@@ -1,0 +1,247 @@
+@using ErrorService.Shared
+@using Microsoft.JSInterop
+
+@if (Categories != null && Categories.Any())
+{
+    <section class="home-categories" dir="rtl">
+        <div class="container">
+            <div class="categories-scroll-wrapper" @ref="scrollWrapper">
+                <div class="categories-grid">
+                    @foreach (var cat in Categories.OrderBy(x => x.SortOrder))
+                    {
+                        <a href="/products?categoryId=@cat.Id" class="category-item-link">
+                            <div class="category-circle-wrapper">
+                                <div class="category-glow-ring"></div>
+                                <div class="category-shine-ring"></div>
+                                <div class="category-circle">
+                                    @if (!string.IsNullOrEmpty(cat.Icon))
+                                    {
+                                        if (cat.Icon.StartsWith("/") || cat.Icon.StartsWith("http"))
+                                        {
+                                            <img src="@cat.Icon" loading="lazy" alt="@cat.Name" class="category-img" />
+                                        }
+                                        else
+                                        {
+                                            <i class="oi @cat.Icon"></i>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="oi oi-grid-three-up"></span>
+                                    }
+                                </div>
+                            </div>
+                            <span class="category-name">@cat.Name</span>
+                        </a>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+}
+
+<style>
+    .categories-section {
+        width: 100%;
+        overflow: hidden;
+        padding: 10px 0;
+    }
+
+    .home-categories {
+        position: relative;
+        overflow: hidden;
+        padding: 10px 0;
+    }
+
+    @@media (min-width: 900px) {
+        .home-categories {
+            padding: 2px 0;
+        }
+
+        .categories-scroll-wrapper {
+            padding: 4px 5px;
+        }
+
+        .category-circle-wrapper {
+            margin-bottom: 4px;
+        }
+
+        .category-name {
+            margin-top: 2px;
+        }
+    }
+
+    .categories-scroll-wrapper {
+        display: flex;
+        justify-content: center;
+        overflow-x: auto;
+        overflow-y: hidden;
+        cursor: grab;
+        padding: 10px 5px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none; /* Firefox */
+        max-width: 100%;
+        width: 100%;
+    }
+
+    .categories-scroll-wrapper::-webkit-scrollbar {
+        display: none; /* Chrome, Safari, Opera */
+    }
+
+    .categories-scroll-wrapper:active {
+        cursor: grabbing;
+    }
+
+    .categories-grid {
+        display: flex;
+        gap: clamp(15px, 4vw, 40px);
+        width: fit-content;
+        justify-content: center;
+        padding: 0 5px;
+        max-width: 100%;
+        margin: 0 auto;
+    }
+
+    .category-item-link {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-decoration: none;
+        color: inherit;
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        width: clamp(80px, 12vw, 110px);
+    }
+
+    .category-item-link:hover {
+        transform: translateY(-8px);
+        color: var(--app-primary, #2563eb);
+    }
+
+    .category-circle-wrapper {
+        position: relative;
+        width: clamp(70px, 10vw, 90px);
+        height: clamp(70px, 10vw, 90px);
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .category-circle {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: clamp(1.2rem, 1.8vw, 1.8rem);
+        color: #1e293b;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        overflow: hidden;
+    }
+
+    .category-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .category-item-link:hover .category-circle {
+        background: var(--app-primary, #2563eb);
+        color: #fff;
+        box-shadow: 0 15px 30px rgba(37, 99, 235, 0.25);
+        transform: scale(1.05);
+    }
+
+    .category-shine-ring {
+        position: absolute;
+        inset: -6px;
+        border-radius: 50%;
+        border: 2px solid rgba(37, 99, 235, 0.18);
+        z-index: 1;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .category-shine-ring::before {
+        content: "";
+        position: absolute;
+        top: -4px;
+        left: 50%;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--app-primary, #2563eb);
+        transform: translateX(-50%);
+        box-shadow: 0 0 12px var(--app-primary, #2563eb);
+    }
+
+    .category-item-link:hover .category-shine-ring {
+        opacity: 1;
+        animation: ring-spin 2s linear infinite;
+    }
+
+    .category-glow-ring {
+        position: absolute;
+        inset: -4px;
+        border-radius: 50%;
+        z-index: 1;
+        background: conic-gradient(from 0deg, #f59e0b, #f97316 30%, #ec4899 50%, #f97316 70%, #f59e0b 100%);
+        -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #fff calc(100% - 3px));
+        mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #fff calc(100% - 3px));
+        animation: glow-spin 12s linear infinite;
+        opacity: 0.6;
+        transition: opacity 0.3s ease;
+    }
+
+    .category-item-link:hover .category-glow-ring {
+        opacity: 0.15;
+    }
+
+    @@keyframes glow-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    @@keyframes ring-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    .category-name {
+        font-size: clamp(0.85rem, 1.1vw, 1rem);
+        font-weight: 800;
+        text-align: center;
+        margin-top: 4px;
+        color: #334155;
+        transition: color 0.3s ease;
+    }
+
+    .category-item-link:hover .category-name {
+        color: var(--app-primary, #2563eb);
+    }
+
+    @@media (max-width: 768px) {
+        .categories-grid {
+            justify-content: flex-start;
+        }
+    }
+</style>
+
+@code {
+    [Parameter] public List<CategoryDto>? Categories { get; set; }
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    private ElementReference scrollWrapper;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Categories != null && Categories.Any())
+        {
+            await JS.InvokeVoidAsync("initDragScroll", scrollWrapper);
+        }
+    }
+}

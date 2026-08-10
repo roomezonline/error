@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ErrorService.WebForms</RootNamespace>
+    <AssemblyName>ErrorService.WebForms</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <OutputPath>bin\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Web" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Web.Services" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Configuration" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!-- Custom publish: build to bin, then copy everything with correct structure -->
+  <Target Name="CustomPublish" AfterTargets="Publish">
+    <!-- Step 1: Copy compiled DLLs to publish\bin\ -->
+    <ItemGroup>
+      <BuildDlls Include="$(OutputPath)*.dll" />
+      <BuildPdbs Include="$(OutputPath)*.pdb" />
+      <BuildRefs Include="$(OutputPath)refs\**\*" Condition="Exists('$(OutputPath)refs')" />
+    </ItemGroup>
+    <MakeDir Directories="$(PublishDir)bin\" />
+    <Copy SourceFiles="@(BuildDlls)" DestinationFolder="$(PublishDir)bin\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(BuildPdbs)" DestinationFolder="$(PublishDir)bin\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(BuildRefs)" DestinationFolder="$(PublishDir)bin\refs\" SkipUnchangedFiles="true" />
+
+    <!-- Step 2: Copy content files (aspx, assets) to publish root -->
+    <ItemGroup>
+      <ContentFiles Include="$(MSBuildProjectDirectory)\**\*"
+                    Exclude="$(MSBuildProjectDirectory)\bin\**;
+                             $(MSBuildProjectDirectory)\obj\**;
+                             $(MSBuildProjectDirectory)\Properties\**;
+                             $(MSBuildProjectDirectory)\*.csproj*;
+                             $(MSBuildProjectDirectory)\*.user;
+                             $(MSBuildProjectDirectory)\debug_temp.txt;
+                             $(MSBuildProjectDirectory)\run.*;
+                             $(MSBuildProjectDirectory)\**\*.cs" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ContentFiles)"
+          DestinationFiles="@(ContentFiles->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+
+    <!-- Step 3: Clean up built-in publish files left at root -->
+    <Delete Files="$(PublishDir)$(AssemblyName).deps.json" Condition="Exists('$(PublishDir)$(AssemblyName).deps.json')" />
+    <Delete Files="$(PublishDir)$(AssemblyName).dll" Condition="Exists('$(PublishDir)$(AssemblyName).dll')" />
+    <Delete Files="$(PublishDir)$(AssemblyName).pdb" Condition="Exists('$(PublishDir)$(AssemblyName).pdb')" />
+    <Delete Files="$(PublishDir)Newtonsoft.Json.dll" Condition="Exists('$(PublishDir)Newtonsoft.Json.dll')" />
+    <Delete Files="$(PublishDir)refs\**\*" Condition="Exists('$(PublishDir)refs')" />
+    <RemoveDir Directories="$(PublishDir)refs" Condition="Exists('$(PublishDir)refs')" />
+
+    <Message Text="Published @(ContentFiles->Count()) files + @(BuildDlls->Count()) DLLs to $(PublishDir)" Importance="high" />
+  </Target>
+
+  <PropertyGroup>
+    <IISExpressPath Condition="Exists('$(MSBuildProgramFiles32)\IIS Express\iisexpress.exe')">$(MSBuildProgramFiles32)\IIS Express\iisexpress.exe</IISExpressPath>
+    <IISExpressPath Condition="Exists('$(ProgramW6432)\IIS Express\iisexpress.exe')">$(ProgramW6432)\IIS Express\iisexpress.exe</IISExpressPath>
+    <RunCommand>$(IISExpressPath)</RunCommand>
+    <RunArguments>/path:"$(MSBuildProjectDirectory)" /port:5001</RunArguments>
+    <LaunchSiteAfterRelaunch>true</LaunchSiteAfterRelaunch>
+  </PropertyGroup>
+
+</Project>

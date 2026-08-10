@@ -1,0 +1,1468 @@
+@page "/products/{Id:int}"
+@page "/products/{Slug}"
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@using System.Net.Http.Json
+@using ErrorService.Client.Utils
+@using System.Text.Json
+@using System.Threading
+@implements IDisposable
+@inject IJSRuntime JS
+
+<PageTitle>ارورسرویس - @(product?.Name ?? "جزئیات محصول")</PageTitle>
+
+<div class="pd-wrap" dir="rtl">
+    <div class="pd-container">
+        @if (isLoading)
+        {
+            <div class="pd-skeleton">
+                <div class="pd-sk-grid">
+                    <div class="pd-sk-gallery"></div>
+                    <div class="pd-sk-info">
+                        <div class="pd-sk-line w-25"></div>
+                        <div class="pd-sk-line w-75 h2"></div>
+                        <div class="pd-sk-line w-50"></div>
+                        <div class="pd-sk-line w-100 h4" style="height:80px; border-radius:1rem;"></div>
+                        <div class="pd-sk-line w-100" style="height:48px; border-radius:0.85rem;"></div>
+                    </div>
+                </div>
+                <div class="pd-sk-details">
+                    <div class="pd-sk-line w-100" style="height:200px; border-radius:1rem;"></div>
+                </div>
+            </div>
+        }
+        else if (product == null)
+        {
+            <SeoHeader Title="محصول یافت نشد | ارور سرویس" Description="متاسفانه محصول مورد نظر یافت نشد." />
+            <div class="pd-notfound">
+                <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#dc3545" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                <h3>محصول مورد نظر یافت نشد!</h3>
+                <a href="/products" class="pd-back-btn">بازگشت به فروشگاه</a>
+            </div>
+        }
+        else
+        {
+            <SeoHeader 
+                Title="@($"{product.Name} | قیمت و مشخصات | ارور سرویس")" 
+                Description="@(string.IsNullOrEmpty(product.Description) ? $"خرید و مشاهده مشخصات فنی {product.Name} در دسته {product.CategoryName}" : (product.Description.Length > 160 ? product.Description.Substring(0, 157) + "..." : product.Description))"
+                OgType="product"
+                OgImage="@(product.MainImageUrl ?? "/images/og-default.jpg")"
+                JsonLd="@productJsonLd" />
+
+            <!-- Mobile header sticky -->
+            <div class="pd-header-sticky d-lg-none shadow-sm">
+                <div class="pd-header-inner">
+                    <a href="/products" class="pd-header-back" title="بازگشت به فروشگاه">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                    </a>
+                    <div class="pd-header-title text-truncate px-2">@product.Name</div>
+                    <button class="pd-header-action" @onclick="OpenShareModal" title="اشتراک‌گذاری">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <nav class="pd-breadcrumb d-none d-lg-flex">
+                <ol>
+                    <li><a href="/">خانه</a></li>
+                    <li><a href="/products">محصولات</a></li>
+                    <li><a href="/products?categoryId=@product.CategoryId">@product.CategoryName</a></li>
+                </ol>
+            </nav>
+
+            <div class="pd-main">
+                <div class="pd-gallery">
+                    <div class="pd-gallery-view"
+                         @onmousedown="HandleMouseDown"
+                         @onmouseup="HandleMouseUp"
+                         @ontouchstart="HandleTouchStart"
+                         @ontouchend="HandleTouchEnd">
+                        <div class="pd-gallery-track" style="transform: translateX(@(currentImageIndex * 100)%)">
+                            @for (int i = 0; i < GetAllImages().Count; i++)
+                            {
+                                var img = GetAllImages()[i];
+                                <div class="pd-gallery-slide">
+                                    <div class="pd-img-wrap">
+                                        <img src="@img" alt="@product.Name" loading="lazy" draggable="false" class="pd-main-img" @onclick="() => OpenLightbox(i)" @onerror="() => HandleImageError(i)" />
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        @if (product.DiscountExpiryDate.HasValue && product.DiscountExpiryDate > DateTimeOffset.Now)
+                        {
+                            <div class="pd-discount-ribbon">
+                                <span class="pd-discount-label">پیشنهاد ویژه</span>
+                                <span class="pd-discount-timer">@countdownText</span>
+                            </div>
+                        }
+
+                        @if (GetAllImages().Count > 1)
+                        {
+                            <div class="pd-dots">
+                                @for (int i = 0; i < GetAllImages().Count; i++)
+                                {
+                                    <button class="pd-dot @(currentImageIndex == i ? "pd-dot--active" : "")"
+                                            @onclick="() => currentImageIndex = i"
+                                            aria-label="تصویر @(i + 1)"></button>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @if (GetAllImages().Count > 1)
+                    {
+                        <div class="pd-thumbs">
+                            @for (int i = 0; i < GetAllImages().Count; i++)
+                            {
+                                var idx = i;
+                                var img = GetAllImages()[i];
+                                <button class="pd-thumb @(currentImageIndex == idx ? "pd-thumb--active" : "")"
+                                        @onclick="() => currentImageIndex = idx"
+                                        aria-label="تصویر کوچک @(i + 1)">
+                                    <img src="@img" alt="" @onerror="() => HandleThumbError(idx)" />
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="pd-info">
+                    <span class="pd-category">@product.CategoryName</span>
+                    <h1 class="pd-title">@product.Name</h1>
+
+                    <div class="pd-extra">
+                        <span class="pd-extra-item pd-code-copy" @onclick="CopyProductCode" title="کلیک برای کپی">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                            کد محصول: #@product.Id.ToString("D6")
+                        </span>
+                        @if (product.IsAvailable && product.StockQuantity > 0)
+                        {
+                            <span class="pd-extra-item pd-instock">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#198754" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                                @if (product.StockQuantity <= 5)
+                                {
+                                    <span>تنها @product.StockQuantity عدد در انبار</span>
+                                }
+                                else
+                                {
+                                    <span>موجود در انبار</span>
+                                }
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="pd-extra-item pd-outstock">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc3545" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                ناموجود
+                            </span>
+                        }
+                    </div>
+
+                    @if (reviewSummary != null)
+                    {
+                        <div class="pd-rating-stars">
+                            <div class="pd-stars">
+                                @for (int i = 1; i <= 5; i++)
+                                {
+                                    var fill = i <= Math.Round(reviewSummary.AverageRating, MidpointRounding.AwayFromZero) ? "#f59e0b" : "none";
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="@fill" stroke="#f59e0b" stroke-width="2">
+                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                    </svg>
+                                }
+                            </div>
+                            <span class="pd-rating-text">@reviewSummary.AverageRating.ToString("F1") از ۵ (@reviewSummary.TotalCount امتیاز)</span>
+                        </div>
+                    }
+
+                    <div class="pd-pricebox">
+                        @if (product.DiscountPrice.HasValue)
+                        {
+                            <div class="pd-price-row">
+                                <span class="pd-price-old">@product.Price.ToString("N0") تومان</span>
+                                <span class="pd-price-badge">تخفیف ویژه</span>
+                            </div>
+                            <div class="pd-price-current">
+                                <span class="pd-price-num">@product.DiscountPrice.Value.ToString("N0")</span>
+                                <span class="pd-price-unit">تومان</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="pd-price-current">
+                                <span class="pd-price-num">@product.Price.ToString("N0")</span>
+                                <span class="pd-price-unit">تومان</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="pd-highlights">
+                        <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>ضمانت اصالت</span></div>
+                        <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>ارسال سریع</span></div>
+                        <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9z"/><polyline points="9 11 12 14 22 4"/></svg><span>۷ روز بازگشت</span></div>
+                        <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>پشتیبانی</span></div>
+                    </div>
+
+                    <div class="pd-actions">
+                        <div class="pd-qty">
+                            <span class="pd-qty-label">تعداد:</span>
+                            <div class="pd-qty-box">
+                                <button class="pd-qty-btn" @onclick="DecrementQty" disabled="@(_quantity <= 1)" aria-label="کاهش">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                </button>
+                                <span class="pd-qty-val">@_quantity</span>
+                                <button class="pd-qty-btn" @onclick="IncrementQty" disabled="@(_quantity >= 99)" aria-label="افزایش">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="pd-actions-tools d-flex gap-1">
+                            <button class="pd-share" @onclick="OpenShareModal" title="اشتراک‌گذاری">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                                <span>اشتراک</span>
+                            </button>
+                            <button class="pd-share @(isInWishlist ? "pd-wishlist-active" : "")" @onclick="ToggleWishlist" title="علاقمندی">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="@(isInWishlist ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                <span>علاقمندی</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button class="pd-add-cart @_cartBtnClass" @onclick="AddToCart" disabled="@(!product.IsAvailable || product.StockQuantity <= 0 || _isAddingToCart)">
+                        @if (_cartBtnState == CartBtnState.Spinner)
+                        {
+                            <span class="pd-cart-spinner"></span>
+                        }
+                        else if (_cartBtnState == CartBtnState.Done)
+                        {
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        }
+                        else
+                        {
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                        }
+                        <span>@_cartBtnText</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="pd-tabs-wrap">
+                <div class="pd-tabs-header">
+                    <button class="pd-tab-btn @(_activeTab == 0 ? "pd-tab-active" : "")" @onclick="() => SwitchTab(0)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        توضیحات
+                    </button>
+                    <button class="pd-tab-btn @(_activeTab == 1 ? "pd-tab-active" : "")" @onclick="() => SwitchTab(1)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                        مشخصات فنی
+                    </button>
+                </div>
+
+                <div class="pd-tab-content @(_activeTab == 0 ? "pd-tab-fade-in" : "pd-tab-fade-out")">
+                    @if (_activeTab == 0)
+                    {
+                        @if (!string.IsNullOrEmpty(product.Description))
+                        {
+                            <div class="pd-tab-panel pd-desc">
+                                @((MarkupString)HtmlSanitizer.Sanitize(product.Description!))
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="pd-tab-empty">هنوز توضیحاتی برای این محصول ثبت نشده است.</div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="pd-specs">
+                            <div class="pd-spec"><span class="pd-spec-key">دسته‌بندی</span><span class="pd-spec-val">@product.CategoryName</span></div>
+                            <div class="pd-spec"><span class="pd-spec-key">شناسه کالا</span><span class="pd-spec-val">#@product.Id.ToString("D10")</span></div>
+                            <div class="pd-spec"><span class="pd-spec-key">قیمت</span><span class="pd-spec-val">@product.Price.ToString("N0") تومان</span></div>
+                            <div class="pd-spec"><span class="pd-spec-key">وضعیت موجودی</span><span class="pd-spec-val @((product.IsAvailable && product.StockQuantity > 0) ? "pd-green" : "pd-red")">@((product.IsAvailable && product.StockQuantity > 0) ? "موجود" : "ناموجود")</span></div>
+                            @if (!string.IsNullOrEmpty(product.CompatibilityInfo))
+                            {
+                                <div class="pd-tech-card">
+                                    <div class="pd-tech-icon"><span class="oi oi-wrench"></span></div>
+                                    <div class="pd-tech-body">
+                                        <div class="pd-tech-label">سازگاری</div>
+                                        <div class="pd-tech-text">@product.CompatibilityInfo</div>
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(product.FailureSymptoms))
+                            {
+                                <div class="pd-tech-card">
+                                    <div class="pd-tech-icon"><span class="oi oi-warning"></span></div>
+                                    <div class="pd-tech-body">
+                                        <div class="pd-tech-label">علائم خرابی</div>
+                                        <div class="pd-tech-text">@product.FailureSymptoms</div>
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(product.DatasheetUrl))
+                            {
+                                <a href="@product.DatasheetUrl" target="_blank" rel="noopener" class="pd-tech-card pd-tech-link">
+                                    <div class="pd-tech-icon"><span class="oi oi-file"></span></div>
+                                    <div class="pd-tech-body">
+                                        <div class="pd-tech-label">دیتاشیت محصول</div>
+                                        <div class="pd-tech-text pd-tech-text--link">مشاهده و دانلود برگه مشخصات فنی</div>
+                                    </div>
+                                    <span class="oi oi-external-link pd-tech-ext"></span>
+                                </a>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (relatedProducts != null && relatedProducts.Any())
+            {
+                <div class="pd-related">
+                    <h2 class="pd-related-title">محصولات مرتبط</h2>
+                    <div class="pd-related-track">
+                        @foreach (var rp in relatedProducts)
+                        {
+                            <a href="@SeoUrl.Product(rp.Id, rp.Slug)" class="pd-related-card">
+                                <div class="pd-related-img">
+                                    @if (!string.IsNullOrEmpty(rp.MainImageUrl))
+                                    {
+                                        <img src="@rp.MainImageUrl" alt="@rp.Name" loading="lazy" />
+                                    }
+                                    else
+                                    {
+                                        <div class="pd-related-placeholder">
+                                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#adb5bd" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                        </div>
+                                    }
+                                </div>
+                                <div class="pd-related-body">
+                                    <span class="pd-related-name">@rp.Name</span>
+                                    <div class="pd-related-price">
+                                        @if (rp.DiscountPrice.HasValue)
+                                        {
+                                            <span class="pd-related-old">@rp.Price.ToString("N0")</span>
+                                            <span class="pd-related-current">@rp.DiscountPrice.Value.ToString("N0")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="pd-related-current">@rp.Price.ToString("N0")</span>
+                                        }
+                                        <span class="pd-related-unit">تومان</span>
+                                    </div>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_recentItems.Any())
+            {
+                <div class="pd-recently">
+                    <h2 class="pd-related-title">بازدیدهای اخیر شما</h2>
+                    <div class="pd-related-track">
+                        @foreach (var ri in _recentItems)
+                        {
+                            <a href="@SeoUrl.Product(ri.Id, ri.Slug)" class="pd-related-card">
+                                <div class="pd-related-img">
+                                    @if (!string.IsNullOrEmpty(ri.ImageUrl))
+                                    {
+                                        <img src="@ri.ImageUrl" alt="@ri.Name" loading="lazy" />
+                                    }
+                                    else
+                                    {
+                                        <div class="pd-related-placeholder">
+                                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#adb5bd" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                        </div>
+                                    }
+                                </div>
+                                <div class="pd-related-body">
+                                    <span class="pd-related-name">@ri.Name</span>
+                                    <div class="pd-related-price">
+                                        @if (ri.DiscountPrice.HasValue)
+                                        {
+                                            <span class="pd-related-old">@ri.Price.ToString("N0")</span>
+                                            <span class="pd-related-current">@ri.DiscountPrice.Value.ToString("N0")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="pd-related-current">@ri.Price.ToString("N0")</span>
+                                        }
+                                        <span class="pd-related-unit">تومان</span>
+                                    </div>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="pd-reviews mt-5">
+                <h3 class="fw-bold mb-4">نظرات کاربران</h3>
+
+                @if (reviewSummary == null)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status"></div>
+                    </div>
+                }
+                else
+                {
+                    <CommentSection ShowStarSummary="false"
+                                    ShowRating="true"
+                                    RequireEmail="true"
+                                    SubmitEndpoint="@($"api/products/{(product?.Id ?? 0)}/reviews")"
+                                    AverageRating="@reviewSummary.AverageRating"
+                                    TotalCount="@reviewSummary.TotalCount"
+                                    Comments="@_productCommentDtos"
+                                    SubmitComment="@HandleProductReviewSubmit" />
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@if (showLightbox)
+{
+    <div class="pd-lightbox" @onkeydown="HandleLightboxKey" @onclick="CloseLightbox" tabindex="0" id="pd-lightbox-el">
+        <div class="pd-lightbox-content" @onclick:stopPropagation>
+            <button class="pd-lightbox-close" @onclick="CloseLightbox" aria-label="بستن">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <div class="pd-lightbox-img-wrap">
+                <img src="@GetAllImages()[_lightboxIndex]" alt="@product?.Name" class="pd-lightbox-img" />
+            </div>
+            <div class="pd-lightbox-counter">@(_lightboxIndex + 1) از @GetAllImages().Count</div>
+            @if (GetAllImages().Count > 1)
+            {
+                <button class="pd-lightbox-nav pd-lightbox-prev" @onclick="PrevLightbox" @onclick:stopPropagation aria-label="قبلی">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <button class="pd-lightbox-nav pd-lightbox-next" @onclick="NextLightbox" @onclick:stopPropagation aria-label="بعدی">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+            }
+        </div>
+    </div>
+}
+
+<ShareModal Visible="showShareModal"
+    OnClose="CloseShareModal"
+    HeaderTitle="اشتراک‌گذاری محصول"
+    LinkLabel="محصول"
+    ImageUrl="@product?.MainImageUrl"
+    PreviewTitle="@(product?.Name ?? "")"
+    PreviewDescription="@(product != null ? TruncateText(StripHtml(product.Description ?? ""), 120) : "")"
+    ShareUrl="@Nav.Uri"
+    GetShareText="@(() => GetShareText())"
+    GetShareTelegramText="@(() => GetShareTextForTelegram())" />
+
+@if (product != null)
+{
+    <div class="pd-sticky-bar">
+        <div class="pd-sticky-inner">
+            <div class="pd-sticky-price">
+                @if (product.DiscountPrice.HasValue)
+                {
+                    <span class="pd-sticky-old">@((product.Price * _quantity).ToString("N0"))</span>
+                }
+                <span class="pd-sticky-current">@(((product.DiscountPrice ?? product.Price) * _quantity).ToString("N0"))</span>
+                <span class="pd-sticky-label">قیمت کل</span>
+            </div>
+            <div class="pd-sticky-actions">
+                <div class="pd-sticky-qty">
+                    <button class="pd-sticky-qty-btn" @onclick="DecrementQty" disabled="@(_quantity <= 1)" aria-label="کاهش">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <span class="pd-sticky-qty-val">@_quantity</span>
+                    <button class="pd-sticky-qty-btn" @onclick="IncrementQty" disabled="@(_quantity >= 99)" aria-label="افزایش">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                </div>
+                <button class="pd-sticky-cart @_cartBtnClass" @onclick="AddToCart" disabled="@(!product.IsAvailable || product.StockQuantity <= 0 || _isAddingToCart)">
+                    @if (_cartBtnState == CartBtnState.Spinner)
+                    {
+                        <span class="pd-cart-spinner"></span>
+                    }
+                    else if (_cartBtnState == CartBtnState.Done)
+                    {
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    }
+                    else
+                    {
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                    }
+                    <span>@_cartBtnText</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<button class="pd-scroll-top @_scrollTopClass" @onclick="ScrollToTop" aria-label="بالا">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+</button>
+
+@if (sharedText != null)
+{
+    <div class="pd-toast" role="status" aria-live="polite">@sharedText</div>
+}
+
+<script>
+    window.__pdScrollHandler = function(dotnetRef) {
+        var handler = function() {
+            dotnetRef.invokeMethodAsync('OnScroll', window.scrollY > 350);
+        };
+        window.addEventListener('scroll', handler, { passive: true });
+        handler();
+        return handler;
+    };
+    window.__pdRemoveScrollHandler = function(handler) {
+        window.removeEventListener('scroll', handler);
+    };
+    window.__pdFocusElement = function(id) {
+        var el = document.getElementById(id);
+        if (el) el.focus();
+    };
+</script>
+
+<style>
+    .pd-wrap *, .pd-wrap *::before, .pd-wrap *::after { box-sizing: border-box; }
+    .pd-wrap { font-family: 'Vazirmatn', system-ui, sans-serif; color: #212529; line-height: 1.6; }
+    .pd-container { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1rem; }
+
+    /* ===== Skeleton ===== */
+    @@keyframes pd-shimmer { 0%{background-position:-400px 0}100%{background-position:400px 0} }
+    .pd-skeleton { padding: 1rem 0; }
+    .pd-sk-grid { display:grid; grid-template-columns:1fr 1fr; gap:2rem; }
+    .pd-sk-gallery { height:420px; background:#e9ecef; border-radius:1.25rem; }
+    .pd-sk-info { display:flex; flex-direction:column; gap:1rem; }
+    .pd-sk-line { height:20px; border-radius:0.5rem; background: linear-gradient(90deg,#e9ecef 25%,#f8f9fa 50%,#e9ecef 75%); background-size:800px 100%; animation:pd-shimmer 1.8s infinite linear; }
+    .pd-sk-line.h2 { height:32px; }
+    .pd-sk-line.h4 { height:28px; }
+    .pd-sk-line.w-25 { width:25%; }
+    .pd-sk-line.w-50 { width:50%; }
+    .pd-sk-line.w-75 { width:75%; }
+    .pd-sk-line.w-100 { width:100%; }
+    .pd-sk-details { margin-top:2rem; }
+    @@media (max-width:767.98px) { .pd-sk-grid { grid-template-columns:1fr; } .pd-sk-gallery { height:280px; } }
+
+    .pd-notfound { text-align:center;padding:4rem 1rem;background:#fff;border-radius:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,.06);max-width:400px;margin:3rem auto; }
+    .pd-notfound h3 { font-size:1.15rem;color:#343a40;margin:1rem 0 1.5rem; }
+    .pd-back-btn { display:inline-block;padding:.6rem 1.75rem;background:#0d6efd;color:#fff;border-radius:2rem;text-decoration:none;font-weight:600;font-size:.9rem;transition:background .2s; }
+    .pd-back-btn:hover { background:#0b5ed7; }
+
+    .pd-breadcrumb { margin-bottom:1.5rem; }
+    .pd-breadcrumb ol { list-style:none;display:flex;flex-wrap:wrap;gap:.4rem;padding:0;margin:0;font-size:.85rem;color:#6c757d; }
+    .pd-breadcrumb li { display:flex;align-items:center; }
+    .pd-breadcrumb li+li::before { content:"/";color:#adb5bd;margin:0 .35rem; }
+    .pd-breadcrumb a { color:#0d6efd;text-decoration:none; }
+    .pd-breadcrumb a:hover { text-decoration:underline; }
+
+    /* Mobile Header Sticky */
+    .pd-header-sticky {
+        position: sticky;
+        top: 0;
+        z-index: 1020;
+        min-height: 56px;
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+        display: flex;
+        align-items: center;
+        margin: -0.75rem -0.6rem 0.75rem;
+        padding: 0 0.6rem;
+        padding-top: env(safe-area-inset-top, 0px);
+    }
+    .pd-header-inner {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+        min-height: 56px;
+    }
+    .pd-header-back {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: #f8fafc;
+        color: #475569;
+        text-decoration: none;
+        transition: all 0.2s;
+        border: 1px solid rgba(0,0,0,0.04);
+        flex-shrink: 0;
+    }
+    .pd-header-back:active { transform: scale(0.92); background: #f1f5f9; }
+    .pd-header-title {
+        flex: 1;
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: #0f172a;
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .pd-header-action {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: #f8fafc;
+        color: #475569;
+        border: 1px solid rgba(0,0,0,0.04);
+        cursor: pointer;
+        transition: all 0.2s;
+        flex-shrink: 0;
+    }
+    .pd-header-action:active { transform: scale(0.92); background: #f1f5f9; }
+
+    .pd-main { display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start; }
+
+    .pd-gallery-view { position:relative;background:#f8f9fa;border-radius:1rem;overflow:hidden;user-select:none;touch-action:none; }
+    .pd-gallery-track { display:flex;transition:transform .4s cubic-bezier(.25,1,.5,1); }
+    .pd-gallery-slide { min-width:100%;display:flex;align-items:center;justify-content:center;padding:1rem; }
+    .pd-img-wrap { width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:.75rem; }
+    .pd-main-img { max-width:100%;max-height:460px;width:auto;height:auto;object-fit:contain;border-radius:.5rem;cursor:zoom-in;transition:transform .35s ease; }
+    .pd-main-img:hover { transform:scale(1.06); }
+
+    .pd-discount-ribbon { position:absolute;top:.75rem;right:.75rem;background:linear-gradient(135deg,#dc3545,#e4606d);color:#fff;padding:.45rem .9rem;border-radius:.65rem;z-index:5;box-shadow:0 4px 14px rgba(220,53,69,.35);text-align:center;min-width:100px;font-size:.8rem; }
+    .pd-discount-label { font-weight:700;font-size:.7rem;opacity:.95;display:block; }
+    .pd-discount-timer { font-family:'Courier New',monospace;font-weight:700;font-size:.95rem;direction:ltr; }
+
+    .pd-dots { position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);display:flex;gap:.4rem; }
+    .pd-dot { width:7px;height:7px;border-radius:50%;border:none;background:rgba(0,0,0,.18);cursor:pointer;transition:all .3s;padding:0; }
+    .pd-dot--active { background:#0d6efd;width:22px;border-radius:4px; }
+
+    .pd-thumbs { display:flex;gap:.6rem;justify-content:center;margin-top:.75rem;flex-wrap:wrap; }
+    .pd-thumb { width:64px;height:64px;border-radius:.65rem;overflow:hidden;border:2.5px solid transparent;background:#f8f9fa;cursor:pointer;transition:all .2s;padding:0;display:flex;align-items:center;justify-content:center; }
+    .pd-thumb img { width:100%;height:100%;object-fit:contain;padding:4px; }
+    .pd-thumb--active { border-color:#0d6efd;background:#fff;box-shadow:0 2px 8px rgba(13,110,253,.15); }
+
+    .pd-info { display:flex;flex-direction:column;gap:1rem; }
+    .pd-category { display:inline-flex;align-self:flex-start;background:#e8f4fd;color:#0d6efd;font-size:.75rem;font-weight:700;padding:.3rem .8rem;border-radius:2rem;letter-spacing:.3px; }
+    .pd-title { font-size:1.4rem;font-weight:800;color:#212529;margin:0;line-height:1.4;word-break:break-word; }
+    .pd-extra { display:flex;flex-wrap:wrap;gap:.4rem 1.5rem;font-size:.8rem;color:#6c757d; }
+    .pd-extra-item { display:inline-flex;align-items:center;gap:.3rem; }
+    .pd-extra-item svg { flex-shrink:0; }
+    .pd-code-copy { cursor:pointer;transition:color .2s; }
+    .pd-code-copy:hover { color:#0d6efd; }
+    .pd-instock { color:#198754;font-weight:700; }
+    .pd-outstock { color:#dc3545;font-weight:700; }
+
+    .pd-rating-stars { display:flex;align-items:center;gap:.5rem;flex-wrap:wrap; }
+    .pd-stars { display:flex;gap:2px; }
+    .pd-stars svg { display:block; }
+    .pd-rating-text { font-size:.8rem;color:#6c757d; }
+
+    .pd-pricebox { background:#f8f9fa;border-radius:1rem;padding:1rem 1.25rem; }
+    .pd-price-row { display:flex;align-items:center;gap:.75rem;margin-bottom:.25rem; }
+    .pd-price-old { font-size:.9rem;color:#adb5bd;text-decoration:line-through; }
+    .pd-price-badge { font-size:.65rem;font-weight:700;background:#dc3545;color:#fff;padding:.15rem .5rem;border-radius:.35rem; }
+    .pd-price-current { display:flex;align-items:baseline;gap:.35rem; }
+    .pd-price-num { font-size:1.75rem;font-weight:800;color:#0d6efd;line-height:1.1; }
+    .pd-price-unit { font-size:.85rem;color:#6c757d;font-weight:600; }
+
+    .pd-highlights { display:grid;grid-template-columns:1fr 1fr;gap:.5rem; }
+    .pd-hl { display:flex;align-items:center;gap:.4rem;font-size:.78rem;font-weight:600;color:#495057;padding:.5rem;background:#f8f9fa;border-radius:.65rem;transition:background .2s,transform .2s; }
+    .pd-hl:hover { background:#e8f4fd;transform:translateY(-1px); }
+    .pd-hl svg { flex-shrink:0;stroke:#2c7da0; }
+
+    .pd-actions { display:flex;align-items:center;gap:.75rem;flex-wrap:wrap; }
+    .pd-qty { display:flex;align-items:center;gap:.6rem;flex-shrink:0; }
+    .pd-qty-label { font-weight:600;color:#495057;font-size:.9rem; }
+    .pd-qty-box { display:flex;align-items:center;border:1.5px solid #dee2e6;border-radius:.65rem;overflow:hidden;background:#fff; }
+    .pd-qty-btn { display:flex;align-items:center;justify-content:center;width:38px;height:38px;border:none;background:#f8f9fa;color:#495057;cursor:pointer;transition:background .15s,color .15s;padding:0;min-width:44px;min-height:44px; }
+    .pd-qty-btn:hover:not(:disabled) { background:#e9ecef;color:#0d6efd; }
+    .pd-qty-btn:disabled { opacity:.3;cursor:not-allowed; }
+    .pd-qty-val { min-width:44px;text-align:center;font-weight:700;font-size:1rem;color:#212529;user-select:none; }
+
+    .pd-share { display:inline-flex;align-items:center;gap:.35rem;padding:.5rem .9rem;border:1.5px solid #dee2e6;border-radius:.65rem;cursor:pointer;font-size:.8rem;font-weight:600;color:#495057;transition:all .2s;min-height:44px;background:#fff; }
+    .pd-share:hover { background:#e8f4fd;border-color:#0d6efd;color:#0d6efd; }
+    .pd-wishlist-active { background:#fff0f0;border-color:#dc3545;color:#dc3545; }
+    .pd-wishlist-active:hover { background:#ffe0e0;border-color:#dc3545;color:#dc3545; }
+    .pd-actions-tools { display:flex;gap:4px;flex-wrap:wrap; }
+
+    .pd-add-cart { display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.85rem 1.5rem;border:none;border-radius:.85rem;background:#0d6efd;color:#fff;font-size:1rem;font-weight:700;cursor:pointer;transition:background .2s,transform .1s,box-shadow .2s;box-shadow:0 4px 14px rgba(13,110,253,.25);min-height:48px;white-space:nowrap; }
+    .pd-add-cart svg { flex-shrink:0; }
+    .pd-add-cart:hover:not(:disabled) { background:#0b5ed7;box-shadow:0 6px 20px rgba(13,110,253,.35);transform:translateY(-1px); }
+    .pd-add-cart:active:not(:disabled) { transform:translateY(0); }
+    .pd-add-cart:disabled { opacity:.5;cursor:not-allowed; }
+    .pd-add-cart.pd-cart-done { background:#198754 !important;box-shadow:0 4px 14px rgba(25,135,84,.25); }
+
+    @@keyframes pd-cart-spin { to { transform:rotate(360deg); } }
+    .pd-cart-spinner { display:inline-block;width:18px;height:18px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:pd-cart-spin .6s linear infinite; }
+
+    /* ===== Tab transitions ===== */
+    @@keyframes pd-tab-fade-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    .pd-tabs-wrap { margin-top:2.5rem;background:#fff;border:1px solid #e9ecef;border-radius:1rem;overflow:hidden; }
+    .pd-tabs-header { display:flex;border-bottom:1px solid #e9ecef;background:#fafbfc;overflow-x:auto; }
+    .pd-tab-btn { display:inline-flex;align-items:center;gap:.4rem;padding:.85rem 1.25rem;border:none;background:transparent;color:#6c757d;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px; }
+    .pd-tab-btn:hover { color:#0d6efd;background:#f0f4ff; }
+    .pd-tab-active { color:#0d6efd !important;border-bottom-color:#0d6efd !important;background:#fff !important; }
+    .pd-tab-content { padding:1.25rem;animation:pd-tab-fade-in .3s ease; }
+    .pd-tab-fade-in { animation:pd-tab-fade-in .3s ease; }
+    .pd-tab-fade-out { animation:none; }
+    .pd-tab-panel { }
+    .pd-desc { color:#495057;line-height:2;font-size:.9rem; }
+    .pd-desc p { margin-bottom:.7rem; }
+    .pd-tab-empty { text-align:center;padding:2rem;color:#adb5bd;font-size:.9rem; }
+
+    .pd-specs { display:flex;flex-direction:column; }
+    .pd-spec { display:flex;justify-content:space-between;padding:.65rem 0;border-bottom:1px solid #f1f3f5;transition:background .15s; }
+    .pd-spec:hover { background:#fafbfc; }
+    .pd-spec:last-child { border-bottom:none; }
+    .pd-spec-key { color:#6c757d;font-weight:500;font-size:.88rem;flex-shrink:0;margin-left:1rem; }
+    .pd-spec-val { color:#212529;font-weight:600;font-size:.88rem;text-align:left; }
+    .pd-green { color:#198754 !important; }
+    .pd-red { color:#dc3545 !important; }
+
+    .pd-tech-card {
+        display:flex;align-items:flex-start;gap:.75rem;
+        padding:.9rem 1rem;margin-top:.5rem;
+        background:#f8f9fa;border-radius:.75rem;
+        border:1px solid #e9ecef;transition:all .2s;
+    }
+    .pd-tech-card:hover { background:#fff;border-color:#dee2e6;box-shadow:0 2px 12px rgba(0,0,0,.05); }
+    .pd-tech-card.pd-tech-link { text-decoration:none;color:inherit;cursor:pointer;align-items:center; }
+    .pd-tech-card.pd-tech-link:hover { border-color:#0d6efd;background:#f0f4ff; }
+    .pd-tech-icon {
+        width:36px;height:36px;border-radius:10px;
+        display:grid;place-items:center;flex-shrink:0;
+        background:#e9ecef;color:#495057;font-size:.9rem;
+    }
+    .pd-tech-card.pd-tech-link .pd-tech-icon { background:#dbe4ff;color:#0d6efd; }
+    .pd-tech-body { flex:1;min-width:0; }
+    .pd-tech-label { font-weight:700;font-size:.78rem;color:#495057;margin-bottom:4px; }
+    .pd-tech-text { font-size:.85rem;color:#212529;line-height:1.7;word-wrap:break-word; }
+    .pd-tech-text--link { color:#0d6efd;font-weight:600;font-size:.8rem; }
+    .pd-tech-ext { color:#0d6efd;font-size:.75rem;flex-shrink:0; }
+
+    /* ===== Related ===== */
+    .pd-related { margin-top:2rem; }
+    .pd-related-title { font-size:1.1rem;font-weight:700;color:#212529;margin:0 0 1rem; }
+    .pd-related-track { display:flex;gap:.75rem;overflow-x:auto;padding-bottom:.5rem;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch; }
+    .pd-related-track::-webkit-scrollbar { height:4px; }
+    .pd-related-track::-webkit-scrollbar-track { background:#e9ecef;border-radius:2px; }
+    .pd-related-track::-webkit-scrollbar-thumb { background:#adb5bd;border-radius:2px; }
+    .pd-related-card { flex:0 0 180px;scroll-snap-align:start;background:#fff;border:1px solid #e9ecef;border-radius:.85rem;overflow:hidden;text-decoration:none;color:inherit;transition:transform .2s,box-shadow .2s; }
+    .pd-related-card:hover { transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.08); }
+    .pd-related-img { height:140px;background:#f8f9fa;display:flex;align-items:center;justify-content:center;overflow:hidden; }
+    .pd-related-img img { width:100%;height:100%;object-fit:contain;padding:.5rem; }
+    .pd-related-placeholder { display:flex;align-items:center;justify-content:center; }
+    .pd-related-body { padding:.6rem .75rem .75rem; }
+    .pd-related-name { display:block;font-size:.8rem;font-weight:600;color:#212529;margin-bottom:.35rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .pd-related-price { display:flex;align-items:baseline;gap:.25rem;flex-wrap:wrap; }
+    .pd-related-old { font-size:.7rem;color:#adb5bd;text-decoration:line-through; }
+    .pd-related-current { font-size:.9rem;font-weight:700;color:#0d6efd; }
+    .pd-related-unit { font-size:.65rem;color:#6c757d; }
+
+    /* ===== Lightbox ===== */
+    .pd-lightbox { position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(4px);animation:pd-lb-in .25s ease;outline:none; }
+    @@keyframes pd-lb-in { from { opacity:0; } to { opacity:1; } }
+    .pd-lightbox-content { position:relative;max-width:90vw;max-height:90vh;display:flex;flex-direction:column;align-items:center; }
+    .pd-lightbox-close { position:absolute;top:-2.5rem;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.15);border:none;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s;z-index:10; }
+    .pd-lightbox-close:hover { background:rgba(255,255,255,.3); }
+    .pd-lightbox-img-wrap { display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:.75rem;max-height:80vh; }
+    .pd-lightbox-img { max-width:100%;max-height:80vh;object-fit:contain;border-radius:.5rem;cursor:zoom-in;transition:transform .3s ease; }
+    .pd-lightbox-img:hover { transform:scale(1.5); }
+    .pd-lightbox-counter { margin-top:.75rem;color:rgba(255,255,255,.6);font-size:.8rem; }
+    .pd-lightbox-nav { position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s;z-index:10; }
+    .pd-lightbox-nav:hover { background:rgba(255,255,255,.3); }
+    .pd-lightbox-prev { right:calc(100% + .75rem); }
+    .pd-lightbox-next { left:calc(100% + .75rem); }
+
+    /* ===== Toast ===== */
+    .pd-toast { position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#212529;color:#fff;padding:.7rem 1.5rem;border-radius:2rem;font-size:.9rem;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.2);animation:pd-fade 2.5s ease forwards;white-space:nowrap; }
+    @@keyframes pd-fade { 0%{opacity:0;transform:translateX(-50%) translateY(10px)}15%{opacity:1;transform:translateX(-50%) translateY(0)}75%{opacity:1}100%{opacity:0;transform:translateX(-50%) translateY(-10px)} }
+
+    /* ===== Sticky Bar ===== */
+    .pd-sticky-bar { display:none;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e9ecef;box-shadow:0 -4px 20px rgba(0,0,0,.08);z-index:1000;padding:.6rem 1rem;padding-bottom:calc(.6rem + env(safe-area-inset-bottom,0px)); }
+    .pd-sticky-inner { display:flex;align-items:center;gap:.75rem;max-width:1200px;margin:0 auto; }
+    .pd-sticky-price { flex-shrink:0;display:flex;flex-direction:column;align-items:center;line-height:1.2; }
+    .pd-sticky-old { font-size:.65rem;color:#adb5bd;text-decoration:line-through;line-height:1; }
+    .pd-sticky-current { font-size:.95rem;font-weight:800;color:#0d6efd; }
+    .pd-sticky-label { font-size:.6rem;color:#94a3b8;font-weight:600; }
+    .pd-sticky-actions { display:flex;align-items:center;gap:.5rem;flex:1;min-width:0; }
+    .pd-sticky-qty { display:flex;align-items:center;border:1.5px solid #dee2e6;border-radius:.65rem;overflow:hidden;background:#fff;flex-shrink:0; }
+    .pd-sticky-qty-btn { display:flex;align-items:center;justify-content:center;width:38px;height:38px;border:none;background:#f8f9fa;color:#495057;cursor:pointer;padding:0;min-width:42px;min-height:42px; }
+    .pd-sticky-qty-btn:hover:not(:disabled) { background:#e9ecef;color:#0d6efd; }
+    .pd-sticky-qty-btn:disabled { opacity:.3;cursor:not-allowed; }
+    .pd-sticky-qty-val { min-width:36px;text-align:center;font-weight:700;font-size:.95rem;color:#212529;user-select:none; }
+    .pd-sticky-cart { display:flex;align-items:center;justify-content:center;gap:.4rem;flex:1;padding:.7rem 1rem;border:none;border-radius:.75rem;background:#0d6efd;color:#fff;font-size:.9rem;font-weight:700;cursor:pointer;transition:background .2s;min-height:44px;white-space:nowrap; }
+    .pd-sticky-cart:hover:not(:disabled) { background:#0b5ed7; }
+    .pd-sticky-cart:disabled { opacity:.5;cursor:not-allowed; }
+    .pd-sticky-cart.pd-cart-done { background:#198754 !important; }
+    .pd-sticky-cart svg { flex-shrink:0; }
+
+    /* ===== Scroll to Top ===== */
+    .pd-scroll-top { position:fixed;bottom:80px;right:1rem;width:44px;height:44px;border-radius:50%;border:none;background:#0d6efd;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 14px rgba(13,110,253,.3);transition:all .25s ease;z-index:999;opacity:0;visibility:hidden;transform:translateY(10px); }
+    .pd-scroll-top.pd-scroll-visible { opacity:1;visibility:visible;transform:translateY(0); }
+    .pd-scroll-top:hover { background:#0b5ed7;transform:translateY(-2px);box-shadow:0 6px 20px rgba(13,110,253,.4); }
+    .pd-scroll-top.pd-scroll-visible:hover { transform:translateY(-2px); }
+
+    @@media (min-width:992px) {
+        .pd-container { padding:2rem 1.5rem; }
+        .pd-main { grid-template-columns:1fr 1fr;gap:2.5rem; }
+        .pd-title { font-size:1.6rem; }
+        .pd-price-num { font-size:2rem; }
+        .pd-highlights { gap:.65rem; }
+        .pd-gallery-view { border-radius:1.25rem; }
+        .pd-gallery-slide { padding:1.5rem;min-height:420px; }
+        .pd-main-img { max-height:500px; }
+        .pd-thumb { width:72px;height:72px; }
+        .pd-sticky-bar { display:none !important; }
+        .pd-lightbox-img:hover { transform:scale(1.8); }
+        .pd-related-card { flex:0 0 200px; }
+        .pd-header-sticky { display: none; }
+    }
+
+    @@media (max-width:991.98px) {
+        .pd-main { grid-template-columns:1fr;gap:1.5rem; }
+        .pd-gallery-slide { min-height:350px; }
+        .pd-main-img { max-height:400px; }
+        .pd-container { padding:1rem .75rem; }
+        .pd-header-sticky { margin: -1rem -0.75rem 0.75rem; padding: 0 0.75rem; }
+    }
+
+    @@media (max-width:767.98px) {
+        .pd-container { padding:.75rem .6rem; }
+        .pd-breadcrumb { margin-bottom:.75rem; }
+        .pd-breadcrumb ol { font-size:.78rem; }
+        .pd-gallery-slide { min-height:280px;padding:.75rem; }
+        .pd-main-img { max-height:300px; }
+        .pd-thumbs { gap:.4rem; }
+        .pd-thumb { width:52px;height:52px; }
+        .pd-title { font-size:1.15rem; }
+        .pd-price-num { font-size:1.5rem; }
+        .pd-pricebox { padding:.75rem 1rem; }
+        .pd-highlights { grid-template-columns:1fr 1fr;gap:.4rem; }
+        .pd-hl { font-size:.7rem;padding:.35rem; }
+        .pd-actions { flex-direction:column;align-items:stretch;gap:.6rem; }
+        .pd-qty { justify-content:center; }
+        .pd-qty-box { flex:1;max-width:160px; }
+        .pd-share { justify-content:center; }
+        .pd-add-cart { min-height:48px;font-size:.92rem;padding:.75rem 1rem; }
+        .pd-tab-btn { font-size:.82rem;padding:.65rem .85rem; }
+        .pd-tab-content { padding:1rem; }
+        .pd-spec-key,.pd-spec-val { font-size:.82rem; }
+        .pd-desc { font-size:.85rem;line-height:1.8; }
+        .pd-related-card { flex:0 0 150px; }
+        .pd-related-img { height:110px; }
+        .pd-related-name { font-size:.75rem; }
+        .pd-lightbox-prev { right:auto;left:.5rem;top:50%; }
+        .pd-lightbox-next { left:auto;right:.5rem;top:50%; }
+        .pd-sticky-bar { display:block; }
+        .pd-scroll-top { bottom:72px;right:.75rem;width:40px;height:40px; }
+    }
+
+    @@media (max-width:400px) {
+        .pd-gallery-slide { min-height:220px; }
+        .pd-main-img { max-height:240px; }
+        .pd-price-num { font-size:1.3rem; }
+        .pd-qty-box { max-width:140px; }
+        .pd-related-card { flex:0 0 130px; }
+        .pd-related-img { height:90px; }
+        .pd-add-cart { font-size:.85rem;padding:.7rem .75rem;gap:.35rem; }
+        .pd-sticky-price { display:none; }
+        .pd-sticky-inner { gap:.5rem; }
+        .pd-sticky-qty-btn { min-width:38px;min-height:38px;width:34px;height:34px; }
+        .pd-sticky-qty-val { min-width:30px;font-size:.85rem; }
+        .pd-sticky-cart { font-size:.82rem;padding:.6rem .75rem;gap:.3rem;min-height:40px; }
+    }
+
+    @@media (max-width:360px) {
+        .pd-sticky-cart { font-size:.75rem;padding:.5rem .6rem;gap:.25rem;min-height:38px; }
+        .pd-sticky-qty-btn { min-width:34px;min-height:34px;width:30px;height:30px; }
+        .pd-sticky-qty-val { min-width:26px;font-size:.8rem; }
+        .pd-sticky-inner { gap:.35rem; }
+    }
+
+    @@media (prefers-reduced-motion: reduce) {
+        .pd-skeleton, .pd-sk-line, .pd-cart-spinner, .pd-tab-content, .pd-lightbox, .pd-toast, .pd-share-modal {
+            animation: none !important;
+            transition: none !important;
+        }
+        .pd-scroll-top, .pd-share, .pd-add-cart, .pd-related-card, .pd-hl, .pd-main-img {
+            transition: none !important;
+        }
+    }
+
+    @@media (prefers-color-scheme: dark) {
+        .pd-wrap { color: #cbd5e1; }
+        .pd-container { background: transparent; }
+        .pd-title { color: #f1f5f9; }
+        .pd-pricebox { background: #1e293b; }
+        .pd-price-old { color: #64748b; }
+        .pd-price-num { color: #60a5fa; }
+        .pd-hl { background: #1e293b; color: #94a3b8; }
+        .pd-hl:hover { background: #334155; }
+        .pd-qty-box { border-color: #334155; background: #1e293b; }
+        .pd-qty-btn { background: #0f172a; color: #94a3b8; }
+        .pd-qty-btn:hover:not(:disabled) { background: #334155; color: #60a5fa; }
+        .pd-qty-val { color: #f1f5f9; }
+        .pd-share { background: #1e293b; border-color: #334155; color: #94a3b8; }
+        .pd-share:hover { background: #334155; border-color: #3b82f6; color: #60a5fa; }
+        .pd-category { background: #1e293b; color: #60a5fa; }
+        .pd-extra-item { color: #94a3b8; }
+        .pd-instock { color: #34d399; }
+        .pd-outstock { color: #f87171; }
+        .pd-rating-text { color: #94a3b8; }
+        .pd-gallery-view { background: #1e293b; }
+        .pd-thumb { background: #1e293b; border-color: transparent; }
+        .pd-thumb--active { border-color: #3b82f6; background: #0f172a; }
+        .pd-tabs-wrap { background: #1e293b; border-color: #334155; }
+        .pd-tabs-header { background: #0f172a; border-bottom-color: #334155; }
+        .pd-tab-btn { color: #94a3b8; }
+        .pd-tab-btn:hover { color: #60a5fa; background: #1e293b; }
+        .pd-tab-active { color: #60a5fa !important; background: #1e293b !important; border-bottom-color: #3b82f6 !important; }
+        .pd-desc { color: #cbd5e1; }
+        .pd-spec { border-bottom-color: #334155; }
+        .pd-spec:hover { background: #0f172a; }
+        .pd-spec-key { color: #94a3b8; }
+        .pd-spec-val { color: #f1f5f9; }
+        .pd-tech-card { background: #0f172a; border-color: #334155; }
+        .pd-tech-card:hover { background: #1e293b; border-color: #3b82f6; }
+        .pd-tech-label { color: #94a3b8; }
+        .pd-tech-text { color: #cbd5e1; }
+        .pd-tech-icon { background: #334155; color: #94a3b8; }
+        .pd-related-card { background: #1e293b; border-color: #334155; }
+        .pd-related-name { color: #f1f5f9; }
+        .pd-related-current { color: #60a5fa; }
+        .pd-related-unit { color: #64748b; }
+        .pd-related-old { color: #64748b; }
+        .pd-reviews { --cs-bg: #0f172a; --cs-surface: #1e293b; --cs-border: #334155; --cs-text: #f1f5f9; --cs-muted: #94a3b8; --cs-input-bg: #1e293b; --cs-input-border: #334155; --cs-shadow: 0 4px 24px rgba(0,0,0,.3); }
+        .pd-sticky-bar { background: #1e293b; border-top-color: #334155; }
+        .pd-sticky-current { color: #60a5fa; }
+        .pd-sticky-old { color: #64748b; }
+        .pd-sticky-qty-btn { background: #0f172a; color: #94a3b8; }
+        .pd-sticky-qty-btn:hover:not(:disabled) { background: #334155; color: #60a5fa; }
+        .pd-sticky-qty-val { color: #f1f5f9; }
+        .pd-header-sticky { background: rgba(15,23,42,0.98); border-bottom-color: #334155; }
+        .pd-header-back { background: #1e293b; color: #94a3b8; border-color: #334155; }
+        .pd-header-action { background: #1e293b; color: #94a3b8; border-color: #334155; }
+        .pd-header-title { color: #f1f5f9; }
+        .pd-breadcrumb a { color: #60a5fa; }
+        .pd-breadcrumb li, .pd-breadcrumb li+li::before { color: #64748b; }
+
+        .pd-lightbox { background: rgba(0,0,0,0.92); }
+        .pd-toast { background: #334155; }
+        .pd-scroll-top { box-shadow: 0 4px 14px rgba(59,130,246,0.3); }
+        .pd-discount-ribbon { background: linear-gradient(135deg, #dc2626, #ef4444); }
+        .pd-notfound { background: #1e293b; }
+        .pd-notfound h3 { color: #f1f5f9; }
+    }
+</style>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [Parameter] public string? Slug { get; set; }
+
+    [Inject] private HttpClient HttpApi { get; set; } = default!;
+    [Inject] private Microsoft.AspNetCore.Components.NavigationManager Nav { get; set; } = default!;
+    [Inject] private ErrorService.Client.Services.CartService CartService { get; set; } = default!;
+    [Inject] private ErrorService.Client.Services.ToastService ToastService { get; set; } = default!;
+    [Inject] private ErrorService.Client.Services.WishlistService Ws { get; set; } = default!;
+    [Inject] private ErrorService.Client.Services.RecentlyViewedService RecentSvc { get; set; } = default!;
+
+    private ProductDto? product;
+    private List<ProductDto>? relatedProducts;
+    private List<RecentlyViewedItem> _recentItems = new();
+    private bool isLoading = true;
+    private int currentImageIndex = 0;
+    private string countdownText = "";
+    private Timer? timer;
+    private string? productJsonLd;
+    private int _quantity = 1;
+    private string? sharedText;
+    private bool showLightbox;
+    private int _lightboxIndex;
+    private int _activeTab;
+    private bool showShareModal;
+    private bool _showScrollTop;
+    private bool _isAddingToCart;
+    private CartBtnState _cartBtnState;
+    private string _cartBtnText = "افزودن به سبد خرید";
+    private string _cartBtnClass => _cartBtnState == CartBtnState.Done ? "pd-cart-done" : "";
+    private string _scrollTopClass => _showScrollTop ? "pd-scroll-visible" : "";
+
+    private CancellationTokenSource? _toastCts;
+    private object? _scrollHandlerRef;
+
+    private bool isInWishlist;
+
+    private async Task ToggleWishlist()
+    {
+        if (product == null) return;
+        await Ws.ToggleAsync(product.Id, product.Name, product.MainImageUrl, product.Price, product.DiscountPrice);
+        isInWishlist = !isInWishlist;
+    }
+
+    private async Task InitActionStates()
+    {
+        if (product == null) return;
+        isInWishlist = (await Ws.GetItemsAsync()).Any(x => x.ProductId == product.Id);
+    }
+
+    private ProductReviewSummaryDto? reviewSummary;
+    private List<CommentDto> _productCommentDtos = new();
+
+    private async Task LoadReviews()
+    {
+        try
+        {
+            reviewSummary = await HttpApi.GetFromJsonAsync<ProductReviewSummaryDto>($"api/products/{(product?.Id ?? 0)}/reviews");
+            if (reviewSummary != null)
+                _productCommentDtos = ConvertProductReviews(reviewSummary.Reviews);
+        }
+        catch { }
+    }
+
+    private async Task HandleProductReviewSubmit(CommentRequest req)
+    {
+        var prReq = new ProductReviewRequest
+        {
+            FullName = req.FullName,
+            Email = !string.IsNullOrWhiteSpace(req.Email) ? req.Email : "guest@errorservice.ir",
+            Rating = req.Rating ?? 5,
+            Content = req.Content,
+            ParentId = req.ParentId
+        };
+        var response = await HttpApi.PostAsJsonAsync($"api/products/{(product?.Id ?? 0)}/reviews", prReq);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException("خطا در ثبت نظر");
+        var fresh = await HttpApi.GetFromJsonAsync<ProductReviewSummaryDto>($"api/products/{(product?.Id ?? 0)}/reviews");
+        if (fresh != null)
+        {
+            reviewSummary = fresh;
+            _productCommentDtos = ConvertProductReviews(fresh.Reviews);
+        }
+    }
+
+    private static List<CommentDto> ConvertProductReviews(List<ProductReviewDto> source)
+    {
+        return source.Select(r => new CommentDto
+        {
+            Id = r.Id,
+            ParentId = r.ParentId,
+            FullName = r.FullName,
+            Content = r.Content,
+            Rating = r.Rating,
+            CreatedAtFa = r.CreatedAtFa,
+            Replies = r.Replies != null ? ConvertProductReviews(r.Replies) : new()
+        }).ToList();
+    }
+
+    private double startX;
+    private void HandleMouseDown(MouseEventArgs e) => startX = e.ClientX;
+    private void HandleMouseUp(MouseEventArgs e) => HandleSwipe(startX - e.ClientX);
+    private void HandleTouchStart(TouchEventArgs e) => startX = e.Touches[0].ClientX;
+    private void HandleTouchEnd(TouchEventArgs e)
+    {
+        if (e.ChangedTouches != null && e.ChangedTouches.Length > 0)
+            HandleSwipe(startX - e.ChangedTouches[0].ClientX);
+    }
+    private void HandleSwipe(double diff)
+    {
+        var images = GetAllImages();
+        if (images.Count <= 1 || Math.Abs(diff) < 30) return;
+        if (diff > 0) { if (currentImageIndex < images.Count - 1) currentImageIndex++; }
+        else { if (currentImageIndex > 0) currentImageIndex--; }
+        StateHasChanged();
+    }
+
+    private void HandleImageError(int index)
+    {
+        var images = GetAllImages();
+        if (index < images.Count)
+        {
+            var el = GetAllImages();
+            if (index < el.Count)
+            {
+            }
+        }
+    }
+
+    private void HandleThumbError(int index) { }
+
+    private void IncrementQty() { if (_quantity < 99) _quantity++; }
+    private void DecrementQty() { if (_quantity > 1) _quantity--; }
+
+    private void OpenLightbox(int index)
+    {
+        _lightboxIndex = index;
+        showLightbox = true;
+        StateHasChanged();
+        try { _ = JS.InvokeVoidAsync("__pdFocusElement", "pd-lightbox-el"); } catch { }
+    }
+    private void CloseLightbox() => showLightbox = false;
+    private void PrevLightbox()
+    {
+        if (_lightboxIndex > 0) _lightboxIndex--;
+    }
+    private void NextLightbox()
+    {
+        if (_lightboxIndex < GetAllImages().Count - 1) _lightboxIndex++;
+    }
+    private void HandleLightboxKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseLightbox();
+        else if (e.Key == "ArrowLeft") PrevLightbox();
+        else if (e.Key == "ArrowRight") NextLightbox();
+    }
+
+    private void OpenShareModal()
+    {
+        showShareModal = true;
+    }
+
+    private void CloseShareModal()
+    {
+        showShareModal = false;
+    }
+
+    private string GetShareText()
+    {
+        if (product == null) return "";
+        var price = (product.DiscountPrice ?? product.Price).ToString("N0");
+        var desc = string.IsNullOrEmpty(product.Description)
+            ? $"قیمت: {price} تومان"
+            : TruncateText(StripHtml(product.Description), 120);
+        return $"{product.Name}\n{desc}\nقیمت: {price} تومان\n🔗 {Nav.Uri}";
+    }
+
+    private string GetShareTextForTelegram()
+    {
+        if (product == null) return "";
+        var price = (product.DiscountPrice ?? product.Price).ToString("N0");
+        var name = StripHtml(product.Name);
+        return $"{name} - {price} تومان";
+    }
+
+    private void SwitchTab(int tab)
+    {
+        if (_activeTab != tab)
+        {
+            _activeTab = tab;
+        }
+    }
+
+    [JSInvokable]
+    public void OnScroll(bool isVisible)
+    {
+        _showScrollTop = isVisible;
+        StateHasChanged();
+    }
+
+    private async Task ScrollToTop()
+    {
+        await JS.InvokeVoidAsync("window.scrollTo", new { top = 0, behavior = "smooth" });
+    }
+
+    private async Task CopyProductCode()
+    {
+        if (product == null) return;
+        _toastCts?.Cancel();
+        _toastCts = new CancellationTokenSource();
+        var token = _toastCts.Token;
+        try
+        {
+            await JS.InvokeVoidAsync("__copyToClipboard", $"#{product.Id:D6}");
+            if (token.IsCancellationRequested) return;
+            sharedText = "کد محصول کپی شد";
+            StateHasChanged();
+            await Task.Delay(2000, token);
+            sharedText = null;
+            StateHasChanged();
+        }
+        catch (OperationCanceledException) { }
+        catch
+        {
+            if (token.IsCancellationRequested) return;
+            sharedText = "خطا در کپی کد";
+            StateHasChanged();
+            await Task.Delay(2000, token);
+            sharedText = null;
+            StateHasChanged();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _quantity = 1;
+        _activeTab = 0;
+        showLightbox = false;
+        showShareModal = false;
+        _cartBtnState = CartBtnState.Default;
+        _cartBtnText = "افزودن به سبد خرید";
+        _isAddingToCart = false;
+        reviewSummary = null;
+        _productCommentDtos = new();
+        await LoadProduct();
+        await InitActionStates();
+        await LoadReviews();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var dotnetRef = DotNetObjectReference.Create(this);
+            _scrollHandlerRef = await JS.InvokeAsync<object>("__pdScrollHandler", dotnetRef);
+        }
+    }
+
+    private async Task LoadProduct()
+    {
+        try
+        {
+            isLoading = true;
+            ProductDto? loaded = null;
+
+            if (!string.IsNullOrEmpty(Slug))
+            {
+                loaded = await HttpApi.GetFromJsonAsync<ProductDto>($"api/products/slug/{Uri.EscapeDataString(Slug)}");
+            }
+            else if (Id.HasValue)
+            {
+                loaded = await HttpApi.GetFromJsonAsync<ProductDto>($"api/products/{Id}");
+                if (loaded != null && !string.IsNullOrEmpty(loaded.Slug))
+                {
+                    Nav.NavigateTo(SeoUrl.Product(loaded.Id, loaded.Slug), replace: true);
+                    return;
+                }
+            }
+
+            product = loaded;
+            if (product != null)
+            {
+                productJsonLd = BuildProductJsonLd(product);
+                StartCountdown();
+                _ = LoadRelatedProducts(product);
+                _ = TrackRecentlyViewed(product);
+            }
+        }
+        catch { product = null; }
+        finally { isLoading = false; }
+    }
+
+    private async Task TrackRecentlyViewed(ProductDto p)
+    {
+        await RecentSvc.AddAsync(new RecentlyViewedItem
+        {
+            Id = p.Id,
+            Slug = p.Slug,
+            Name = p.Name,
+            ImageUrl = p.MainImageUrl,
+            Price = p.Price,
+            DiscountPrice = p.DiscountPrice
+        });
+        _recentItems = await RecentSvc.GetItemsAsync();
+        StateHasChanged();
+    }
+
+    private async Task LoadRelatedProducts(ProductDto product)
+    {
+        try
+        {
+            var excludeIds = new HashSet<int> { product.Id };
+            var results = new List<ProductDto>();
+
+            if (!string.IsNullOrWhiteSpace(product.RelatedProductIds))
+            {
+                var ids = product.RelatedProductIds
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(id => int.TryParse(id, out var n) ? n : -1)
+                    .Where(id => id > 0)
+                    .Distinct()
+                    .ToList();
+
+                var tasks = ids
+                    .Where(id => !excludeIds.Contains(id))
+                    .Select(async pid =>
+                    {
+                        try
+                        {
+                            var p = await HttpApi.GetFromJsonAsync<ProductDto>($"api/products/{pid}");
+                            if (p != null)
+                            {
+                                lock (excludeIds) { excludeIds.Add(pid); }
+                                return p;
+                            }
+                        }
+                        catch { }
+                        return null;
+                    });
+
+                var responses = await Task.WhenAll(tasks);
+                foreach (var p in responses)
+                {
+                    if (p != null) results.Add(p);
+                }
+            }
+
+            if (results.Count < 6)
+            {
+                var need = 6 - results.Count;
+                var query = $"api/products?categoryId={product.CategoryId}&take={need + 1}";
+                var categoryProducts = await HttpApi.GetFromJsonAsync<List<ProductDto>>(query);
+                if (categoryProducts != null)
+                {
+                    foreach (var p in categoryProducts)
+                    {
+                        if (excludeIds.Contains(p.Id)) continue;
+                        results.Add(p);
+                        excludeIds.Add(p.Id);
+                        if (results.Count >= 6) break;
+                    }
+                }
+            }
+
+            relatedProducts = results;
+        }
+        catch { }
+    }
+
+    private string BuildProductJsonLd(ProductDto product)
+    {
+        var price = product.DiscountPrice ?? product.Price;
+        var images = GetAllImages();
+        var baseUrl = Nav.BaseUri.TrimEnd('/');
+
+        var productSchema = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org/",
+            ["@type"] = "Product",
+            ["name"] = product.Name,
+            ["image"] = images.Count == 1 ? images[0] : images.ToArray(),
+            ["description"] = TruncateText(product.Description ?? product.FailureSymptoms ?? product.Name, 500),
+            ["url"] = $"{baseUrl}{SeoUrl.Product(product.Id, product.Slug)}",
+            ["sku"] = $"ES-{product.Id:D6}",
+            ["brand"] = new Dictionary<string, object?> { ["@type"] = "Brand", ["name"] = "ErrorService" },
+            ["category"] = product.CategoryName ?? "قطعات یدکی",
+            ["offers"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "Offer",
+                ["url"] = $"{baseUrl}{SeoUrl.Product(product.Id, product.Slug)}",
+                ["priceCurrency"] = "IRT",
+                ["price"] = price.ToString("F0"),
+                ["availability"] = product.IsAvailable ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+                ["itemCondition"] = "https://schema.org/NewCondition"
+            }
+        };
+
+        if (product.DiscountExpiryDate.HasValue)
+        {
+            var offers = productSchema["offers"] as Dictionary<string, object?>;
+            offers!["priceValidUntil"] = product.DiscountExpiryDate.Value.ToString("yyyy-MM-dd");
+        }
+
+        var breadcrumb = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "BreadcrumbList",
+            ["itemListElement"] = new List<object>
+            {
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 1, ["name"] = "خانه", ["item"] = baseUrl },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 2, ["name"] = "محصولات", ["item"] = $"{baseUrl}/products" },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 3, ["name"] = product.CategoryName ?? "محصولات", ["item"] = $"{baseUrl}/products?categoryId={product.CategoryId}" },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 4, ["name"] = product.Name }
+            }
+        };
+
+        return JsonSerializer.Serialize(new object[] { productSchema, breadcrumb });
+    }
+
+    private async Task AddToCart()
+    {
+        if (product == null || _isAddingToCart) return;
+        _isAddingToCart = true;
+        _cartBtnState = CartBtnState.Spinner;
+        _cartBtnText = "در حال افزودن...";
+        StateHasChanged();
+        await Task.Delay(400);
+        await CartService.AddToCartAsync(product, _quantity);
+        _cartBtnState = CartBtnState.Done;
+        _cartBtnText = "افزوده شد";
+        StateHasChanged();
+        await Task.Delay(1500);
+        _cartBtnState = CartBtnState.Default;
+        _cartBtnText = "افزودن به سبد خرید";
+        _isAddingToCart = false;
+        StateHasChanged();
+        ToastService.ShowSuccess($"تعداد {_quantity} عدد از محصول \"{product.Name}\" به سبد خرید اضافه شد.");
+    }
+
+    private List<string> GetAllImages()
+    {
+        var list = new List<string>();
+        if (!string.IsNullOrEmpty(product?.MainImageUrl)) list.Add(product.MainImageUrl);
+        if (!string.IsNullOrEmpty(product?.ImageUrl2)) list.Add(product.ImageUrl2);
+        if (!string.IsNullOrEmpty(product?.ImageUrl3)) list.Add(product.ImageUrl3);
+        if (!string.IsNullOrEmpty(product?.ImageUrl4)) list.Add(product.ImageUrl4);
+        if (list.Count == 0) list.Add("/images/placeholder-product.svg");
+        return list;
+    }
+
+    private void StartCountdown()
+    {
+        timer?.Dispose();
+        if (product?.DiscountExpiryDate == null) return;
+        timer = new Timer(_ =>
+        {
+            var diff = product.DiscountExpiryDate.Value - DateTimeOffset.Now;
+            if (diff.TotalSeconds <= 0)
+            {
+                countdownText = "پایان یافت";
+                timer?.Dispose();
+            }
+            else
+            {
+                int days = (int)diff.TotalDays;
+                countdownText = days > 0
+                    ? $"{days} روز و {diff.Hours:D2}:{diff.Minutes:D2}:{diff.Seconds:D2}"
+                    : $"{diff.Hours:D2}:{diff.Minutes:D2}:{diff.Seconds:D2}";
+            }
+            InvokeAsync(StateHasChanged);
+        }, null, 0, 1000);
+    }
+
+    private static string TruncateText(string text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= maxLength) return text ?? "";
+        return text.Substring(0, maxLength - 3) + "...";
+    }
+
+    private static string StripHtml(string html)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(html, @"<[^>]+>", " ").Trim();
+    }
+
+    public void Dispose()
+    {
+        timer?.Dispose();
+        _toastCts?.Cancel();
+        _toastCts?.Dispose();
+        if (_scrollHandlerRef != null)
+        {
+            _ = JS.InvokeVoidAsync("__pdRemoveScrollHandler", _scrollHandlerRef);
+        }
+    }
+
+    private enum CartBtnState
+    {
+        Default,
+        Spinner,
+        Done
+    }
+}

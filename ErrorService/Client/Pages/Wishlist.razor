@@ -1,0 +1,119 @@
+@page "/wishlist"
+@implements IDisposable
+@using ErrorService.Client.Services
+@inject WishlistService Ws
+@inject NavigationManager Nav
+
+<SeoHeader Title="علاقمندی‌ها | ارورسرویس" Description="محصولات مورد علاقه شما" OgType="website" />
+
+<div class="wishlist-page py-5">
+    <div class="container">
+        <div class="d-flex align-items-center justify-content-between mb-4">
+            <h1 class="fw-black m-0 fs-3 d-flex align-items-center gap-2">
+                <span class="text-danger"><span class="oi oi-heart"></span></span>
+                علاقمندی‌ها
+            </h1>
+            @if (_items.Count > 0)
+            {
+                <button class="btn btn-outline-danger btn-sm rounded-pill px-3" @onclick="ClearAll">
+                    <span class="oi oi-trash me-1"></span>حذف همه
+                </button>
+            }
+        </div>
+
+        @if (_items.Count == 0)
+        {
+            <div class="text-center py-5">
+                <div class="display-3 text-muted opacity-25 mb-3"><span class="oi oi-heart"></span></div>
+                <h4 class="fw-bold">لیست علاقمندی‌ها خالی است</h4>
+                <p class="text-muted mb-4">محصولات مورد علاقه خود را با کلیک روی قلب ❤ ذخیره کنید.</p>
+                <a href="/products" class="btn btn-primary rounded-pill px-5 py-2 fw-bold">مشاهده محصولات</a>
+            </div>
+        }
+        else
+        {
+            <div class="row g-3">
+                @foreach (var item in _items)
+                {
+                    <div class="col-6 col-md-4 col-lg-3">
+                        <div class="wishlist-card rounded-3 shadow-sm bg-white overflow-hidden">
+                            <a href="/product/@item.ProductId" class="text-decoration-none">
+                                <div class="wishlist-img" style="height:160px;background:#f8fafc;">
+                                    @if (!string.IsNullOrEmpty(item.ImageUrl))
+                                    {
+                                        <img src="@item.ImageUrl" alt="@item.Name" class="w-100 h-100 object-fit-contain p-3" loading="lazy" />
+                                    }
+                                    else
+                                    {
+                                        <div class="w-100 h-100 d-flex align-items-center justify-content-center text-muted"><span class="oi oi-image fs-1"></span></div>
+                                    }
+                                </div>
+                            </a>
+                            <div class="p-3">
+                                <a href="/product/@item.ProductId" class="text-decoration-none text-dark">
+                                    <div class="fw-bold small mb-2 text-truncate">@item.Name</div>
+                                </a>
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <div>
+                                        @{
+                                            var displayPrice = item.DiscountPrice ?? item.Price;
+                                        }
+                                        <span class="fw-bold text-primary small">@displayPrice.ToString("N0")</span>
+                                        <small class="text-muted">تومان</small>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-danger rounded-circle p-1" @onclick="() => Remove(item.ProductId)" title="حذف">
+                                        <span class="oi oi-heart" style="font-size:0.8rem;"></span>
+                                    </button>
+                                </div>
+                                <a href="/product/@item.ProductId" class="btn btn-primary btn-sm w-100 rounded-pill mt-2 fw-bold">
+                                    <span class="oi oi-eye me-1"></span>مشاهده محصول
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .wishlist-card { transition: transform 0.2s; border: 1px solid rgba(0,0,0,0.05); }
+    .wishlist-card:hover { transform: translateY(-3px); }
+    .object-fit-contain { object-fit: contain; }
+
+    @@media (max-width: 576px) {
+        .wishlist-card .wishlist-img { height: 130px; }
+    }
+</style>
+
+@code {
+    private List<WishlistItem> _items = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _items = await Ws.GetItemsAsync();
+        Ws.OnChange += Refresh;
+    }
+
+    private async void Refresh()
+    {
+        _items = await Ws.GetItemsAsync();
+        StateHasChanged();
+    }
+
+    private async Task Remove(int productId)
+    {
+        await Ws.RemoveAsync(productId);
+    }
+
+    private async Task ClearAll()
+    {
+        await Ws.ClearAsync();
+    }
+
+    public void Dispose()
+    {
+        Ws.OnChange -= Refresh;
+    }
+}

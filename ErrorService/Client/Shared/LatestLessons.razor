@@ -1,0 +1,284 @@
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject IJSRuntime JS
+
+@if (settings != null && settings.ShowLatestAcademy)
+{
+    @if (items == null)
+    {
+        <section class="academy-section py-5 position-relative" dir="rtl">
+            <div class="container-fluid px-3 px-md-4">
+                <div class="d-flex gap-3 overflow-hidden px-2">
+                    @for (int i = 0; i < 3; i++)
+                    {
+                        <div class="academy-item-skeleton rounded-4 bg-white p-3 shadow-sm" style="flex: 0 0 320px;">
+                            <div class="skeleton-thumb rounded-3 mb-3"></div>
+                            <div class="skeleton-line mb-2"></div>
+                            <div class="skeleton-line w-50"></div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </section>
+    }
+    else if (items.Any())
+    {
+        <section class="academy-section py-5 position-relative" dir="rtl">
+            <div class="container-fluid px-3 px-md-4">
+                <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center mb-4 px-2 gap-3 gap-sm-0">
+                    <div class="text-end">
+                        <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2 mb-2 fw-bold">آکادمی آموزش</span>
+                        <h2 class="fw-black h4 h3-sm mb-0">جدیدترین دوره‌ها و مقالات</h2>
+                    </div>
+                    <a href="/academy" class="btn btn-outline-primary rounded-pill px-4 btn-sm align-self-start">مشاهده آکادمی</a>
+                </div>
+
+                <div class="academy-scroll-container" @ref="scrollContainer">
+                    @foreach (var item in items)
+                    {
+                        <div class="academy-scroll-item">
+                            <a href="@(item.IsCourse ? SeoUrl.Course(item.Id, item.Slug) : SeoUrl.Article(item.Id, item.Slug))" class="text-decoration-none">
+                                <div class="academy-card rounded-4 overflow-hidden h-100 shadow-sm border-0">
+                                    <div class="academy-card__thumb position-relative">
+                                        <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-academy.svg" : item.ImageUrl)" loading="lazy" alt="@item.Title" />
+                                        <div class="academy-card__badge @(item.IsCourse ? "academy-card__badge--course" : "academy-card__badge--article")">
+                                            <span class="oi @(item.IsCourse ? "oi-layers" : "oi-document") me-1"></span>
+                                            @(item.IsCourse ? "دوره آموزشی" : "آموزش تکی")
+                                        </div>
+                                    </div>
+                                    <div class="academy-card__content p-4">
+                                        <h3 class="academy-card__title h6 fw-bold text-dark mb-3">@item.Title</h3>
+                                        <div class="academy-card__desc text-muted small line-clamp-2">@item.Summary</div>
+                                        <div class="academy-card__footer mt-4 pt-3 border-top d-flex justify-content-between align-items-center">
+                                            <div class="text-primary small fw-bold">مشاهده محتوا</div>
+                                            <span class="oi oi-arrow-left text-primary small"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                    }
+                </div>
+            </div>
+        </section>
+    }
+}
+
+<style>
+    .academy-section {
+        background: #fff;
+        padding: 80px 0 !important;
+    }
+
+    @@media (min-width: 900px) {
+        .academy-section {
+            padding: 28px 0 !important;
+        }
+
+        .academy-scroll-container {
+            padding: 6px 8px 4px 8px;
+        }
+
+        .academy-card__content {
+            padding: 18px !important;
+        }
+
+        .academy-card__title {
+            margin-bottom: 10px !important;
+        }
+
+        .academy-card__footer {
+            margin-top: 14px !important;
+            padding-top: 10px !important;
+        }
+    }
+
+    .h3-sm { font-size: 1.75rem; }
+
+    @@media (max-width: 576px) {
+        .h3-sm { font-size: 1.4rem; line-height: 1.35; }
+    }
+
+    .fw-black { font-weight: 900; }
+
+    .academy-scroll-container {
+        display: flex;
+        gap: 24px;
+        overflow-x: auto;
+        padding: 10px 8px 40px 8px;
+        scroll-behavior: smooth;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        cursor: grab;
+    }
+
+    .academy-scroll-container::-webkit-scrollbar { display: none; }
+    .academy-scroll-container.active { cursor: grabbing; }
+
+    .academy-scroll-item {
+        flex: 0 0 340px;
+        min-width: 340px;
+    }
+
+    @@media (max-width: 768px) {
+        .academy-scroll-item {
+            flex: 0 0 280px;
+            min-width: 280px;
+        }
+        .academy-scroll-container { 
+            gap: 16px; 
+            padding: 10px 8px 40px 8px;
+        }
+    }
+
+    .academy-card {
+        background: #fff;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        border: 1px solid #f1f5f9 !important;
+        border-radius: 24px !important;
+    }
+
+    .academy-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08) !important;
+        border-color: var(--bs-primary) !important;
+    }
+
+    .academy-card__thumb {
+        height: 190px;
+        overflow: hidden;
+        border-radius: 24px 24px 0 0;
+    }
+
+    .academy-card__thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.6s ease;
+    }
+
+    .academy-card:hover .academy-card__thumb img {
+        transform: scale(1.1);
+    }
+
+    .academy-card__badge {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        padding: 6px 14px;
+        border-radius: 10px;
+        font-size: 0.7rem;
+        font-weight: 800;
+        color: #fff;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .academy-card__badge--course {
+        background: rgba(37, 99, 235, 0.85); /* blue */
+    }
+
+    .academy-card__badge--article {
+        background: rgba(16, 185, 129, 0.85); /* green */
+    }
+
+    .academy-card__title {
+        line-height: 1.6;
+        height: 2.8em;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .line-clamp-2 {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        height: 3em;
+    }
+
+    /* Skeleton */
+    .academy-item-skeleton .skeleton-thumb {
+        height: 180px;
+        background: #f1f5f9;
+        border-radius: 12px;
+    }
+    .skeleton-line {
+        height: 14px;
+        background: #f1f5f9;
+        border-radius: 4px;
+    }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private List<AcademyUnifiedDto>? items;
+    private SiteSettingsDto? settings;
+    private ElementReference scrollContainer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+            if (settings != null && !settings.ShowLatestAcademy) return;
+
+            var courses = await Http.GetFromJsonAsync<List<TrainingCourseDto>>("api/trainings/courses?onlyPublished=true");
+            var articles = await Http.GetFromJsonAsync<List<TrainingArticleDto>>("api/trainingarticles?onlyPublished=true");
+
+            var list = new List<AcademyUnifiedDto>();
+            
+            if (courses != null)
+            {
+                list.AddRange(courses.Select(c => new AcademyUnifiedDto 
+                { 
+                    Id = c.Id, 
+                    Title = c.Title, 
+                    Slug = c.Slug, 
+                    Summary = c.Summary, 
+                    ImageUrl = c.CoverImageUrl,
+                    CreatedAt = c.CreatedAt,
+                    IsCourse = true 
+                }));
+            }
+
+            if (articles != null)
+            {
+                list.AddRange(articles.Select(a => new AcademyUnifiedDto 
+                { 
+                    Id = a.Id, 
+                    Title = a.Title, 
+                    Slug = a.Slug, 
+                    Summary = a.Summary, 
+                    ImageUrl = a.CoverImageUrl,
+                    CreatedAt = a.CreatedAt,
+                    IsCourse = false 
+                }));
+            }
+
+            items = list.OrderByDescending(x => x.CreatedAt).Take(8).ToList();
+        }
+        catch { items = new(); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && items != null && items.Any())
+        {
+            await JS.InvokeVoidAsync("initDragScroll", scrollContainer);
+        }
+    }
+
+    public class AcademyUnifiedDto
+    {
+        public int Id { get; set; }
+        public string? Slug { get; set; }
+        public string Title { get; set; } = "";
+        public string? Summary { get; set; }
+        public string? ImageUrl { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
+        public bool IsCourse { get; set; }
+    }
+}

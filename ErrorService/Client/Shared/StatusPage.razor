@@ -1,0 +1,111 @@
+@using ErrorService.Shared
+<div class="status-page-container d-flex align-items-center justify-content-center min-vh-100 p-3" dir="rtl">
+    <div class="status-card text-center rounded-4 bg-white animate__animated animate__fadeIn">
+        <div class="status-icon-wrapper mx-auto">
+            @if (Type == "404")
+            {
+                <div class="status-icon icon-404">
+                    <span class="oi oi-warning"></span>
+                </div>
+            }
+            else if (Type == "403")
+            {
+                <div class="status-icon icon-403">
+                    <span class="oi oi-lock-locked"></span>
+                </div>
+            }
+            else if (Type == "maintenance")
+            {
+                <div class="status-icon icon-maintenance">
+                    <span class="oi oi-wrench animate-spin"></span>
+                </div>
+            }
+            else
+            {
+                <div class="status-icon icon-error">
+                    <span class="oi oi-bolt"></span>
+                </div>
+            }
+        </div>
+
+        <h1 class="status-title fw-bold text-dark mb-2">@Title</h1>
+        <p class="status-message text-muted mb-4">@Message</p>
+
+        <div class="status-actions d-flex flex-column flex-sm-row gap-3 justify-content-center">
+            <a href="/" class="btn btn-primary rounded-pill px-4 py-2 shadow-sm d-flex align-items-center justify-content-center gap-2">
+                <span class="oi oi-home"></span>
+                بازگشت به صفحه اصلی
+            </a>
+            @if (ShowBackButton)
+            {
+                <button @onclick="GoBack" class="btn btn-outline-secondary rounded-pill px-4 py-2 d-flex align-items-center justify-content-center gap-2">
+                    <span class="oi oi-arrow-right"></span>
+                    صفحه قبل
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .status-page-container {
+        background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
+        font-family: 'Vazirmatn', sans-serif;
+    }
+    .status-card {
+        max-width: 520px;
+        width: 100%;
+        border: 1px solid rgba(0,0,0,0.06);
+        padding: clamp(16px, 2.5vw, 28px);
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+    }
+    .status-icon-wrapper {
+        width: 80px;
+        height: 80px;
+        display: grid;
+        place-items: center;
+        background: rgba(37, 99, 235, 0.06);
+        border-radius: 24px;
+        color: var(--app-primary);
+        margin-bottom: 14px;
+    }
+    .status-icon {
+        font-size: 34px;
+        line-height: 1;
+    }
+    .icon-404 { color: #f59e0b; background: rgba(245, 158, 11, 0.05); }
+    .icon-403 { color: #ef4444; background: rgba(239, 68, 68, 0.05); }
+    .icon-maintenance { color: #3b82f6; background: rgba(59, 130, 246, 0.05); }
+    .icon-error { color: #6366f1; background: rgba(99, 102, 241, 0.05); }
+
+    .status-title { font-size: clamp(1.25rem, 1rem + 1.2vw, 1.8rem); }
+    .status-message { font-size: clamp(0.95rem, 0.9rem + 0.3vw, 1.05rem); line-height: 1.8; }
+    
+    @@keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    .animate-spin {
+        animation: spin 4s linear infinite;
+        display: inline-block;
+    }
+
+    @@media (max-width: 576px) {
+        .status-actions .btn { width: 100%; }
+    }
+</style>
+
+@code {
+    [Parameter] public string Type { get; set; } = "404";
+    [Parameter] public string Title { get; set; } = "صفحه یافت نشد";
+    [Parameter] public string Message { get; set; } = "متاسفانه صفحه مورد نظر شما وجود ندارد یا جابجا شده است.";
+    [Parameter] public bool ShowBackButton { get; set; } = true;
+
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+    [Inject] private Microsoft.JSInterop.IJSRuntime JS { get; set; } = default!;
+
+    private async Task GoBack()
+    {
+        await JS.InvokeVoidAsync("history.back");
+    }
+}

@@ -1,0 +1,1068 @@
+/* ==========================================================================
+   ErrorService - Comprehensive Dark Mode Theme System
+   This file provides complete light/dark theme support for all components
+   ========================================================================== */
+
+/* Root Variables - Light Mode (Default)
+   ========================================================================== */
+:root {
+    /* Background Colors */
+    --app-bg: #f1f5f9;
+    --app-surface: #ffffff;
+    --app-card-bg: #ffffff;
+    --app-header-bg: rgba(255, 255, 255, 0.85);
+    --app-nav-bg: rgba(255, 255, 255, 0.9);
+    --app-drawer-bg: #ffffff;
+    --app-footer-bg: #f8fafc;
+    
+    /* Text Colors */
+    --app-text: #0f172a;
+    --app-text-secondary: #334155;
+    --app-text-muted: #64748b;
+    --app-text-inverse: #ffffff;
+    
+    /* Border Colors */
+    --app-border: rgba(15, 23, 42, 0.08);
+    --app-border-strong: rgba(15, 23, 42, 0.15);
+    --app-divider: rgba(15, 23, 42, 0.06);
+    
+    /* Primary Colors */
+    --app-primary: #2563eb;
+    --app-primary-hover: #1d4ed8;
+    --app-primary-light: rgba(37, 99, 235, 0.1);
+    --app-primary-dark: #1e40af;
+    
+    /* Semantic Colors */
+    --app-success: #10b981;
+    --app-success-bg: rgba(16, 185, 129, 0.1);
+    --app-warning: #f59e0b;
+    --app-warning-bg: rgba(245, 158, 11, 0.1);
+    --app-danger: #ef4444;
+    --app-danger-bg: rgba(239, 68, 68, 0.1);
+    --app-info: #06b6d4;
+    --app-info-bg: rgba(6, 182, 212, 0.1);
+    
+    /* Input & Form Colors */
+    --app-input-bg: #ffffff;
+    --app-input-border: rgba(15, 23, 42, 0.15);
+    --app-input-focus: rgba(37, 99, 235, 0.35);
+    --app-placeholder: #94a3b8;
+    
+    /* Shadow Colors */
+    --app-shadow-sm: rgba(0, 0, 0, 0.05);
+    --app-shadow: rgba(0, 0, 0, 0.08);
+    --app-shadow-lg: rgba(0, 0, 0, 0.12);
+    --app-shadow-xl: rgba(0, 0, 0, 0.15);
+    
+    /* Overlay */
+    --app-overlay: rgba(0, 0, 0, 0.4);
+    --app-backdrop: rgba(255, 255, 255, 0.8);
+    
+    /* Table Colors */
+    --app-table-header: #f8fafc;
+    --app-table-row-hover: #f1f5f9;
+    --app-table-border: rgba(15, 23, 42, 0.05);
+    
+    /* Chat/Message Colors */
+    --app-chat-user-bg: #f1f5f9;
+    --app-chat-user-text: #1e293b;
+    --app-chat-admin-bg: #2563eb;
+    --app-chat-admin-text: #ffffff;
+    
+    /* Status Badge Colors */
+    /* Status Badge Colors */
+    --app-status-pending: #f59e0b;
+    --app-status-progress: #3b82f6;
+    --app-status-success: #10b981;
+    --app-status-danger: #ef4444;
+    
+    /* Shop / Store Colors */
+    --shop-bg: #f6f7ff;
+    --shop-surface: #ffffff;
+    --shop-text: #0f172a;
+    --shop-muted: #64748b;
+    --shop-border: rgba(2, 6, 23, 0.06);
+    --shop-primary: #4f46e5;
+    --shop-primary-2: #7c3aed;
+    --shop-danger: #ef4444;
+    --shop-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+}
+
+/* Dark Mode Variables
+   ========================================================================== */
+[data-theme="dark"] {
+    /* Background Colors */
+    --app-bg: #0f172a;
+    --app-surface: #1e293b;
+    --app-card-bg: #1e293b;
+    --app-header-bg: rgba(15, 23, 42, 0.9);
+    --app-nav-bg: rgba(15, 23, 42, 0.95);
+    --app-drawer-bg: #1e293b;
+    --app-footer-bg: #0f172a;
+    
+    /* Text Colors */
+    --app-text: #f1f5f9;
+    --app-text-secondary: #cbd5e1;
+    --app-text-muted: #94a3b8;
+    --app-text-inverse: #0f172a;
+    
+    /* Border Colors */
+    --app-border: rgba(255, 255, 255, 0.1);
+    --app-border-strong: rgba(255, 255, 255, 0.2);
+    --app-divider: rgba(255, 255, 255, 0.08);
+    
+    /* Primary Colors */
+    --app-primary: #3b82f6;
+    --app-primary-hover: #60a5fa;
+    --app-primary-light: rgba(59, 130, 246, 0.2);
+    --app-primary-dark: #1d4ed8;
+    
+    /* Semantic Colors (Adjusted for dark mode) */
+    --app-success: #34d399;
+    --app-success-bg: rgba(16, 185, 129, 0.2);
+    --app-warning: #fbbf24;
+    --app-warning-bg: rgba(245, 158, 11, 0.2);
+    --app-danger: #f87171;
+    --app-danger-bg: rgba(239, 68, 68, 0.2);
+    --app-info: #22d3ee;
+    --app-info-bg: rgba(6, 182, 212, 0.2);
+    
+    /* Input & Form Colors */
+    --app-input-bg: #334155;
+    --app-input-border: rgba(255, 255, 255, 0.15);
+    --app-input-focus: rgba(59, 130, 246, 0.5);
+    --app-placeholder: #64748b;
+    
+    /* Shadow Colors (More subtle in dark mode) */
+    --app-shadow-sm: rgba(0, 0, 0, 0.3);
+    --app-shadow: rgba(0, 0, 0, 0.4);
+    --app-shadow-lg: rgba(0, 0, 0, 0.5);
+    --app-shadow-xl: rgba(0, 0, 0, 0.6);
+    
+    /* Overlay */
+    --app-overlay: rgba(0, 0, 0, 0.7);
+    --app-backdrop: rgba(15, 23, 42, 0.9);
+    
+    /* Table Colors */
+    --app-table-header: #1e293b;
+    --app-table-row-hover: #334155;
+    --app-table-border: rgba(255, 255, 255, 0.05);
+    
+    /* Chat/Message Colors */
+    --app-chat-user-bg: #334155;
+    --app-chat-user-text: #f1f5f9;
+    --app-chat-admin-bg: #3b82f6;
+    --app-chat-admin-text: #ffffff;
+    
+    /* Status Badge Colors */
+    --app-status-pending: #fbbf24;
+    --app-status-progress: #60a5fa;
+    --app-status-success: #34d399;
+    --app-status-danger: #f87171;
+    
+    /* Shop / Store Colors (Dark Mode) */
+    --shop-bg: #1e293b;
+    --shop-surface: #1e293b;
+    --shop-text: #f1f5f9;
+    --shop-muted: #94a3b8;
+    --shop-border: rgba(255, 255, 255, 0.1);
+    --shop-primary: #818cf8;
+    --shop-primary-2: #a78bfa;
+    --shop-danger: #f87171;
+    --shop-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
+}
+
+/* ==========================================================================
+   Base Styles - CRITICAL: Must apply to ALL elements inside data-theme="dark"
+   ========================================================================== */
+html[data-theme="dark"] body,
+[data-theme="dark"] body {
+    background-color: var(--app-bg);
+    color: var(--app-text);
+}
+
+/* Only apply text color to specific elements, NOT buttons or interactive elements */
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4,
+[data-theme="dark"] h5,
+[data-theme="dark"] h6 {
+    color: var(--app-text);
+}
+
+[data-theme="dark"] p:not(.btn):not(.card-text),
+[data-theme="dark"] .card-body > *,
+[data-theme="dark"] .card-text,
+[data-theme="dark"] .card-title {
+    color: var(--app-text);
+}
+
+/* Links should be primary color */
+[data-theme="dark"] a {
+    color: var(--app-primary);
+}
+
+[data-theme="dark"] a:hover {
+    color: var(--app-primary-hover);
+}
+
+/* Smooth transitions for theme changes - applied only to dark mode elements */
+[data-theme="dark"] *,
+[data-theme="dark"] *::before,
+[data-theme="dark"] *::after {
+    transition: background-color 0.2s ease, 
+                color 0.2s ease, 
+                border-color 0.2s ease;
+}
+
+/* ==========================================================================
+   Card Components
+   ========================================================================== */
+[data-theme="dark"] .card,
+.card[data-theme="dark"] {
+    background-color: var(--app-card-bg);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .card-header {
+    background-color: var(--app-surface);
+    border-bottom-color: var(--app-border);
+}
+
+[data-theme="dark"] .card-footer {
+    background-color: var(--app-surface);
+    border-top-color: var(--app-border);
+}
+
+/* Bootstrap background utilities mapped to theme surfaces in dark mode */
+[data-theme="dark"] .bg-white {
+    background-color: var(--app-surface) !important;
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .bg-light {
+    background-color: var(--app-bg) !important;
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .bg-light-subtle {
+    background-color: var(--app-surface) !important;
+}
+
+/* ==========================================================================
+   Form Components
+   ========================================================================== */
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select {
+    background-color: var(--app-input-bg);
+    border-color: var(--app-input-border);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .form-control:focus,
+[data-theme="dark"] .form-select:focus {
+    background-color: var(--app-input-bg);
+    border-color: var(--app-primary);
+    color: var(--app-text);
+    box-shadow: 0 0 0 0.25rem var(--app-input-focus);
+}
+
+[data-theme="dark"] .form-control::placeholder {
+    color: var(--app-placeholder);
+}
+
+/* Many pages use bg-white + border-0 on inputs; in dark mode that removes all contrast */
+[data-theme="dark"] .form-control.border-0,
+[data-theme="dark"] .form-select.border-0,
+[data-theme="dark"] textarea.form-control.border-0 {
+    border: 1px solid var(--app-input-border) !important;
+    background-color: var(--app-input-bg) !important;
+    box-shadow: none !important;
+}
+
+/* If a form-control explicitly uses bg-white in markup, force input background to input surface */
+[data-theme="dark"] .form-control.bg-white,
+[data-theme="dark"] .form-select.bg-white,
+[data-theme="dark"] textarea.form-control.bg-white {
+    background-color: var(--app-input-bg) !important;
+    border-color: var(--app-input-border) !important;
+}
+
+/* Readonly/disabled inputs should still be distinguishable */
+[data-theme="dark"] .form-control:disabled,
+[data-theme="dark"] .form-control[readonly],
+[data-theme="dark"] .form-select:disabled,
+[data-theme="dark"] .form-select[readonly] {
+    background-color: rgba(255,255,255,0.06) !important;
+    color: rgba(241, 245, 249, 0.82) !important;
+    border-color: rgba(255,255,255,0.10) !important;
+    opacity: 1 !important;
+}
+
+/* Input groups: keep separators visible */
+[data-theme="dark"] .input-group-text {
+    background-color: rgba(255,255,255,0.04) !important;
+    border-color: var(--app-input-border) !important;
+    color: var(--app-text-muted) !important;
+}
+
+[data-theme="dark"] .form-label {
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .form-text {
+    color: var(--app-text-muted);
+}
+
+/* Bootstrap text utility overrides (many pages use text-dark on titles) */
+[data-theme="dark"] .text-dark,
+[data-theme="dark"] .text-body,
+[data-theme="dark"] .text-black {
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .input-group-text {
+    background-color: var(--app-surface);
+    border-color: var(--app-input-border);
+    color: var(--app-text);
+}
+
+/* ==========================================================================
+   Button Components
+   ========================================================================== */
+/* Light buttons on dark background - keep text dark */
+[data-theme="dark"] .btn-light,
+[data-theme="dark"] .btn-white,
+[data-theme="dark"] .bg-white.btn,
+[data-theme="dark"] .btn.bg-white {
+    background-color: #ffffff;
+    border-color: var(--app-border);
+    color: #0f172a !important;
+}
+
+[data-theme="dark"] .btn-light:hover,
+[data-theme="dark"] .btn-white:hover {
+    background-color: #f1f5f9;
+    border-color: var(--app-border-strong);
+    color: #0f172a !important;
+}
+
+/* Primary buttons */
+[data-theme="dark"] .btn-primary {
+    color: #ffffff !important;
+}
+
+/* Success buttons */
+[data-theme="dark"] .btn-success {
+    color: #ffffff !important;
+}
+
+/* Danger buttons */
+[data-theme="dark"] .btn-danger {
+    color: #ffffff !important;
+}
+
+/* Dark/Solid buttons on dark theme */
+[data-theme="dark"] .btn-dark {
+    background-color: #0f172a;
+    border-color: #334155;
+    color: #ffffff !important;
+}
+
+/* Secondary buttons */
+[data-theme="dark"] .btn-secondary {
+    background-color: var(--app-surface);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
+/* Outline buttons */
+[data-theme="dark"] .btn-outline-secondary {
+    color: var(--app-text-muted);
+    border-color: var(--app-border-strong);
+}
+
+[data-theme="dark"] .btn-outline-secondary:hover {
+    background-color: var(--app-surface);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .btn-outline-primary {
+    color: var(--app-primary);
+    border-color: var(--app-primary);
+}
+
+/* ==========================================================================
+   List Group Components
+   ========================================================================== */
+[data-theme="dark"] .list-group-item {
+    background-color: transparent;
+    color: var(--app-text);
+    border-color: var(--app-border);
+}
+
+[data-theme="dark"] .list-group-item:hover {
+    background-color: var(--app-bg);
+}
+
+[data-theme="dark"] .list-group-item.active {
+    background-color: var(--app-primary);
+    border-color: var(--app-primary);
+    color: var(--app-text-inverse);
+}
+
+[data-theme="dark"] .list-group-item-action {
+    color: var(--app-text);
+}
+
+/* ==========================================================================
+   Table Components
+   ========================================================================== */
+[data-theme="dark"] .table {
+    color: var(--app-text);
+    border-color: var(--app-table-border);
+}
+
+[data-theme="dark"] .table thead th {
+    background-color: var(--app-table-header);
+    color: var(--app-text);
+    border-color: var(--app-table-border);
+}
+
+[data-theme="dark"] .table tbody td {
+    border-color: var(--app-table-border);
+}
+
+[data-theme="dark"] .table-hover tbody tr:hover {
+    background-color: var(--app-table-row-hover);
+    color: var(--app-text);
+}
+
+/* ==========================================================================
+   Modal & Drawer Components
+   ========================================================================== */
+[data-theme="dark"] .modal-content {
+    background-color: var(--app-card-bg);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .modal-header {
+    border-bottom-color: var(--app-border);
+}
+
+[data-theme="dark"] .modal-footer {
+    border-top-color: var(--app-border);
+}
+
+[data-theme="dark"] .drawer-overlay,
+[data-theme="dark"] .modal-backdrop {
+    background-color: var(--app-overlay);
+}
+
+/* ==========================================================================
+   Dropdown Components
+   ========================================================================== */
+[data-theme="dark"] .dropdown-menu {
+    background-color: var(--app-card-bg);
+    border-color: var(--app-border);
+    box-shadow: 0 10px 30px var(--app-shadow-lg);
+}
+
+[data-theme="dark"] .dropdown-item {
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .dropdown-item:hover,
+[data-theme="dark"] .dropdown-item:focus {
+    background-color: var(--app-surface);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .dropdown-divider {
+    border-color: var(--app-divider);
+}
+
+/* ==========================================================================
+   Navigation Components
+   ========================================================================== */
+[data-theme="dark"] .navbar {
+    background-color: var(--app-header-bg) !important;
+    border-bottom-color: var(--app-border);
+}
+
+[data-theme="dark"] .nav-link {
+    color: var(--app-text-muted);
+}
+
+[data-theme="dark"] .nav-link:hover,
+[data-theme="dark"] .nav-link:focus {
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .nav-link.active {
+    color: var(--app-primary);
+}
+
+/* Bottom navigation */
+[data-theme="dark"] .app-bottom-nav {
+    background-color: var(--app-nav-bg);
+    border-top-color: var(--app-border);
+}
+
+[data-theme="dark"] .nav-item {
+    color: var(--app-text-muted);
+}
+
+[data-theme="dark"] .nav-item.active {
+    color: var(--app-primary);
+}
+
+/* ==========================================================================
+   Badge Components
+   ========================================================================== */
+[data-theme="dark"] .badge.bg-light {
+    background-color: var(--app-surface) !important;
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .badge.bg-primary-subtle {
+    background-color: var(--app-primary-light) !important;
+    color: var(--app-primary) !important;
+}
+
+[data-theme="dark"] .badge.bg-success-subtle {
+    background-color: var(--app-success-bg) !important;
+    color: var(--app-success) !important;
+}
+
+[data-theme="dark"] .badge.bg-warning-subtle {
+    background-color: var(--app-warning-bg) !important;
+    color: var(--app-warning) !important;
+}
+
+[data-theme="dark"] .badge.bg-danger-subtle {
+    background-color: var(--app-danger-bg) !important;
+    color: var(--app-danger) !important;
+}
+
+[data-theme="dark"] .badge.bg-info-subtle {
+    background-color: var(--app-info-bg) !important;
+    color: var(--app-info) !important;
+}
+
+/* ==========================================================================
+   News components (public)
+   ========================================================================== */
+[data-theme="dark"] .news-list-view .news-title-link {
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .news-list-view .news-date-small {
+    color: var(--app-text-muted) !important;
+}
+
+[data-theme="dark"] .news-list-view .news-list-card .card-header {
+    background-color: var(--app-surface) !important;
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .news-list-view .news-list-card .card-header .text-dark {
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .news-card-view .news-card__title,
+[data-theme="dark"] .news-card-view .news-card__summary {
+    color: var(--app-text) !important;
+}
+
+/* ==========================================================================
+   Products (public)
+   ========================================================================== */
+[data-theme="dark"] .products-list-page {
+    background-color: var(--app-bg) !important;
+}
+
+[data-theme="dark"] .product-card,
+[data-theme="dark"] .product-card-skeleton {
+    background-color: var(--app-surface) !important;
+    border-color: var(--app-border) !important;
+}
+
+[data-theme="dark"] .product-card__img-wrap {
+    background-color: rgba(255,255,255,0.04) !important;
+}
+
+[data-theme="dark"] .product-card__title,
+[data-theme="dark"] .product-card__title.text-dark {
+    color: var(--app-text) !important;
+}
+
+/* Products filters (search box, select, chips, checkboxes) */
+[data-theme="dark"] .products-list-page .filters-card {
+    background-color: var(--app-surface) !important;
+    border: 1px solid var(--app-border) !important;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25) !important;
+}
+
+[data-theme="dark"] .products-list-page .search-wrap {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.10) !important;
+}
+
+[data-theme="dark"] .products-list-page .search-wrap .form-control {
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .products-list-page .sort-select {
+    background-color: var(--app-input-bg) !important;
+    color: var(--app-text) !important;
+    border-color: var(--app-input-border) !important;
+}
+
+[data-theme="dark"] .products-list-page .btn-group-wrap .btn.btn-light {
+    background-color: rgba(255,255,255,0.06) !important;
+    border-color: rgba(255,255,255,0.12) !important;
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .products-list-page .chip-toggle {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.10) !important;
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .products-list-page .cat-chip {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.10) !important;
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .products-list-page .cat-chip.active {
+    background: rgba(59, 130, 246, 0.20) !important;
+    border-color: rgba(59, 130, 246, 0.45) !important;
+    color: #dbeafe !important;
+}
+
+/* Checkbox & radio visibility in dark mode (bootstrap defaults are too low-contrast) */
+[data-theme="dark"] .form-check-input {
+    background-color: rgba(255,255,255,0.06) !important;
+    border-color: rgba(255,255,255,0.22) !important;
+}
+
+[data-theme="dark"] .form-check-input:focus {
+    border-color: rgba(59, 130, 246, 0.65) !important;
+    box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.22) !important;
+}
+
+[data-theme="dark"] .form-check-input:checked {
+    background-color: var(--app-primary) !important;
+    border-color: var(--app-primary) !important;
+}
+
+[data-theme="dark"] .form-check-input:checked[type="checkbox"] {
+    background-image: none !important;
+}
+
+/* Make card borders more visible on dark backgrounds */
+[data-theme="dark"] .product-card {
+    border: 1px solid rgba(255,255,255,0.10) !important;
+}
+
+[data-theme="dark"] .academy-card {
+    border: 1px solid rgba(255,255,255,0.10) !important;
+}
+
+/* ==========================================================================
+   QuantityControl (used in product cards)
+   ========================================================================== */
+[data-theme="dark"] .qc-badge {
+    background: rgba(148, 163, 184, 0.16) !important;
+    color: var(--app-text) !important;
+    border-color: var(--app-border) !important;
+}
+
+[data-theme="dark"] .qc-add,
+[data-theme="dark"] .qc-qty {
+    background: var(--app-surface) !important;
+    color: var(--app-text) !important;
+    border-color: var(--app-border) !important;
+}
+
+[data-theme="dark"] .qc-val {
+    color: var(--app-primary) !important;
+}
+
+/* ==========================================================================
+   Academy (public)
+   ========================================================================== */
+[data-theme="dark"] .academy-section {
+    background: var(--app-bg) !important;
+}
+
+[data-theme="dark"] .academy-card {
+    background: var(--app-surface) !important;
+    border-color: var(--app-border) !important;
+}
+
+[data-theme="dark"] .academy-card__title,
+[data-theme="dark"] .academy-card__title.text-dark {
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .academy-card__desc {
+    color: var(--app-text-muted) !important;
+}
+
+[data-theme="dark"] .academy-card__footer {
+    border-top-color: var(--app-border) !important;
+}
+
+/* ==========================================================================
+   Special offers (public)
+   ========================================================================== */
+[data-theme="dark"] .special-offers {
+    background: var(--app-bg) !important;
+}
+
+/* ==========================================================================
+   Alert Components
+   ========================================================================== */
+[data-theme="dark"] .alert {
+    border-color: var(--app-border);
+}
+
+[data-theme="dark"] .alert-primary {
+    background-color: var(--app-primary-light);
+    color: var(--app-primary);
+    border-color: var(--app-primary);
+}
+
+[data-theme="dark"] .alert-success {
+    background-color: var(--app-success-bg);
+    color: var(--app-success);
+}
+
+[data-theme="dark"] .alert-warning {
+    background-color: var(--app-warning-bg);
+    color: var(--app-warning);
+}
+
+[data-theme="dark"] .alert-danger {
+    background-color: var(--app-danger-bg);
+    color: var(--app-danger);
+}
+
+/* ==========================================================================
+   Toast & Notification Components
+   ========================================================================== */
+[data-theme="dark"] .toast {
+    background-color: var(--app-card-bg);
+    border-color: var(--app-border);
+    color: var(--app-text);
+    box-shadow: 0 10px 30px var(--app-shadow-lg);
+}
+
+[data-theme="dark"] .toast-header {
+    background-color: var(--app-surface);
+    border-bottom-color: var(--app-border);
+    color: var(--app-text);
+}
+
+/* ==========================================================================
+   Chat & Message Components (Profile/Consultation)
+   ========================================================================== */
+[data-theme="dark"] .chat-bubble.user {
+    background-color: var(--app-chat-user-bg);
+    color: var(--app-chat-user-text);
+    border-color: var(--app-border);
+}
+
+[data-theme="dark"] .chat-bubble.admin {
+    background-color: var(--app-chat-admin-bg);
+    color: var(--app-chat-admin-text);
+}
+
+[data-theme="dark"] .chat-meta {
+    color: var(--app-text-muted);
+}
+
+/* ==========================================================================
+   Order & Ticket Card Components
+   ========================================================================== */
+[data-theme="dark"] .order-details,
+[data-theme="dark"] .order-meta-box,
+[data-theme="dark"] .order-item-row,
+[data-theme="dark"] .order-receipt-box,
+[data-theme="dark"] .order-note-box {
+    background-color: var(--app-surface);
+    border-color: var(--app-border);
+}
+
+[data-theme="dark"] .chip {
+    background-color: var(--app-primary-light);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
+/* ==========================================================================
+   Profile Page Specific
+   ========================================================================== */
+[data-theme="dark"] .avatar-sm {
+    background-color: var(--app-surface);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .avatar-lg {
+    background-color: var(--app-primary-light);
+    color: var(--app-primary);
+}
+
+/* Subtle backgrounds */
+[data-theme="dark"] .bg-primary-subtle {
+    background-color: var(--app-primary-light) !important;
+}
+
+[data-theme="dark"] .bg-success-subtle {
+    background-color: var(--app-success-bg) !important;
+}
+
+[data-theme="dark"] .bg-warning-subtle {
+    background-color: var(--app-warning-bg) !important;
+}
+
+[data-theme="dark"] .bg-danger-subtle {
+    background-color: var(--app-danger-bg) !important;
+}
+
+[data-theme="dark"] .bg-info-subtle {
+    background-color: var(--app-info-bg) !important;
+}
+
+[data-theme="dark"] .bg-secondary-subtle {
+    background-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+/* ==========================================================================
+   Search & Input Components
+   ========================================================================== */
+[data-theme="dark"] .search-suggest {
+    background-color: var(--app-card-bg);
+    border-color: var(--app-border);
+}
+
+[data-theme="dark"] .suggest-item:hover {
+    background-color: var(--app-bg);
+}
+
+[data-theme="dark"] .suggest-title {
+    color: var(--app-text-muted);
+}
+
+[data-theme="dark"] .suggest-footer {
+    background-color: var(--app-surface);
+    border-top-color: var(--app-border);
+}
+
+/* ==========================================================================
+   Admin Layout Specific
+   ========================================================================== */
+[data-theme="dark"] .admin-sidebar {
+    background-color: var(--app-surface);
+    border-color: var(--app-border);
+}
+
+[data-theme="dark"] .admin-header {
+    background-color: var(--app-header-bg);
+    border-color: var(--app-border);
+}
+
+[data-theme="dark"] .admin-content {
+    background-color: var(--app-bg);
+}
+
+/* ==========================================================================
+   Public Header Specific
+   ========================================================================== */
+[data-theme="dark"] .public-header {
+    background-color: #1e3a4f; /* Slightly lighter than pure dark for header */
+}
+
+[data-theme="dark"] .public-header__brand,
+[data-theme="dark"] .public-header__link {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+[data-theme="dark"] .public-header__mobile,
+[data-theme="dark"] .public-header__mobile-search {
+    background-color: #1e3a4f;
+}
+
+/* ==========================================================================
+   Pagination Components
+   ========================================================================== */
+[data-theme="dark"] .page-link {
+    background-color: var(--app-card-bg);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .page-link:hover {
+    background-color: var(--app-surface);
+    border-color: var(--app-border-strong);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .page-item.active .page-link {
+    background-color: var(--app-primary);
+    border-color: var(--app-primary);
+}
+
+[data-theme="dark"] .page-item.disabled .page-link {
+    background-color: var(--app-surface);
+    color: var(--app-text-muted);
+}
+
+/* ==========================================================================
+   Accordion & Collapse Components
+   ========================================================================== */
+[data-theme="dark"] .accordion-button {
+    background-color: var(--app-surface);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .accordion-button:not(.collapsed) {
+    background-color: var(--app-primary-light);
+    color: var(--app-primary);
+}
+
+[data-theme="dark"] .accordion-body {
+    background-color: var(--app-card-bg);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .accordion-item {
+    background-color: var(--app-card-bg);
+    border-color: var(--app-border);
+}
+
+/* ==========================================================================
+   Tab Components
+   ========================================================================== */
+[data-theme="dark"] .nav-tabs .nav-link {
+    color: var(--app-text-muted);
+    border-color: transparent;
+}
+
+[data-theme="dark"] .nav-tabs .nav-link:hover {
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .nav-tabs .nav-link.active {
+    background-color: var(--app-card-bg);
+    border-color: var(--app-border) var(--app-border) var(--app-card-bg);
+    color: var(--app-primary);
+}
+
+[data-theme="dark"] .tab-content {
+    background-color: var(--app-card-bg);
+}
+
+/* ==========================================================================
+   Progress & Loading Components
+   ========================================================================== */
+[data-theme="dark"] .progress {
+    background-color: var(--app-surface);
+}
+
+[data-theme="dark"] .progress-bar {
+    background-color: var(--app-primary);
+}
+
+[data-theme="dark"] .spinner-border {
+    color: var(--app-primary);
+}
+
+/* ==========================================================================
+   Image & Media Components
+   ========================================================================== */
+[data-theme="dark"] img {
+    opacity: 0.95;
+}
+
+[data-theme="dark"] .card img:hover,
+[data-theme="dark"] .product-card img:hover {
+    opacity: 1;
+}
+
+/* ==========================================================================
+   Scrollbar Styling for Dark Mode
+   ========================================================================== */
+[data-theme="dark"] ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+    background: var(--app-surface);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: var(--app-border-strong);
+    border-radius: 5px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+    background: var(--app-text-muted);
+}
+
+/* ==========================================================================
+   Utility Classes for Dark Mode
+   ========================================================================== */
+[data-theme="dark"] .text-muted {
+    color: var(--app-text-muted) !important;
+}
+
+[data-theme="dark"] .text-secondary {
+    color: var(--app-text-secondary) !important;
+}
+
+[data-theme="dark"] .border {
+    border-color: var(--app-border) !important;
+}
+
+[data-theme="dark"] .border-bottom {
+    border-bottom-color: var(--app-border) !important;
+}
+
+[data-theme="dark"] .border-top {
+    border-top-color: var(--app-border) !important;
+}
+
+[data-theme="dark"] .shadow-sm {
+    box-shadow: 0 1px 3px var(--app-shadow-sm) !important;
+}
+
+[data-theme="dark"] .shadow {
+    box-shadow: 0 4px 6px var(--app-shadow) !important;
+}
+
+[data-theme="dark"] .shadow-lg {
+    box-shadow: 0 10px 15px var(--app-shadow-lg) !important;
+}
+
+/* Force transparency fixes */
+[data-theme="dark"] .bg-transparent {
+    background-color: transparent !important;
+}
+
+/* Opacity utilities that work in dark mode */
+[data-theme="dark"] .opacity-10 { opacity: 0.1; }
+[data-theme="dark"] .opacity-25 { opacity: 0.25; }
+[data-theme="dark"] .opacity-50 { opacity: 0.5; }
+[data-theme="dark"] .opacity-75 { opacity: 0.75; }
+[data-theme="dark"] .opacity-100 { opacity: 1; }

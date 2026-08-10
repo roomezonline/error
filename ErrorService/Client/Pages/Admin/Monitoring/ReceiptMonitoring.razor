@@ -1,0 +1,682 @@
+@page "/admin/receipts/monitoring/{ReceiptId:int}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.monitoring.view")]
+@attribute [Authorize(Roles = "super_admin,workshop_manager")]
+@implements IDisposable
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ErrorService.Client.Services.ToastService ToastService
+@inject ErrorService.Client.Services.AdminWorkshopSelectionService AdminWorkshopSelection
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>اتصال به مانیتورینگ</PageTitle>
+
+<div class="rm-page" dir="rtl">
+    <div class="rm-header">
+        <button class="rm-back" @onclick='() => Navigation.NavigateTo("/admin/receipts")'>
+            <span class="oi oi-arrow-right"></span>
+        </button>
+        <div class="rm-header__title">
+            <div class="rm-header__kicker">مدیریت پایش</div>
+            <div class="rm-header__main">اتصال رسید به دستگاه</div>
+        </div>
+        @if (isSuperAdmin)
+        {
+            <button class="rm-back" @onclick="RefreshData" style="margin-right: auto;" title="بروزرسانی با کارگاه جدید">
+                <span class="oi oi-reload"></span>
+            </button>
+        }
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="rm-card rm-card--loading">
+            <div class="spinner-border text-primary"></div>
+            <div class="rm-loading-text">در حال دریافت اطلاعات...</div>
+        </div>
+    }
+    else if (receipt == null)
+    {
+        <div class="rm-card rm-card--error">
+            <div class="rm-error-text">رسید مورد نظر یافت نشد.</div>
+        </div>
+    }
+    else
+    {
+        <div class="rm-card rm-info-card">
+            <div class="rm-info-grid">
+                <div class="rm-info-section">
+                    <div class="rm-info-icon rm-info-icon--user">
+                        <span class="oi oi-person"></span>
+                    </div>
+                    <div>
+                        <div class="rm-info-label">مشتری</div>
+                        <div class="rm-info-value">@receipt.CustomerFirstName @receipt.CustomerLastName</div>
+                        <div class="rm-info-sub">@receipt.CustomerMobile</div>
+                    </div>
+                </div>
+                <div class="rm-info-section">
+                    <div class="rm-info-icon rm-info-icon--device">
+                        <span class="oi oi-monitor"></span>
+                    </div>
+                    <div>
+                        <div class="rm-info-label">دستگاه مشتری</div>
+                        <div class="rm-info-value">@receipt.DeviceTypeName</div>
+                        <div class="rm-info-sub">@receipt.DeviceBrandName</div>
+                    </div>
+                </div>
+            </div>
+            <div class="rm-info-footer">
+                <div class="rm-info-badge">شماره رسید: #@receipt.Id</div>
+                <div class="rm-info-badge">تاریخ ثبت: @PersianDateHelper.ToPersianDateTimeString(receipt.RegisteredAt)</div>
+            </div>
+        </div>
+
+        <div class="rm-card rm-selection-card">
+            <div class="rm-card-head">
+                <div class="rm-card-title">
+                    <span class="oi oi-pulse"></span>
+                    انتخاب دستگاه مانیتورینگ کارگاه
+                </div>
+                <div class="rm-card-subtitle">دستگاه‌های فعال و متصل به این کارگاه را در زیر مشاهده می‌کنید.</div>
+                @if (isSuperAdmin)
+                {
+                    <div class="rm-info-badge" style="margin-top: 10px; background: #4f46e5; color: white;">
+                        کارگاه انتخاب شده: @(selectedWorkshopId.HasValue ? selectedWorkshopId.Value.ToString() : "انتخاب نشده")
+                    </div>
+                }
+            </div>
+
+            @if (activeMonitoringDevices == null || !activeMonitoringDevices.Any())
+            {
+                <div class="rm-empty-state">
+                    <div class="rm-empty-icon">
+                        <span class="oi oi-warning"></span>
+                    </div>
+                    <div class="rm-empty-text">هیچ دستگاه مانیتورینگ فعالی برای این کارگاه تعریف نشده است.</div>
+                    <button class="rm-btn rm-btn--outline" @onclick='() => Navigation.NavigateTo("/admin/monitoring")'>مدیریت دستگاه‌ها</button>
+                </div>
+            }
+            else
+            {
+                <div class="rm-selection-list">
+                    @foreach (var dev in activeMonitoringDevices)
+                    {
+                        <label class="rm-device-option @(selectedDeviceId == dev.Id ? "is-selected" : "")">
+                            <input type="radio" name="monitoringDevice" value="@dev.Id"
+                                   checked="@(selectedDeviceId == dev.Id)"
+                                   @onchange="() => selectedDeviceId = dev.Id" />
+                            <div class="rm-device-content">
+                                <div class="rm-device-main">
+                                    <div class="rm-device-title">@dev.Title</div>
+                                </div>
+                                <div class="rm-device-status">
+                                    <span class="rm-status-dot"></span>
+                                    آماده اتصال
+                                </div>
+                            </div>
+                            <div class="rm-device-check">
+                                <span class="oi oi-check"></span>
+                            </div>
+                        </label>
+                    }
+                </div>
+
+                @if (_capacityFull)
+                {
+                    <div class="rm-capacity-warning">
+                        <div class="rm-capacity-warning__icon">⚠️</div>
+                        <div class="rm-capacity-warning__text">
+                            <div class="rm-capacity-warning__title">ظرفیت مانیتورینگ این کارگاه تکمیل است</div>
+                            <div class="rm-capacity-warning__desc">
+                                تعداد مانیتورینگ‌های این کارگاه (@_workshopUsed) به حداکثر مجاز (@_workshopMax) رسیده است.
+                                برای شروع مانیتورینگ جدید:
+                            </div>
+                            <ol class="rm-capacity-warning__steps">
+                                <li>دیتای یکی از مانیتورینگ‌های قدیمی را <strong>دانلود</strong> کنید</li>
+                                <li>سپس آن مانیتورینگ را <strong>حذف</strong> کنید</li>
+                                <li>حالا می‌توانید مانیتورینگ جدید شروع کنید</li>
+                            </ol>
+                            <a href="/admin/monitoring/active-receipts?workshopId=@_targetWorkshopId" class="rm-capacity-warning__link">مدیریت مانیتورینگ‌های کارگاه</a>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="rm-capacity-info">ظرفیت مانیتورینگ: @_workshopUsed از @_workshopMax</div>
+                }
+
+                <div class="rm-actions">
+                    <button class="rm-btn rm-btn--primary rm-btn--lg" @onclick="ConfirmConnection" disabled="@(selectedDeviceId == 0 || isSubmitting || _capacityFull)">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm"></span>
+                            <span>در حال تایید...</span>
+                        }
+                        else
+                        {
+                            <span>تایید اتصال به مانیتورینگ</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    /* استایل‌ها به همان صورت قبلی */
+    .rm-page {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 16px 8px 100px;
+    }
+
+    .rm-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+        padding: 0 8px;
+    }
+
+    .rm-back {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        background: #fff;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        color: #0f172a;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+        transition: all 0.2s;
+    }
+
+        .rm-back:hover {
+            background: #f8fafc;
+            transform: translateX(2px);
+        }
+
+    .rm-header__kicker {
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #4f46e5;
+        margin-bottom: 2px;
+    }
+
+    .rm-header__main {
+        font-size: 1.25rem;
+        font-weight: 950;
+        color: #0f172a;
+    }
+
+    .rm-card {
+        background: #fff;
+        border-radius: 20px;
+        border: 1px solid rgba(2, 6, 23, 0.06);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+        padding: 16px;
+        margin-bottom: 12px;
+    }
+
+    .rm-card--loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        padding: 60px;
+    }
+
+    .rm-loading-text {
+        font-weight: 800;
+        color: #64748b;
+    }
+
+    .rm-info-card {
+        background: linear-gradient(135deg, #ffffff, #f8faff);
+        border: 1px solid rgba(79, 70, 229, 0.08);
+    }
+
+    .rm-info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    @@media (max-width: 600px) {
+        .rm-info-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .rm-info-section {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+    }
+
+    .rm-info-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        font-size: 1.2rem;
+    }
+
+    .rm-info-icon--user {
+        background: rgba(79, 70, 229, 0.08);
+        color: #4f46e5;
+    }
+
+    .rm-info-icon--device {
+        background: rgba(14, 165, 233, 0.08);
+        color: #0ea5e9;
+    }
+
+    .rm-info-label {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: #64748b;
+        margin-bottom: 2px;
+    }
+
+    .rm-info-value {
+        font-size: 1rem;
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    .rm-info-sub {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #94a3b8;
+    }
+
+    .rm-info-footer {
+        display: flex;
+        gap: 12px;
+        padding-top: 16px;
+        border-top: 1px dashed rgba(2, 6, 23, 0.08);
+    }
+
+    .rm-info-badge {
+        padding: 6px 12px;
+        background: rgba(15, 23, 42, 0.04);
+        border-radius: 10px;
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #475569;
+    }
+
+    .rm-card-head {
+        margin-bottom: 24px;
+    }
+
+    .rm-card-title {
+        font-size: 1.1rem;
+        font-weight: 900;
+        color: #0f172a;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 4px;
+    }
+
+        .rm-card-title .oi {
+            color: #f43f5e;
+            font-size: 1.2rem;
+        }
+
+    .rm-card-subtitle {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #64748b;
+    }
+
+    .rm-selection-list {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 24px;
+    }
+
+    .rm-device-option {
+        display: flex;
+        align-items: center;
+        padding: 14px;
+        background: #fff;
+        border: 2px solid rgba(2, 6, 23, 0.05);
+        border-radius: 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+    }
+
+        .rm-device-option input {
+            position: absolute;
+            opacity: 0;
+        }
+
+        .rm-device-option:hover {
+            border-color: rgba(79, 70, 229, 0.2);
+            background: #fcfcff;
+        }
+
+        .rm-device-option.is-selected {
+            border-color: #4f46e5;
+            background: rgba(79, 70, 229, 0.02);
+            box-shadow: 0 8px 24px rgba(79, 70, 229, 0.08);
+        }
+
+    .rm-device-content {
+        flex: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .rm-device-title {
+        font-weight: 900;
+        font-size: 1rem;
+        color: #0f172a;
+        margin-bottom: 2px;
+    }
+
+    .rm-device-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #10b981;
+        background: rgba(16, 185, 129, 0.08);
+        padding: 4px 10px;
+        border-radius: 8px;
+    }
+
+    .rm-status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #10b981;
+        animation: pulse 2s infinite;
+    }
+
+    .rm-device-check {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #4f46e5;
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-size: 0.75rem;
+        margin-right: 16px;
+        opacity: 0;
+        transform: scale(0.5);
+        transition: all 0.2s;
+    }
+
+    .rm-device-option.is-selected .rm-device-check {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    .rm-actions {
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .rm-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border-radius: 14px;
+        font-weight: 900;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+    }
+
+    .rm-btn--primary {
+        background: #4f46e5;
+        color: #fff;
+        box-shadow: 0 10px 25px rgba(79, 70, 229, 0.2);
+    }
+
+        .rm-btn--primary:hover:not(:disabled) {
+            background: #4338ca;
+            transform: translateY(-2px);
+        }
+
+        .rm-btn--primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+    .rm-btn--lg {
+        padding: 16px 32px;
+        font-size: 1rem;
+        width: 100%;
+    }
+
+    .rm-btn--outline {
+        background: #fff;
+        border: 1px solid rgba(2, 6, 23, 0.1);
+        color: #64748b;
+    }
+
+    .rm-empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        background: rgba(15, 23, 42, 0.02);
+        border-radius: 20px;
+    }
+
+    .rm-empty-icon {
+        font-size: 2.5rem;
+        color: #cbd5e1;
+        margin-bottom: 12px;
+    }
+
+    .rm-empty-text {
+        font-weight: 800;
+        color: #64748b;
+        margin-bottom: 20px;
+    }
+
+    @@keyframes pulse {
+        0% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        }
+
+        70% {
+            transform: scale(1);
+            box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+        }
+
+        100% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+        }
+    }
+    .rm-capacity-warning {
+        display: flex; align-items: flex-start; gap: 10px;
+        background: #fef2f2; border: 1px solid #fecaca;
+        border-radius: 10px; padding: 12px 14px; margin-bottom: 12px;
+    }
+    .rm-capacity-warning__icon { font-size: 20px; flex-shrink: 0; }
+    .rm-capacity-warning__title { font-size: 13px; font-weight: 700; color: #991b1b; margin-bottom: 4px; }
+    .rm-capacity-warning__desc { font-size: 12px; color: #b91c1c; font-weight: 600; margin-bottom: 6px; }
+    .rm-capacity-warning__steps { margin: 0; padding-right: 18px; font-size: 11px; color: #7f1d1d; line-height: 1.8; }
+    .rm-capacity-warning__link {
+        display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 700; color: #dc2626;
+        text-decoration: underline;
+    }
+    .rm-capacity-info {
+        font-size: 11px; color: #6b7280; font-weight: 600; margin-bottom: 8px; text-align: center;
+    }
+</style>
+
+@code {
+    [Parameter] public int ReceiptId { get; set; }
+
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private CustomerReceiptDto? receipt;
+    private List<MonitoringDeviceDto>? activeMonitoringDevices;
+    private int selectedDeviceId;
+    private bool isSuperAdmin;
+    private int? selectedWorkshopId;
+    private int _workshopUsed;
+    private int _workshopMax;
+    private bool _capacityFull;
+    private int _targetWorkshopId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // بررسی نقش کاربر
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        isSuperAdmin = state.User.IsInRole("super_admin");
+
+        if (isSuperAdmin)
+        {
+            await AdminWorkshopSelection.InitializeAsync();
+            selectedWorkshopId = AdminWorkshopSelection.SelectedWorkshopId;
+            AdminWorkshopSelection.OnChanged += HandleWorkshopChanged;
+        }
+
+        await LoadData();
+    }
+
+    // متد بروزرسانی دستی
+    private async Task RefreshData()
+    {
+        if (isSuperAdmin)
+        {
+            selectedWorkshopId = AdminWorkshopSelection.SelectedWorkshopId;
+        }
+        await LoadData();
+        StateHasChanged();
+        ToastService.ShowSuccess($"لیست دستگاه‌ها برای کارگاه {selectedWorkshopId} بروزرسانی شد");
+    }
+
+    private void HandleWorkshopChanged(int? workshopId)
+    {
+        selectedWorkshopId = workshopId;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            isLoading = true;
+            selectedDeviceId = 0;
+
+            // دریافت اطلاعات رسید
+            receipt = await Http.GetFromJsonAsync<CustomerReceiptDto>($"api/customer-receipts/{ReceiptId}");
+
+            if (receipt == null)
+            {
+                ToastService.ShowError("رسید مورد نظر یافت نشد");
+                return;
+            }
+
+            // تعیین کارگاه هدف
+            // اولویت: receipt.WorkshopId > selectedWorkshopId
+            // (همانند ReceiptsList و WorkshopApiHelper.ResolveWorkshopId)
+
+            if (receipt.WorkshopId > 0)
+            {
+                _targetWorkshopId = receipt.WorkshopId;
+            }
+            else if (isSuperAdmin && selectedWorkshopId.HasValue && selectedWorkshopId.Value > 0)
+            {
+                _targetWorkshopId = selectedWorkshopId.Value;
+            }
+            else
+            {
+                activeMonitoringDevices = new List<MonitoringDeviceDto>();
+                return;
+            }
+
+            // دریافت ظرفیت مانیتورینگ کارگاه
+            try
+            {
+                var cap = await Http.GetFromJsonAsync<System.Text.Json.JsonElement>($"api/monitoring-receipts/workshop-capacity?workshopId={_targetWorkshopId}");
+                _workshopUsed = cap.GetProperty("used").GetInt32();
+                _workshopMax = cap.GetProperty("max").GetInt32();
+                _capacityFull = !cap.GetProperty("canConnect").GetBoolean();
+            }
+            catch { _capacityFull = false; }
+
+            // دریافت دستگاه‌های آماده اتصال برای کارگاه (حذف دستگاه‌های مشغول)
+            activeMonitoringDevices = await Http.GetFromJsonAsync<List<MonitoringDeviceDto>>($"api/monitoring-devices/workshop-devices?workshopId={_targetWorkshopId}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ConfirmConnection()
+    {
+        if (selectedDeviceId == 0) return;
+
+        try
+        {
+            isSubmitting = true;
+
+            var req = new MonitoringReceiptConnectRequest
+                {
+                    CustomerReceiptId = ReceiptId,
+                    MonitoringDeviceId = selectedDeviceId
+                };
+
+            var resp = await Http.PostAsJsonAsync("api/monitoring-receipts/connect", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ثبت اتصال" : msg);
+                return;
+            }
+
+            ToastService.ShowSuccess("اتصال با موفقیت ثبت شد");
+            Navigation.NavigateTo("/admin/monitoring/active-receipts");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطا در ثبت اتصال");
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (isSuperAdmin)
+        {
+            AdminWorkshopSelection.OnChanged -= HandleWorkshopChanged;
+        }
+    }
+}

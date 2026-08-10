@@ -1,0 +1,96 @@
+@using Microsoft.AspNetCore.Components
+
+<div class="qc" @onclick:stopPropagation="true" @onclick:preventDefault="true">
+    @if (Disabled)
+    {
+        <span class="qc-badge">ناموجود</span>
+    }
+    else if (Quantity <= 0)
+    {
+        <button type="button" class="qc-add" @onclick="OnAdd" @onclick:stopPropagation="true" @onclick:preventDefault="true">
+            <span class="oi oi-cart me-1"></span>
+            @AddLabel
+        </button>
+    }
+    else
+    {
+        <div class="qc-qty">
+            <button type="button" class="qc-btn" @onclick="OnDecrease" @onclick:stopPropagation="true" @onclick:preventDefault="true" aria-label="کم کردن">
+                <span class="oi oi-minus"></span>
+            </button>
+            <span class="qc-val">@Quantity</span>
+            <button type="button" class="qc-btn" @onclick="OnIncrease" @onclick:stopPropagation="true" @onclick:preventDefault="true" aria-label="زیاد کردن">
+                <span class="oi oi-plus"></span>
+            </button>
+        </div>
+    }
+</div>
+
+<style>
+    .qc { display: inline-flex; align-items: center; }
+
+    .qc-badge {
+        background: rgba(100, 116, 139, 0.14);
+        color: #334155;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-weight: 800;
+        font-size: 0.8rem;
+        box-shadow: 0 10px 18px rgba(15, 23, 42, 0.06);
+    }
+
+    .qc-add {
+        background: #ffffff;
+        color: #0f172a;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        border-radius: 999px;
+        padding: 8px 14px;
+        font-weight: 900;
+        font-size: 0.85rem;
+        box-shadow: 0 10px 18px rgba(15, 23, 42, 0.06);
+    }
+
+    .qc-qty {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #ffffff;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        border-radius: 999px;
+        padding: 6px 10px;
+        box-shadow: 0 10px 18px rgba(15, 23, 42, 0.06);
+    }
+
+    .qc-btn {
+        width: 28px;
+        height: 28px;
+        border: none;
+        background: rgba(79, 70, 229, 0.10);
+        color: #4f46e5;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        font-size: 0.8rem;
+    }
+
+    .qc-btn:active { transform: scale(0.94); }
+
+    .qc-val {
+        min-width: 18px;
+        text-align: center;
+        font-weight: 900;
+        color: #4f46e5;
+    }
+</style>
+
+@code {
+    [Parameter] public int Quantity { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    [Parameter] public string AddLabel { get; set; } = "افزودن";
+
+    [Parameter] public EventCallback OnAdd { get; set; }
+    [Parameter] public EventCallback OnIncrease { get; set; }
+    [Parameter] public EventCallback OnDecrease { get; set; }
+}

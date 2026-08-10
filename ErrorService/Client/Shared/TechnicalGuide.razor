@@ -1,0 +1,396 @@
+@using System.Net.Http.Json
+
+<section class="tg-section" dir="rtl">
+    <div class="tg-container">
+        @if (isLoading)
+        {
+            <div class="tg-grid-2">
+                <div class="tg-skel-section">
+                    <div class="tg-sk-head"></div>
+                    <div class="tg-sk-list">@for (int i = 0; i < 4; i++) { <div class="tg-sk-row"><div class="tg-sk-icon"></div><div><div class="tg-sk-line w-50 mb-1"></div><div class="tg-sk-line w-75"></div></div></div> }</div>
+                </div>
+                <div class="tg-skel-section">
+                    <div class="tg-sk-head"></div>
+                    <div class="tg-sk-list">@for (int i = 0; i < 4; i++) { <div class="tg-sk-row"><div class="tg-sk-icon"></div><div><div class="tg-sk-line w-50 mb-1"></div><div class="tg-sk-line w-75"></div></div></div> }</div>
+                </div>
+            </div>
+        }
+        else if (hasData)
+        {
+            <div class="tg-grid-2">
+                <!-- Error Codes -->
+                <div class="tg-col">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h3 class="tg-col-title">
+                            <span class="oi oi-document-text tg-col-icon tg-col-icon--blue"></span>
+                            بانک کد خطا
+                        </h3>
+                        <a href="/technical/error-codes" class="tg-more">مشاهده همه</a>
+                    </div>
+                    <div class="tg-list">
+                        @foreach (var item in recentErrors)
+                        {
+                            <a href="@($"/technical/error-codes/{Uri.EscapeDataString(item.Brand)}/{Uri.EscapeDataString(item.DeviceType)}/{Uri.EscapeDataString(item.Code)}")" class="tg-row">
+                                <span class="tg-row-icon tg-row-icon--code">
+                                    @item.Code
+                                </span>
+                                <div class="tg-row-body">
+                                    <div class="tg-row-title">
+                                        <span class="tg-badge tg-badge--brand">@item.Brand</span>
+                                        <span class="tg-desc-text">@item.Description</span>
+                                    </div>
+                                    <div class="tg-solution-text">@item.Solution</div>
+                                </div>
+                                <span class="oi oi-chevron-left tg-row-arrow"></span>
+                            </a>
+                        }
+                    </div>
+                </div>
+
+                <!-- Sensors -->
+                <div class="tg-col">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h3 class="tg-col-title">
+                            <span class="oi oi-microchip tg-col-icon tg-col-icon--green"></span>
+                            سنسور یاب
+                        </h3>
+                        <a href="/technical/sensor-finder" class="tg-more">مشاهده همه</a>
+                    </div>
+                    <div class="tg-list">
+                        @foreach (var item in recentSensors)
+                        {
+                            <a href="/technical/sensor-finder/@item.Id" class="tg-row">
+                                <span class="tg-row-icon tg-row-icon--sensor">
+                                    @if (!string.IsNullOrEmpty(item.ImageUrl))
+                                    {
+                                        <img src="@item.ImageUrl" alt="" />
+                                    }
+                                    else
+                                    {
+                                        <span class="oi oi-microchip"></span>
+                                    }
+                                </span>
+                                <div class="tg-row-body">
+                                    <div class="tg-row-title">
+                                        <span class="tg-badge tg-badge--sensor">@item.SensorType</span>
+                                        <span>@item.SensorName</span>
+                                    </div>
+                                    <div class="tg-row-desc">
+                                        @item.DeviceName
+                                        @if (!string.IsNullOrEmpty(item.SizeText))
+                                        {
+                                            <span class="tg-size-tag">@item.SizeText</span>
+                                        }
+                                    </div>
+                                </div>
+                                <span class="oi oi-chevron-left tg-row-arrow"></span>
+                            </a>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</section>
+
+<style>
+    .tg-section {
+        padding: 20px 0;
+        background: #fff;
+    }
+    .tg-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px;
+    }
+
+    /* 2-column grid */
+    .tg-grid-2 {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 24px;
+    }
+    @@media (min-width: 768px) {
+        .tg-grid-2 {
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+        }
+        .tg-section { padding: 28px 0; }
+        .tg-container { padding: 0 24px; }
+    }
+
+    /* Column */
+    .tg-col {
+        min-width: 0;
+    }
+    .tg-col-title {
+        font-size: 1rem;
+        font-weight: 900;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .tg-col-icon {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 10px;
+        font-size: 0.9rem;
+    }
+    .tg-col-icon--blue {
+        background: rgba(37, 99, 235, 0.1);
+        color: #2563eb;
+    }
+    .tg-col-icon--green {
+        background: rgba(16, 185, 129, 0.1);
+        color: #059669;
+    }
+    .tg-more {
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--bs-primary, #2563eb);
+        text-decoration: none;
+        white-space: nowrap;
+    }
+    .tg-more:hover {
+        text-decoration: underline;
+    }
+
+    /* List */
+    .tg-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    /* Row item */
+    .tg-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        text-decoration: none;
+        transition: background 0.2s;
+        background: #fff;
+        border: 1px solid transparent;
+        overflow: hidden;
+    }
+    .tg-row:hover {
+        background: #f8fafc;
+        border-color: #f1f5f9;
+    }
+    .tg-row:active {
+        background: #f1f5f9;
+    }
+
+    .tg-row-icon {
+        flex-shrink: 0;
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-weight: 800;
+        overflow: hidden;
+    }
+    .tg-row-icon--code {
+        background: linear-gradient(135deg, #2563eb, #6366f1);
+        color: #fff;
+    }
+    .tg-row-icon--sensor {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+    .tg-row-icon--sensor img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        padding: 4px;
+    }
+    .tg-row-icon--sensor .oi {
+        font-size: 1rem;
+    }
+
+    .tg-row-body {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+    }
+    .tg-row-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 2px;
+        line-height: 1.4;
+    }
+    .tg-desc-text {
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        flex: 1;
+        min-width: 0;
+    }
+    .tg-solution-text {
+        font-size: 0.72rem;
+        color: #065f46;
+        background: #ecfdf5;
+        border: 1px dashed #a7f3d0;
+        border-radius: 6px;
+        padding: 4px 8px;
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    .tg-row-arrow {
+        flex-shrink: 0;
+        color: #cbd5e1;
+        font-size: 0.7rem;
+        transition: transform 0.2s;
+    }
+    .tg-row:hover .tg-row-arrow {
+        transform: translateX(-2px);
+    }
+
+    .tg-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        line-height: 1.5;
+        white-space: nowrap;
+    }
+    .tg-badge--brand {
+        background: rgba(37, 99, 235, 0.1);
+        color: #2563eb;
+    }
+    .tg-badge--sensor {
+        background: rgba(139, 92, 246, 0.1);
+        color: #7c3aed;
+    }
+    .tg-row-desc {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .tg-size-tag {
+        display: inline-block;
+        background: rgba(245, 158, 11, 0.12);
+        color: #d97706;
+        padding: 1px 7px;
+        border-radius: 4px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        margin-right: 4px;
+    }
+
+    /* Skeleton */
+    .tg-skel-section {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    .tg-sk-head {
+        height: 32px;
+        width: 120px;
+        background: #f1f5f9;
+        border-radius: 8px;
+    }
+    .tg-sk-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .tg-sk-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+    }
+    .tg-sk-icon {
+        width: 42px;
+        height: 42px;
+        background: #f1f5f9;
+        border-radius: 10px;
+        flex-shrink: 0;
+    }
+    .tg-sk-line {
+        height: 11px;
+        background: #f1f5f9;
+        border-radius: 4px;
+    }
+    .tg-sk-line.w-50 { width: 50%; }
+    .tg-sk-line.w-75 { width: 75%; }
+    .mb-1 { margin-bottom: 4px; }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private bool isLoading = true;
+    private bool hasData;
+    private List<ErrorCodePreview> recentErrors = new();
+    private List<SensorPreview> recentSensors = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var errorsTask = Http.GetFromJsonAsync<List<ErrorCodePreview>>("api/technical/error-codes/recent?take=6");
+            var sensorsTask = Http.GetFromJsonAsync<List<SensorPreview>>("api/sensor-finder/records/recent?take=6");
+
+            await Task.WhenAll(errorsTask, sensorsTask);
+
+            if (errorsTask.Result?.Count > 0)
+                recentErrors = errorsTask.Result;
+            if (sensorsTask.Result?.Count > 0)
+                recentSensors = sensorsTask.Result;
+
+            hasData = recentErrors.Count > 0 || recentSensors.Count > 0;
+        }
+        catch
+        {
+            hasData = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private sealed class ErrorCodePreview
+    {
+        public string Brand { get; set; } = "";
+        public string DeviceType { get; set; } = "";
+        public string Code { get; set; } = "";
+        public string? Description { get; set; }
+        public string? Solution { get; set; }
+    }
+
+    private sealed class SensorPreview
+    {
+        public int Id { get; set; }
+        public string DeviceName { get; set; } = "";
+        public string SensorName { get; set; } = "";
+        public string? SensorType { get; set; }
+        public string? SizeText { get; set; }
+        public string? ImageUrl { get; set; }
+    }
+}

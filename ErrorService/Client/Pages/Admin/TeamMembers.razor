@@ -1,0 +1,351 @@
+@page "/admin/team"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.team.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Client.Services
+@inject IJSRuntime JS
+@inject ToastService ToastService
+@inject HttpClient Http
+
+<ConfirmDialog IsVisible="showConfirm"
+               Title="حذف عضو تیم"
+               Message="آیا از حذف این عضو اطمینان دارید؟"
+               OnResult="HandleDeleteResult" />
+
+<div class="admin-container" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="admin-page-title m-0">مدیریت اعضای تیم</h3>
+        <button class="btn btn-primary shadow-sm rounded-3" @onclick="NewMember">
+            <span class="oi oi-plus me-1"></span> عضو جدید
+        </button>
+    </div>
+
+    @if (showEditor)
+    {
+        <div class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="m-0 fw-bold">@(editingId == 0 ? "افزودن عضو جدید" : "ویرایش عضو")</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+
+            <EditForm Model="model" OnValidSubmit="SaveMember">
+                <DataAnnotationsValidator />
+                <div class="row g-4">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">نام و نام خانوادگی</label>
+                            <InputText @bind-Value="model.FullName" class="form-control rounded-3" />
+                            <ValidationMessage For="@(() => model.FullName)" class="text-danger small" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">سمت / تخصص</label>
+                            <InputText @bind-Value="model.Role" class="form-control rounded-3" placeholder="مثلاً: متخصص تعمیرات برد" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">توضیحات مختصر</label>
+                            <InputTextArea @bind-Value="model.Bio" class="form-control rounded-3" rows="3" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">ترتیب نمایش</label>
+                            <InputNumber @bind-Value="model.SortOrder" class="form-control rounded-3" />
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-4">
+                            <label class="form-label fw-bold text-muted small mb-2">تصویر پروفایل</label>
+                            <ImageUploader @bind-ImageUrl="model.PhotoUrl" 
+                                           UploadUrl="api/teammembers/upload" />
+                        </div>
+
+                        <div class="card bg-light border-0 rounded-4 p-3">
+                            <div class="form-check form-switch">
+                                <InputCheckbox @bind-Value="model.IsPublished" class="form-check-input" id="isPublished" />
+                                <label class="form-check-label fw-bold" for="isPublished">نمایش در سایت</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+                    <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseEditor">انصراف</button>
+                    <button type="submit" class="btn btn-primary rounded-3 px-4 shadow-sm" disabled="@(isSaving || isUploading)">
+                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        ذخیره اطلاعات
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    }
+
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4" style="width: 100px;">عکس</th>
+                        <th>نام و نام خانوادگی</th>
+                        <th>سمت</th>
+                        <th>ترتیب</th>
+                        <th>وضعیت</th>
+                        <th class="text-end pe-4">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (members == null)
+                    {
+                        <tr><td colspan="6" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
+                    }
+                    else if (!members.Any())
+                    {
+                        <tr><td colspan="6" class="text-center py-5 text-muted">هیچ عضوی یافت نشد.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var member in members)
+                        {
+                            <tr>
+                                <td class="ps-4">
+                                    <div class="rounded-circle bg-light overflow-hidden" style="width: 50px; height: 50px;">
+                                        @if (!string.IsNullOrEmpty(member.PhotoUrl))
+                                        {
+                                            <img src="@member.PhotoUrl" class="w-100 h-100 object-fit-cover" style="object-position:@GetPhotoObjectPosition(member.PhotoUrl);" />
+                                        }
+                                        else
+                                        {
+                                            <div class="w-100 h-100 d-flex align-items-center justify-content-center text-muted">
+                                                <span class="oi oi-person"></span>
+                                            </div>
+                                        }
+                                    </div>
+                                </td>
+                                <td><div class="fw-bold text-dark">@member.FullName</div></td>
+                                <td><span class="text-muted small">@member.Role</span></td>
+                                <td>@member.SortOrder</td>
+                                <td>
+                                    <span class="badge @(member.IsPublished ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning") rounded-pill px-3">
+                                        @(member.IsPublished ? "منتشر شده" : "مخفی")
+                                    </span>
+                                </td>
+                                <td class="text-end pe-4">
+                                    <button class="btn btn-sm btn-outline-primary border-0 rounded-circle me-1" @onclick="() => EditMember(member)">
+                                        <span class="oi oi-pencil"></span>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger border-0 rounded-circle" @onclick="() => AskDelete(member)">
+                                        <span class="oi oi-trash"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .image-upload-zone { min-height: 200px; transition: all 0.2s ease; }
+    .image-upload-zone:hover { background: #f0f4f8 !important; border-color: #0d6efd !important; }
+    .object-fit-cover { object-fit: cover; }
+    .bg-success-subtle { background-color: #d1e7dd; }
+    .bg-warning-subtle { background-color: #fff3cd; }
+</style>
+
+@code {
+    private List<TeamMemberDto>? members;
+    private TeamMemberUpsertRequest model = new();
+    private bool showEditor = false;
+    private int editingId = 0;
+    private bool isSaving = false;
+    private bool isUploading = false;
+
+    private int photoX = 50;
+    private int photoY = 50;
+
+    protected override async Task OnInitializedAsync() => await LoadMembers();
+
+    private async Task LoadMembers()
+    {
+        members = await Http.GetFromJsonAsync<List<TeamMemberDto>>("api/teammembers");
+    }
+
+    private void NewMember()
+    {
+        editingId = 0;
+        model = new TeamMemberUpsertRequest { IsPublished = true };
+        photoX = 50;
+        photoY = 50;
+        showEditor = true;
+    }
+
+    private void EditMember(TeamMemberDto member)
+    {
+        editingId = member.Id;
+        model = new TeamMemberUpsertRequest
+        {
+            FullName = member.FullName,
+            Role = member.Role,
+            Bio = member.Bio,
+            PhotoUrl = member.PhotoUrl,
+            SortOrder = member.SortOrder,
+            IsPublished = member.IsPublished
+        };
+        (photoX, photoY) = GetPhotoXY(model.PhotoUrl);
+        showEditor = true;
+    }
+
+    private void CloseEditor() => showEditor = false;
+    private void ClearImage()
+    {
+        model.PhotoUrl = null;
+        photoX = 50;
+        photoY = 50;
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        isUploading = true;
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+            
+            var resp = await Http.PostAsync("api/teammembers/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = await resp.Content.ReadAsStringAsync();
+                photoX = 50;
+                photoY = 35;
+                model.PhotoUrl = SetPhotoXY(url, photoX, photoY);
+                ToastService.ShowSuccess("تصویر آپلود شد");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isUploading = false; }
+    }
+
+    private void OnPhotoXChanged(ChangeEventArgs e)
+    {
+        if (e.Value is null) return;
+        if (!int.TryParse(e.Value.ToString(), out var v)) return;
+        photoX = Clamp(v, 0, 100);
+        model.PhotoUrl = SetPhotoXY(model.PhotoUrl, photoX, photoY);
+    }
+
+    private void OnPhotoYChanged(ChangeEventArgs e)
+    {
+        if (e.Value is null) return;
+        if (!int.TryParse(e.Value.ToString(), out var v)) return;
+        photoY = Clamp(v, 0, 100);
+        model.PhotoUrl = SetPhotoXY(model.PhotoUrl, photoX, photoY);
+    }
+
+    private static string GetPhotoObjectPosition(string? photoUrl)
+    {
+        var (x, y) = GetPhotoXY(photoUrl);
+        return $"{x.ToString(CultureInfo.InvariantCulture)}% {y.ToString(CultureInfo.InvariantCulture)}%";
+    }
+
+    private static (int x, int y) GetPhotoXY(string? photoUrl)
+    {
+        if (string.IsNullOrWhiteSpace(photoUrl)) return (50, 50);
+
+        var x = 50;
+        var y = 50;
+
+        if (TryGetQueryValue(photoUrl, "x", out var xStr) && int.TryParse(xStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var px))
+        {
+            x = Clamp(px, 0, 100);
+        }
+
+        if (TryGetQueryValue(photoUrl, "y", out var yStr) && int.TryParse(yStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var py))
+        {
+            y = Clamp(py, 0, 100);
+        }
+
+        return (x, y);
+    }
+
+    private static string? SetPhotoXY(string? photoUrl, int x, int y)
+    {
+        if (string.IsNullOrWhiteSpace(photoUrl)) return photoUrl;
+
+        x = Clamp(x, 0, 100);
+        y = Clamp(y, 0, 100);
+
+        var baseUrl = photoUrl;
+        var qIndex = baseUrl.IndexOf('?');
+        if (qIndex >= 0) baseUrl = baseUrl[..qIndex];
+
+        return $"{baseUrl}?x={x.ToString(CultureInfo.InvariantCulture)}&y={y.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private static bool TryGetQueryValue(string url, string key, out string value)
+    {
+        value = string.Empty;
+        var qIndex = url.IndexOf('?');
+        if (qIndex < 0 || qIndex == url.Length - 1) return false;
+
+        var query = url[(qIndex + 1)..];
+        var parts = query.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length != 2) continue;
+            if (!string.Equals(kv[0], key, StringComparison.OrdinalIgnoreCase)) continue;
+            value = Uri.UnescapeDataString(kv[1]);
+            return true;
+        }
+        return false;
+    }
+
+    private static int Clamp(int v, int min, int max)
+        => v < min ? min : (v > max ? max : v);
+
+    private async Task SaveMember()
+    {
+        isSaving = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingId == 0) resp = await Http.PostAsJsonAsync("api/teammembers", model);
+            else resp = await Http.PutAsJsonAsync($"api/teammembers/{editingId}", model);
+            
+            if (resp.IsSuccessStatusCode)
+            {
+                showEditor = false;
+                await LoadMembers();
+                ToastService.ShowSuccess("اطلاعات ذخیره شد");
+            }
+        }
+        finally { isSaving = false; }
+    }
+
+    private TeamMemberDto? _deleteMember;
+    private bool showConfirm;
+
+    private void AskDelete(TeamMemberDto member)
+    {
+        _deleteMember = member;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool ok)
+    {
+        showConfirm = false;
+        if (!ok || _deleteMember == null) return;
+        await Http.DeleteAsync($"api/teammembers/{_deleteMember.Id}");
+        await LoadMembers();
+        ToastService.ShowSuccess("حذف شد");
+    }
+}

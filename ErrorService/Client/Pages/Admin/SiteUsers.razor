@@ -1,0 +1,284 @@
+@page "/admin/site-users"
+@layout AdminLayout
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authorization
+@inject HttpClient Http
+@inject ToastService ToastService
+@attribute [Authorize(Policy = "perm:admin.users.manage")]
+
+<div class="admin-container" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="admin-page-title m-0">مدیریت کاربران سایت</h3>
+    </div>
+
+    @if (showResetPasswordModal)
+    {
+        <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg rounded-4">
+                    <div class="modal-header border-0 pb-0">
+                        <h5 class="modal-title fw-bold">ریست رمز عبور</h5>
+                        <button type="button" class="btn-close" @onclick="CloseResetPasswordModal"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="alert alert-info border-0 rounded-3 small py-2 mb-3">
+                            کاربر: <strong>@resetPasswordTarget?.FullName</strong>
+                            <div class="text-muted mt-1">@resetPasswordTarget?.PhoneNumber</div>
+                        </div>
+
+                        <EditForm Model="resetPasswordRequest" OnValidSubmit="SubmitResetPassword">
+                            <DataAnnotationsValidator />
+
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">رمز عبور جدید</label>
+                                <InputText @bind-Value="resetPasswordRequest.NewPassword" class="form-control rounded-3" type="password" />
+                                <ValidationMessage For="@(() => resetPasswordRequest.NewPassword)" class="text-danger small" />
+                            </div>
+
+                            <div class="d-flex justify-content-end gap-2 pt-2">
+                                <button type="button" class="btn btn-light rounded-3" @onclick="CloseResetPasswordModal">انصراف</button>
+                                <button type="submit" class="btn btn-primary rounded-3" disabled="@isSubmittingResetPassword">
+                                    @if (isSubmittingResetPassword)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                    }
+                                    ذخیره
+                                </button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="card shadow-sm border-0 rounded-4 p-3 mb-3">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-6">
+                <input class="form-control rounded-3" placeholder="جستجو (نام یا موبایل)..." value="@search" @oninput="OnSearchInput" />
+            </div>
+            <div class="col-md-3">
+                <select class="form-select rounded-3" @bind="filterActive">
+                    <option value="">همه وضعیت‌ها</option>
+                    <option value="true">فعال</option>
+                    <option value="false">غیرفعال</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select rounded-3" @bind="filterVip">
+                    <option value="">همه کاربران</option>
+                    <option value="true">VIP</option>
+                    <option value="false">غیر VIP</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mt-3">
+            <button class="btn btn-outline-secondary rounded-3" @onclick="ClearFilters">پاک کردن</button>
+            <button class="btn btn-primary rounded-3" @onclick="Load">اعمال</button>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">نام</th>
+                        <th>موبایل</th>
+                        <th>VIP</th>
+                        <th>وضعیت</th>
+                        <th class="text-end pe-4">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (users == null)
+                    {
+                        <tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
+                    }
+                    else if (!users.Any())
+                    {
+                        <tr><td colspan="5" class="text-center py-5 text-muted">کاربری یافت نشد.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var u in users)
+                        {
+                            <tr>
+                                <td class="ps-4 fw-bold">@u.FullName</td>
+                                <td>@u.PhoneNumber</td>
+                                <td>
+                                    <span class="badge @(u.IsVip ? "bg-warning-subtle text-warning" : "bg-light text-muted") rounded-pill px-3">
+                                        @(u.IsVip ? "VIP" : "-")
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge @(u.IsActive ? "bg-success-subtle text-success" : "bg-danger-subtle text-danger") rounded-pill px-3">
+                                        @(u.IsActive ? "فعال" : "غیرفعال")
+                                    </span>
+                                </td>
+                                <td class="text-end pe-4 text-nowrap">
+                                    <button class="btn btn-sm btn-outline-primary border-0" title="ریست رمز" @onclick="() => OpenResetPasswordModal(u)">
+                                        <span class="oi oi-key"></span>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary border-0" title="فعال/غیرفعال" @onclick="() => ToggleActive(u)">
+                                        <span class="oi oi-power-standby"></span>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-warning border-0" title="VIP" @onclick="() => ToggleVip(u)">
+                                        <span class="oi oi-star"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<AdminSiteUserDto>? users;
+
+    private string search = string.Empty;
+    private string filterActive = string.Empty;
+    private string filterVip = string.Empty;
+
+    private bool showResetPasswordModal;
+    private bool isSubmittingResetPassword;
+    private AdminSiteUserDto? resetPasswordTarget;
+    private AdminResetSiteUserPasswordRequest resetPasswordRequest = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            var q = new AdminSiteUsersQuery
+            {
+                Search = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+                IsActive = ParseNullableBool(filterActive),
+                IsVip = ParseNullableBool(filterVip),
+                Take = 300
+            };
+
+            var url = BuildQueryUrl(q);
+            users = await Http.GetFromJsonAsync<List<AdminSiteUserDto>>(url);
+        }
+        catch
+        {
+            users = new();
+            ToastService.ShowError("خطا در بارگذاری کاربران");
+        }
+    }
+
+    private static bool? ParseNullableBool(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        if (bool.TryParse(s, out var b)) return b;
+        return null;
+    }
+
+    private static string BuildQueryUrl(AdminSiteUsersQuery q)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(q.Search)) parts.Add($"search={Uri.EscapeDataString(q.Search)}");
+        if (q.IsActive.HasValue) parts.Add($"isActive={q.IsActive.Value.ToString().ToLowerInvariant()}");
+        if (q.IsVip.HasValue) parts.Add($"isVip={q.IsVip.Value.ToString().ToLowerInvariant()}");
+        if (q.Take > 0) parts.Add($"take={q.Take}");
+
+        var qs = parts.Count == 0 ? "" : "?" + string.Join("&", parts);
+        return "api/admin-users" + qs;
+    }
+
+    private Task ClearFilters()
+    {
+        search = string.Empty;
+        filterActive = string.Empty;
+        filterVip = string.Empty;
+        return Load();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        search = e.Value?.ToString() ?? string.Empty;
+    }
+
+    private void OpenResetPasswordModal(AdminSiteUserDto user)
+    {
+        resetPasswordTarget = user;
+        resetPasswordRequest = new AdminResetSiteUserPasswordRequest();
+        showResetPasswordModal = true;
+    }
+
+    private void CloseResetPasswordModal()
+    {
+        showResetPasswordModal = false;
+        resetPasswordTarget = null;
+        resetPasswordRequest = new AdminResetSiteUserPasswordRequest();
+    }
+
+    private async Task SubmitResetPassword()
+    {
+        if (resetPasswordTarget == null) return;
+        if (isSubmittingResetPassword) return;
+
+        isSubmittingResetPassword = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"api/admin-users/{resetPasswordTarget.Id}/reset-password", resetPasswordRequest);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("رمز عبور بروزرسانی شد");
+                CloseResetPasswordModal();
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "عملیات ناموفق" : body.Trim('"'));
+            }
+        }
+        finally
+        {
+            isSubmittingResetPassword = false;
+        }
+    }
+
+    private async Task ToggleActive(AdminSiteUserDto user)
+    {
+        var next = !user.IsActive;
+        var resp = await Http.PutAsJsonAsync($"api/admin-users/{user.Id}/set-active", new AdminSetSiteUserActiveRequest { IsActive = next });
+        if (resp.IsSuccessStatusCode)
+        {
+            user.IsActive = next;
+            ToastService.ShowSuccess(next ? "کاربر فعال شد" : "کاربر غیرفعال شد");
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "عملیات ناموفق" : body.Trim('"'));
+        }
+    }
+
+    private async Task ToggleVip(AdminSiteUserDto user)
+    {
+        var next = !user.IsVip;
+        var resp = await Http.PutAsJsonAsync($"api/admin-users/{user.Id}/set-vip", new AdminSetSiteUserVipRequest { IsVip = next });
+        if (resp.IsSuccessStatusCode)
+        {
+            user.IsVip = next;
+            ToastService.ShowSuccess(next ? "کاربر VIP شد" : "VIP برداشته شد");
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "عملیات ناموفق" : body.Trim('"'));
+        }
+    }
+}

@@ -1,0 +1,888 @@
+@page "/admin/chat"
+@layout AdminLayout
+@attribute [Authorize(Policy = "perm:admin.chat.manage")]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.SignalR.Client
+@using System.Text.Json
+@using System.Net.Http.Json
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject AuthService Auth
+@implements IAsyncDisposable
+
+<ConfirmDialog IsVisible="showConfirmDelete"
+               Title="حذف مکالمه"
+               Message="آیا از حذف این مکالمه و تمام پیام‌های آن اطمینان دارید؟"
+               OnResult="HandleDeleteResult" />
+
+<div class="chat-app">
+    @* --- Mobile overlay --- *@
+    @if (_showMobileSidebar)
+    {
+        <div class="chat-overlay" @onclick="() => _showMobileSidebar = false"></div>
+    }
+
+    @* --- Settings modal --- *@
+    @if (_showSettings)
+    {
+        <div class="settings-backdrop" @onclick="() => _showSettings = false"></div>
+        <div class="settings-modal">
+            <div class="settings-head">
+                <h6 class="m-0 fw-bold">تنظیمات بله</h6>
+                <button class="btn-close-sm" @onclick="() => _showSettings = false"></button>
+            </div>
+            <div class="settings-body">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">توکن ربات بله</label>
+                    <input type="password" class="form-control" @bind="_baleToken" placeholder="توکن ربات بله" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">شناسه گروه بله</label>
+                    <input type="text" class="form-control" @bind="_baleGroupId" placeholder="-123456789" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">توکن وب‌هوک (اختیاری)</label>
+                    <input type="text" class="form-control" @bind="_webhookSecret" placeholder="webhook_secret" />
+                </div>
+                @if (!string.IsNullOrEmpty(_webhookUrl))
+                {
+                    <div class="mb-3 p-2 bg-light rounded-3 small">
+                        <div class="fw-bold mb-1">آدرس وب‌هوک</div>
+                        <code class="d-block text-break" dir="ltr">@_webhookUrl</code>
+                    </div>
+                }
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <button class="btn btn-primary btn-sm" @onclick="SaveBaleSettings" disabled="@_savingSettings">
+                        @if (_savingSettings) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        ذخیره تنظیمات
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="TestBaleConnection">تست اتصال</button>
+                    <button class="btn btn-outline-info btn-sm" @onclick="SetWebhook" disabled="@_settingWebhook">
+                        @if (_settingWebhook) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        ثبت وب‌هوک
+                    </button>
+                </div>
+                @if (!string.IsNullOrEmpty(_settingsMessage))
+                {
+                    <div class="alert @(_settingsSuccess ? "alert-success" : "alert-danger") py-2 small">@_settingsMessage</div>
+                }
+                <div class="border-top pt-3">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <small class="fw-bold">وضعیت وب‌هوک</small>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="CheckWebhookStatus" disabled="@_checkingWebhookStatus">
+                            @if (_checkingWebhookStatus) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            بررسی
+                        </button>
+                    </div>
+                    @if (_webhookStatusChecked)
+                    {
+                        <div class="p-2 rounded-3 small @(_webhookStatusRegistered ? "bg-success bg-opacity-10" : "bg-warning bg-opacity-10")">
+                            @if (_webhookStatusRegistered)
+                            {
+                                <div class="text-success fw-bold">✅ وب‌هوک ثبت شده</div>
+                                <code class="d-block mt-1 text-break" dir="ltr">@_webhookStatusUrl</code>
+                                if (!string.IsNullOrEmpty(_webhookUrl) && _webhookStatusUrl != _webhookUrl)
+                                {
+                                    <div class="text-danger mt-1">⚠️ آدرس ثبت‌شده با آدرس فعلی مطابقت ندارد</div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="text-warning fw-bold">⚠️ وب‌هوک ثبت نشده</div>
+                                <div class="text-muted mt-1">دکمه "ثبت وب‌هوک" را بزنید</div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @* --- Sidebar --- *@
+    <div class="chat-sidebar @(_showMobileSidebar ? "show" : "")">
+        <div class="sidebar-head">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <h6 class="m-0 fw-bold">مکالمات</h6>
+                <button class="btn-close-sm d-md-none" @onclick="() => _showMobileSidebar = false"></button>
+            </div>
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="bale-dot @(_baleConfigured ? "on" : "off")"></span>
+                <small class="text-muted">@(_baleConfigured ? "متصل به بله" : "بله پیکربندی نشده")</small>
+            </div>
+            <div class="filter-row">
+                <button class="filter-btn @(_activeFilter == "all" ? "act" : "")" @onclick='() => SetFilter("all")'>
+                    همه @_allSessions.Count
+                    @if (_newSessionCount > 0 && _activeFilter != "all") { <span class="filter-badge">@_newSessionCount</span> }
+                </button>
+                <button class="filter-btn @(_activeFilter == "active" ? "act" : "")" @onclick='() => SetFilter("active")'>فعال @_allSessions.Count(s => s.Status == ChatSessionStatusDto.Active)</button>
+                <button class="filter-btn @(_activeFilter == "closed" ? "act" : "")" @onclick='() => SetFilter("closed")'>پایان @_allSessions.Count(s => s.Status == ChatSessionStatusDto.Closed)</button>
+            </div>
+        </div>
+
+        <div class="session-list">
+            @if (FilteredSessions.Count == 0)
+            {
+                <div class="empty-list">
+                    <span class="oi oi-chat empty-icon"></span>
+                    <span>مکالمه‌ای یافت نشد</span>
+                </div>
+            }
+            @foreach (var session in FilteredSessions)
+            {
+                <div class="session-row @(_selectedSessionId == session.Id ? "sel" : "") @(session.HasUnread ? "unread" : "")"
+                     @onclick="() => SelectSession(session.Id)">
+                    <div class="s-avatar">@(session.UserName?.FirstOrDefault() ?? '?')</div>
+                    <div class="s-info">
+                        <div class="s-name">@(session.UserName ?? "کاربر")</div>
+                        <div class="s-meta">
+                            <span class="s-badge @(session.Status == ChatSessionStatusDto.Active ? "badge-active" : "badge-closed")">
+                                @(session.Status == ChatSessionStatusDto.Active ? "فعال" : "پایان")
+                            </span>
+                            <span class="s-time">@FormatTime(session.CreatedAt)</span>
+                        </div>
+                    </div>
+                    @if (session.HasUnread) { <div class="s-unread"></div> }
+                </div>
+            }
+        </div>
+
+        <div class="sidebar-foot">
+            <button class="settings-trigger" @onclick="() => _showSettings = true">
+                <span class="oi oi-cog"></span>
+                تنظیمات بله
+            </button>
+        </div>
+    </div>
+
+    @* --- Main chat area --- *@
+    <div class="chat-main">
+        @* --- Top bar (always visible) --- *@
+        <div class="chat-topbar">
+            <button class="btn-back d-md-none" @onclick="() => _showMobileSidebar = true">
+                <span class="oi oi-menu"></span>
+            </button>
+            @if (_selectedSession == null)
+            {
+                <div class="topbar-user">
+                    <div class="topbar-name">چت آنلاین</div>
+                </div>
+            }
+            else
+            {
+                <div class="topbar-user">
+                    <div class="topbar-name">@(_selectedSession.UserName ?? "کاربر")</div>
+                    @if (!string.IsNullOrEmpty(_selectedSession.UserEmail))
+                    {
+                        <div class="topbar-detail">@_selectedSession.UserEmail</div>
+                    }
+                    <div class="topbar-detail">@(_selectedSession.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm"))</div>
+                </div>
+                <div class="topbar-actions">
+                    @if (_selectedSession.Status == ChatSessionStatusDto.Active)
+                    {
+                        <button class="act-btn end-btn" @onclick="CloseSession" title="پایان مکالمه"><span class="oi oi-circle-x"></span></button>
+                    }
+                    <button class="act-btn delete-btn" @onclick="AskDelete" title="حذف مکالمه"><span class="oi oi-trash"></span></button>
+                    <button class="act-btn ban-btn" @onclick="ToggleBan" title="بن/لغو بن کاربر"><span class="oi oi-ban"></span></button>
+                </div>
+            }
+        </div>
+
+        @if (_selectedSessionId == 0)
+        {
+            <div class="chat-welcome">
+                <div class="welcome-icon"><span class="oi oi-chat"></span></div>
+                <h5>به پنل مدیریت چت خوش آمدید</h5>
+                <p class="text-muted">یک مکالمه را از لیست انتخاب کنید</p>
+            </div>
+        }
+        else
+        {
+            @* --- Messages --- *@
+            <div class="messages-area" @ref="_messagesContainer">
+                @foreach (var msg in _messages)
+                {
+                    <div class="msg @(msg.SenderType == ChatSenderTypeDto.Operator ? "msg-op" : "msg-user")">
+                        @if (msg.MessageType == ChatMessageTypeDto.Text)
+                        {
+                            <div class="msg-bubble msg-text">@msg.Content</div>
+                        }
+                        else if (msg.MessageType == ChatMessageTypeDto.Image)
+                        {
+                            <div class="msg-bubble msg-image-wrapper">
+                                <img src="@msg.MediaUrl" class="msg-img" @onclick="() => OpenLightbox(msg.MediaUrl)" />
+                                @if (!string.IsNullOrEmpty(msg.Content)) { <div class="mt-1 small">@msg.Content</div> }
+                            </div>
+                        }
+                        else if (msg.MessageType == ChatMessageTypeDto.Voice)
+                        {
+                            <div class="msg-bubble msg-voice-wrapper">
+                                <audio src="@msg.MediaUrl" controls class="msg-audio" preload="none"></audio>
+                            </div>
+                        }
+                        else if (msg.MessageType == ChatMessageTypeDto.File)
+                        {
+                            <div class="msg-bubble msg-file-wrapper">
+                                <a href="@msg.MediaUrl" target="_blank" class="file-link" download>
+                                    <span class="oi oi-file"></span>
+                                    @(!string.IsNullOrEmpty(msg.Content) ? msg.Content : "فایل")
+                                </a>
+                            </div>
+                        }
+                        else if (msg.MessageType == ChatMessageTypeDto.System)
+                        {
+                            <div class="msg-system">@msg.Content</div>
+                        }
+                        <div class="msg-time">
+                            @if (msg.SenderType == ChatSenderTypeDto.Operator && msg.SenderId != "system")
+                            {
+                                <span>@msg.SenderId • </span>
+                            }
+                            @msg.CreatedAt.ToLocalTime().ToString("HH:mm")
+                            @if (msg.SenderType == ChatSenderTypeDto.Operator)
+                            {
+                                @if (msg.Status == ChatMessageStatusDto.Sending)
+                                {
+                                    <span class="msg-status">⏳</span>
+                                }
+                                else if (msg.Status == ChatMessageStatusDto.Read)
+                                {
+                                    <span class="msg-status read">✓✓</span>
+                                }
+                                else
+                                {
+                                    <span class="msg-status">✓</span>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+                @if (_userTyping)
+                {
+                    <div class="msg msg-user">
+                        <div class="msg-bubble typing-dots"><span></span><span></span><span></span></div>
+                    </div>
+                }
+            </div>
+
+            @* --- Input --- *@
+            @if (_selectedSession?.Status != ChatSessionStatusDto.Closed)
+            {
+                <div class="chat-input-bar">
+                    <button class="input-btn" @onclick="PickImage" title="ارسال تصویر"><span class="oi oi-image"></span></button>
+                    <input class="input-field" @bind="_inputText" @bind:event="oninput"
+                           @onkeydown="HandleKeyDown"
+                           @onkeyup="HandleTyping"
+                           placeholder="پیام خود را بنویسید..." />
+                    <button class="send-btn" @onclick="SendMessage" disabled="@string.IsNullOrWhiteSpace(_inputText)">
+                        <span class="oi oi-arrow-left"></span>
+                    </button>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@* --- Lightbox --- *@
+@if (!string.IsNullOrEmpty(_lightboxUrl))
+{
+    <div class="lightbox-overlay" @onclick="() => _lightboxUrl = null">
+        <img src="@_lightboxUrl" class="lightbox-img" />
+    </div>
+}
+
+<style>
+    /* ── Root ── */
+    .chat-app { display:flex; height:calc(100vh - 80px); background:#fff; border-radius:18px; overflow:hidden; box-shadow:0 2px 24px rgba(0,0,0,.07); position:relative; }
+    .chat-overlay { display:none; }
+
+    /* ── Sidebar ── */
+    .chat-sidebar { width:320px; min-width:320px; border-left:1px solid #f0f0f0; display:flex; flex-direction:column; background:#fafafa; }
+    .sidebar-head { padding:18px 16px 12px; border-bottom:1px solid #f0f0f0; }
+    .bale-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .bale-dot.on { background:#22c55e; box-shadow:0 0 6px rgba(34,197,94,.4); }
+    .bale-dot.off { background:#ef4444; box-shadow:0 0 6px rgba(239,68,68,.4); }
+    .filter-row { display:flex; gap:4px; }
+    .filter-btn { flex:1; border:none; background:#f0f0f0; padding:5px 0; border-radius:8px; font-size:.72rem; font-weight:600; cursor:pointer; transition:.15s; color:#6b7280; position:relative; }
+    .filter-btn.act { background:#4f46e5; color:#fff; }
+    .filter-btn:hover:not(.act) { background:#e5e7eb; }
+    .filter-badge { position:absolute; top:-4px; right:-4px; background:#ef4444; color:#fff; font-size:.55rem; width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; }
+
+    .session-list { flex:1; overflow-y:auto; scrollbar-width:thin; }
+    .session-row { display:flex; align-items:center; gap:10px; padding:12px 16px; cursor:pointer; border-bottom:1px solid #f5f5f5; transition:.15s; position:relative; }
+    .session-row:hover { background:#f3f4f6; }
+    .session-row.sel { background:#eef2ff; }
+    .session-row.unread { background:#fefce8; }
+    .s-avatar { width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,#4f46e5,#6366f1); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.9rem; flex-shrink:0; }
+    .s-info { flex:1; min-width:0; }
+    .s-name { font-weight:600; font-size:.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .s-meta { display:flex; align-items:center; gap:6px; margin-top:2px; }
+    .s-badge { font-size:.58rem; padding:1px 6px; border-radius:10px; font-weight:600; }
+    .badge-active { background:#dcfce7; color:#16a34a; }
+    .badge-closed { background:#f3f4f6; color:#6b7280; }
+    .s-time { font-size:.62rem; color:#9ca3af; }
+    .s-unread { width:8px; height:8px; border-radius:50%; background:#ef4444; flex-shrink:0; }
+    .empty-list { display:flex; flex-direction:column; align-items:center; gap:8px; padding:60px 20px; color:#9ca3af; font-size:.85rem; }
+    .empty-icon { font-size:2rem; }
+    .sidebar-foot { padding:12px 16px; border-top:1px solid #f0f0f0; }
+    .settings-trigger { width:100%; border:none; background:#f0f0f0; padding:10px; border-radius:12px; font-weight:600; font-size:.82rem; cursor:pointer; transition:.15s; display:flex; align-items:center; justify-content:center; gap:6px; color:#374151; }
+    .settings-trigger:hover { background:#e5e7eb; }
+
+    /* ── Settings modal ── */
+    .settings-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:2000; }
+    .settings-modal { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:520px; max-width:94vw; max-height:85vh; background:#fff; border-radius:18px; overflow:hidden; z-index:2001; box-shadow:0 20px 60px rgba(0,0,0,.2); display:flex; flex-direction:column; }
+    .settings-head { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #f0f0f0; }
+    .settings-body { flex:1; overflow-y:auto; padding:20px; }
+    .btn-close-sm { width:30px; height:30px; border:none; background:#f0f0f0; border-radius:50%; cursor:pointer; font-size:1.1rem; display:flex; align-items:center; justify-content:center; color:#6b7280; transition:.15s; }
+    .btn-close-sm:hover { background:#e5e7eb; }
+    .btn-close-sm::after { content:"✕"; }
+
+    /* ── Chat main ── */
+    .chat-main { flex:1; display:flex; flex-direction:column; min-width:0; background:#fff; }
+    .chat-welcome { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; background:#fafafa; }
+    .welcome-icon { width:72px; height:72px; border-radius:50%; background:#eef2ff; display:flex; align-items:center; justify-content:center; font-size:1.8rem; color:#4f46e5; }
+    .chat-welcome h5 { font-weight:700; margin:4px 0 0; color:#1f2937; }
+    .chat-welcome p { margin:0; font-size:.85rem; }
+
+    .chat-topbar { display:flex; align-items:center; gap:10px; padding:11px 16px; border-bottom:1px solid #f0f0f0; background:#fff; }
+    .btn-back { width:34px; height:34px; border:none; background:#f0f0f0; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#374151; flex-shrink:0; }
+    .btn-back:hover { background:#e5e7eb; }
+    .topbar-user { flex:1; min-width:0; }
+    .topbar-name { font-weight:700; font-size:.9rem; color:#1f2937; }
+    .topbar-detail { font-size:.7rem; color:#9ca3af; }
+    .topbar-actions { display:flex; gap:6px; flex-shrink:0; }
+    .act-btn { width:32px; height:32px; border-radius:50%; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:.85rem; transition:.15s; }
+    .end-btn { background:#fef2f2; color:#ef4444; }
+    .end-btn:hover { background:#fee2e2; }
+    .delete-btn { background:#fef2f2; color:#ef4444; }
+    .delete-btn:hover { background:#fee2e2; }
+    .ban-btn { background:#fffbeb; color:#f59e0b; }
+    .ban-btn:hover { background:#fef3c7; }
+
+    /* ── Messages ── */
+    .messages-area { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:10px; background:#fcfcfc; scrollbar-width:thin; }
+    .msg { max-width:78%; display:flex; flex-direction:column; gap:2px; animation:msgIn .2s ease; }
+    @@keyframes msgIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+    .msg-op { align-self:flex-start; }
+    .msg-user { align-self:flex-end; }
+    .msg-bubble { padding:10px 15px; border-radius:16px; font-size:.85rem; line-height:1.6; word-break:break-word; }
+    .msg-op .msg-bubble { background:#4f46e5; color:#fff; border-bottom-left-radius:4px; }
+    .msg-user .msg-bubble { background:#f0f0f0; color:#1f2937; border-bottom-right-radius:4px; }
+    .msg-system { font-size:.72rem; color:#9ca3af; text-align:center; padding:8px 0; }
+    .msg-time { font-size:.62rem; color:#adb5bd; padding:0 4px; }
+    .msg-status { font-size:.58rem; margin-left:3px; color:#adb5bd; }
+    .msg-status.read { color:#53bdeb; }
+    .msg-img { max-width:220px; max-height:200px; border-radius:10px; cursor:pointer; display:block; }
+    .msg-audio { width:100%; height:36px; }
+    .msg-image-wrapper { padding:6px; background:#4f46e5; border-bottom-left-radius:4px; }
+    .msg-user .msg-image-wrapper { background:#f0f0f0; border-bottom-right-radius:4px; }
+    .msg-voice-wrapper { padding:6px 10px; }
+    .msg-file-wrapper { padding:10px 15px; }
+    .file-link { color:inherit; text-decoration:none; display:flex; align-items:center; gap:6px; }
+    .file-link:hover { text-decoration:underline; }
+    .msg-op .file-link { color:#fff; }
+    .msg-user .file-link { color:#1f2937; }
+    .typing-dots { display:flex; gap:4px; padding:12px 16px; background:#f0f0f0 !important; }
+    .typing-dots span { width:7px; height:7px; border-radius:50%; background:#9ca3af; animation:typingBounce 1.4s infinite; }
+    .typing-dots span:nth-child(2) { animation-delay:.2s; }
+    .typing-dots span:nth-child(3) { animation-delay:.4s; }
+    @@keyframes typingBounce { 0%,60%,100% { transform:translateY(0); } 30% { transform:translateY(-6px); } }
+
+    /* ── Input bar ── */
+    .chat-input-bar { display:flex; align-items:center; gap:8px; padding:12px 16px; border-top:1px solid #f0f0f0; background:#fff; }
+    .input-btn { width:36px; height:36px; border-radius:50%; border:none; background:#f0f0f0; color:#6b7280; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:.15s; font-size:.85rem; flex-shrink:0; }
+    .input-btn:hover { background:#e5e7eb; }
+    .input-field { flex:1; border:1.5px solid #e5e7eb; border-radius:24px; padding:9px 16px; font-size:.85rem; outline:none; transition:border-color .2s; }
+    .input-field:focus { border-color:#4f46e5; }
+    .send-btn { width:40px; height:40px; border-radius:50%; border:none; background:#4f46e5; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:.15s; flex-shrink:0; }
+    .send-btn:hover { background:#4338ca; }
+    .send-btn:disabled { opacity:.4; cursor:default; }
+
+    /* ── Lightbox ── */
+    .lightbox-overlay { position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:9999; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+    .lightbox-img { max-width:92vw; max-height:92vh; border-radius:10px; }
+
+    /* ── Responsive ── */
+    @@media(max-width:900px) {
+        .chat-app { height:calc(100vh - 60px); border-radius:0; }
+        .chat-sidebar { position:fixed; top:0; right:-100%; width:84%; max-width:360px; height:100vh; z-index:1500; transition:right .3s cubic-bezier(.4,0,.2,1); border-radius:0; box-shadow:4px 0 20px rgba(0,0,0,.1); }
+        .chat-sidebar.show { right:0; }
+        .chat-overlay { display:block; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1499; }
+        .chat-main { height:100%; }
+        .messages-area { padding:12px 14px; }
+        .msg { max-width:88%; }
+        .msg-img { max-width:180px; max-height:160px; }
+        .chat-input-bar { padding:10px 12px; }
+        .topbar-actions .act-btn { width:30px; height:30px; font-size:.8rem; }
+        .settings-modal { width:96vw; max-height:90vh; border-radius:14px; }
+    }
+
+    @@media(max-width:480px) {
+        .msg { max-width:92%; }
+        .msg-img { max-width:150px; max-height:140px; }
+        .session-row { padding:10px 12px; }
+        .sidebar-head { padding:14px 12px 10px; }
+    }
+</style>
+
+@code {
+    private HubConnection? _hub;
+    private List<ChatSessionDto> _allSessions = new();
+    private List<ChatMessageDto> _messages = new();
+    private ChatSessionDto? _selectedSession;
+    private int _selectedSessionId;
+    private string _inputText = "";
+    private bool _userTyping;
+    private ElementReference _messagesContainer;
+    private string? _lightboxUrl;
+
+    private bool _showMobileSidebar;
+    private bool _showSettings;
+    private string _activeFilter = "all";
+    private string _baleToken = "";
+    private string _baleGroupId = "";
+    private string _webhookSecret = "";
+    private string _webhookUrl = "";
+    private bool _baleConfigured;
+    private bool _savingSettings;
+    private bool _settingWebhook;
+    private bool _checkingWebhookStatus;
+    private bool _webhookStatusChecked;
+    private bool _webhookStatusRegistered;
+    private string _webhookStatusUrl = "";
+    private string? _settingsMessage;
+    private bool _settingsSuccess;
+    private DateTime _lastTypingSent = DateTime.MinValue;
+    private int _nextTempId = -1;
+    private Queue<int> _pendingTempIds = new();
+    private int _newSessionCount;
+
+    private List<ChatSessionDto> FilteredSessions => _activeFilter switch
+    {
+        "active" => _allSessions.Where(s => s.Status == ChatSessionStatusDto.Active).ToList(),
+        "closed" => _allSessions.Where(s => s.Status == ChatSessionStatusDto.Closed).ToList(),
+        _ => _allSessions.ToList()
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ConnectHub();
+        await LoadSessions();
+        await LoadBaleSettings();
+    }
+
+    private async Task ConnectHub()
+    {
+        _hub = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri("/hubs/chat"), options =>
+            {
+                options.AccessTokenProvider = async () =>
+                {
+                    var token = await Auth.GetTokenAsync();
+                    _ = JS.InvokeVoidAsync("console.log", "AT provider token:", token?.Substring(0, Math.Min(20, token?.Length ?? 0)) + "..." + " (len=" + (token?.Length ?? 0) + ")");
+                    return token;
+                };
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hub.On<ChatMessageDto>("NewMessage", msg =>
+        {
+            if (_selectedSessionId == msg.SessionId)
+            {
+                if (_pendingTempIds.TryDequeue(out var tempId))
+                    _messages.RemoveAll(m => m.Id == tempId);
+                _messages.Add(msg);
+                _messages.Sort((a, b) => a.CreatedAt.CompareTo(b.CreatedAt));
+                if (msg.SenderType == ChatSenderTypeDto.User)
+                    _userTyping = false;
+                _ = ScrollToBottom();
+                if (msg.SenderType == ChatSenderTypeDto.User)
+                    _ = _hub.InvokeAsync("MarkAsRead", msg.SessionId, new List<int> { msg.Id });
+            }
+            var session = _allSessions.FirstOrDefault(s => s.Id == msg.SessionId);
+            if (session != null && msg.SenderType == ChatSenderTypeDto.User && _selectedSessionId != msg.SessionId)
+                session.HasUnread = true;
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<ChatSessionDto>("NewSession", session =>
+        {
+            if (_allSessions.Any(s => s.Id == session.Id)) return;
+            _allSessions.Insert(0, session);
+            _newSessionCount++;
+            if (_selectedSessionId == 0 || _selectedSessionId != session.Id)
+                _ = JS.InvokeVoidAsync("__chatPlayNotification");
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<int, bool>("UserTyping", (sessionId, isTyping) =>
+        {
+            if (_selectedSessionId == sessionId)
+            {
+                _userTyping = isTyping;
+                InvokeAsync(StateHasChanged);
+            }
+        });
+
+        _hub.On<int, List<int>>("MessagesRead", (sessionId, messageIds) =>
+        {
+            if (_selectedSessionId == sessionId)
+            {
+                foreach (var msg in _messages.Where(m => messageIds.Contains(m.Id)))
+                {
+                    msg.IsRead = true;
+                    msg.Status = ChatMessageStatusDto.Read;
+                }
+                InvokeAsync(StateHasChanged);
+            }
+        });
+
+        _hub.On<int>("SessionClosed", sessionId =>
+        {
+            var s = _allSessions.FirstOrDefault(x => x.Id == sessionId);
+            if (s != null) s.Status = ChatSessionStatusDto.Closed;
+            if (_selectedSessionId == sessionId && _selectedSession != null)
+                _selectedSession.Status = ChatSessionStatusDto.Closed;
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hub.Reconnecting += _ =>
+        {
+            _pendingTempIds.Clear();
+            _messages.RemoveAll(m => m.Id < 0);
+            InvokeAsync(StateHasChanged);
+            return Task.CompletedTask;
+        };
+        _hub.Reconnected += async _ =>
+        {
+            _pendingTempIds.Clear();
+            _messages.RemoveAll(m => m.Id < 0);
+            await LoadSessions();
+            if (_selectedSessionId > 0)
+                await _hub.InvokeAsync("JoinSession", _selectedSessionId);
+            InvokeAsync(StateHasChanged);
+        };
+
+        await _hub.StartAsync();
+    }
+
+    private async Task LoadSessions()
+    {
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<JsonElement>("api/chat/sessions?take=200");
+            if (resp.ValueKind == JsonValueKind.Object && resp.TryGetProperty("items", out var items))
+            {
+                _allSessions = System.Text.Json.JsonSerializer.Deserialize<List<ChatSessionDto>>(items.GetRawText(), new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+            }
+        }
+        catch { }
+    }
+
+    private async Task LoadBaleSettings()
+    {
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<JsonElement>("api/chat/settings");
+            if (resp.ValueKind == JsonValueKind.Object)
+            {
+                _baleConfigured = resp.TryGetProperty("baleConfigured", out var bc) && bc.GetBoolean();
+                _baleToken = resp.TryGetProperty("baleToken", out var bt) ? bt.GetString() ?? "" : "";
+                _baleGroupId = resp.TryGetProperty("baleGroupId", out var bg) ? bg.GetString() ?? "" : "";
+                _webhookSecret = resp.TryGetProperty("webhookSecret", out var ws) ? ws.GetString() ?? "" : "";
+                _webhookUrl = resp.TryGetProperty("webhookUrl", out var wu) ? wu.GetString() ?? "" : "";
+            }
+        }
+        catch { }
+    }
+
+    private async Task SaveBaleSettings()
+    {
+        _savingSettings = true;
+        _settingsMessage = null;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/chat/settings",
+                new { baleToken = _baleToken, baleGroupId = _baleGroupId, webhookSecret = _webhookSecret });
+            if (resp.IsSuccessStatusCode)
+            {
+                _settingsSuccess = true;
+                _settingsMessage = "تنظیمات با موفقیت ذخیره شد.";
+                _baleConfigured = !string.IsNullOrEmpty(_baleToken) && !string.IsNullOrEmpty(_baleGroupId);
+            }
+            else
+            {
+                _settingsSuccess = false;
+                _settingsMessage = "خطا در ذخیره تنظیمات.";
+            }
+        }
+        catch
+        {
+            _settingsSuccess = false;
+            _settingsMessage = "خطا در ارتباط با سرور.";
+        }
+        _savingSettings = false;
+    }
+
+    private async Task TestBaleConnection()
+    {
+        _settingsMessage = null;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/chat/test-bale", new { baleToken = _baleToken, baleGroupId = _baleGroupId });
+            var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            _settingsSuccess = json.TryGetProperty("success", out var s) && s.GetBoolean();
+            _settingsMessage = json.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
+            if (_settingsSuccess) _baleConfigured = true;
+        }
+        catch
+        {
+            _settingsSuccess = false;
+            _settingsMessage = "خطا در ارتباط با سرور.";
+        }
+    }
+
+    private async Task SetWebhook()
+    {
+        _settingWebhook = true;
+        _settingsMessage = null;
+        try
+        {
+            var resp = await Http.PostAsync("api/chat/set-webhook", null);
+            var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            _settingsSuccess = json.TryGetProperty("success", out var s) && s.GetBoolean();
+            _settingsMessage = json.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
+        }
+        catch
+        {
+            _settingsSuccess = false;
+            _settingsMessage = "خطا در ارتباط با سرور.";
+        }
+        _settingWebhook = false;
+    }
+
+    private async Task CheckWebhookStatus()
+    {
+        _checkingWebhookStatus = true;
+        try
+        {
+            var json = await Http.GetFromJsonAsync<JsonElement>("api/chat/webhook-status");
+            _webhookStatusRegistered = json.TryGetProperty("hasWebhook", out var hw) && hw.GetBoolean();
+            _webhookStatusUrl = json.TryGetProperty("registeredUrl", out var ru) ? ru.GetString() ?? "" : "";
+            _webhookStatusChecked = true;
+        }
+        catch
+        {
+            _webhookStatusChecked = true;
+            _webhookStatusRegistered = false;
+            _webhookStatusUrl = "";
+        }
+        _checkingWebhookStatus = false;
+    }
+
+    private async Task SelectSession(int sessionId)
+    {
+        _selectedSessionId = sessionId;
+        _selectedSession = _allSessions.FirstOrDefault(s => s.Id == sessionId);
+        if (_selectedSession != null) _selectedSession.HasUnread = false;
+        _newSessionCount = 0;
+        _messages.Clear();
+        _showMobileSidebar = false;
+
+        if (_hub != null)
+            await _hub.InvokeAsync("JoinSession", sessionId);
+
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<JsonElement>($"api/chat/sessions/{sessionId}/messages?take=200");
+            if (resp.ValueKind == JsonValueKind.Object && resp.TryGetProperty("items", out var items))
+            {
+                _messages = System.Text.Json.JsonSerializer.Deserialize<List<ChatMessageDto>>(items.GetRawText(), new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+            }
+        }
+        catch { }
+
+        await ScrollToBottom();
+        StateHasChanged();
+
+        // Mark unread user messages as read
+        var unreadIds = _messages
+            .Where(m => m.SenderType == ChatSenderTypeDto.User && !m.IsRead)
+            .Select(m => m.Id)
+            .ToList();
+        if (unreadIds.Count > 0 && _hub?.State == HubConnectionState.Connected)
+        {
+            try { await _hub.InvokeAsync("MarkAsRead", sessionId, unreadIds); } catch { }
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        var text = _inputText.Trim();
+        if (string.IsNullOrWhiteSpace(text) || _selectedSessionId == 0) return;
+        if (_hub == null) { await ConnectHub(); }
+        if (_hub?.State != HubConnectionState.Connected)
+        {
+            try { await _hub!.StartAsync(); } catch { return; }
+        }
+        _inputText = "";
+        _userTyping = false;
+
+        var tempId = _nextTempId--;
+        _pendingTempIds.Enqueue(tempId);
+        _messages.Add(new ChatMessageDto
+        {
+            Id = tempId,
+            SessionId = _selectedSessionId,
+            SenderType = ChatSenderTypeDto.Operator,
+            Content = text,
+            MessageType = ChatMessageTypeDto.Text,
+            CreatedAt = DateTime.UtcNow,
+            Status = ChatMessageStatusDto.Sending
+        });
+        ScrollToBottom();
+        StateHasChanged();
+
+        try { await _hub.InvokeAsync("SendMessage", _selectedSessionId, text, ChatMessageTypeDto.Text, null); }
+        catch (Exception ex)
+        {
+            _messages.RemoveAll(m => m.Id == tempId);
+            _ = JS.InvokeVoidAsync("console.error", "SendMessage failed:", ex.Message, ex.ToString());
+            StateHasChanged();
+        }
+    }
+
+    private async Task PickImage()
+    {
+        if (_hub == null || _selectedSessionId == 0) return;
+        await JS.InvokeVoidAsync("__chatPickImage", DotNetObjectReference.Create(this));
+    }
+
+    [JSInvokable]
+    public async Task OnImagePicked(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            if (_pendingTempIds.TryDequeue(out var failedId))
+                _messages.RemoveAll(m => m.Id == failedId);
+            StateHasChanged();
+            return;
+        }
+        if (_hub != null)
+        {
+            var tempId = _nextTempId--;
+            _pendingTempIds.Enqueue(tempId);
+            _messages.Add(new ChatMessageDto
+            {
+                Id = tempId,
+                SessionId = _selectedSessionId,
+                SenderType = ChatSenderTypeDto.Operator,
+                MessageType = ChatMessageTypeDto.Image,
+                MediaUrl = url,
+                CreatedAt = DateTime.UtcNow
+            });
+            ScrollToBottom();
+            StateHasChanged();
+            try { await _hub.InvokeAsync("SendMessage", _selectedSessionId, "", ChatMessageTypeDto.Image, url); }
+            catch
+            {
+                _messages.RemoveAll(m => m.Id == tempId);
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task CloseSession()
+    {
+        if (_selectedSessionId == 0 || _hub == null) return;
+        await _hub.InvokeAsync("CloseSession", _selectedSessionId);
+    }
+
+    private bool showConfirmDelete;
+
+    private void AskDelete()
+    {
+        if (_selectedSessionId == 0) return;
+        showConfirmDelete = true;
+    }
+
+    private async Task HandleDeleteResult(bool ok)
+    {
+        showConfirmDelete = false;
+        if (!ok || _selectedSessionId == 0) return;
+        try { await Http.DeleteAsync($"api/chat/sessions/{_selectedSessionId}"); } catch { }
+        _selectedSessionId = 0;
+        _selectedSession = null;
+        _messages.Clear();
+        await LoadSessions();
+        StateHasChanged();
+    }
+
+    private async Task ToggleBan()
+    {
+        if (_selectedSession == null) return;
+        try
+        {
+            var check = await Http.GetFromJsonAsync<JsonElement>($"api/chat/check-ban?visitorId={_selectedSession.VisitorId}");
+            var isBanned = check.TryGetProperty("banned", out var b) && b.GetBoolean();
+            if (isBanned)
+            {
+                await Http.PostAsJsonAsync("api/chat/unban", new { visitorId = _selectedSession.VisitorId });
+            }
+            else
+            {
+                await Http.PostAsJsonAsync("api/chat/ban", new { visitorId = _selectedSession.VisitorId, reason = "بن توسط اپراتور" });
+            }
+        }
+        catch { }
+    }
+
+    private void HandleTyping()
+    {
+        if (_hub == null || _selectedSessionId == 0) return;
+        if ((DateTime.UtcNow - _lastTypingSent).TotalSeconds > 2)
+        {
+            _ = _hub.InvokeAsync("Typing", _selectedSessionId, true);
+            _lastTypingSent = DateTime.UtcNow;
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_inputText))
+            await SendMessage();
+    }
+
+    private async Task ScrollToBottom()
+    {
+        await Task.Delay(50);
+        await JS.InvokeVoidAsync("__chatScrollToBottom", ".messages-area");
+    }
+
+    private void OpenLightbox(string? url) => _lightboxUrl = url;
+
+    private void SetFilter(string filter)
+    {
+        _activeFilter = filter;
+        if (filter == "all") _newSessionCount = 0;
+    }
+
+    private string FormatTime(DateTime dt)
+    {
+        var local = dt.ToLocalTime();
+        var diff = DateTime.Now - local;
+        if (diff.TotalMinutes < 1) return "الان";
+        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}p";
+        if (diff.TotalDays < 1) return local.ToString("HH:mm");
+        return local.ToString("MM/dd HH:mm");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hub != null) await _hub.DisposeAsync();
+    }
+}

@@ -1,0 +1,272 @@
+@page "/cart"
+@using ErrorService.Client.Services
+@using ErrorService.Shared
+@inject CartService CartService
+@inject NavigationManager Nav
+@inject HttpClient Http
+@inject AuthService AuthService
+@using ErrorService.Client.Shared
+@using Microsoft.AspNetCore.Components.Authorization
+
+<HeadContent>
+    <meta name="robots" content="noindex, nofollow" />
+</HeadContent>
+
+<PageTitle>سبد خرید - ارورسرویس</PageTitle>
+
+<div class="cart-page" dir="rtl">
+    <div class="container py-4">
+        <div class="d-flex align-items-center gap-3 mb-5 px-1">
+            <a href="/products" class="btn-back">
+                <span class="oi oi-arrow-right"></span>
+            </a>
+            <div>
+                <h1 class="page-title">سبد خرید</h1>
+                <p class="page-subtitle">@CartService.GetTotalCount() کالا در سبد شماست</p>
+            </div>
+        </div>
+
+        @if (!CartService.GetItems().Any())
+        {
+            <div class="empty-state animate__animated animate__fadeIn">
+                <div class="empty-icon">
+                    <span class="oi oi-cart"></span>
+                </div>
+                <h3 class="empty-title">سبد خرید خالی است</h3>
+                <p class="empty-desc">هنوز محصولی به سبد خود اضافه نکرده‌اید</p>
+                <a href="/products" class="btn btn-primary-custom px-5 py-3">مشاهده محصولات</a>
+            </div>
+        }
+        else
+        {
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <div class="d-flex justify-content-between align-items-center mb-3 px-1">
+                        <span class="text-muted small">@CartService.GetItems().Count() قلم کالا</span>
+                        <button class="btn btn-sm btn-link text-danger p-0" @onclick="async () => await CartService.ClearCartAsync()">
+                            <span class="oi oi-trash me-1"></span> خالی کردن سبد
+                        </button>
+                    </div>
+                    <div class="items-list">
+                        @foreach (var item in CartService.GetItems())
+                        {
+                            <div class="item-card animate__animated animate__fadeInUp">
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="item-img">
+                                        <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-product.svg" : item.ImageUrl)" alt="@item.Name" />
+                                    </div>
+                                    <div class="flex-grow-1 min-w-0">
+                                        <h5 class="item-name">@item.Name</h5>
+                                        <div class="item-price">@item.Price.ToString("N0") <span class="currency">تومان</span></div>
+                                    </div>
+                                    <div class="item-qty">
+                                        <QuantityControl Quantity="@item.Quantity"
+                                                         OnAdd="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity + 1)"
+                                                         OnIncrease="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity + 1)"
+                                                         OnDecrease="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity - 1)" />
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="summary-card sticky-top">
+                        <CascadingAuthenticationState>
+                            <AuthorizeView>
+                                <NotAuthorized>
+                                    <div class="auth-banner">
+                                        <div class="auth-banner-icon">
+                                            <span class="oi oi-account-login"></span>
+                                        </div>
+                                        <div>
+                                            <div class="auth-banner-title">مهمان هستید؟</div>
+                                            <div class="auth-banner-desc">برای پیگیری آسان‌تر سفارش وارد شوید</div>
+                                            <div class="d-flex gap-2 mt-2">
+                                                <a class="btn btn-sm btn-primary-custom px-3 py-1" href="/auth/login">ورود</a>
+                                                <a class="btn btn-sm btn-outline-custom px-3 py-1" href="/auth/register">ثبت‌نام</a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </NotAuthorized>
+                                <Authorized>
+                                    <div class="auth-banner auth-banner--ok">
+                                        <span class="oi oi-check text-success"></span>
+                                        <span class="small text-muted">اطلاعات در مرحله بعد خودکار پر می‌شود</span>
+                                    </div>
+                                </Authorized>
+                            </AuthorizeView>
+                        </CascadingAuthenticationState>
+
+                        <div class="summary-row">
+                            <span class="summary-label">تعداد اقلام</span>
+                            <span class="summary-value">@CartService.GetTotalCount() عدد</span>
+                        </div>
+                        <div class="summary-row">
+                            <span class="summary-label">مجموع کالاها</span>
+                            <span class="summary-value">@CartService.GetTotalAmount().ToString("N0") <small>تومان</small></span>
+                        </div>
+                        <div class="summary-divider"></div>
+                        <div class="summary-total">
+                            <span>مبلغ قابل پرداخت</span>
+                            <div class="total-amount">@CartService.GetTotalAmount().ToString("N0") <span class="total-currency">تومان</span></div>
+                        </div>
+
+                        <div class="d-grid gap-2 mt-4">
+                            <button class="btn btn-primary-custom py-3" @onclick="ProceedToCheckout">
+                                ثبت سفارش و ادامه
+                                <span class="oi oi-chevron-left me-1"></span>
+                            </button>
+                            <a href="/products" class="btn btn-ghost-custom py-3">بازگشت به فروشگاه</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .cart-page {
+        background: var(--shop-bg, #f8fafc);
+        min-height: 100vh;
+    }
+
+    .btn-back {
+        width: 42px; height: 42px; display: grid; place-items: center; flex-shrink: 0;
+        background: var(--shop-surface, #fff); color: var(--shop-text, #1e293b);
+        text-decoration: none; border: 1px solid var(--shop-border, #e2e8f0); border-radius: 12px;
+        transition: transform 0.15s;
+    }
+    .btn-back:active { transform: scale(0.95); }
+
+    .page-title { font-size: 1.25rem; font-weight: 800; margin: 0; color: var(--shop-text, #0f172a); }
+    .page-subtitle { font-size: 0.8rem; color: #94a3b8; margin: 2px 0 0; }
+
+    .empty-state {
+        text-align: center; padding: 60px 24px;
+        background: var(--shop-surface, #fff); border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 24px;
+    }
+    .empty-icon { width: 80px; height: 80px; margin: 0 auto 20px; background: #f1f5f9; border-radius: 24px; display: grid; place-items: center; font-size: 2rem; color: #94a3b8; }
+    .empty-title { font-size: 1.1rem; font-weight: 800; color: var(--shop-text, #0f172a); margin-bottom: 8px; }
+    .empty-desc { font-size: 0.85rem; color: #94a3b8; margin-bottom: 28px; }
+
+    .items-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .item-card {
+        background: var(--shop-surface, #fff); border: 1px solid var(--shop-border, #f1f5f9);
+        border-radius: 16px; padding: 16px; transition: box-shadow 0.2s;
+    }
+    .item-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.04); }
+
+    .item-img {
+        width: 72px; height: 72px; flex-shrink: 0; background: #f8fafc;
+        border-radius: 14px; overflow: hidden; display: grid; place-items: center; padding: 6px;
+    }
+    .item-img img { width: 100%; height: 100%; object-fit: contain; }
+
+    .item-name { font-size: 0.88rem; font-weight: 700; color: var(--shop-text, #1e293b); margin: 0 0 4px; line-height: 1.5; }
+    .item-price { font-size: 0.95rem; font-weight: 800; color: var(--shop-primary, #4f46e5); }
+    .item-price .currency { font-size: 0.7rem; font-weight: 600; opacity: 0.7; }
+
+    .summary-card {
+        background: var(--shop-surface, #fff); border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 20px; padding: 24px; top: 90px;
+    }
+
+    .auth-banner {
+        display: flex; align-items: flex-start; gap: 12px; padding: 14px; margin-bottom: 20px;
+        background: #f0f4ff; border-radius: 14px; font-size: 0.82rem;
+    }
+    .auth-banner--ok { align-items: center; background: #f0fdf4; }
+    .auth-banner-icon { width: 36px; height: 36px; flex-shrink: 0; background: #fff; border-radius: 10px; display: grid; place-items: center; color: var(--shop-primary, #4f46e5); font-size: 0.9rem; }
+    .auth-banner-title { font-weight: 700; color: var(--shop-text, #0f172a); margin-bottom: 2px; }
+    .auth-banner-desc { color: #64748b; line-height: 1.6; }
+
+    .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+    .summary-label { font-size: 0.82rem; color: #94a3b8; }
+    .summary-value { font-size: 0.85rem; font-weight: 700; color: var(--shop-text, #1e293b); }
+
+    .summary-divider { height: 1px; background: var(--shop-border, #f1f5f9); margin: 12px 0; }
+
+    .summary-total { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+    .summary-total span:first-child { font-size: 0.85rem; font-weight: 700; color: var(--shop-text, #0f172a); }
+    .total-amount { font-size: 1.3rem; font-weight: 900; color: var(--shop-primary, #4f46e5); }
+    .total-currency { font-size: 0.7rem; font-weight: 600; opacity: 0.7; }
+
+    .btn-primary-custom {
+        background: linear-gradient(135deg, var(--shop-primary, #4f46e5), var(--shop-primary-2, #6366f1));
+        color: #fff; border: none; border-radius: 14px; font-weight: 800; font-size: 0.9rem;
+        transition: transform 0.15s, box-shadow 0.15s; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-primary-custom:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(79,70,229,0.25); color: #fff; }
+    .btn-primary-custom:active { transform: scale(0.98); }
+
+    .btn-outline-custom {
+        background: transparent; border: 1px solid var(--shop-border, #e2e8f0); border-radius: 10px;
+        font-weight: 700; font-size: 0.78rem; color: var(--shop-text, #475569); text-decoration: none;
+        display: inline-flex; align-items: center; justify-content: center; transition: background 0.15s;
+    }
+    .btn-outline-custom:hover { background: #f8fafc; }
+
+    .btn-ghost-custom {
+        background: transparent; border: 1px solid var(--shop-border, #e2e8f0); border-radius: 14px;
+        font-weight: 700; font-size: 0.85rem; color: #94a3b8; text-decoration: none;
+        transition: background 0.15s;
+    }
+    .btn-ghost-custom:hover { background: #f8fafc; color: #64748b; }
+
+    @@media (max-width: 768px) {
+        .item-img { width: 60px; height: 60px; }
+        .summary-card { padding: 20px; border-radius: 20px; margin-top: 12px; }
+        .total-amount { font-size: 1.15rem; }
+    }
+</style>
+
+@code {
+    protected override void OnInitialized()
+    {
+        CartService.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        CartService.OnChange -= StateHasChanged;
+    }
+
+    private async Task ProceedToCheckout()
+    {
+        var allowGuest = true;
+
+        try
+        {
+            var settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+            allowGuest = settings?.AllowGuestCheckout ?? true;
+        }
+        catch
+        {
+        }
+
+        if (!allowGuest)
+        {
+            try
+            {
+                var me = await AuthService.GetMeAsync();
+                if (me == null)
+                {
+                    Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString("/checkout")}");
+                    return;
+                }
+            }
+            catch
+            {
+                Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString("/checkout")}");
+                return;
+            }
+        }
+
+        Nav.NavigateTo("/checkout");
+    }
+}

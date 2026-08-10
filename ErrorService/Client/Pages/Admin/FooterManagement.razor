@@ -1,0 +1,669 @@
+@page "/admin/footer"
+@layout AdminLayout
+@attribute [Authorize(Policy = "perm:admin.footer.manage")]
+@using ErrorService.Shared.Models
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authorization
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>مدیریت فوتر - ادمین</PageTitle>
+
+<div class="admin-footer-page" dir="rtl">
+    <div class="page-header d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="fw-bold m-0">مدیریت فوتر سایت</h3>
+            <p class="text-muted small mt-1">تنظیمات و محتوای فوتر را در اینجا مدیریت کنید</p>
+        </div>
+        <button class="btn btn-primary rounded-pill px-4" @onclick="SaveSettings" disabled="@isSaving">
+            @if (isSaving)
+            {
+                <span class="spinner-border spinner-border-sm me-2"></span>
+                <span>در حال ذخیره...</span>
+            }
+            else
+            {
+                <span class="oi oi-check me-1"></span>
+                <span>ذخیره تغییرات</span>
+            }
+        </button>
+    </div>
+
+    @if (model == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary"></div>
+            <p class="text-muted mt-3">در حال بارگذاری...</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <!-- Company Info -->
+            <div class="col-lg-6">
+                <div class="admin-card">
+                    <div class="card-header">
+                        <span class="oi oi-info me-2"></span>
+                        اطلاعات شرکت
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">نام شرکت</label>
+                            <input type="text" class="form-control" @bind="model.CompanyName" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">توضیحات شرکت</label>
+                            <textarea class="form-control" rows="2" @bind="model.CompanyDescription"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">آدرس لوگو (اختیاری)</label>
+                            <input type="text" class="form-control" @bind="model.LogoUrl" placeholder="/images/logo.png" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contact Info -->
+            <div class="col-lg-6">
+                <div class="admin-card">
+                    <div class="card-header">
+                        <span class="oi oi-phone me-2"></span>
+                        اطلاعات تماس
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">شماره تماس ۱</label>
+                                <input type="text" class="form-control" @bind="model.PhoneNumber1" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">شماره تماس ۲</label>
+                                <input type="text" class="form-control" @bind="model.PhoneNumber2" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">واتساپ</label>
+                                <input type="text" class="form-control" @bind="model.WhatsAppNumber" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">ایمیل</label>
+                                <input type="email" class="form-control" @bind="model.Email" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">آدرس</label>
+                                <textarea class="form-control" rows="2" @bind="model.Address"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logo Upload -->
+            <div class="col-12">
+                <div class="admin-card">
+                    <div class="card-header">
+                        <span class="oi oi-image me-2"></span>
+                        لوگوی سایت
+                    </div>
+                    <div class="card-body">
+                        <div class="row align-items-center">
+                            <div class="col-md-4">
+                                @if (!string.IsNullOrEmpty(logoPreviewUrl))
+                                {
+                                    <img src="@logoPreviewUrl" class="img-fluid rounded-3 border" style="max-height: 120px;" />
+                                }
+                                else
+                                {
+                                    <div class="bg-light rounded-3 d-flex align-items-center justify-content-center" style="height: 120px;">
+                                        <span class="text-muted">بدون لوگو</span>
+                                    </div>
+                                }
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label">آپلود لوگو</label>
+                                <InputFile OnChange="@LoadLogoFile" class="form-control" accept=".jpg,.jpeg,.png,.svg,.webp" />
+                                <small class="text-muted">فرمت‌های مجاز: JPG, PNG, SVG, WEBP</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Social Links -->
+            <div class="col-lg-6">
+                <div class="admin-card">
+                    <div class="card-header">
+                        <span class="oi oi-share me-2"></span>
+                        شبکه‌های اجتماعی (فقط نام کاربری)
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">اینستاگرام</label>
+                            <div class="input-group">
+                                <span class="input-group-text text-muted">instagram.com/</span>
+                                <input type="text" class="form-control" @bind="instagramUsername" placeholder="username" @onblur="UpdateInstagramUrl" />
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">تلگرام</label>
+                            <div class="input-group">
+                                <span class="input-group-text text-muted">t.me/</span>
+                                <input type="text" class="form-control" @bind="telegramUsername" placeholder="username" @onblur="UpdateTelegramUrl" />
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">یوتیوب</label>
+                            <div class="input-group">
+                                <span class="input-group-text text-muted">youtube.com/@@</span>
+                                <input type="text" class="form-control" @bind="youtubeUsername" placeholder="username" @onblur="UpdateYouTubeUrl" />
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">لینکدین</label>
+                            <div class="input-group">
+                                <span class="input-group-text text-muted">linkedin.com/in/</span>
+                                <input type="text" class="form-control" @bind="linkedinUsername" placeholder="username" @onblur="UpdateLinkedInUrl" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trust Badges -->
+            <div class="col-lg-6">
+                <div class="admin-card">
+                    <div class="card-header">
+                        <span class="oi oi-shield me-2"></span>
+                        نمادهای اعتماد
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">کد نماد اعتماد (اینماد)</label>
+                            <input type="text" class="form-control" @bind="model.EnamadCode" placeholder="کد اینماد" inputmode="numeric" />
+                            <small class="text-muted">کد دریافتی از enamad.ir</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">کد ساماندهی</label>
+                            <input type="text" class="form-control" @bind="model.SamandehiCode" placeholder="کد ساماندهی" inputmode="numeric" />
+                            <small class="text-muted">کد دریافتی از samandehi.ir</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">کد کسب‌وکار اینترنتی (ETA)</label>
+                            <input type="text" class="form-control" @bind="model.EtaCode" placeholder="کد ETA" inputmode="numeric" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Copyright -->
+            <div class="col-12">
+                <div class="admin-card">
+                    <div class="card-header">
+                        <span class="oi oi-copyright me-2"></span>
+                        متن کپی‌رایت
+                    </div>
+                    <div class="card-body">
+                        <input type="text" class="form-control" @bind="model.CopyrightText" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- Link Groups -->
+            <div class="col-12">
+                <div class="admin-card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>
+                            <span class="oi oi-link-intact me-2"></span>
+                            گروه‌های لینک
+                        </span>
+                        <button class="btn btn-sm btn-success" @onclick="AddLinkGroup">
+                            <span class="oi oi-plus"></span>
+                            افزودن گروه
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        @foreach (var group in model.LinkGroups.OrderBy(g => g.SortOrder).Select((g, i) => new { Group = g, Index = i }))
+                        {
+                            <div class="link-group-item mb-4 p-3 border rounded-3">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <div class="d-flex align-items-center gap-2 flex-grow-1">
+                                        <span class="badge bg-secondary">@(group.Index + 1)</span>
+                                        <input type="text" class="form-control form-control-sm" 
+                                               @bind="group.Group.Title" 
+                                               placeholder="عنوان گروه" />
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => MoveGroupUp(group.Group)" 
+                                                disabled="@group.Index == 0">
+                                            <span class="oi oi-arrow-top"></span>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => MoveGroupDown(group.Group)" 
+                                                disabled="@group.Index == model.LinkGroups.Count - 1">
+                                            <span class="oi oi-arrow-bottom"></span>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveLinkGroup(group.Group)">
+                                            <span class="oi oi-trash"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="links-list">
+                                    @foreach (var link in group.Group.Links.OrderBy(l => l.SortOrder).Select((l, i) => new { Link = l, Index = i }))
+                                    {
+                                        <div class="link-item d-flex gap-2 align-items-center mb-2 flex-wrap">
+                                            <input type="text" class="form-control form-control-sm" style="flex: 1; min-width: 120px;" @bind="link.Link.Title" placeholder="عنوان" />
+                                            
+                                            @if (link.Link.IsExternal)
+                                            {
+                                                <!-- External link: text input for URL -->
+                                                <input type="url" class="form-control form-control-sm" style="flex: 2; min-width: 200px;" @bind="link.Link.Url" placeholder="https://..." />
+                                            }
+                                            else
+                                            {
+                                                <!-- Internal link: dropdown selector -->
+                                                <select class="form-select form-select-sm" style="flex: 2; min-width: 150px;" @bind="link.Link.Url">
+                                                    @foreach (var pageOption in availablePages)
+                                                    {
+                                                        <option value="@pageOption.Value">@pageOption.Key</option>
+                                                    }
+                                                </select>
+                                            }
+                                            
+                                            <input type="text" class="form-control form-control-sm" style="width: 80px;" @bind="link.Link.Icon" placeholder="آیکون" />
+                                            
+                                            <div class="form-check form-check-inline ms-2">
+                                                <input type="checkbox" class="form-check-input" @bind="link.Link.IsExternal" id="ext-@group.Index-@link.Index" />
+                                                <label class="form-check-label small" for="ext-@group.Index-@link.Index">خارجی</label>
+                                            </div>
+                                            
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveLink(group.Group, link.Link)">
+                                                <span class="oi oi-x"></span>
+                                            </button>
+                                        </div>
+                                    }
+                                    <button class="btn btn-sm btn-outline-success mt-2" @onclick="() => AddLink(group.Group)">
+                                        <span class="oi oi-plus"></span>
+                                        افزودن لینک
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .admin-footer-page {
+        padding: 20px;
+    }
+
+    .page-header {
+        padding-bottom: 20px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .admin-card {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+    }
+
+    .admin-card .card-header {
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+        color: #fff;
+        padding: 16px 20px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+    }
+
+    .admin-card .card-body {
+        padding: 20px;
+    }
+
+    .link-group-item {
+        background: #f8fafc;
+        transition: all 0.2s ease;
+    }
+
+    .link-group-item:hover {
+        background: #f1f5f9;
+    }
+
+    .links-list {
+        padding-right: 20px;
+    }
+
+    .link-item {
+        background: #fff;
+        padding: 8px;
+        border-radius: 8px;
+    }
+
+    [data-theme="dark"] .admin-card {
+        background: #1e293b;
+    }
+
+    [data-theme="dark"] .admin-card .card-header {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    }
+
+    [data-theme="dark"] .link-group-item {
+        background: #334155;
+    }
+
+    [data-theme="dark"] .link-group-item:hover {
+        background: #475569;
+    }
+
+    [data-theme="dark"] .link-item {
+        background: #1e293b;
+    }
+</style>
+
+@code {
+    private SaveFooterSettingsRequest? model;
+    private bool isSaving = false;
+    private string logoPreviewUrl = "";
+    private IBrowserFile? logoFile;
+
+    // Social media usernames
+    private string instagramUsername = "";
+    private string telegramUsername = "";
+    private string youtubeUsername = "";
+    private string linkedinUsername = "";
+
+    // Available pages for link dropdown
+    private Dictionary<string, string> availablePages = new()
+    {
+        { "صفحه اصلی", "/" },
+        { "محصولات", "/products" },
+        { "آکادمی آموزش", "/academy" },
+        { "درباره ما", "/about" },
+        { "تماس با ما", "/contact" },
+        { "مشاوره فنی", "/technical/consultation" },
+        { "کدهای خطا", "/technical/error-codes" },
+        { "ماشین‌حساب", "/technical/calculators" },
+        { "سبد خرید", "/cart" },
+        { "ورود", "/login" },
+        { "ثبت‌نام", "/register" },
+        { "پروفایل", "/profile" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettings();
+    }
+
+    private async Task LoadSettings()
+    {
+        try
+        {
+            var response = await Http.GetFromJsonAsync<FooterSettingsDto>("api/footer");
+            if (response != null)
+            {
+                model = new SaveFooterSettingsRequest
+                {
+                    CompanyName = response.CompanyName,
+                    CompanyDescription = response.CompanyDescription,
+                    LogoUrl = response.LogoUrl,
+                    PhoneNumber1 = response.PhoneNumber1,
+                    PhoneNumber2 = response.PhoneNumber2,
+                    WhatsAppNumber = response.WhatsAppNumber,
+                    Email = response.Email,
+                    Address = response.Address,
+                    InstagramUrl = response.InstagramUrl,
+                    TelegramUrl = response.TelegramUrl,
+                    YouTubeUrl = response.YouTubeUrl,
+                    LinkedInUrl = response.LinkedInUrl,
+                    EnamadCode = response.EnamadCode,
+                    SamandehiCode = response.SamandehiCode,
+                    EtaCode = response.EtaCode,
+                    CopyrightText = response.CopyrightText,
+                    LinkGroups = response.LinkGroups ?? new List<FooterLinkGroupDto>()
+                };
+
+                // Set logo preview
+                logoPreviewUrl = model.LogoUrl ?? "";
+
+                // Extract usernames from URLs
+                ExtractUsernamesFromUrls();
+            }
+        }
+        catch
+        {
+            // Create default model if API fails
+            model = new SaveFooterSettingsRequest
+            {
+                CompanyName = "ارورسرویس",
+                CopyrightText = "© 2025 ارورسرویس - تمامی حقوق محفوظ است",
+                LinkGroups = new List<FooterLinkGroupDto>()
+            };
+        }
+    }
+
+    private void ExtractUsernamesFromUrls()
+    {
+        if (!string.IsNullOrEmpty(model?.InstagramUrl))
+            instagramUsername = ExtractUsername(model.InstagramUrl, "instagram.com/");
+        
+        if (!string.IsNullOrEmpty(model?.TelegramUrl))
+            telegramUsername = ExtractUsername(model.TelegramUrl, "t.me/");
+        
+        if (!string.IsNullOrEmpty(model?.YouTubeUrl))
+            youtubeUsername = ExtractUsername(model.YouTubeUrl, "youtube.com/@");
+        
+        if (!string.IsNullOrEmpty(model?.LinkedInUrl))
+            linkedinUsername = ExtractUsername(model.LinkedInUrl, "linkedin.com/in/");
+    }
+
+    private string ExtractUsername(string url, string prefix)
+    {
+        if (url.Contains(prefix))
+        {
+            var index = url.IndexOf(prefix) + prefix.Length;
+            return url.Substring(index).TrimEnd('/', ' ');
+        }
+        return "";
+    }
+
+    private async Task LoadLogoFile(InputFileChangeEventArgs e)
+    {
+        logoFile = e.File;
+        
+        // Show preview
+        var compressed = await ImageCompressionHelper.CompressIfNeededAsync(logoFile, JS);
+        var imageBase64 = Convert.ToBase64String(compressed);
+        logoPreviewUrl = $"data:{logoFile.ContentType};base64,{imageBase64}";
+    }
+
+    private void UpdateInstagramUrl()
+    {
+        if (model != null && !string.IsNullOrWhiteSpace(instagramUsername))
+            model.InstagramUrl = $"https://instagram.com/{instagramUsername.Trim()}";
+    }
+
+    private void UpdateTelegramUrl()
+    {
+        if (model != null && !string.IsNullOrWhiteSpace(telegramUsername))
+            model.TelegramUrl = $"https://t.me/{telegramUsername.Trim()}";
+    }
+
+    private void UpdateYouTubeUrl()
+    {
+        if (model != null && !string.IsNullOrWhiteSpace(youtubeUsername))
+            model.YouTubeUrl = $"https://youtube.com/@{youtubeUsername.Trim()}";
+    }
+
+    private void UpdateLinkedInUrl()
+    {
+        if (model != null && !string.IsNullOrWhiteSpace(linkedinUsername))
+            model.LinkedInUrl = $"https://linkedin.com/in/{linkedinUsername.Trim()}";
+    }
+
+    private async Task SaveSettings()
+    {
+        if (model == null) return;
+
+        // Update URLs from usernames before saving
+        UpdateInstagramUrl();
+        UpdateTelegramUrl();
+        UpdateYouTubeUrl();
+        UpdateLinkedInUrl();
+
+        isSaving = true;
+        try
+        {
+            // If there's a new logo file, upload it first
+            if (logoFile != null)
+            {
+                var uploadSuccess = await UploadLogo();
+                if (!uploadSuccess)
+                {
+                    await JS.InvokeVoidAsync("alert", "خطا در آپلود لوگو");
+                    isSaving = false;
+                    return;
+                }
+            }
+
+            var response = await Http.PostAsJsonAsync("api/footer", model);
+            if (response.IsSuccessStatusCode)
+            {
+                await JS.InvokeVoidAsync("alert", "تنظیمات با موفقیت ذخیره شد");
+                logoFile = null; // Clear the file after successful save
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                await JS.InvokeVoidAsync("alert", "خطای 403: دسترسی denied - لطفاً مطمئن شوید با کاربر ادمین وارد شده‌اید");
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                await JS.InvokeVoidAsync("alert", $"خطا در ذخیره تنظیمات: {response.StatusCode} - {errorContent}");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"خطا: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task<bool> UploadLogo()
+    {
+        if (logoFile == null) return false;
+
+        try
+        {
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(logoFile, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(logoFile.ContentType);
+            content.Add(byteContent, "file", logoFile.Name);
+
+            var response = await Http.PostAsync("api/upload/logo", content);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<UploadResult>();
+                if (result != null && model != null)
+                {
+                    model.LogoUrl = result.Url;
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Logo upload error: {ex.Message}");
+        }
+        return false;
+    }
+
+    private void AddLinkGroup()
+    {
+        if (model == null) return;
+
+        var newGroup = new FooterLinkGroupDto
+        {
+            Title = "گروه جدید",
+            SortOrder = model.LinkGroups.Count,
+            Links = new List<FooterLinkDto>()
+        };
+        model.LinkGroups.Add(newGroup);
+    }
+
+    private void RemoveLinkGroup(FooterLinkGroupDto group)
+    {
+        if (model == null) return;
+        model.LinkGroups.Remove(group);
+        ReorderGroups();
+    }
+
+    private void MoveGroupUp(FooterLinkGroupDto group)
+    {
+        if (model == null) return;
+        var index = model.LinkGroups.IndexOf(group);
+        if (index > 0)
+        {
+            var temp = model.LinkGroups[index - 1];
+            model.LinkGroups[index - 1] = group;
+            model.LinkGroups[index] = temp;
+        }
+        ReorderGroups();
+    }
+
+    private void MoveGroupDown(FooterLinkGroupDto group)
+    {
+        if (model == null) return;
+        var index = model.LinkGroups.IndexOf(group);
+        if (index < model.LinkGroups.Count - 1)
+        {
+            var temp = model.LinkGroups[index + 1];
+            model.LinkGroups[index + 1] = group;
+            model.LinkGroups[index] = temp;
+        }
+        ReorderGroups();
+    }
+
+    private void ReorderGroups()
+    {
+        if (model == null) return;
+        for (int i = 0; i < model.LinkGroups.Count; i++)
+        {
+            model.LinkGroups[i].SortOrder = i;
+        }
+    }
+
+    private void AddLink(FooterLinkGroupDto group)
+    {
+        var newLink = new FooterLinkDto
+        {
+            Title = "لینک جدید",
+            Url = "/",
+            SortOrder = group.Links.Count
+        };
+        group.Links.Add(newLink);
+    }
+
+    private void RemoveLink(FooterLinkGroupDto group, FooterLinkDto link)
+    {
+        group.Links.Remove(link);
+        // Reorder remaining links
+        for (int i = 0; i < group.Links.Count; i++)
+        {
+            group.Links[i].SortOrder = i;
+        }
+    }
+
+    private class UploadResult
+    {
+        public string Url { get; set; } = string.Empty;
+    }
+}

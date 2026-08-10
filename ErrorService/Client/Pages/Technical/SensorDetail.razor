@@ -1,0 +1,337 @@
+@page "/technical/sensor-finder/{Id:int}"
+@using ErrorService.Shared
+@using System.Text.Json
+@inject HttpClient Http
+
+<SeoHeader
+    Title="@pageTitle"
+    Description="@pageDescription"
+    Keywords="@pageKeywords"
+    OgType="website"
+    OgImage="@firstImageUrl"
+    JsonLd="@jsonLd" />
+
+<div class="sd-page" dir="rtl">
+    <!-- Breadcrumb -->
+    <nav class="sd-breadcrumb">
+        <a href="/" class="sd-bc-link">خانه</a>
+        <span class="sd-bc-sep">/</span>
+        <a href="/technical/sensor-finder" class="sd-bc-link">سنسور یاب</a>
+        <span class="sd-bc-sep">/</span>
+        <span class="sd-bc-current">@(record?.SensorName ?? "...")</span>
+    </nav>
+
+    @if (isLoading)
+    {
+        <div class="sd-skeleton-wrap">
+            <div class="sd-skel sd-skel--h1"></div>
+            <div class="sd-skel sd-skel--h2"></div>
+            <div class="sd-skel sd-skel--img"></div>
+            <div class="sd-skel sd-skel--block"></div>
+        </div>
+    }
+    else if (record == null)
+    {
+        <div class="sd-notfound">
+            <span class="oi oi-warning"></span>
+            <h2>سنسور یافت نشد</h2>
+            <p>رکورد مورد نظر در پایگاه داده وجود ندارد.</p>
+            <a href="/technical/sensor-finder" class="sd-btn">بازگشت به سنسور یاب</a>
+        </div>
+    }
+    else
+    {
+        <!-- Hero -->
+        <div class="sd-hero">
+            <div class="sd-hero__badge">@record.DeviceName</div>
+            <h1 class="sd-hero__title">@record.SensorName</h1>
+            @if (!string.IsNullOrEmpty(record.SensorType))
+            {
+                <div class="sd-hero__type">@record.SensorType</div>
+            }
+        </div>
+
+        <!-- Specs -->
+        <div class="sd-section">
+            <div class="sd-section__header">
+                <span class="oi oi-info sd-section__icon"></span>
+                <h2 class="sd-section__title">مشخصات فنی</h2>
+            </div>
+            <div class="sd-specs">
+                <div class="sd-spec-row">
+                    <span class="sd-spec-label">نام سنسور</span>
+                    <span class="sd-spec-value">@record.SensorName</span>
+                </div>
+                <div class="sd-spec-row">
+                    <span class="sd-spec-label">نوع سنسور</span>
+                    <span class="sd-spec-value">@(record.SensorType ?? "-")</span>
+                </div>
+                <div class="sd-spec-row">
+                    <span class="sd-spec-label">اندازه</span>
+                    <span class="sd-spec-value">@(record.SizeText ?? "-")</span>
+                </div>
+                <div class="sd-spec-row">
+                    <span class="sd-spec-label">دستگاه</span>
+                    <span class="sd-spec-value">@record.DeviceName</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notes -->
+        @if (!string.IsNullOrEmpty(record.Notes))
+        {
+            <div class="sd-section sd-section--notes">
+                <div class="sd-section__header">
+                    <span class="oi oi-book sd-section__icon"></span>
+                    <h2 class="sd-section__title">توضیحات و نکات</h2>
+                </div>
+                <div class="sd-notes-text">@record.Notes</div>
+            </div>
+        }
+
+        <!-- Images -->
+        @if (record.Images != null && record.Images.Any())
+        {
+            <div class="sd-section">
+                <div class="sd-section__header">
+                    <span class="oi oi-image sd-section__icon"></span>
+                    <h2 class="sd-section__title">تصاویر سنسور</h2>
+                </div>
+                <div class="sd-gallery">
+                    @foreach (var img in record.Images.OrderBy(i => i.SortOrder))
+                    {
+                        <div class="sd-gallery__item" @onclick="() => OpenImage(img.Url, img.Title ?? record.SensorName)">
+                            <img src="@img.Url" alt="@(img.Title ?? record.SensorName)" loading="lazy" />
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- CTA -->
+        <div class="sd-cta">
+            <a href="/technical/sensor-finder" class="sd-btn sd-btn--primary">
+                <span class="oi oi-magnifying-glass"></span>
+                جستجوی سنسور
+            </a>
+            <a href="/admission/repair" class="sd-btn sd-btn--secondary">
+                <span class="oi oi-wrench"></span>
+                درخواست تعمیر
+            </a>
+        </div>
+    }
+</div>
+
+<!-- Image Modal -->
+@if (showImageModal)
+{
+    <div class="sd-modal-overlay" @onclick="CloseImage">
+        <div class="sd-modal-content" @onclick:stopPropagation="true">
+            <button class="sd-modal-close" @onclick="CloseImage"><span class="oi oi-x"></span></button>
+            <img src="@selectedImageUrl" alt="@selectedImageTitle" />
+        </div>
+    </div>
+}
+
+<style>
+    .sd-page { max-width: 800px; margin: 0 auto; padding: 20px 16px 40px; }
+
+    .sd-breadcrumb {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+        padding: 12px 0; margin-bottom: 16px;
+        font-size: 0.8rem; color: #94a3b8;
+    }
+    .sd-bc-link { color: #6366f1; text-decoration: none; font-weight: 600; }
+    .sd-bc-link:hover { text-decoration: underline; }
+    .sd-bc-sep { color: #cbd5e1; }
+    .sd-bc-current { color: #475569; font-weight: 700; }
+
+    .sd-hero {
+        background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+        border-radius: 20px; padding: 28px 24px; color: #fff; margin-bottom: 20px;
+    }
+    .sd-hero__badge {
+        display: inline-block; padding: 4px 12px; border-radius: 8px;
+        background: rgba(255,255,255,0.15); font-size: 0.75rem; font-weight: 700;
+        margin-bottom: 10px;
+    }
+    .sd-hero__title { font-size: 1.3rem; font-weight: 900; margin: 0 0 6px; }
+    .sd-hero__type { font-size: 0.85rem; opacity: 0.8; }
+
+    .sd-section {
+        background: #fff; border-radius: 16px; padding: 20px;
+        margin-bottom: 16px; border: 1px solid rgba(0,0,0,0.04);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .sd-section__header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .sd-section__icon { font-size: 1.1rem; color: #059669; }
+    .sd-section__title { font-size: 1rem; font-weight: 800; color: #1e293b; margin: 0; }
+
+    .sd-specs { display: flex; flex-direction: column; gap: 0; }
+    .sd-spec-row {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 12px 0; border-bottom: 1px solid #f1f5f9;
+    }
+    .sd-spec-row:last-child { border-bottom: none; }
+    .sd-spec-label { font-size: 0.8rem; color: #94a3b8; font-weight: 600; }
+    .sd-spec-value { font-size: 0.9rem; color: #1e293b; font-weight: 700; }
+
+    .sd-notes-text {
+        line-height: 1.8; color: #475569; font-size: 0.9rem;
+        padding: 14px; border-radius: 12px; background: #fefce8;
+        border-right: 4px solid #eab308;
+    }
+
+    .sd-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+    .sd-gallery__item {
+        border-radius: 12px; overflow: hidden; background: #f1f5f9;
+        aspect-ratio: 1; cursor: pointer; transition: transform 0.2s;
+    }
+    .sd-gallery__item:hover { transform: scale(1.03); }
+    .sd-gallery__item img { width: 100%; height: 100%; object-fit: cover; }
+
+    .sd-cta { display: flex; gap: 10px; margin-top: 24px; }
+    .sd-btn {
+        flex: 1; display: flex; align-items: center; justify-content: center;
+        gap: 8px; padding: 14px; border-radius: 14px; font-size: 0.9rem;
+        font-weight: 700; text-decoration: none; transition: all 0.2s;
+    }
+    .sd-btn--primary { background: linear-gradient(135deg, #059669, #10b981); color: #fff; }
+    .sd-btn--primary:hover { box-shadow: 0 6px 20px rgba(5,150,105,0.3); }
+    .sd-btn--secondary { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+
+    .sd-notfound { text-align: center; padding: 60px 20px; }
+    .sd-notfound span { font-size: 3rem; color: #cbd5e1; display: block; margin-bottom: 12px; }
+    .sd-notfound h2 { font-weight: 800; color: #475569; }
+    .sd-notfound p { color: #94a3b8; margin-bottom: 20px; }
+
+    .sd-skel { border-radius: 12px; margin-bottom: 12px;
+        background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+        background-size: 200% 100%; animation: sd-shimmer 1.5s infinite; }
+    .sd-skel--h1 { height: 40px; width: 50%; }
+    .sd-skel--h2 { height: 24px; width: 70%; }
+    .sd-skel--img { height: 200px; }
+    .sd-skel--block { height: 100px; }
+    .sd-skeleton-wrap { padding: 20px; }
+    @@keyframes sd-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+    .sd-modal-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 1000; padding: 20px;
+    }
+    .sd-modal-content { position: relative; max-width: 90vw; max-height: 85vh; }
+    .sd-modal-content img { max-width: 100%; max-height: 85vh; border-radius: 12px; object-fit: contain; }
+    .sd-modal-close {
+        position: absolute; top: -12px; right: -12px;
+        width: 36px; height: 36px; border-radius: 50%; border: none;
+        background: #fff; color: #1e293b; font-size: 1rem;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    @@media (min-width: 768px) {
+        .sd-page { padding: 32px 24px 60px; }
+        .sd-hero { padding: 36px 32px; }
+    }
+</style>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private SensorFinderRecordDto? record;
+    private bool isLoading = true;
+    private string pageTitle = "سنسور یاب | ارورسرویس";
+    private string pageDescription = "";
+    private string pageKeywords = "";
+    private string? jsonLd;
+    private string? firstImageUrl;
+
+    private bool showImageModal;
+    private string? selectedImageUrl;
+    private string? selectedImageTitle;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            record = await Http.GetFromJsonAsync<SensorFinderRecordDto>($"api/sensor-finder/records/{Id}");
+
+            if (record == null)
+            {
+                isLoading = false;
+                return;
+            }
+
+            firstImageUrl = record.Images?.FirstOrDefault()?.Url;
+
+            pageTitle = $"سنسور {record.SensorName} - {record.DeviceName} | ارورسرویس";
+            pageDescription = $"مشخصات فنی سنسور {record.SensorName} ({record.SensorType ?? ""}) مربوط به {record.DeviceName}. {(string.IsNullOrEmpty(record.SizeText) ? "" : $"اندازه: {record.SizeText}. ")}{(string.IsNullOrEmpty(record.Notes) ? "" : Truncate(record.Notes, 120))}";
+            pageKeywords = $"سنسور {record.SensorName}, {record.SensorType}, {record.DeviceName}, سنسور لوازم خانگی";
+
+            BuildJsonLd();
+        }
+        catch
+        {
+            record = null;
+        }
+        isLoading = false;
+    }
+
+    private void BuildJsonLd()
+    {
+        if (record == null) return;
+
+        var baseUrl = "https://errorservice.ir";
+        var url = $"{baseUrl}/technical/sensor-finder/{record.Id}";
+
+        var product = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "Product",
+            ["name"] = $"سنسور {record.SensorName}",
+            ["description"] = record.Notes ?? $"سنسور {record.SensorName} مربوط به {record.DeviceName}",
+            ["url"] = url,
+            ["brand"] = new Dictionary<string, string?> { ["@type"] = "Brand", ["name"] = record.DeviceName },
+            ["category"] = record.SensorType ?? "سنسور لوازم خانگی"
+        };
+
+        if (!string.IsNullOrEmpty(firstImageUrl))
+            product["image"] = firstImageUrl;
+
+        var breadcrumbList = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "BreadcrumbList",
+            ["itemListElement"] = new object[]
+            {
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 1, ["name"] = "خانه", ["item"] = baseUrl },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 2, ["name"] = "سنسور یاب", ["item"] = $"{baseUrl}/technical/sensor-finder" },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 3, ["name"] = record.SensorName, ["item"] = url }
+            }
+        };
+
+        jsonLd = $"[{JsonSerializer.Serialize(product)},{JsonSerializer.Serialize(breadcrumbList)}]";
+    }
+
+    private void OpenImage(string url, string title)
+    {
+        selectedImageUrl = url;
+        selectedImageTitle = title;
+        showImageModal = true;
+    }
+
+    private void CloseImage() => showImageModal = false;
+
+    private string Truncate(string? text, int max)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= max ? text : text[..max] + "...";
+    }
+}

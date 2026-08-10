@@ -1,0 +1,148 @@
+@page "/my-orders"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Nav
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@inject ToastService Toast
+
+<SeoHeader Title="سفارشات من | ارورسرویس" Description="پیگیری وضعیت سفارش‌های ثبت‌شده" OgType="website" />
+
+<div class="my-orders-page py-5">
+    <div class="container">
+        <div class="d-flex align-items-center gap-3 mb-4">
+            <a href="/profile" class="btn btn-outline-secondary rounded-pill btn-sm"><span class="oi oi-chevron-right me-1"></span>بازگشت</a>
+            <h1 class="fw-black m-0 fs-3">سفارشات من</h1>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+            </div>
+        }
+        else if (_orders == null || _orders.Count == 0)
+        {
+            <div class="text-center py-5">
+                <div class="display-3 text-muted opacity-25 mb-3"><span class="oi oi-basket"></span></div>
+                <h4 class="fw-bold">سفارشی ثبت نشده</h4>
+                <p class="text-muted mb-4">شما هنوز هیچ سفارشی ثبت نکرده‌اید.</p>
+                <a href="/products" class="btn btn-primary rounded-pill px-5 py-2 fw-bold">مشاهده محصولات</a>
+            </div>
+        }
+        else
+        {
+            <div class="row g-3">
+                @foreach (var order in _orders)
+                {
+                    <div class="col-12">
+                        <div class="order-card p-4 rounded-4 shadow-sm bg-white">
+                            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                                <div>
+                                    <span class="text-muted small">کد سفارش:</span>
+                                    <span class="fw-bold ms-2" dir="ltr">@order.OrderNumber</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge fs-6 px-3 py-2 rounded-pill @GetStatusBadgeClass(order.Status)">@GetStatusText(order.Status)</span>
+                                </div>
+                            </div>
+
+                            <div class="row g-2 mb-3">
+                                @foreach (var item in order.Items)
+                                {
+                                    <div class="col-md-6">
+                                        <div class="d-flex gap-2 align-items-center">
+                                            <span class="text-muted small">@item.ProductName</span>
+                                            <span class="badge bg-secondary-subtle text-secondary">@item.Quantity عدد</span>
+                                            <span class="text-primary fw-bold small">@item.Price.ToString("N0") تومان</span>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="d-flex flex-wrap justify-content-between align-items-center pt-3 border-top">
+                                <div>
+                                    <span class="text-muted small">تاریخ ثبت:</span>
+                                    <span class="small ms-2">@PersianDate.ToJalaliDateTime(order.CreatedAt)</span>
+                                    @if (!string.IsNullOrEmpty(order.TrackingNumber))
+                                    {
+                                        <span class="text-muted small me-3">کد رهگیری:</span>
+                                        <span class="small ms-2" dir="ltr">@order.TrackingNumber</span>
+                                    }
+                                </div>
+                                <div class="fw-bold text-primary fs-5">@order.TotalAmount.ToString("N0") <small class="text-muted fs-6">تومان</small></div>
+                            </div>
+
+                            @if (order.Status == OrderStatus.PendingPayment)
+                            {
+                                <div class="mt-3 pt-3 border-top">
+                                    <a href="/payment/offline/@order.Id" class="btn btn-warning rounded-pill px-4 py-2 fw-bold">
+                                        <span class="oi oi-credit-card me-2"></span>ثبت رسید پرداخت
+                                    </a>
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(order.AdminNotes))
+                            {
+                                <div class="mt-3 pt-3 border-top small text-muted">
+                                    <span class="fw-bold">یادداشت مدیر:</span> @order.AdminNotes
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .order-card { border: 1px solid rgba(0,0,0,0.05); transition: transform 0.2s; }
+    .order-card:hover { transform: translateY(-2px); }
+    @@media (max-width: 576px) {
+        .my-orders-page .container { padding-inline: 0.75rem; }
+    }
+</style>
+
+@code {
+    private List<OrderDto>? _orders;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _orders = await Http.GetFromJsonAsync<List<OrderDto>>("api/orders/my");
+        }
+        catch
+        {
+            Toast.ShowError("خطا در دریافت سفارش‌ها");
+        }
+        _loading = false;
+    }
+
+    private string GetStatusText(OrderStatus status) => status switch
+    {
+        OrderStatus.PendingPayment => "در انتظار پرداخت",
+        OrderStatus.ReceiptUploaded => "در انتظار تایید",
+        OrderStatus.Approved => "تایید شده",
+        OrderStatus.Rejected => "رد شده",
+        OrderStatus.Cancelled => "لغو شده",
+        OrderStatus.Completed => "تکمیل شده",
+        _ => "نامشخص"
+    };
+
+    private string GetStatusBadgeClass(OrderStatus status) => status switch
+    {
+        OrderStatus.PendingPayment => "bg-warning text-dark",
+        OrderStatus.ReceiptUploaded => "bg-info text-white",
+        OrderStatus.Approved => "bg-success text-white",
+        OrderStatus.Rejected => "bg-danger text-white",
+        OrderStatus.Cancelled => "bg-secondary text-white",
+        OrderStatus.Completed => "bg-primary text-white",
+        _ => "bg-light text-dark"
+    };
+}

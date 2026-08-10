@@ -1,0 +1,795 @@
+@page "/admin/monitoring-devices"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.monitoring.devices.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using System.Text.RegularExpressions
+@using System.Globalization
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService ToastService
+@inject IJSRuntime JS
+
+<PageTitle>مدیریت دستگاه‌های مانیتورینگ</PageTitle>
+
+<div class="md-page" dir="rtl">
+    <div class="md-header">
+        <div>
+            <div class="md-kicker">سوپر ادمین</div>
+            <div class="md-title">مدیریت دستگاه‌های مانیتورینگ</div>
+        </div>
+        <button class="md-btn md-btn--ghost" @onclick="Reload">
+            <span class="oi oi-reload"></span>
+            بروزرسانی
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="md-card">
+            <div class="md-loading">
+                <div class="spinner-border text-primary"></div>
+                <div class="md-loading__text">در حال بارگذاری...</div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="md-tabs">
+            <button type="button" class="md-tab @(activeTab == 0 ? "active" : "")" @onclick="() => SetTab(0)">
+                <span class="oi oi-hard-drive"></span>
+                <span>دستگاه‌ها</span>
+            </button>
+            <button type="button" class="md-tab @(activeTab == 1 ? "active" : "")" @onclick="() => SetTab(1)">
+                <span class="oi oi-pulse"></span>
+                <span>تخصیص‌ها</span>
+            </button>
+        </div>
+
+        @if (activeTab == 0)
+        {
+            <div class="md-grid">
+                <div class="md-col">
+                    <div class="md-card">
+                        <div class="md-card__head">
+                            <div class="md-card__title">@(editingDeviceId == 0 ? "تعریف دستگاه" : "ویرایش دستگاه")</div>
+                            @if (editingDeviceId != 0)
+                            {
+                                <button class="md-btn md-btn--ghost" @onclick="ResetDeviceForm">
+                                    <span class="oi oi-x"></span>
+                                    انصراف
+                                </button>
+                            }
+                        </div>
+
+                        <EditForm Model="deviceModel" OnValidSubmit="SaveDevice">
+                            <DataAnnotationsValidator />
+                            <div class="md-field">
+                                <label class="md-label">عنوان</label>
+                                <InputText class="md-input" @bind-Value="deviceModel.Title" placeholder="مثلاً: دستگاه شماره 1" />
+                                <ValidationMessage For="@(() => deviceModel.Title)" class="md-val" />
+                            </div>
+
+                            <div class="md-field">
+                                <label class="md-label">شماره دستگاه</label>
+                                <InputText class="md-input ltr" @bind-Value="deviceModel.DeviceNumber" placeholder="مثلاً: MD-001" />
+                                <ValidationMessage For="@(() => deviceModel.DeviceNumber)" class="md-val" />
+                            </div>
+
+                            <div class="md-field md-field--row">
+                                <label class="md-check">
+                                    <InputCheckbox class="md-check__box" @bind-Value="deviceModel.IsActive" />
+                                    <span class="md-check__text">فعال</span>
+                                </label>
+                            </div>
+
+                            <div class="md-actions">
+                                <button type="submit" class="md-btn md-btn--primary" disabled="@isSavingDevice">
+                                    @(isSavingDevice ? "در حال ذخیره..." : "ذخیره")
+                                </button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+
+                <div class="md-col">
+                    <div class="md-card">
+                        <div class="md-card__head">
+                            <div class="md-card__title">لیست دستگاه‌ها</div>
+                            <div class="md-pill">@(allDevices?.Count ?? 0)</div>
+                        </div>
+
+                        <div class="md-search">
+                            <span class="oi oi-magnifying-glass md-search__icon"></span>
+                            <input type="text" class="md-search__input" placeholder="جستجو در دستگاه‌ها..." @bind="deviceSearchTerm" @bind:event="oninput" />
+                        </div>
+
+                        @if (allDevices == null || allDevices.Count == 0)
+                        {
+                            <div class="md-empty">دستگاهی ثبت نشده است.</div>
+                        }
+                        else
+                        {
+                            <div class="md-list">
+                                @foreach (var d in FilteredDevices)
+                                {
+                                    <div class="md-item">
+                                        <div class="md-item__main">
+                                            <div class="md-item__top">
+                                                <div class="md-item__title">
+                                                    <span class="md-item__device">@d.Title</span>
+                                                </div>
+                                                <div class="md-item__actions">
+                                                    <button type="button" class="md-act md-act--toggle @(d.IsActive ? "on" : "off")" @onclick="() => ToggleDeviceStatus(d.Id)" title="@(d.IsActive ? "غیرفعال کردن دستگاه" : "فعال کردن دستگاه")">
+                                                        @(d.IsActive ? "فعال" : "غیرفعال")
+                                                    </button>
+                                                    <button type="button" class="md-act md-act--edit" title="ویرایش" @onclick="() => StartEditDevice(d)">
+                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                                    </button>
+                                                    <button type="button" class="md-act md-act--del" title="حذف" @onclick="() => AskDeleteDevice(d)">
+                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="md-item__sub">
+                                                <span class="md-item__device-num">@d.DeviceNumber</span>
+                                                <span class="md-item__sep">•</span>
+                                                <span class="md-badge @(d.IsActive ? "md-badge--ok" : "md-badge--off")">@(d.IsActive ? "فعال" : "غیرفعال")</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="md-grid">
+                <div class="md-col">
+                    <div class="md-card" id="assignment-form">
+                        <div class="md-card__head">
+                            <div class="md-card__title">@(editingAssignmentId == 0 ? "اتصال دستگاه به کارگاه" : "ویرایش اتصال")</div>
+                            @if (editingAssignmentId != 0)
+                            {
+                                <button class="md-btn md-btn--ghost" @onclick="ResetAssignmentForm">
+                                    <span class="oi oi-x"></span>
+                                    انصراف
+                                </button>
+                            }
+                        </div>
+
+                        <EditForm Model="assignModel" OnValidSubmit="SaveAssignment">
+                            <DataAnnotationsValidator />
+
+                            <div class="md-field">
+                                <label class="md-label">دستگاه</label>
+                                <select class="md-input" @bind="assignModel.MonitoringDeviceId">
+                                    <option value="0">انتخاب کنید...</option>
+                                    @if (freeDevices != null)
+                                    {
+                                        @foreach (var d in freeDevices)
+                                        {
+                                            <option value="@d.Id">@d.Title (@d.DeviceNumber)</option>
+                                        }
+                                    }
+                                </select>
+                                <ValidationMessage For="@(() => assignModel.MonitoringDeviceId)" class="md-val" />
+                            </div>
+
+                            <div class="md-field">
+                                <label class="md-label">کارگاه</label>
+                                <select class="md-input" @bind="assignModel.WorkshopId">
+                                    <option value="0">انتخاب کنید...</option>
+                                    @if (workshops != null)
+                                    {
+                                        @foreach (var w in workshops)
+                                        {
+                                            <option value="@w.Id">@w.WorkshopName (@w.OwnerFullName)</option>
+                                        }
+                                    }
+                                </select>
+                                <ValidationMessage For="@(() => assignModel.WorkshopId)" class="md-val" />
+                            </div>
+
+                            <div class="md-field">
+                                <label class="md-label">تاریخ شروع فعالسازی (شمسی)</label>
+                                <input class="md-input ltr" data-jdp autocomplete="off" @bind="assignModel.StartDateFa" placeholder="انتخاب تاریخ..." />
+                                <ValidationMessage For="@(() => assignModel.StartDateFa)" class="md-val" />
+                            </div>
+
+                            <div class="md-field">
+                                <label class="md-label">تاریخ پایان (اختیاری)</label>
+                                <input class="md-input ltr" data-jdp autocomplete="off" @bind="assignModel.EndDateFa" placeholder="اختیاری" />
+                            </div>
+
+                            <div class="md-actions">
+                                <button type="submit" class="md-btn md-btn--success" disabled="@isSavingAssign">
+                                    @(isSavingAssign ? "در حال ثبت..." : editingAssignmentId == 0 ? "ثبت اتصال" : "ذخیره تغییرات")
+                                </button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+
+                <div class="md-col">
+                    <div class="md-card">
+                        <div class="md-card__head">
+                            <div class="md-card__title">تخصیص‌ها</div>
+                            <div class="md-pill">@(assignments?.Count ?? 0)</div>
+                        </div>
+
+                        <div class="md-search">
+                            <span class="oi oi-magnifying-glass md-search__icon"></span>
+                            <input type="text" class="md-search__input" placeholder="جستجو در تخصیص‌ها (نام کارگاه یا دستگاه)..." @bind="assignmentSearchTerm" @bind:event="oninput" />
+                        </div>
+
+                        @if (assignments == null || assignments.Count == 0)
+                        {
+                            <div class="md-empty">تخصیصی ثبت نشده است.</div>
+                        }
+                        else
+                        {
+                            <div class="md-list">
+                                @foreach (var a in FilteredAssignments)
+                                {
+                                    var device = allDevices?.FirstOrDefault(d => d.Id == a.MonitoringDeviceId);
+                                    var isExpired = !a.IsActiveNow && a.EndAt.HasValue && a.EndAt.Value <= DateTimeOffset.UtcNow;
+                                    var remainingDays = a.EndAt.HasValue ? (int)(a.EndAt.Value - DateTimeOffset.UtcNow).TotalDays : (int?)null;
+                                    var daysClass = remainingDays.HasValue && remainingDays <= 3 ? "md-badge--warn" : remainingDays.HasValue && remainingDays <= 7 ? "md-badge--amber" : "md-badge--ok";
+                                    <div class="md-item @(isExpired ? "md-item--expired" : "")">
+                                        <div class="md-item__main">
+                                            <div class="md-item__top">
+                                                <div class="md-item__title">
+                                                    <span class="md-item__device">@a.MonitoringDeviceTitle</span>
+                                                    <span class="md-item__code">@a.MonitoringDeviceNumber</span>
+                                                </div>
+                                                <div class="md-item__actions">
+                                                    @if (device != null)
+                                                    {
+                                                        <button type="button" class="md-act md-act--toggle @(device.IsActive ? "on" : "off")" @onclick="() => ToggleDeviceStatus(device.Id)" title="@(device.IsActive ? "غیرفعال کردن دستگاه" : "فعال کردن دستگاه")">
+                                                            @(device.IsActive ? "فعال" : "غیرفعال")
+                                                        </button>
+                                                    }
+                                                    <button type="button" class="md-act md-act--edit" title="ویرایش تخصیص" @onclick="() => StartEditAssignment(a)">
+                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                                    </button>
+                                                    <button type="button" class="md-act md-act--del" title="حذف تخصیص" @onclick="() => AskDeleteAssignment(a)">
+                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="md-item__sub">
+                                                <span class="md-item__workshop">@a.WorkshopName</span>
+                                                <span class="md-item__sep">•</span>
+                                                <span class="md-item__dates">از @a.StartDateFa تا @(string.IsNullOrWhiteSpace(a.EndDateFa) ? "نامحدود" : a.EndDateFa)</span>
+                                                <span class="md-item__sep">•</span>
+                                                @if (isExpired)
+                                                {
+                                                    <span class="md-badge md-badge--expired">منقضی</span>
+                                                }
+                                                else if (remainingDays.HasValue && remainingDays >= 0)
+                                                {
+                                                    <span class="md-badge @daysClass">@remainingDays روز باقی</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="md-badge md-badge--ok">نامحدود</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+</div>
+
+
+@if (showConfirmDelete)
+{
+    <ConfirmDialog IsVisible="showConfirmDelete"
+                   Title="حذف"
+                   Message="@confirmDeleteMessage"
+                   ConfirmText="حذف"
+                   IsDanger="true"
+                   OnResult="HandleDeleteResult" />
+}
+
+
+
+<style>
+
+    .md-page { max-width: 1100px; margin: 0 auto; padding: 10px 10px 40px; }
+
+    .md-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 12px 14px; border-radius: 18px; border: 1px solid rgba(2,6,23,0.06); background: rgba(255,255,255,0.75); backdrop-filter: blur(10px); }
+    .md-kicker { font-size: 0.72rem; font-weight: 900; color: rgba(100,116,139,0.95); }
+    .md-title { font-weight: 950; font-size: 1.05rem; color: #0f172a; }
+
+    .md-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .md-col { display: flex; flex-direction: column; gap: 12px; }
+
+    .md-card { background: #fff; border: 1px solid rgba(2,6,23,0.08); border-radius: 18px; padding: 16px; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.04); }
+    .md-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .md-card__title { font-weight: 950; font-size: 0.95rem; color: #0f172a; }
+
+    .md-field { display: grid; gap: 6px; margin-top: 10px; }
+    .md-field--row { display: flex; align-items: center; justify-content: space-between; }
+    .md-label { font-size: 0.8rem; font-weight: 900; color: rgba(100,116,139,0.95); }
+    .md-input { width: 100%; border-radius: 14px; border: 1px solid rgba(2,6,23,0.10); background: rgba(248,250,252,0.95); padding: 10px 12px; font-weight: 800; color: #0f172a; outline: none; }
+    .md-input:focus { border-color: rgba(79,70,229,0.35); box-shadow: 0 0 0 4px rgba(79,70,229,0.10); }
+
+    .md-actions { margin-top: 12px; display: flex; gap: 10px; }
+    .md-btn { border: none; border-radius: 14px; padding: 10px 12px; font-weight: 950; font-size: 0.82rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+    .md-btn--ghost { background: rgba(15, 23, 42, 0.05); color: rgba(15, 23, 42, 0.85); }
+    .md-btn--primary { background: linear-gradient(135deg, #4f46e5, #2563eb); color: #fff; box-shadow: 0 10px 20px rgba(79,70,229,0.18); flex: 1; }
+    .md-btn--success { background: linear-gradient(135deg, #10b981, #059669); color: #fff; box-shadow: 0 10px 20px rgba(16,185,129,0.18); flex: 1; }
+
+    .md-check { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+    .md-check__box { width: 18px; height: 18px; }
+    .md-check__text { font-weight: 900; font-size: 0.85rem; color: #0f172a; }
+
+    .md-val { font-size: 0.75rem; font-weight: 800; color: #dc2626; }
+    .md-loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 0; }
+    .md-loading__text { font-weight: 900; color: rgba(100,116,139,0.95); }
+    .md-note { margin-top: 12px; font-weight: 800; color: #64748b; }
+
+    .md-pill {
+        min-width: 30px;
+        height: 26px;
+        padding: 0 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: rgba(79, 70, 229, 0.10);
+        border: 1px solid rgba(79, 70, 229, 0.18);
+        color: rgba(67, 56, 202, 0.98);
+        font-weight: 950;
+        font-size: 0.78rem;
+    }
+
+    .md-empty { padding: 12px 4px; font-weight: 900; color: rgba(100,116,139,0.95); }
+    .md-list { display: grid; gap: 10px; }
+    .md-item {
+        display: flex;
+        padding: 14px 16px;
+        border-radius: 16px;
+        border: 1px solid rgba(2,6,23,0.08);
+        background: #fff;
+        transition: all 0.15s;
+    }
+    .md-item:hover { border-color: rgba(2,6,23,0.14); box-shadow: 0 4px 12px rgba(15,23,42,0.04); }
+    .md-item--expired { background: rgba(254,242,242,0.95); border-color: rgba(239,68,68,0.2); }
+    .md-item--expired:hover { border-color: rgba(239,68,68,0.35); box-shadow: 0 4px 12px rgba(239,68,68,0.08); }
+    .md-item__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+    .md-item__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .md-item__title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .md-item__device { font-weight: 950; font-size: 0.92rem; color: #0f172a; }
+    .md-item__code { font-weight: 800; font-size: 0.78rem; color: rgba(100,116,139,0.85); direction: ltr; }
+    .md-item__device-num { font-weight: 800; font-size: 0.78rem; color: rgba(37,99,235,0.9); direction: ltr; }
+    .md-item__sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.78rem; font-weight: 700; color: rgba(100,116,139,0.9); }
+    .md-item__workshop { color: rgba(37,99,235,0.95); font-weight: 800; }
+    .md-item__sep { color: rgba(148,163,184,0.5); font-size: 0.6rem; }
+    .md-item__dates { color: rgba(100,116,139,0.85); }
+
+    .md-item__actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+    .md-act {
+        display: inline-flex; align-items: center; gap: 5px;
+        border: none; cursor: pointer; font-weight: 900; font-size: 0.72rem;
+        padding: 6px 10px; border-radius: 10px;
+        transition: all 0.12s; white-space: nowrap;
+        text-decoration: none;
+    }
+    .md-act--toggle {
+        background: rgba(16,185,129,0.10); color: rgba(6,95,70,0.95);
+        border: 1px solid rgba(16,185,129,0.18);
+    }
+    .md-act--toggle:hover { background: rgba(16,185,129,0.18); }
+    .md-act--toggle.off { background: rgba(148,163,184,0.12); color: rgba(71,85,105,0.95); border-color: rgba(148,163,184,0.2); }
+    .md-act--toggle.off:hover { background: rgba(148,163,184,0.2); }
+    .md-act--edit {
+        background: rgba(59,130,246,0.08); color: rgba(37,99,235,0.95);
+        border: 1px solid rgba(59,130,246,0.15);
+        padding: 6px 8px;
+    }
+    .md-act--edit:hover { background: rgba(59,130,246,0.16); transform: translateY(-1px); }
+    .md-act--del {
+        background: rgba(239,68,68,0.08); color: rgba(185,28,28,0.95);
+        border: 1px solid rgba(239,68,68,0.15);
+        padding: 6px 8px;
+    }
+    .md-act--del:hover { background: rgba(239,68,68,0.18); transform: translateY(-1px); }
+
+    .md-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-weight: 950;
+        font-size: 0.7rem;
+        border: 1px solid rgba(2,6,23,0.08);
+        background: rgba(15,23,42,0.04);
+        white-space: nowrap;
+    }
+    .md-badge--ok { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.20); color: rgba(6,95,70,0.98); }
+    .md-badge--off { background: rgba(148,163,184,0.18); border-color: rgba(148,163,184,0.28); color: rgba(51,65,85,0.98); }
+    .md-badge--expired { background: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.20); color: rgba(185,28,28,0.98); }
+    .md-badge--warn { background: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.20); color: rgba(185,28,28,0.98); }
+    .md-badge--amber { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.20); color: rgba(146,64,14,0.98); }
+
+    @@media (max-width: 900px) { .md-grid { grid-template-columns: 1fr; } }
+
+    @@media (max-width: 640px) {
+        .md-item { padding: 12px; }
+        .md-item__top { flex-direction: column; align-items: stretch; gap: 8px; }
+        .md-item__actions { justify-content: flex-end; }
+        .md-item__sub { font-size: 0.72rem; }
+    }
+
+    /* Tabs System */
+    .md-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        padding: 4px;
+        background: rgba(241, 245, 249, 0.8);
+        border-radius: 20px;
+        border: 1px solid rgba(2, 6, 23, 0.05);
+    }
+    .md-tab {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px;
+        border: none;
+        background: transparent;
+        border-radius: 16px;
+        font-weight: 900;
+        font-size: 0.85rem;
+        color: #64748b;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .md-tab .oi { font-size: 1.1rem; }
+    .md-tab.active {
+        background: #fff;
+        color: #4f46e5;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.08);
+    }
+    .md-tab:not(.active):hover { background: rgba(255, 255, 255, 0.5); color: #0f172a; }
+
+    /* Search Styles */
+    .md-search {
+        position: relative;
+        margin-bottom: 12px;
+    }
+    .md-search__input {
+        width: 100%;
+        padding: 10px 40px 10px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        background: #fff;
+        font-weight: 800;
+        font-size: 0.85rem;
+        outline: none;
+        transition: all 0.2s;
+    }
+    .md-search__input:focus {
+        border-color: #4f46e5;
+        box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.05);
+    }
+    .md-search__icon {
+        position: absolute;
+        top: 50%;
+        right: 14px;
+        transform: translateY(-50%);
+        color: #94a3b8;
+        font-size: 0.9rem;
+    }
+</style>
+
+<script>
+    function scrollIntoView(id) {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+</script>
+
+@code {
+    private bool isLoading = true;
+    private int activeTab = 0;
+
+    private void SetTab(int tab) => activeTab = tab;
+
+    private bool isSavingDevice;
+    private int editingDeviceId;
+    private MonitoringDeviceUpsertRequest deviceModel = new();
+
+    private bool isSavingAssign;
+    private int editingAssignmentId;
+    private MonitoringDeviceAssignRequest assignModel = new();
+
+    private List<MonitoringDeviceDto>? freeDevices;
+    private List<MonitoringDeviceDto>? allDevices;
+    private string deviceSearchTerm = "";
+    private string assignmentSearchTerm = "";
+
+    private IEnumerable<MonitoringDeviceDto> FilteredDevices =>
+        (string.IsNullOrWhiteSpace(deviceSearchTerm)
+        ? (allDevices ?? Enumerable.Empty<MonitoringDeviceDto>())
+        : (allDevices ?? Enumerable.Empty<MonitoringDeviceDto>()).Where(x => x.Title.Contains(deviceSearchTerm, StringComparison.OrdinalIgnoreCase) || x.DeviceNumber.Contains(deviceSearchTerm, StringComparison.OrdinalIgnoreCase)))
+        .OrderBy(x => ExtractNumber(x.DeviceNumber));
+
+    private IEnumerable<MonitoringDeviceAssignmentDto> FilteredAssignments =>
+        (string.IsNullOrWhiteSpace(assignmentSearchTerm)
+        ? (assignments ?? Enumerable.Empty<MonitoringDeviceAssignmentDto>())
+        : (assignments ?? Enumerable.Empty<MonitoringDeviceAssignmentDto>()).Where(x => x.MonitoringDeviceTitle.Contains(assignmentSearchTerm, StringComparison.OrdinalIgnoreCase) || x.MonitoringDeviceNumber.Contains(assignmentSearchTerm, StringComparison.OrdinalIgnoreCase) || x.WorkshopName.Contains(assignmentSearchTerm, StringComparison.OrdinalIgnoreCase)))
+        .OrderBy(x => ExtractNumber(x.MonitoringDeviceNumber));
+
+    private static string NormalizeDigits(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        var sb = new System.Text.StringBuilder(value.Length);
+        foreach (var c in value)
+        {
+            if (c >= '\u06F0' && c <= '\u06F9') sb.Append((char)('0' + (c - '\u06F0')));
+            else if (c >= '\u0660' && c <= '\u0669') sb.Append((char)('0' + (c - '\u0660')));
+            else sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    private static long ExtractNumber(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return 0;
+        var normalized = NormalizeDigits(value);
+        var match = Regex.Match(normalized, @"\d+");
+        return match.Success && long.TryParse(match.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var num) ? num : 0;
+    }
+
+    private List<WorkshopDto>? workshops;
+    private List<MonitoringDeviceAssignmentDto>? assignments;
+
+    private bool showConfirmDelete;
+    private string confirmDeleteMessage = "";
+    private Func<Task>? onConfirmAction;
+
+    private async Task HandleDeleteResult(bool confirmed)
+    {
+        showConfirmDelete = false;
+        if (confirmed && onConfirmAction != null)
+        {
+            await onConfirmAction();
+        }
+        onConfirmAction = null;
+    }
+
+    private void AskDeleteDevice(MonitoringDeviceDto d)
+    {
+        confirmDeleteMessage = $"آیا از حذف دستگاه \"{d.Title}\" اطمینان دارید؟ این عمل غیرقابل بازگشت است.";
+        onConfirmAction = () => DeleteDevice(d);
+        showConfirmDelete = true;
+    }
+
+    private void AskDeleteAssignment(MonitoringDeviceAssignmentDto a)
+    {
+        confirmDeleteMessage = $"آیا از حذف تخصیص دستگاه \"{a.MonitoringDeviceTitle}\" به کارگاه \"{a.WorkshopName}\" اطمینان دارید؟";
+        onConfirmAction = () => DeleteAssignment(a);
+        showConfirmDelete = true;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        try
+        {
+            isLoading = true;
+            allDevices = await Http.GetFromJsonAsync<List<MonitoringDeviceDto>>("api/monitoring-devices");
+            freeDevices = await Http.GetFromJsonAsync<List<MonitoringDeviceDto>>("api/monitoring-devices?onlyFree=true");
+            workshops = await Http.GetFromJsonAsync<List<WorkshopDto>>("api/workshops");
+            assignments = await Http.GetFromJsonAsync<List<MonitoringDeviceAssignmentDto>>("api/monitoring-devices/assignments");
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در دریافت اطلاعات");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ToggleDeviceStatus(int deviceId)
+    {
+        try
+        {
+            var resp = await Http.PatchAsync($"api/monitoring-devices/{deviceId}/toggle", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                await Reload();
+                ToastService.ShowSuccess("وضعیت دستگاه تغییر کرد");
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در تغییر وضعیت");
+        }
+    }
+
+    private void ResetDeviceForm()
+    {
+        editingDeviceId = 0;
+        deviceModel = new MonitoringDeviceUpsertRequest();
+    }
+
+    private void StartEditDevice(MonitoringDeviceDto d)
+    {
+        editingDeviceId = d.Id;
+        deviceModel = new MonitoringDeviceUpsertRequest
+        {
+            Title = d.Title,
+            DeviceNumber = d.DeviceNumber,
+            IsActive = d.IsActive
+        };
+    }
+
+    private async Task DeleteDevice(MonitoringDeviceDto d)
+    {
+        try
+        {
+            var resp = await Http.DeleteWithFallbackAsync($"api/monitoring-devices/{d.Id}");
+            if (!resp.IsSuccessStatusCode)
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در حذف دستگاه" : msg);
+                return;
+            }
+
+            ToastService.ShowSuccess("دستگاه حذف شد");
+            await Reload();
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در حذف دستگاه");
+        }
+    }
+
+    private async Task SaveDevice()
+    {
+        try
+        {
+            isSavingDevice = true;
+
+            if (editingDeviceId == 0)
+            {
+                var resp = await Http.PostAsJsonAsync("api/monitoring-devices", deviceModel);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var msg = await resp.Content.ReadAsStringAsync();
+                    ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ذخیره دستگاه" : msg);
+                    return;
+                }
+
+                ToastService.ShowSuccess("دستگاه ایجاد شد");
+                ResetDeviceForm();
+            }
+            else
+            {
+                var resp = await Http.PutWithFallbackAsync($"api/monitoring-devices/{editingDeviceId}", deviceModel);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var msg = await resp.Content.ReadAsStringAsync();
+                    ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ذخیره دستگاه" : msg);
+                    return;
+                }
+
+                ToastService.ShowSuccess("تغییرات ذخیره شد");
+                ResetDeviceForm();
+            }
+
+            await Reload();
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در ذخیره دستگاه");
+        }
+        finally
+        {
+            isSavingDevice = false;
+        }
+    }
+
+    private void ResetAssignmentForm()
+    {
+        editingAssignmentId = 0;
+        assignModel = new MonitoringDeviceAssignRequest();
+    }
+
+    private async Task StartEditAssignment(MonitoringDeviceAssignmentDto a)
+    {
+        editingAssignmentId = a.Id;
+        assignModel = new MonitoringDeviceAssignRequest
+        {
+            MonitoringDeviceId = a.MonitoringDeviceId,
+            WorkshopId = a.WorkshopId,
+            StartDateFa = a.StartDateFa,
+            EndDateFa = a.EndDateFa
+        };
+        await Task.Delay(50);
+        await JS.InvokeVoidAsync("scrollIntoView", "assignment-form");
+    }
+
+    private async Task SaveAssignment()
+    {
+        try
+        {
+            isSavingAssign = true;
+
+            HttpResponseMessage resp;
+            if (editingAssignmentId == 0)
+            {
+                resp = await Http.PostAsJsonAsync("api/monitoring-devices/assignments", assignModel);
+            }
+            else
+            {
+                resp = await Http.PutWithFallbackAsync($"api/monitoring-devices/assignments/{editingAssignmentId}", assignModel);
+            }
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ثبت اتصال" : msg);
+                return;
+            }
+
+            ToastService.ShowSuccess(editingAssignmentId == 0 ? "اتصال ثبت شد" : "تغییرات ذخیره شد");
+            ResetAssignmentForm();
+            await Reload();
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در ثبت اتصال");
+        }
+        finally
+        {
+            isSavingAssign = false;
+        }
+    }
+
+    private async Task DeleteAssignment(MonitoringDeviceAssignmentDto a)
+    {
+        try
+        {
+            var resp = await Http.DeleteWithFallbackAsync($"api/monitoring-devices/assignments/{a.Id}");
+            if (!resp.IsSuccessStatusCode)
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در حذف تخصیص" : msg);
+                return;
+            }
+
+            ToastService.ShowSuccess("تخصیص حذف شد");
+            await Reload();
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در حذف تخصیص");
+        }
+    }
+}

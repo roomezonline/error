@@ -1,0 +1,33 @@
+@page "/admin/monitoring/details"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.monitoring.details.view")]
+@using ErrorService.Client.Shared.Components
+
+<MonitoringDetailsView
+    Id="@Id"
+    CustomerReceiptId="@CustomerReceiptId"
+    CustomerName="@CustomerName"
+    CustomerMobile="@CustomerMobile"
+    DeviceTitle="@DeviceTitle"
+    ProblemDescription="@ProblemDescription"
+    MonitoringDeviceTitle="@MonitoringDeviceTitle"
+    WorkshopName="@WorkshopName"
+    CreatedAtFa="@CreatedAtFa"
+    CreatedByUserName="@CreatedByUserName"
+    Code="@Code"
+    IsReadOnly="false" />
+
+@code {
+    [SupplyParameterFromQuery] public int Id { get; set; }
+    [SupplyParameterFromQuery] public int CustomerReceiptId { get; set; }
+    [SupplyParameterFromQuery] public string CustomerName { get; set; } = "";
+    [SupplyParameterFromQuery] public string CustomerMobile { get; set; } = "";
+    [SupplyParameterFromQuery] public string DeviceTitle { get; set; } = "";
+    [SupplyParameterFromQuery] public string ProblemDescription { get; set; } = "";
+    [SupplyParameterFromQuery] public string MonitoringDeviceTitle { get; set; } = "";
+    [SupplyParameterFromQuery] public string WorkshopName { get; set; } = "";
+    [SupplyParameterFromQuery] public string CreatedAtFa { get; set; } = "";
+    [SupplyParameterFromQuery] public string CreatedByUserName { get; set; } = "";
+    [SupplyParameterFromQuery] public string Code { get; set; } = "";
+}

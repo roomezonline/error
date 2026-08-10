@@ -1,0 +1,420 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+@if (Visible)
+{
+    <div class="share-modal-overlay" @onclick="Close">
+        <div class="share-modal" @onclick:stopPropagation>
+            <div class="share-modal-header">
+                <h3>@HeaderTitle</h3>
+                <button class="share-modal-close" @onclick="Close" aria-label="بستن">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <div class="share-modal-preview">
+                @if (!string.IsNullOrEmpty(ImageUrl))
+                {
+                    <img src="@ImageUrl" alt="@PreviewTitle" class="share-modal-preview-img" />
+                }
+                <div class="share-modal-preview-info">
+                    <span class="share-modal-preview-title">@PreviewTitle</span>
+                    @if (!string.IsNullOrEmpty(PreviewDescription))
+                    {
+                        <span class="share-modal-preview-desc">@TruncateText(PreviewDescription, 120)</span>
+                    }
+                </div>
+            </div>
+
+            <div class="share-modal-options">
+                <button class="share-modal-option share-modal-whatsapp" @onclick="ShareWhatsApp" title="اشتراک در واتساپ">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/></svg>
+                    <span>واتساپ</span>
+                </button>
+                <button class="share-modal-option share-modal-telegram" @onclick="ShareTelegram" title="اشتراک در تلگرام">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#0088cc"><path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                    <span>تلگرام</span>
+                </button>
+                <button class="share-modal-option share-modal-twitter" @onclick="ShareTwitter" title="اشتراک در X">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#000"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                    <span>X (توییتر)</span>
+                </button>
+                <button class="share-modal-option share-modal-email" @onclick="ShareEmail" title="اشتراک از طریق ایمیل">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ea4335" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    <span>ایمیل</span>
+                </button>
+                <button class="share-modal-option share-modal-native" @onclick="ShareNative" title="اشتراک‌گذاری پیشرفته">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                    <span>اشتراک پیشرفته</span>
+                </button>
+                <button class="share-modal-option share-modal-copy" @onclick="CopyRich" title="کپی لینک و توضیحات">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6c757d" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                    <span>کپی لینک + متن</span>
+                </button>
+            </div>
+
+            <div class="share-modal-url">
+                <span class="share-modal-url-label">لینک @LinkLabel:</span>
+                <div class="share-modal-url-row">
+                    <span class="share-modal-url-text">@ShareUrl</span>
+                    <button class="share-modal-url-copy" @onclick="CopyUrl">کپی</button>
+                </div>
+            </div>
+
+            <div class="share-modal-feedback @_feedbackClass" aria-live="polite">@_feedbackText</div>
+        </div>
+    </div>
+}
+
+<style>
+    .share-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        padding: 16px;
+        backdrop-filter: blur(3px);
+    }
+    .share-modal {
+        background: #fff;
+        border-radius: 20px;
+        max-width: 420px;
+        width: 100%;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        direction: rtl;
+        animation: share-modal-in 0.25s ease;
+    }
+    @@keyframes share-modal-in {
+        from { opacity: 0; transform: scale(0.92) translateY(10px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .share-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 20px 12px;
+        border-bottom: 1px solid #e9ecef;
+    }
+    .share-modal-header h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin: 0;
+        color: #212529;
+    }
+    .share-modal-close {
+        width: 36px;
+        height: 36px;
+        border: none;
+        background: #f1f3f4;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: #475569;
+        transition: background 0.2s;
+        padding: 0;
+    }
+    .share-modal-close:hover { background: #e2e5e7; }
+    .share-modal-preview {
+        display: flex;
+        gap: 12px;
+        padding: 16px 20px;
+        background: #f8fafc;
+        margin: 0 16px;
+        border-radius: 12px;
+        margin-top: 12px;
+    }
+    .share-modal-preview-img {
+        width: 72px;
+        height: 72px;
+        object-fit: cover;
+        border-radius: 10px;
+        flex-shrink: 0;
+    }
+    .share-modal-preview-info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+    }
+    .share-modal-preview-title {
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: #1e293b;
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .share-modal-preview-desc {
+        font-size: 0.82rem;
+        color: #64748b;
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .share-modal-options {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        padding: 16px 20px;
+    }
+    .share-modal-option {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 12px 4px;
+        border: 1px solid #e9ecef;
+        border-radius: 14px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #475569;
+        transition: all 0.15s;
+        min-height: 64px;
+    }
+    .share-modal-option:hover {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+        transform: translateY(-1px);
+    }
+    .share-modal-whatsapp:hover { color: #25D366; }
+    .share-modal-telegram:hover { color: #0088cc; }
+    .share-modal-twitter:hover { color: #000; }
+    .share-modal-email:hover { color: #ea4335; }
+    .share-modal-native:hover { color: #4f46e5; }
+    .share-modal-copy:hover { color: #6c757d; }
+    .share-modal-url {
+        padding: 10px 20px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .share-modal-url-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #475569;
+    }
+    .share-modal-url-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #f8fafc;
+        border: 1px solid #e9ecef;
+        border-radius: 10px;
+        padding: 8px 12px;
+    }
+    .share-modal-url-text {
+        flex: 1;
+        font-size: 0.82rem;
+        color: #64748b;
+        direction: ltr;
+        text-align: left;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .share-modal-url-copy {
+        flex-shrink: 0;
+        padding: 4px 14px;
+        border: none;
+        background: #4f46e5;
+        color: #fff;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    .share-modal-url-copy:hover { background: #4338ca; }
+    .share-modal-feedback {
+        text-align: center;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 0 20px 14px;
+        min-height: 0;
+        opacity: 0;
+        transition: opacity 0.25s;
+    }
+    .share-modal-feedback.show { opacity: 1; }
+    .share-modal-feedback.success { color: #16a34a; }
+    .share-modal-feedback.error { color: #dc2626; }
+
+    @@media (max-width: 576px) {
+        .share-modal-options { grid-template-columns: repeat(2, 1fr); }
+    }
+    @@media (prefers-color-scheme: dark) {
+        .share-modal { background: #1e293b; }
+        .share-modal-header { border-bottom-color: #334155; }
+        .share-modal-header h3 { color: #f1f5f9; }
+        .share-modal-close { background: #334155; color: #94a3b8; }
+        .share-modal-preview { background: #0f172a; }
+        .share-modal-preview-title { color: #f1f5f9; }
+        .share-modal-preview-desc { color: #94a3b8; }
+        .share-modal-option { background: #1e293b; border-color: #334155; color: #94a3b8; }
+        .share-modal-option:hover { background: #334155; border-color: #475569; }
+        .share-modal-url-row { background: #0f172a; border-color: #334155; }
+        .share-modal-url-text { color: #94a3b8; }
+    }
+    @@media (prefers-reduced-motion: reduce) {
+        .share-modal { animation: none; }
+    }
+</style>
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public string HeaderTitle { get; set; } = "اشتراک‌گذاری";
+    [Parameter] public string LinkLabel { get; set; } = "مطلب";
+    [Parameter] public string? ImageUrl { get; set; }
+    [Parameter] public string PreviewTitle { get; set; } = "";
+    [Parameter] public string? PreviewDescription { get; set; }
+    [Parameter] public string ShareUrl { get; set; } = "";
+    [Parameter] public Func<string> GetShareText { get; set; } = () => "";
+    [Parameter] public Func<string> GetShareTelegramText { get; set; } = () => "";
+
+    private string _feedbackText = "";
+    private string _feedbackClass = "";
+    private CancellationTokenSource? _cts;
+
+    private async Task Close()
+    {
+        _cts?.Cancel();
+        _feedbackText = "";
+        _feedbackClass = "";
+        await OnClose.InvokeAsync();
+    }
+
+    private void ShareWhatsApp()
+    {
+        var text = GetShareText();
+        var url = $"https://wa.me/?text={Uri.EscapeDataString(text)}";
+        Nav.NavigateTo(url);
+    }
+
+    private void ShareTelegram()
+    {
+        var telegramText = GetShareTelegramText();
+        var text = string.IsNullOrEmpty(telegramText) ? GetShareText() : telegramText;
+        var url = $"https://t.me/share/url?url={Uri.EscapeDataString(ShareUrl)}&text={Uri.EscapeDataString(text)}";
+        Nav.NavigateTo(url);
+    }
+
+    private void ShareTwitter()
+    {
+        var text = PreviewTitle;
+        var url = $"https://x.com/intent/tweet?text={Uri.EscapeDataString(text)}&url={Uri.EscapeDataString(ShareUrl)}";
+        Nav.NavigateTo(url);
+    }
+
+    private void ShareEmail()
+    {
+        var subject = $"{PreviewTitle} | ارور سرویس";
+        var body = GetShareText();
+        var url = $"mailto:?subject={Uri.EscapeDataString(subject)}&body={Uri.EscapeDataString(body)}";
+        Nav.NavigateTo(url);
+    }
+
+    private async Task ShareNative()
+    {
+        try
+        {
+            var shareData = new
+            {
+                title = PreviewTitle,
+                text = GetShareText(),
+                url = ShareUrl
+            };
+            await JS.InvokeVoidAsync("navigator.share", shareData);
+        }
+        catch { }
+    }
+
+    private async Task CopyUrl()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        try
+        {
+            await JS.InvokeVoidAsync("__copyToClipboard", ShareUrl);
+            if (token.IsCancellationRequested) return;
+            _feedbackText = "لینک کپی شد";
+            _feedbackClass = "show success";
+            StateHasChanged();
+            await Task.Delay(2500, token);
+            _feedbackText = "";
+            _feedbackClass = "";
+            StateHasChanged();
+        }
+        catch (OperationCanceledException) { }
+        catch
+        {
+            if (token.IsCancellationRequested) return;
+            _feedbackText = "خطا در کپی";
+            _feedbackClass = "show error";
+            StateHasChanged();
+            await Task.Delay(2000, token);
+            _feedbackText = "";
+            _feedbackClass = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task CopyRich()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        try
+        {
+            var text = GetShareText();
+            await JS.InvokeVoidAsync("__copyToClipboard", text);
+            if (token.IsCancellationRequested) return;
+            _feedbackText = "متن با موفقیت کپی شد";
+            _feedbackClass = "show success";
+            StateHasChanged();
+            await Task.Delay(2500, token);
+            _feedbackText = "";
+            _feedbackClass = "";
+            StateHasChanged();
+        }
+        catch (OperationCanceledException) { }
+        catch
+        {
+            if (token.IsCancellationRequested) return;
+            _feedbackText = "خطا در کپی";
+            _feedbackClass = "show error";
+            StateHasChanged();
+            await Task.Delay(2000, token);
+            _feedbackText = "";
+            _feedbackClass = "";
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+
+    private static string TruncateText(string text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= maxLength) return text ?? "";
+        return text.Substring(0, maxLength - 3) + "...";
+    }
+}

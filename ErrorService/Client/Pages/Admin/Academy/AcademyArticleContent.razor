@@ -1,0 +1,621 @@
+@page "/admin/academy/articles/{ArticleId:int}/content"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.academy.articles.content.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Client.Services
+@inject IJSRuntime JS
+@inject ToastService ToastService
+@inject HttpClient Http
+
+<ConfirmDialog IsVisible="showConfirm"
+               Title="حذف بلوک"
+               Message="آیا از حذف این بلوک اطمینان دارید؟"
+               OnResult="HandleDeleteResult" />
+
+<div class="admin-container" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1">
+                    <li class="breadcrumb-item"><a href="/admin/academy/articles">آموزش‌های تک‌قسمتی</a></li>
+                    <li class="breadcrumb-item active">مدیریت محتوا</li>
+                </ol>
+            </nav>
+            <h3 class="admin-page-title m-0">@article?.Title</h3>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary rounded-3" @onclick="NewBlock">
+                <span class="oi oi-plus me-1"></span> افزودن بلوک محتوایی
+            </button>
+            <a href="/academy/articles/@ArticleId" target="_blank" class="btn btn-light rounded-3">مشاهده در سایت</a>
+        </div>
+    </div>
+
+    @if (showBlockEditor)
+    {
+        <div class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
+            <h5 class="fw-bold mb-4">@(editingBlockId == 0 ? "افزودن بلوک جدید" : "ویرایش بلوک")</h5>
+            <EditForm Model="blockModel" OnValidSubmit="SaveBlock">
+                <DataAnnotationsValidator />
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">نوع محتوا</label>
+                        <InputSelect @bind-Value="blockModel.BlockType" class="form-select rounded-3">
+                            <option value="@TrainingBlockTypeDto.Text">متن / HTML</option>
+                            <option value="@TrainingBlockTypeDto.Image">تصویر</option>
+                            <option value="@TrainingBlockTypeDto.Video">ویدیو</option>
+                            <option value="@TrainingBlockTypeDto.Audio">صوت</option>
+                            <option value="@TrainingBlockTypeDto.File">فایل ضمیمه</option>
+                            <option value="@TrainingBlockTypeDto.Embed">کد Embed</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">عنوان بلوک (اختیاری)</label>
+                        <InputText @bind-Value="blockModel.Title" class="form-control rounded-3" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">ترتیب نمایش</label>
+                        <InputNumber @bind-Value="blockModel.SortOrder" class="form-control rounded-3" />
+                    </div>
+
+                    @if (blockModel.BlockType == TrainingBlockTypeDto.Text)
+                    {
+                        <div class="col-12">
+                            <label class="form-label fw-bold">متن محتوا</label>
+                            <div class="editor-container">
+                                <textarea id="tiny-editor" class="form-control">@blockModel.Content</textarea>
+                            </div>
+                        </div>
+                    }
+                    else if (blockModel.BlockType == TrainingBlockTypeDto.Image)
+                    {
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold">آدرس تصویر</label>
+                            <div class="input-group">
+                                <InputText @bind-Value="blockModel.Url" class="form-control rounded-3-start" placeholder="آدرس تصویر یا آپلود کنید..." />
+                                <div class="position-relative overflow-hidden btn btn-secondary rounded-3-end">
+                                    <span class="oi oi-cloud-upload"></span> آپلود
+                                    <InputFile OnChange="HandleImageUpload" class="position-absolute opacity-0" style="inset: 0; cursor: pointer;" accept="image/*" />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">متن جایگزین (Alt)</label>
+                            <InputText @bind-Value="blockModel.Content" class="form-control rounded-3" placeholder="توضیح کوتاه تصویر" />
+                        </div>
+                        @if (!string.IsNullOrEmpty(blockModel.Url))
+                        {
+                            <div class="col-12">
+                                <div class="image-preview-box rounded-3 p-3 bg-light">
+                                    <img src="@blockModel.Url" class="img-preview" alt="پیش‌نمایش" />
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (blockModel.BlockType == TrainingBlockTypeDto.Video)
+                    {
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold">آدرس ویدیو</label>
+                            <InputText @bind-Value="blockModel.Url" class="form-control rounded-3" placeholder="https://example.com/video.mp4" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">تصویر بندانگشتی (اختیاری)</label>
+                            <div class="input-group">
+                                <InputText @bind-Value="blockModel.ThumbnailUrl" class="form-control rounded-3-start" placeholder="آدرس تصویر" />
+                                <div class="position-relative overflow-hidden btn btn-secondary rounded-3-end">
+                                    <span class="oi oi-image"></span>
+                                    <InputFile OnChange="HandleThumbUpload" class="position-absolute opacity-0" style="inset: 0; cursor: pointer;" accept="image/*" />
+                                </div>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(blockModel.Url))
+                        {
+                            <div class="col-12">
+                                <div class="image-preview-box rounded-3 p-3 bg-light">
+                                    <video controls style="max-height: 200px; max-width: 100%;">
+                                        <source src="@blockModel.Url" />
+                                    </video>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (blockModel.BlockType == TrainingBlockTypeDto.Audio)
+                    {
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold">آدرس فایل صوتی</label>
+                            <div class="input-group">
+                                <InputText @bind-Value="blockModel.Url" class="form-control rounded-3-start" placeholder="https://example.com/audio.mp3" />
+                                <div class="position-relative overflow-hidden btn btn-secondary rounded-3-end">
+                                    <span class="oi oi-cloud-upload"></span> آپلود
+                                    <InputFile OnChange="HandleAudioUpload" class="position-absolute opacity-0" style="inset: 0; cursor: pointer;" accept="audio/*" />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">توضیح (اختیاری)</label>
+                            <InputText @bind-Value="blockModel.Content" class="form-control rounded-3" placeholder="توضیح درباره فایل صوتی" />
+                        </div>
+                        @if (!string.IsNullOrEmpty(blockModel.Url))
+                        {
+                            <div class="col-12">
+                                <div class="image-preview-box rounded-3 p-3 bg-dark">
+                                    <audio controls style="width: 100%;">
+                                        <source src="@blockModel.Url" />
+                                    </audio>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (blockModel.BlockType == TrainingBlockTypeDto.File)
+                    {
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold">فایل ضمیمه</label>
+                            <div class="input-group">
+                                <InputText @bind-Value="blockModel.Url" class="form-control rounded-3-start" placeholder="آدرس فایل یا آپلود کنید..." />
+                                <div class="position-relative overflow-hidden btn btn-secondary rounded-3-end">
+                                    <span class="oi oi-cloud-upload"></span> آپلود فایل
+                                    <InputFile OnChange="HandleFileUpload" class="position-absolute opacity-0" style="inset: 0; cursor: pointer;" />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">نام نمایشی (اختیاری)</label>
+                            <InputText @bind-Value="blockModel.Title" class="form-control rounded-3" placeholder="مثلاً: نقشه شماتیک برد" />
+                        </div>
+                    }
+                    else if (blockModel.BlockType == TrainingBlockTypeDto.Embed)
+                    {
+                        <div class="col-12">
+                            <label class="form-label fw-bold">کد Embed</label>
+                            <InputTextArea @bind-Value="blockModel.Content" class="form-control rounded-3 font-monospace" rows="5" placeholder="<iframe src='...'></iframe>" />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold">آدرس منبع (اختیاری)</label>
+                            <InputText @bind-Value="blockModel.Url" class="form-control rounded-3" placeholder="https://example.com" />
+                        </div>
+                        @if (!string.IsNullOrEmpty(blockModel.Content))
+                        {
+                            <div class="col-12">
+                                <label class="form-label small text-muted">پیش‌نمایش:</label>
+                                <div class="embed-preview-box rounded-3 p-3 bg-light border">
+                                    @((MarkupString)blockModel.Content)
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+                    <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseBlockEditor">انصراف</button>
+                    <button type="submit" class="btn btn-primary rounded-3 px-4 shadow-sm" disabled="@isSavingBlock">
+                        @if (isSavingBlock) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        ذخیره بلوک
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    }
+
+    <div class="blocks-list">
+        @if (article?.Blocks == null)
+        {
+            <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+        }
+        else if (!article.Blocks.Any())
+        {
+            <div class="card border-0 shadow-sm rounded-4 p-5 text-center text-muted">
+                <span class="oi oi-layers display-4 mb-3"></span>
+                <p>هنوز هیچ محتوایی برای این آموزش اضافه نشده است.</p>
+                <button class="btn btn-primary rounded-pill px-4 mx-auto" @onclick="NewBlock">شروع کنید</button>
+            </div>
+        }
+        else
+        {
+            @foreach (var block in article.Blocks.OrderBy(x => x.SortOrder))
+            {
+                <div class="card border-0 shadow-sm rounded-4 mb-3 overflow-hidden block-item animate__animated animate__fadeInUp" @key="block.Id">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="badge bg-light text-dark rounded-pill border">@block.SortOrder</span>
+                            <span class="block-type-badge @GetBlockTypeBadgeClass(block.BlockType)">
+                                @GetBlockTypeIcon(block.BlockType)
+                                @GetBlockTypeName(block.BlockType)
+                            </span>
+                            @if (!string.IsNullOrEmpty(block.Title))
+                            {
+                                <span class="text-muted">| @block.Title</span>
+                            }
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-primary border-0 rounded-circle" @onclick="() => MoveBlockUp(block)" title="بالا"><span class="oi oi-chevron-top"></span></button>
+                            <button class="btn btn-sm btn-outline-primary border-0 rounded-circle" @onclick="() => MoveBlockDown(block)" title="پایین"><span class="oi oi-chevron-bottom"></span></button>
+                            <button class="btn btn-sm btn-outline-secondary border-0 rounded-circle" @onclick="() => EditBlock(block)" title="ویرایش"><span class="oi oi-pencil"></span></button>
+                            <button class="btn btn-sm btn-outline-danger border-0 rounded-circle" @onclick="() => AskDelete(block)" title="حذف"><span class="oi oi-trash"></span></button>
+                        </div>
+                    </div>
+                    <div class="card-body pt-0">
+                        @switch (block.BlockType)
+                        {
+                            case TrainingBlockTypeDto.Text:
+                                <div class="block-preview-text text-muted small">@TruncateText(StripHtml(block.Content ?? ""), 200)</div>
+                                break;
+                            case TrainingBlockTypeDto.Image:
+                                <div class="block-preview-media">
+                                    <img src="@block.Url" alt="@block.Title" class="block-preview-img" />
+                                </div>
+                                break;
+                            case TrainingBlockTypeDto.Video:
+                                <div class="block-preview-media position-relative">
+                                    @if (!string.IsNullOrEmpty(block.ThumbnailUrl))
+                                    {
+                                        <img src="@block.ThumbnailUrl" alt="@block.Title" class="block-preview-img" />
+                                    }
+                                    <div class="block-preview-overlay">
+                                        <span class="oi oi-video"></span> @block.Url
+                                    </div>
+                                </div>
+                                break;
+                            case TrainingBlockTypeDto.Audio:
+                                <div class="block-preview-media d-flex align-items-center gap-2 text-muted small p-2">
+                                    <span class="oi oi-volume-high fs-5"></span>
+                                    <span>@block.Url</span>
+                                </div>
+                                break;
+                            case TrainingBlockTypeDto.File:
+                                <div class="block-preview-media d-flex align-items-center gap-2 text-primary small p-2">
+                                    <span class="oi oi-file fs-5"></span>
+                                    <span>@block.Url</span>
+                                </div>
+                                break;
+                            case TrainingBlockTypeDto.Embed:
+                                <div class="block-preview-media d-flex align-items-center gap-2 text-muted small p-2">
+                                    <span class="oi oi-code fs-5"></span>
+                                    <span>@TruncateText(block.Content ?? "", 150)</span>
+                                </div>
+                                break;
+                        }
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .rounded-3-start { border-top-left-radius: 0; border-bottom-left-radius: 0; border-top-right-radius: 12px; border-bottom-right-radius: 12px; }
+    .rounded-3-end { border-top-right-radius: 0; border-bottom-right-radius: 0; border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
+    .block-item { border-right: 4px solid #0d6efd !important; }
+    .image-preview-box { min-height: 100px; display: flex; align-items: center; justify-content: center; }
+    .img-preview { max-height: 200px; max-width: 100%; object-fit: contain; border-radius: 0.5rem; }
+    .block-type-badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.65rem; border-radius: 2rem; font-size: 0.78rem; font-weight: 600; }
+    .block-preview-text { max-height: 60px; overflow: hidden; }
+    .block-preview-media { position: relative; border-radius: 0.5rem; overflow: hidden; background: #f8f9fa; }
+    .block-preview-img { max-height: 80px; width: auto; object-fit: contain; display: block; }
+    .block-preview-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 0.5rem; background: rgba(0,0,0,0.4); color: #fff; font-size: 0.8rem; }
+    .embed-preview-box { overflow: hidden; max-height: 120px; }
+    .embed-preview-box iframe { max-width: 100%; max-height: 100px; }
+</style>
+
+@code {
+    [Parameter] public int ArticleId { get; set; }
+    private TrainingArticleDto? article;
+    private TrainingArticleBlockDto blockModel = new();
+    private bool showBlockEditor = false;
+    private int editingBlockId = 0;
+    private bool isSavingBlock = false;
+    private bool _tinyInitialized;
+    private DotNetObjectReference<AcademyArticleContent>? objRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadArticle();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (showBlockEditor && blockModel.BlockType == TrainingBlockTypeDto.Text)
+        {
+            if (!_tinyInitialized)
+            {
+                objRef ??= DotNetObjectReference.Create(this);
+                await Task.Delay(100);
+                try { await JS.InvokeVoidAsync("initTinyMCE", "#tiny-editor", objRef); }
+                catch { /* TinyMCE script may not be loaded */ }
+                _tinyInitialized = true;
+            }
+        }
+        else
+        {
+            _tinyInitialized = false;
+        }
+    }
+
+    [JSInvokable]
+    public void UpdateContent(string content)
+    {
+        blockModel.Content = content;
+        StateHasChanged();
+    }
+
+    public void Dispose() => objRef?.Dispose();
+
+    private async Task LoadArticle()
+    {
+        try
+        {
+            article = await Http.GetFromJsonAsync<TrainingArticleDto>($"api/trainingarticles/{ArticleId}");
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در بارگذاری مقاله");
+        }
+    }
+
+    private void NewBlock()
+    {
+        editingBlockId = 0;
+        blockModel = new TrainingArticleBlockDto { SortOrder = (article?.Blocks?.Any() == true ? article.Blocks.Max(x => x.SortOrder) : 0) + 10 };
+        showBlockEditor = true;
+    }
+
+    private void EditBlock(TrainingArticleBlockDto block)
+    {
+        editingBlockId = block.Id;
+        blockModel = new TrainingArticleBlockDto
+        {
+            Id = block.Id,
+            BlockType = block.BlockType,
+            Title = block.Title,
+            Content = block.Content,
+            Url = block.Url,
+            ThumbnailUrl = block.ThumbnailUrl,
+            SortOrder = block.SortOrder
+        };
+        showBlockEditor = true;
+    }
+
+    private void CloseBlockEditor()
+    {
+        showBlockEditor = false;
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/trainings/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                blockModel.Url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                ToastService.ShowSuccess("فایل آپلود شد");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+    }
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/trainings/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                blockModel.Url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                ToastService.ShowSuccess("تصویر آپلود شد");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+    }
+
+    private async Task HandleThumbUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/trainings/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                blockModel.ThumbnailUrl = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                ToastService.ShowSuccess("بندانگشتی آپلود شد");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+    }
+
+    private async Task HandleAudioUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/trainings/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                blockModel.Url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                ToastService.ShowSuccess("فایل صوتی آپلود شد");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+    }
+
+    private async Task SaveBlock()
+    {
+        isSavingBlock = true;
+        try
+        {
+            if (blockModel.BlockType == TrainingBlockTypeDto.Text && _tinyInitialized)
+            {
+                try { blockModel.Content = await JS.InvokeAsync<string>("getTinyContent"); }
+                catch { }
+            }
+
+            HttpResponseMessage resp;
+            if (editingBlockId == 0)
+                resp = await Http.PostAsJsonAsync($"api/trainingarticles/{ArticleId}/blocks", blockModel);
+            else
+                resp = await Http.PutAsJsonAsync($"api/trainingarticles/blocks/{editingBlockId}", blockModel);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                showBlockEditor = false;
+                await LoadArticle();
+                ToastService.ShowSuccess("بلوک ذخیره شد");
+            }
+            else
+            {
+                var err = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(err) ? "خطا در ذخیره" : err.Trim('"'));
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError(ex.Message);
+        }
+        finally
+        {
+            isSavingBlock = false;
+        }
+    }
+
+    private TrainingArticleBlockDto? _deleteBlock;
+    private bool showConfirm;
+
+    private void AskDelete(TrainingArticleBlockDto block)
+    {
+        _deleteBlock = block;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool ok)
+    {
+        showConfirm = false;
+        if (!ok || _deleteBlock == null) return;
+        try
+        {
+            await Http.DeleteAsync($"api/trainingarticles/blocks/{_deleteBlock.Id}");
+            await LoadArticle();
+            ToastService.ShowSuccess("حذف شد");
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در حذف");
+        }
+    }
+
+    private async Task MoveBlockUp(TrainingArticleBlockDto block)
+    {
+        var siblings = article?.Blocks.OrderBy(x => x.SortOrder).ToList();
+        if (siblings == null) return;
+        var idx = siblings.IndexOf(block);
+        if (idx <= 0) return;
+        var swap = siblings[idx - 1];
+        var temp = block.SortOrder;
+        block.SortOrder = swap.SortOrder;
+        swap.SortOrder = temp;
+        await SaveSortOrder(block, swap);
+    }
+
+    private async Task MoveBlockDown(TrainingArticleBlockDto block)
+    {
+        var siblings = article?.Blocks.OrderBy(x => x.SortOrder).ToList();
+        if (siblings == null) return;
+        var idx = siblings.IndexOf(block);
+        if (idx < 0 || idx >= siblings.Count - 1) return;
+        var swap = siblings[idx + 1];
+        var temp = block.SortOrder;
+        block.SortOrder = swap.SortOrder;
+        swap.SortOrder = temp;
+        await SaveSortOrder(block, swap);
+    }
+
+    private async Task SaveSortOrder(TrainingArticleBlockDto a, TrainingArticleBlockDto b)
+    {
+        try
+        {
+            var respA = await Http.PutAsJsonAsync($"api/trainingarticles/blocks/{a.Id}", a);
+            var respB = await Http.PutAsJsonAsync($"api/trainingarticles/blocks/{b.Id}", b);
+            if (respA.IsSuccessStatusCode && respB.IsSuccessStatusCode)
+            {
+                await LoadArticle();
+                ToastService.ShowSuccess("ترتیب تغییر کرد");
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در تغییر ترتیب");
+        }
+    }
+
+    private string GetBlockTypeName(TrainingBlockTypeDto type) => type switch
+    {
+        TrainingBlockTypeDto.Text => "متن / HTML",
+        TrainingBlockTypeDto.Image => "تصویر",
+        TrainingBlockTypeDto.Video => "ویدیو",
+        TrainingBlockTypeDto.Audio => "صوت",
+        TrainingBlockTypeDto.File => "فایل ضمیمه",
+        TrainingBlockTypeDto.Embed => "کد Embed",
+        _ => type.ToString()
+    };
+
+    private string GetBlockTypeBadgeClass(TrainingBlockTypeDto type) => type switch
+    {
+        TrainingBlockTypeDto.Text => "bg-light text-dark border",
+        TrainingBlockTypeDto.Image => "bg-primary-subtle text-primary",
+        TrainingBlockTypeDto.Video => "bg-danger-subtle text-danger",
+        TrainingBlockTypeDto.Audio => "bg-purple-subtle text-purple",
+        TrainingBlockTypeDto.File => "bg-success-subtle text-success",
+        TrainingBlockTypeDto.Embed => "bg-warning-subtle text-warning",
+        _ => "bg-light text-dark border"
+    };
+
+    private string GetBlockTypeIcon(TrainingBlockTypeDto type) => type switch
+    {
+        TrainingBlockTypeDto.Text => "<span class='oi oi-document'></span>",
+        TrainingBlockTypeDto.Image => "<span class='oi oi-image'></span>",
+        TrainingBlockTypeDto.Video => "<span class='oi oi-video'></span>",
+        TrainingBlockTypeDto.Audio => "<span class='oi oi-volume-high'></span>",
+        TrainingBlockTypeDto.File => "<span class='oi oi-file'></span>",
+        TrainingBlockTypeDto.Embed => "<span class='oi oi-code'></span>",
+        _ => ""
+    };
+
+    private static string TruncateText(string text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= maxLength) return text ?? "";
+        return text.Substring(0, maxLength - 3) + "...";
+    }
+
+    private static string StripHtml(string html)
+    {
+        if (string.IsNullOrEmpty(html)) return "";
+        return System.Text.RegularExpressions.Regex.Replace(html, @"<[^>]+>", " ").Trim();
+    }
+}

@@ -1,0 +1,2269 @@
+@page "/admin/workshops"
+@layout AdminLayout
+@using ErrorService.Client.Helpers
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@attribute [Authorize]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Client.Services
+@inject ToastService ToastService
+@inject IJSRuntime JS
+@using ErrorService.Client.Shared
+
+<div class="admin-container" dir="rtl" @ref="pageTopRef" id="workshops-page-top">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="admin-page-title m-0">مدیریت کارگاه‌ها</h3>
+    </div>
+
+    <div class="ws-tabs" role="tablist">
+        @if (isSuperAdmin)
+        {
+            <button type="button"
+                    class="ws-tab @(activeTab == WorkshopPageTab.Register ? "ws-tab--active" : "")"
+                    role="tab"
+                    aria-selected="@(activeTab == WorkshopPageTab.Register)"
+                    @onclick="() => SetActiveTab(WorkshopPageTab.Register)">
+                <span class="oi oi-plus"></span>
+                <span>ثبت کارگاه</span>
+            </button>
+        }
+        <button type="button"
+                class="ws-tab @(activeTab == WorkshopPageTab.Manage ? "ws-tab--active" : "")"
+                role="tab"
+                aria-selected="@(activeTab == WorkshopPageTab.Manage)"
+                @onclick="() => SetActiveTab(WorkshopPageTab.Manage)">
+            <span class="oi oi-list"></span>
+            <span>@(isSuperAdmin ? "مدیریت کارگاه" : "کارگاه من")</span>
+        </button>
+    </div>
+
+    <ConfirmDialog IsVisible="showConfirm"
+                   Title="حذف کارگاه"
+                   Message=@($"آیا از حذف کارگاه \"{itemToDelete?.WorkshopName}\" اطمینان دارید؟")
+                   OnResult="HandleDeleteResult" />
+
+    <UserDeleteConfirmDialog IsVisible="showUserConfirm"
+                             Title="@userConfirmTitle"
+                             Message="@userConfirmMessage"
+                             HasTransactionalRefs="userHasTransactionalRefs"
+                             OnResult="HandleUserDeleteResult"
+                             OnDeactivate="HandleUserDeactivate" />
+
+    @if (activeTab == WorkshopPageTab.Register)
+    {
+        <div class="ws-register-wrapper">
+            <div class="ws-form-card">
+                    <div class="ws-form-card__hero">
+                        <div class="ws-form-card__hero-icon">
+                            <span class="oi oi-wrench"></span>
+                        </div>
+                        <div>
+                            <h5 class="ws-form-card__title">@(editingId == 0 ? "ثبت کارگاه جدید" : "ویرایش کارگاه")</h5>
+                            <p class="ws-form-card__subtitle">اطلاعات کارگاه را با دقت وارد کنید</p>
+                        </div>
+                    </div>
+
+                <EditForm Model="model" OnValidSubmit="Save" class="ws-form">
+                    <DataAnnotationsValidator />
+
+                    <div class="ws-field">
+                        <label class="ws-field__label" for="ws-workshop-name">
+                            <span class="ws-field__icon oi oi-home"></span>
+                            نام کارگاه
+                        </label>
+                        <div class="ws-field__control">
+                            <input id="ws-workshop-name" @bind="model.WorkshopName" class="ws-field__input" placeholder="مثلاً کارگاه تعمیرات آریا" />
+                        </div>
+                        <ValidationMessage For="@(() => model.WorkshopName)" class="ws-field__error" />
+                    </div>
+
+                    <div class="ws-field">
+                        <label class="ws-field__label" for="ws-owner-name">
+                            <span class="ws-field__icon oi oi-person"></span>
+                            نام و نام خانوادگی صاحب امتیاز
+                        </label>
+                        <div class="ws-field__control">
+                            <input id="ws-owner-name" @bind="model.OwnerFullName" class="ws-field__input" placeholder="نام کامل مدیر کارگاه" />
+                        </div>
+                        <ValidationMessage For="@(() => model.OwnerFullName)" class="ws-field__error" />
+                    </div>
+
+                    <div class="ws-field">
+                        <label class="ws-field__label" for="ws-mobile">
+                            <span class="ws-field__icon oi oi-phone"></span>
+                            شماره موبایل
+                        </label>
+                        <div class="ws-field__control">
+                            <input id="ws-mobile" @bind="model.MobileNumber" class="ws-field__input ltr" placeholder="09xxxxxxxxx" inputmode="tel" />
+                        </div>
+                        <ValidationMessage For="@(() => model.MobileNumber)" class="ws-field__error" />
+                    </div>
+
+                    <div class="ws-field">
+                        <label class="ws-field__label">
+                            <span class="ws-field__icon oi oi-map-marker"></span>
+                            استان
+                        </label>
+                        <div class="ws-field__control ws-field__control--select">
+                            <SearchableSelect Items="(provinces ?? new List<ProvinceDto>())"
+                                              Value="model.ProvinceId"
+                                              ValueChanged="OnProvinceChanged"
+                                              GetValue="p => p.Id"
+                                              GetText="p => p.Name"
+                                              Placeholder="انتخاب استان"
+                                              Hint="ابتدا استان را جستجو و انتخاب کنید" />
+                        </div>
+                        <ValidationMessage For="@(() => model.ProvinceId)" class="ws-field__error" />
+                    </div>
+
+                    <div class="ws-field">
+                        <label class="ws-field__label">
+                            <span class="ws-field__icon oi oi-location"></span>
+                            شهرستان / شهر
+                        </label>
+                        <div class="ws-field__control ws-field__control--select">
+                            <SearchableSelect Items="(cities ?? new List<CityDto>())"
+                                              Value="model.CityId"
+                                              ValueChanged="OnCityChanged"
+                                              GetValue="c => c.Id"
+                                              GetText="c => c.Name"
+                                              Placeholder="انتخاب شهر"
+                                              Hint="سپس شهر را جستجو و انتخاب کنید"
+                                              Disabled="@(cities == null || !cities.Any())" />
+                        </div>
+                        <ValidationMessage For="@(() => model.CityId)" class="ws-field__error" />
+                    </div>
+
+                    <div class="ws-field">
+                        <label class="ws-field__label" for="ws-address">
+                            <span class="ws-field__icon oi oi-map"></span>
+                            آدرس
+                        </label>
+                        <div class="ws-field__control">
+                            <textarea id="ws-address" @bind="model.Address" class="ws-field__input ws-field__textarea" rows="3" placeholder="آدرس کامل کارگاه (اختیاری)"></textarea>
+                        </div>
+                        <ValidationMessage For="@(() => model.Address)" class="ws-field__error" />
+                    </div>
+
+                    <div class="ws-toggles">
+                        <label class="ws-switch-row">
+                            <div class="ws-switch-row__text">
+                                <span class="ws-switch-row__title">کارگاه فعال</span>
+                                <span class="ws-switch-row__sub">در صورت غیرفعال، کارگاه در پذیرش نمایش داده نمی‌شود</span>
+                            </div>
+                            <span class="ws-switch">
+                                <InputCheckbox @bind-Value="model.IsActive" class="ws-switch__input" />
+                                <span class="ws-switch__track" aria-hidden="true"></span>
+                            </span>
+                        </label>
+
+                        <label class="ws-switch-row">
+                            <div class="ws-switch-row__text">
+                                <span class="ws-switch-row__title">نمایش در «همکاران ما»</span>
+                                <span class="ws-switch-row__sub">لوگو در ردیف مشتریان صفحه اصلی سایت نمایش داده شود</span>
+                            </div>
+                            <span class="ws-switch">
+                                <InputCheckbox @bind-Value="model.ShowInCustomersRow" class="ws-switch__input" />
+                                <span class="ws-switch__track ws-switch__track--accent" aria-hidden="true"></span>
+                            </span>
+                        </label>
+                    </div>
+
+                    <div class="ws-field">
+                        <label class="ws-field__label">
+                            <span class="ws-field__icon oi oi-image"></span>
+                            تصویر کارگاه (لوگو)
+                        </label>
+                        <div class="ws-logo-upload">
+                            @if (!string.IsNullOrEmpty(model.ImageUrl))
+                            {
+                                <div class="ws-logo-preview">
+                                    <img src="@model.ImageUrl" alt="لوگوی کارگاه" />
+                                    <div class="ws-logo-overlay">
+                                        <label class="ws-logo-action" title="تغییر تصویر">
+                                            <span class="oi oi-pencil"></span>
+                                            <InputFile OnChange="HandleLogoFile" accept="image/*,.svg" class="d-none" />
+                                        </label>
+                                        <button type="button" class="ws-logo-action ws-logo-action--danger" @onclick="RemoveLogo" title="حذف">
+                                            <span class="oi oi-trash"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="ws-logo-options">
+                                    <label class="ws-logo-option">
+                                        <div class="ws-logo-option__icon">
+                                            <span class="oi oi-image"></span>
+                                        </div>
+                                        <span class="ws-logo-option__title">انتخاب از گالری</span>
+                                        <span class="ws-logo-option__hint">حداکثر ۵ مگابایت</span>
+                                        <InputFile OnChange="HandleLogoFile" accept="image/*,.svg" class="d-none" />
+                                    </label>
+                                    <label class="ws-logo-option ws-logo-option--camera">
+                                        <div class="ws-logo-option__icon">
+                                            <span class="oi oi-camera"></span>
+                                        </div>
+                                        <span class="ws-logo-option__title">گرفتن عکس</span>
+                                        <span class="ws-logo-option__hint">دوربین گوشی</span>
+                                        <InputFile OnChange="HandleLogoFile" accept="image/*" capture="environment" class="d-none" />
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="ws-field">
+                        <label class="ws-field__label">
+                            <span class="ws-field__icon">📊</span>
+                            تعداد مجاز مانیتورینگ
+                        </label>
+                        <div class="ws-field__hint">حداکثر تعداد مانیتورینگ (فعال + پایان‌یافته) که این کارگاه می‌تواند داشته باشد</div>
+                        <div class="ws-input-wrap">
+                            <InputNumber @bind-Value="model.MaxMonitoringConnections" class="ws-input ws-input--ltr ws-input--monitoring" min="1" max="100" />
+                        </div>
+                    </div>
+
+                    <div class="ws-form-actions">
+                        <button type="submit" class="ws-btn ws-btn--primary" disabled="@isSaving">
+                            @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            <span class="oi oi-check me-1"></span>
+                            ذخیره کارگاه
+                        </button>
+                        @if (editingId != 0)
+                        {
+                            <button type="button" class="ws-btn ws-btn--ghost" @onclick="ResetForm">انصراف</button>
+                        }
+                    </div>
+                </EditForm>
+                </div>
+            </div>
+    }
+    else
+    {
+        <div class="row g-4 mt-1">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h5 class="m-0 fw-bold text-muted">@(isSuperAdmin ? "لیست کارگاه‌ها" : "کارگاه من")</h5>
+                    @if (isSuperAdmin)
+                    {
+                        <button type="button" class="btn btn-primary rounded-pill px-4" @onclick="StartNewWorkshop">
+                            <span class="oi oi-plus me-1"></span>
+                            ثبت کارگاه جدید
+                        </button>
+                    }
+                </div>
+                <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+                <div class="p-3">
+                    @if (items == null)
+                    {
+                        <div class="text-center py-4">در حال بارگذاری...</div>
+                    }
+                    else if (!items.Any())
+                    {
+                        <div class="text-center py-4 text-muted">کارگاهی ثبت نشده است.</div>
+                    }
+                    else
+                    {
+                        @foreach (var it in items)
+                        {
+                            var isExpanded = expandedIds.Contains(it.Id);
+
+                            <div class="ws-card rounded-4 border bg-white shadow-sm mb-3 overflow-hidden">
+                                <button type="button" class="ws-card__header w-100 border-0 bg-transparent" @onclick="() => ToggleDetails(it.Id)">
+                                    <div class="d-flex align-items-center justify-content-between gap-3">
+                                        <div class="text-end overflow-hidden">
+                                            <div class="fw-black text-dark text-truncate">@it.WorkshopName</div>
+                                            <div class="small text-muted text-truncate">@it.ProvinceName / @it.CityName</div>
+                                        </div>
+                                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                            <span class="badge @(it.IsActive ? "bg-success-subtle text-success" : "bg-danger-subtle text-danger") rounded-pill px-3">
+                                                @(it.IsActive ? "فعال" : "غیرفعال")
+                                            </span>
+                                            <span class="oi @(isExpanded ? "oi-chevron-top" : "oi-chevron-bottom") text-muted"></span>
+                                        </div>
+                                    </div>
+                                </button>
+
+                                @if (isExpanded)
+                                {
+                                    <div class="ws-card__body p-3 pt-0">
+                                        <div class="ws-kv-grid">
+                                            <div class="ws-kv">
+                                                <div class="ws-kv__k">صاحب امتیاز</div>
+                                                <div class="ws-kv__v">@it.OwnerFullName</div>
+                                            </div>
+                                            <div class="ws-kv">
+                                                <div class="ws-kv__k">موبایل</div>
+                                                <div class="ws-kv__v">@it.MobileNumber</div>
+                                            </div>
+                                        </div>
+
+                                        <div class="d-flex flex-wrap justify-content-end gap-2 mt-3">
+                                            <button class="btn btn-sm btn-outline-success" title="افزودن پرسنل" @onclick="() => OpenAddUserModal(it)" @onclick:stopPropagation>
+                                                <span class="oi oi-plus"></span>
+                                            </button>
+                                            @if (isSuperAdmin)
+                                            {
+                                                <button class="btn btn-sm btn-outline-secondary" title="فعال/غیرفعال" @onclick="() => ToggleStatus(it)" @onclick:stopPropagation>
+                                                    <span class="oi oi-power-standby"></span>
+                                                </button>
+                                            }
+                                            @if (isSuperAdmin || canEditOwn)
+                                            {
+                                                <button class="btn btn-sm btn-outline-primary" title="ویرایش" @onclick="async () => await Edit(it)" @onclick:stopPropagation>
+                                                    <span class="oi oi-pencil"></span>
+                                                </button>
+                                            }
+                                            @if (isSuperAdmin)
+                                            {
+                                                <button class="btn btn-sm btn-outline-danger" title="حذف" @onclick="() => AskDelete(it)" @onclick:stopPropagation>
+                                                    <span class="oi oi-trash"></span>
+                                                </button>
+                                            }
+                                        </div>
+
+                                        <div class="mt-3 pt-3 border-top">
+                                            <div class="ws-staff-header">
+                                                <div class="ws-staff-header__title">
+                                                    <span class="oi oi-people"></span>
+                                                    پرسنل کارگاه
+                                                    @if (workshopUsersMap.TryGetValue(it.Id, out var staffCountList))
+                                                    {
+                                                        <span class="ws-staff-header__count">@staffCountList.Count</span>
+                                                    }
+                                                </div>
+                                                <button type="button" class="ws-staff-header__add" @onclick="() => OpenAddUserModal(it)" @onclick:stopPropagation>
+                                                    <span class="oi oi-plus"></span>
+                                                    افزودن
+                                                </button>
+                                            </div>
+
+                                            @if (!workshopUsersMap.ContainsKey(it.Id))
+                                            {
+                                                <div class="ws-staff-empty">در حال بارگذاری پرسنل...</div>
+                                            }
+                                            else if (workshopUsersMap.TryGetValue(it.Id, out var wsUsers) && wsUsers.Any())
+                                            {
+                                                <div class="ws-staff-list">
+                                                    @foreach (var user in wsUsers)
+                                                    {
+                                                        <div class="ws-staff-item @(user.IsActive ? "" : "ws-staff-item--inactive")">
+                                                            <div class="ws-staff-item__avatar">@GetStaffInitial(user)</div>
+                                                            <div class="ws-staff-item__body">
+                                                                <div class="ws-staff-item__top">
+                                                                    <div class="ws-staff-item__name">@user.FullName</div>
+                                                                    <span class="ws-staff-item__status @(user.IsActive ? "ws-staff-item__status--on" : "ws-staff-item__status--off")">
+                                                                        @(user.IsActive ? "فعال" : "غیرفعال")
+                                                                    </span>
+                                                                </div>
+                                                                <div class="ws-staff-item__phone ltr">@user.PhoneNumber</div>
+                                                                @if (user.IsTechnician)
+                                                                {
+                                                                    <span class="ws-staff-item__tag ws-staff-item__tag--tech">تکنسین</span>
+                                                                }
+                                                                <div class="ws-staff-item__roles">
+                                                                    @if (user.RoleKeys.Any())
+                                                                    {
+                                                                        @foreach (var r in user.RoleKeys.Take(4))
+                                                                        {
+                                                                            <span class="ws-staff-item__role">@GetRoleTitle(r)</span>
+                                                                        }
+                                                                        @if (user.RoleKeys.Count > 4)
+                                                                        {
+                                                                            <span class="ws-staff-item__role ws-staff-item__role--more">+@(user.RoleKeys.Count - 4)</span>
+                                                                        }
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span class="ws-staff-item__role ws-staff-item__role--empty">بدون نقش</span>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                            <div class="ws-staff-item__actions">
+                                                                <button type="button" class="ws-staff-action ws-staff-action--edit" title="ویرایش" @onclick="() => EditUser(user, it)" @onclick:stopPropagation>
+                                                                    <span class="oi oi-pencil"></span>
+                                                                </button>
+                                                                <button type="button" class="ws-staff-action @(user.IsActive ? "ws-staff-action--warn" : "ws-staff-action--ok")" title="@(user.IsActive ? "غیرفعال کردن" : "فعال کردن")" @onclick="() => ToggleUserStatusInList(user, it)" @onclick:stopPropagation>
+                                                                    <span class="oi @(user.IsActive ? "oi-power-standby" : "oi-check")"></span>
+                                                                </button>
+                                                                <button type="button" class="ws-staff-action ws-staff-action--danger" title="حذف" @onclick="() => AskDeleteUser(user, it)" @onclick:stopPropagation>
+                                                                    <span class="oi oi-trash"></span>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <div class="ws-staff-empty">هیچ پرسنلی برای این کارگاه ثبت نشده است.</div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (showUserModal)
+{
+    <div class="ws-user-modal-backdrop" @onclick="CloseUserModal"></div>
+    <div class="ws-user-modal" @onclick:stopPropagation>
+        <div class="ws-user-modal__header">
+            <div class="ws-user-modal__hero">
+                <div class="ws-user-modal__avatar">@(editingUserId == 0 ? "+" : GetStaffInitialFromRequest())</div>
+                <div>
+                    <h5 class="ws-user-modal__title">@(editingUserId == 0 ? "افزودن پرسنل" : "ویرایش پرسنل")</h5>
+                    <p class="ws-user-modal__sub">کارگاه: @targetWorkshop?.WorkshopName</p>
+                </div>
+            </div>
+            <button type="button" class="ws-user-modal__close" @onclick="CloseUserModal"><span class="oi oi-x"></span></button>
+        </div>
+
+        <div class="ws-user-modal__body">
+            <EditForm Model="userRequest" OnValidSubmit="SaveUser" autocomplete="off" class="ws-form">
+                <DataAnnotationsValidator />
+
+                <div class="ws-field">
+                    <label class="ws-field__label"><span class="ws-field__icon oi oi-person"></span>نام و نام خانوادگی</label>
+                    <div class="ws-field__control">
+                        <input @bind="userRequest.FullName" class="ws-field__input" placeholder="نام تکنسین یا همکار..." autocomplete="new-password" />
+                    </div>
+                    <ValidationMessage For="@(() => userRequest.FullName)" class="ws-field__error" />
+                </div>
+
+                <div class="ws-field">
+                    <label class="ws-field__label"><span class="ws-field__icon oi oi-phone"></span>شماره موبایل (نام کاربری)</label>
+                    <div class="ws-field__control">
+                        <input @bind="userRequest.PhoneNumber" class="ws-field__input ltr" placeholder="09xxxxxxxxx" autocomplete="new-password" />
+                    </div>
+                    <ValidationMessage For="@(() => userRequest.PhoneNumber)" class="ws-field__error" />
+                </div>
+
+                <div class="ws-toggles ws-toggles--compact">
+                    <label class="ws-switch-row">
+                        <div class="ws-switch-row__text">
+                            <span class="ws-switch-row__title">حساب فعال</span>
+                            <span class="ws-switch-row__sub">کاربر بتواند وارد سیستم شود</span>
+                        </div>
+                        <span class="ws-switch">
+                            <InputCheckbox @bind-Value="userRequest.IsActive" class="ws-switch__input" />
+                            <span class="ws-switch__track" aria-hidden="true"></span>
+                        </span>
+                    </label>
+                    <label class="ws-switch-row">
+                        <div class="ws-switch-row__text">
+                            <span class="ws-switch-row__title">تکنسین</span>
+                            <span class="ws-switch-row__sub">امکان ارجاع رسید به این پرسنل</span>
+                        </div>
+                        <span class="ws-switch">
+                            <InputCheckbox @bind-Value="userRequest.IsTechnician" class="ws-switch__input" />
+                            <span class="ws-switch__track ws-switch__track--accent" aria-hidden="true"></span>
+                        </span>
+                    </label>
+                </div>
+
+                <div class="ws-password-card">
+                    <div class="ws-password-card__title">
+                        <span class="oi oi-lock-locked"></span>
+                        @(editingUserId == 0 ? "رمز عبور اولیه" : "تغییر رمز عبور")
+                    </div>
+                    <div class="ws-field">
+                        <label class="ws-field__label">@(editingUserId == 0 ? "رمز عبور" : "رمز عبور جدید")</label>
+                        <div class="ws-field__control ws-field__control--password">
+                            <input @bind="newPassword" type="@(showNewPassword ? "text" : "password")" class="ws-field__input ltr" placeholder="@(editingUserId == 0 ? "حداقل ۴ کاراکتر" : "خالی = بدون تغییر")" autocomplete="new-password" />
+                            <button type="button" class="ws-password-toggle" @onclick="() => showNewPassword = !showNewPassword" title="نمایش/مخفی">
+                                <span class="oi @(showNewPassword ? "oi-eye-slash" : "oi-eye")"></span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ws-field">
+                    <label class="ws-field__label"><span class="ws-field__icon oi oi-shield"></span>نقش‌های دسترسی</label>
+                    @if (availableRoles == null)
+                    {
+                        <div class="ws-staff-empty">در حال بارگذاری نقش‌ها...</div>
+                    }
+                    else
+                    {
+                        <div class="ws-role-grid">
+                            @foreach (var role in RolesForTargetWorkshop)
+                            {
+                                <button type="button" class="ws-role-chip @(userRequest.RoleKeys.Contains(role.Key) ? "ws-role-chip--on" : "")" @onclick="() => ToggleUserRole(role.Key, !userRequest.RoleKeys.Contains(role.Key))">
+                                    <span class="ws-role-chip__check">@(userRequest.RoleKeys.Contains(role.Key) ? "✓" : "")</span>
+                                    <span>@role.TitleFa</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="ws-form-actions">
+                    <button type="submit" class="ws-btn ws-btn--primary" disabled="@isSavingUser">
+                        @if (isSavingUser) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        ذخیره پرسنل
+                    </button>
+                    <button type="button" class="ws-btn ws-btn--ghost" @onclick="CloseUserModal">انصراف</button>
+                    @if (editingUserId != 0)
+                    {
+                        <button type="button" class="ws-btn ws-btn--ghost text-danger" @onclick="AskDeleteCurrentEditingUser">حذف پرسنل</button>
+                    }
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+
+<style>
+    .fw-black { font-weight: 900; }
+    .workshops-table-responsive { overflow-x: auto; }
+    .workshops-table { min-width: 860px; }
+    .bg-light-subtle { background-color: #f8fafc; }
+    .dashed { border-style: dashed !important; }
+    .cursor-pointer { cursor: pointer; }
+
+    .image-preview {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 14px;
+        padding: 10px;
+        background: #fff;
+        overflow: hidden;
+    }
+
+    .image-preview img {
+        width: 100%;
+        max-height: 160px;
+        object-fit: contain;
+        display: block;
+        border-radius: 12px;
+        background: #f8fafc;
+    }
+
+    .image-preview__url {
+        margin-top: 8px;
+        font-size: 0.75rem;
+        color: #64748b;
+        direction: ltr;
+        word-break: break-all;
+    }
+
+    .ws-card__header {
+        padding: 14px 14px;
+        text-align: right;
+    }
+
+    .ws-kv-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-top: 12px;
+    }
+
+    .ws-kv {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: #fff;
+    }
+
+    .ws-kv__k {
+        font-size: 0.72rem;
+        color: #64748b;
+        font-weight: 800;
+        margin-bottom: 2px;
+    }
+
+    .ws-kv__v {
+        font-size: 0.9rem;
+        color: #0f172a;
+        font-weight: 800;
+        word-break: break-word;
+    }
+    
+    .details-content {
+        border-right: 4px solid var(--bs-primary);
+        margin: 10px 20px 20px 20px;
+        background: #fff;
+        border-radius: 15px;
+        box-shadow: inset 0 2px 10px rgba(0,0,0,0.05);
+    }
+
+    /* --- Workshop register form (Material / Android) --- */
+    .ws-form-card {
+        background: #fff;
+        border-radius: 24px;
+        border: 1px solid rgba(15, 23, 42, 0.06);
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+        overflow: visible;
+    }
+
+    .ws-form-card__hero {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 18px 20px;
+        background: linear-gradient(135deg, rgba(79, 70, 229, 0.12), rgba(16, 185, 129, 0.1));
+        border-bottom: 1px solid rgba(79, 70, 229, 0.1);
+    }
+
+    .ws-form-card__hero-icon {
+        width: 52px;
+        height: 52px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #4f46e5, #10b981);
+        color: #fff;
+        font-size: 1.35rem;
+        box-shadow: 0 10px 24px rgba(79, 70, 229, 0.35);
+        flex-shrink: 0;
+    }
+
+    .ws-form-card__title {
+        margin: 0;
+        font-weight: 900;
+        font-size: 1.1rem;
+        color: #0f172a;
+    }
+
+    .ws-form-card__subtitle {
+        margin: 4px 0 0;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #64748b;
+    }
+
+    .ws-form {
+        --ws-primary: #4f46e5;
+        --ws-text: #0f172a;
+        --ws-surface: #ffffff;
+        --ws-input-border: rgba(2, 6, 23, 0.08);
+        --ws-input-bg: rgba(15, 23, 42, 0.03);
+        --ws-input-focus-ring: rgba(79, 70, 229, 0.12);
+        padding: 18px 20px 22px;
+/*         display: grid;
+ */        gap: 16px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .ws-field__control > * {
+        flex: 1 1 auto;
+        width: 100%;
+        min-width: 0;
+        border-radius: 8px;
+    min-height: 40px;
+    border-color: lavender;
+    }
+
+    .ws-field {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+        margin-bottom: 12px;
+    }
+
+    .ws-field__label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 900;
+        font-size: 0.8rem;
+        color: rgba(15, 23, 42, 0.80);
+        margin-bottom: 8px;
+        width: 100%;
+    }
+
+    .ws-field__icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        display: inline-grid;
+        place-items: center;
+        background: rgba(79, 70, 229, 0.1);
+        color: #4f46e5;
+        font-size: 0.85rem;
+        flex-shrink: 0;
+    }
+
+    .ws-field__control {
+        position: relative;
+        width: 100%;
+        box-sizing: border-box;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        overflow: visible;
+        display: block;
+        padding: 0;
+    }
+
+    /* همان استایل wr-input در receipts/new */
+    .ws-form ::deep .form-control,
+    .ws-field__input,
+    .ws-field__control input:not(.ws-password-toggle),
+    .ws-field__control textarea,
+    .ws-field__control ::deep input:not(.ws-password-toggle),
+    .ws-field__control ::deep textarea,
+    .ws-field__control ::deep select {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        height: auto !important;
+        margin: 0 !important;
+        border: 1px solid var(--ws-input-border) !important;
+        background: var(--ws-input-bg) !important;
+        box-shadow: none !important;
+        padding: 12px 14px !important;
+        font-weight: 800 !important;
+        line-height: 1.4 !important;
+        color: var(--ws-text) !important;
+        outline: none !important;
+        border-radius: 18px !important;
+        -webkit-appearance: none;
+        appearance: none;
+        box-sizing: border-box !important;
+        transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .ws-form ::deep .form-control:focus,
+    .ws-field__control input:not(.ws-password-toggle):focus,
+    .ws-field__control textarea:focus,
+    .ws-field__control ::deep input:not(.ws-password-toggle):focus,
+    .ws-field__control ::deep textarea:focus,
+    .ws-field__control ::deep select:focus {
+        border-color: var(--ws-primary) !important;
+        background: var(--ws-surface) !important;
+        box-shadow: 0 0 0 5px var(--ws-input-focus-ring) !important;
+        outline: none !important;
+    }
+
+    .ws-form ::deep .form-control:hover,
+    .ws-field__control input:not(.ws-password-toggle):hover,
+    .ws-field__control textarea:hover,
+    .ws-field__control ::deep input:not(.ws-password-toggle):hover,
+    .ws-field__control ::deep textarea:hover,
+    .ws-field__control ::deep select:hover {
+        border-color: rgba(79, 70, 229, 0.25) !important;
+        background: rgba(15, 23, 42, 0.04) !important;
+    }
+
+    .ws-field__input::placeholder,
+    .ws-form ::deep .form-control::placeholder,
+    .ws-field__control ::deep input::placeholder,
+    .ws-field__control ::deep textarea::placeholder {
+        color: #94a3b8 !important;
+        font-weight: 700 !important;
+        opacity: 1 !important;
+    }
+
+    .ws-input-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .ws-field__hint {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #64748b;
+        line-height: 1.5;
+        margin-top: -4px;
+    }
+
+    .ws-input--ltr {
+        direction: ltr;
+    }
+    .ws-input--ltr.ws-input--monitoring {
+            background: rgba(245, 158, 11, 0.06) !important;
+            border-color: rgba(245, 158, 11, 0.25) !important;
+            border-left: 3px solid #f59e0b !important;
+            width: 100%;
+            text-align: center;
+            border-radius: 15px;
+            min-height: 40px;
+    }
+    .ws-input--ltr.ws-input--monitoring:focus {
+        border-color: #f59e0b !important;
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12) !important;
+    }
+
+    /* Force border-box on all form children to prevent width overflow */
+    .ws-form,
+    .ws-form *,
+    .ws-field,
+    .ws-field__control,
+    .ws-field__control > *,
+    .ws-toggles,
+    .ws-switch-row,
+    .ws-field__control--select ::deep .searchable-select {
+        box-sizing: border-box !important;
+    }
+
+    .ws-field__textarea,
+    .ws-field__control textarea,
+    .ws-field__control ::deep textarea {
+        min-height: 140px !important;
+        resize: vertical;
+        padding: 12px 14px !important;
+    }
+
+    .ws-field__control--select {
+        overflow: visible;
+    }
+
+    .ws-field__control--select ::deep .searchable-select {
+        width: 100%;
+        display: block;
+        position: relative;
+    }
+
+    .ws-field__control--select ::deep .searchable-select > input.form-control {
+        padding: 12px 14px !important;
+        border: 1px solid var(--ws-input-border) !important;
+        background: var(--ws-input-bg) !important;
+        box-shadow: none !important;
+        font-weight: 800 !important;
+        border-radius: 18px !important;
+        cursor: pointer;
+        width: 100% !important;
+        color: var(--ws-text) !important;
+        min-height: 0 !important;
+    }
+
+    .ws-field__control--select ::deep .searchable-select > input.form-control:focus {
+        border-color: var(--ws-primary) !important;
+        background: var(--ws-surface) !important;
+        box-shadow: 0 0 0 5px var(--ws-input-focus-ring) !important;
+    }
+
+    .ws-field__control--select ::deep .dropdown-panel {
+        z-index: 3000;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+    }
+
+    .ws-field__control--select ::deep .options .list-group-item {
+        color: #0f172a;
+        background: #fff;
+    }
+
+    .ws-field__control--select ::deep .options .list-group-item:hover,
+    .ws-field__control--select ::deep .options .list-group-item:focus {
+        background: #f1f5f9;
+        color: #0f172a;
+    }
+
+    /* --- Logo upload redesign --- */
+    .ws-logo-upload {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .ws-logo-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+
+    .ws-logo-option {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 20px 12px;
+        border-radius: 18px;
+        border: 2px dashed #e2e8f0;
+        background: #f8fafc;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        min-height: 120px;
+        text-align: center;
+        margin: 0;
+    }
+
+    .ws-logo-option:hover {
+        border-color: #4f46e5;
+        background: #f1f5f9;
+    }
+
+    .ws-logo-option--camera {
+        border-color: #a7f3d0;
+        background: #f0fdf4;
+    }
+
+    .ws-logo-option--camera:hover {
+        border-color: #10b981;
+        background: #ecfdf5;
+    }
+
+    .ws-logo-option__icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        font-size: 1.3rem;
+        background: rgba(79, 70, 229, 0.1);
+        color: #4f46e5;
+        flex-shrink: 0;
+    }
+
+    .ws-logo-option--camera .ws-logo-option__icon {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+    }
+
+    .ws-logo-option__title {
+        font-weight: 900;
+        font-size: 0.85rem;
+        color: #0f172a;
+    }
+
+    .ws-logo-option__hint {
+        font-size: 0.7rem;
+        color: #64748b;
+        font-weight: 700;
+    }
+
+    .ws-logo-preview {
+        position: relative;
+        border-radius: 18px;
+        overflow: hidden;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+    }
+
+    .ws-logo-preview img {
+        width: 100%;
+        max-height: 180px;
+        object-fit: contain;
+        display: block;
+        padding: 16px;
+        box-sizing: border-box;
+    }
+
+    .ws-logo-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.4);
+        backdrop-filter: blur(2px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .ws-logo-preview:hover .ws-logo-overlay,
+    .ws-logo-overlay:has(:focus-visible) {
+        opacity: 1;
+    }
+
+    .ws-logo-action {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        border: none;
+        cursor: pointer;
+        background: #fff;
+        color: #4f46e5;
+        font-size: 1.1rem;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+    }
+
+    .ws-logo-action:hover {
+        transform: scale(1.1);
+    }
+
+    .ws-logo-action--danger {
+        color: #ef4444;
+    }
+
+    @@media (max-width: 480px) {
+        .ws-logo-option {
+            padding: 14px 10px;
+            min-height: 100px;
+            gap: 6px;
+        }
+        .ws-logo-option__icon {
+            width: 40px;
+            height: 40px;
+            font-size: 1.1rem;
+        }
+        .ws-logo-option__title {
+            font-size: 0.8rem;
+        }
+        .ws-logo-preview img {
+            max-height: 140px;
+            padding: 12px;
+        }
+    }
+
+    .ws-field__control--uploader {
+        padding: 12px;
+        border-radius: 18px;
+        border: 1px solid var(--ws-input-border);
+        background: var(--ws-input-bg);
+        overflow: hidden;
+    }
+
+    .ws-field__error,
+    .ws-form ::deep .validation-message {
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #dc2626;
+        padding-inline: 4px;
+    }
+
+    .ws-toggles {
+        display: grid;
+        gap: 10px;
+        padding: 4px 0;
+    }
+
+    .ws-switch-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: #f8fafc;
+        border: 1px solid rgba(15, 23, 42, 0.06);
+        cursor: pointer;
+        margin: 0;
+        transition: background 0.2s ease, border-color 0.2s ease;
+    }
+
+    .ws-switch-row:hover {
+        background: #f1f5f9;
+        border-color: rgba(79, 70, 229, 0.15);
+    }
+
+    .ws-switch-row__text {
+        display: grid;
+        gap: 3px;
+        text-align: right;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .ws-switch-row__title {
+        font-weight: 900;
+        font-size: 0.88rem;
+        color: #0f172a;
+    }
+
+    .ws-switch-row__sub {
+        font-weight: 700;
+        font-size: 0.72rem;
+        color: #64748b;
+        line-height: 1.45;
+    }
+
+    .ws-switch {
+        position: relative;
+        width: 52px;
+        height: 30px;
+        flex-shrink: 0;
+        display: inline-block;
+    }
+
+    .ws-switch__input {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        opacity: 0;
+        cursor: pointer;
+        z-index: 2;
+    }
+
+    .ws-switch__track {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: #cbd5e1;
+        transition: background 0.25s ease;
+        pointer-events: none;
+    }
+
+    .ws-switch__track::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.2);
+        transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    .ws-switch__input:checked + .ws-switch__track {
+        background: linear-gradient(135deg, #22c55e, #10b981);
+    }
+
+    .ws-switch__input:checked + .ws-switch__track--accent {
+        background: linear-gradient(135deg, #6366f1, #4f46e5);
+    }
+
+    .ws-switch__input:checked + .ws-switch__track::after {
+        transform: translateX(-22px);
+    }
+
+    .ws-switch__input:focus-visible + .ws-switch__track {
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.25);
+    }
+
+    .ws-form-actions {
+        display: grid;
+        gap: 10px;
+        margin-top: 4px;
+        padding-top: 8px;
+    }
+
+    .ws-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border: none;
+        border-radius: 16px;
+        padding: 14px 18px;
+        font-weight: 900;
+        font-size: 0.92rem;
+        cursor: pointer;
+        transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    }
+
+    .ws-btn:active:not(:disabled) {
+        transform: scale(0.98);
+    }
+
+    .ws-btn--primary {
+        background: linear-gradient(135deg, #4f46e5, #6366f1);
+        color: #fff;
+        box-shadow: 0 12px 28px rgba(79, 70, 229, 0.35);
+    }
+
+    .ws-btn--primary:hover:not(:disabled) {
+        box-shadow: 0 14px 32px rgba(79, 70, 229, 0.42);
+    }
+
+    .ws-btn--ghost {
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .ws-btn--ghost:hover:not(:disabled) {
+        background: #e2e8f0;
+    }
+
+    .ws-btn:disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+    }
+
+    .ws-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        padding: 6px;
+        background: #f1f5f9;
+        border-radius: 16px;
+        margin-bottom: 16px;
+    }
+
+    .ws-tab {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: none;
+        border-radius: 12px;
+        padding: 12px 14px;
+        font-weight: 800;
+        font-size: 0.88rem;
+        color: #64748b;
+        background: transparent;
+        cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+    }
+
+    .ws-tab:active {
+        transform: scale(0.98);
+    }
+
+    .ws-tab--active {
+        background: #fff;
+        color: #4f46e5;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+    }
+
+    .ws-tab .oi {
+        font-size: 0.95rem;
+    }
+
+    /* Staff list */
+    .ws-staff-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .ws-staff-header__title {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 900;
+        font-size: 0.88rem;
+        color: #4f46e5;
+    }
+
+    .ws-staff-header__count {
+        min-width: 22px;
+        height: 22px;
+        padding: 0 7px;
+        border-radius: 999px;
+        background: rgba(79, 70, 229, 0.12);
+        color: #4f46e5;
+        font-size: 0.72rem;
+        font-weight: 900;
+        display: inline-grid;
+        place-items: center;
+    }
+
+    .ws-staff-header__add {
+        border: none;
+        border-radius: 999px;
+        padding: 8px 14px;
+        background: linear-gradient(135deg, #4f46e5, #6366f1);
+        color: #fff;
+        font-weight: 800;
+        font-size: 0.78rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+    }
+
+    .ws-staff-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .ws-staff-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px;
+        border-radius: 18px;
+        background: #f8fafc;
+        border: 1px solid rgba(15, 23, 42, 0.06);
+        transition: background 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .ws-staff-item:hover {
+        background: #fff;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    }
+
+    .ws-staff-item--inactive {
+        opacity: 0.72;
+        background: #f1f5f9;
+    }
+
+    .ws-staff-item__avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #6366f1, #10b981);
+        color: #fff;
+        font-weight: 900;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+    }
+
+    .ws-staff-item__body {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .ws-staff-item__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .ws-staff-item__name {
+        font-weight: 900;
+        color: #0f172a;
+        font-size: 0.92rem;
+    }
+
+    .ws-staff-item__status {
+        font-size: 0.68rem;
+        font-weight: 800;
+        padding: 3px 8px;
+        border-radius: 999px;
+        flex-shrink: 0;
+    }
+
+    .ws-staff-item__status--on {
+        background: rgba(16, 185, 129, 0.12);
+        color: #059669;
+    }
+
+    .ws-staff-item__status--off {
+        background: rgba(239, 68, 68, 0.1);
+        color: #dc2626;
+    }
+
+    .ws-staff-item__phone {
+        font-size: 0.8rem;
+        color: #64748b;
+        font-weight: 700;
+        margin-top: 2px;
+    }
+
+    .ws-staff-item__tag {
+        display: inline-block;
+        margin-top: 6px;
+        font-size: 0.68rem;
+        font-weight: 800;
+        padding: 2px 8px;
+        border-radius: 999px;
+    }
+
+    .ws-staff-item__tag--tech {
+        background: rgba(79, 70, 229, 0.12);
+        color: #4f46e5;
+    }
+
+    .ws-staff-item__roles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 8px;
+    }
+
+    .ws-staff-item__role {
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #fff;
+        border: 1px solid rgba(79, 70, 229, 0.15);
+        color: #4338ca;
+    }
+
+    .ws-staff-item__role--more,
+    .ws-staff-item__role--empty {
+        background: #e2e8f0;
+        border-color: transparent;
+        color: #64748b;
+    }
+
+    .ws-staff-item__actions {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex-shrink: 0;
+    }
+
+    .ws-staff-action {
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        background: #fff;
+        color: #64748b;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+    }
+
+    .ws-staff-action--edit { color: #4f46e5; }
+    .ws-staff-action--warn { color: #d97706; }
+    .ws-staff-action--ok { color: #059669; }
+    .ws-staff-action--danger { color: #dc2626; }
+
+    .ws-staff-empty {
+        text-align: center;
+        padding: 16px;
+        border-radius: 16px;
+        border: 1px dashed #cbd5e1;
+        color: #64748b;
+        font-weight: 700;
+        font-size: 0.82rem;
+        background: #f8fafc;
+    }
+
+    /* User modal */
+    .ws-user-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1300;
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(3px);
+    }
+
+    .ws-user-modal {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1301;
+        width: min(520px, calc(100vw - 24px));
+        max-height: min(90vh, 760px);
+        background: #fff;
+        border-radius: 24px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .ws-user-modal__header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 16px 18px;
+        border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+        background: linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(16, 185, 129, 0.06));
+    }
+
+    .ws-user-modal__hero {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .ws-user-modal__avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #4f46e5, #10b981);
+        color: #fff;
+        font-weight: 900;
+        font-size: 1.1rem;
+        display: grid;
+        place-items: center;
+    }
+
+    .ws-user-modal__title {
+        margin: 0;
+        font-weight: 900;
+        font-size: 1rem;
+    }
+
+    .ws-user-modal__sub {
+        margin: 4px 0 0;
+        font-size: 0.78rem;
+        color: #64748b;
+        font-weight: 700;
+    }
+
+    .ws-user-modal__close {
+        width: 38px;
+        height: 38px;
+        border: none;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.85);
+        cursor: pointer;
+    }
+
+    .ws-user-modal__body {
+        padding: 16px 18px 20px;
+        overflow: auto;
+        display: grid;
+        gap: 14px;
+    }
+
+    .ws-user-modal__body > .ws-form {
+        padding: 0;
+        gap: 14px;
+    }
+
+    .ws-toggles--compact {
+        gap: 8px;
+        padding: 0;
+    }
+
+    .ws-password-card {
+        padding: 14px;
+        border-radius: 18px;
+        background: #f8fafc;
+        border: 1px solid rgba(15, 23, 42, 0.06);
+        display: grid;
+        gap: 10px;
+    }
+
+    .ws-password-card__title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 900;
+        font-size: 0.88rem;
+        color: #334155;
+    }
+
+    .ws-password-card__hint {
+        margin: 0;
+        font-size: 0.75rem;
+        color: #64748b;
+        font-weight: 700;
+        line-height: 1.5;
+    }
+
+    .ws-field__control--password {
+        display: flex;
+        align-items: stretch;
+        padding: 0;
+        overflow: hidden;
+        border-radius: 18px;
+        border: 1px solid var(--ws-input-border);
+        background: var(--ws-input-bg);
+        transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .ws-field__control--password:focus-within {
+        border-color: var(--ws-primary);
+        background: var(--ws-surface);
+        box-shadow: 0 0 0 5px var(--ws-input-focus-ring);
+    }
+
+    .ws-field__control--password .ws-field__input,
+    .ws-field__control--password ::deep input {
+        flex: 1;
+        min-width: 0;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+
+    .ws-field__control--password .ws-field__input:focus,
+    .ws-field__control--password ::deep input:focus {
+        border: 0 !important;
+        box-shadow: none !important;
+        background: transparent !important;
+    }
+
+    .ws-password-toggle {
+        width: 48px;
+        border: none;
+        border-right: 1px solid rgba(15, 23, 42, 0.08);
+        background: transparent;
+        color: #64748b;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
+    .ws-role-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .ws-role-chip {
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        padding: 8px 12px;
+        background: #fff;
+        font-size: 0.78rem;
+        font-weight: 800;
+        color: #475569;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+    }
+
+    .ws-register-wrapper {
+        max-width: 700px;
+        margin: 0 auto;
+        overflow: hidden;
+    }
+
+    .admin-container {
+        padding: 0 16px;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    @@media (min-width: 768px) {
+        .admin-container {
+            padding: 0 24px;
+        }
+    }
+
+    @@media (min-width: 992px) {
+        .admin-container {
+            padding: 0 32px;
+        }
+    }
+
+    .ws-role-chip--on {
+        background: rgba(79, 70, 229, 0.12);
+        border-color: rgba(79, 70, 229, 0.35);
+        color: #4338ca;
+    }
+
+    .ws-role-chip__check {
+        width: 16px;
+        font-size: 0.7rem;
+    }
+
+    @@media (max-width: 768px) {
+        .workshops-table { min-width: 720px; }
+
+        .ws-register-wrapper {
+            overflow: hidden;
+        }
+
+        .ws-form-card {
+            overflow-x: hidden;
+        }
+
+        .ws-form {
+            padding: 14px 10px 18px;
+        }
+
+        .ws-form-card__hero {
+            padding: 14px 14px;
+        }
+
+        .ws-switch-row {
+            padding: 10px 12px;
+            gap: 10px;
+        }
+
+        .ws-switch-row__title {
+            font-size: 0.82rem;
+        }
+
+        .ws-field__input,
+        .ws-field__control ::deep input:not(.ws-password-toggle),
+        .ws-field__control ::deep textarea,
+        .ws-field__control ::deep select,
+        .ws-field__control--select ::deep .searchable-select > input.form-control {
+            padding: 8px 10px !important;
+        }
+
+        .ws-staff-item {
+            flex-wrap: wrap;
+        }
+
+        .ws-staff-item__actions {
+            flex-direction: row;
+            width: 100%;
+            justify-content: flex-end;
+        }
+
+        .ws-user-modal {
+            top: auto;
+            bottom: 0;
+            left: 0;
+            transform: none;
+            width: 100%;
+            max-height: 92vh;
+            border-radius: 24px 24px 0 0;
+        }
+    }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+
+    private bool isSuperAdmin;
+    private bool canEditOwn;
+    private bool canManageStaff;
+
+    private enum WorkshopPageTab
+    {
+        Register,
+        Manage
+    }
+
+    private WorkshopPageTab activeTab = WorkshopPageTab.Register;
+    private ElementReference pageTopRef;
+
+    private List<WorkshopDto>? items;
+    private List<ProvinceDto>? provinces;
+    private List<CityDto>? cities;
+    private List<RoleDto>? availableRoles;
+
+    private Dictionary<string, string> roleTitleMap = new();
+
+    private WorkshopUpsertRequest model = new();
+    private int editingId;
+    private bool isSaving;
+    private bool isUploadingLogo;
+
+    private WorkshopDto? itemToDelete;
+    private bool showConfirm;
+
+    private WorkshopUserDto? userToDelete;
+    private bool showUserConfirm;
+    private WorkshopDto? userToDeleteWorkshop;
+
+    private string userConfirmTitle = "حذف پرسنل";
+    private string userConfirmMessage = "";
+    private bool userHasTransactionalRefs = false;
+
+    // Workshop User Management State
+    private HashSet<int> expandedIds = new();
+    private Dictionary<int, List<WorkshopUserDto>> workshopUsersMap = new();
+    private bool showUserModal;
+    private bool isSavingUser;
+    private WorkshopDto? targetWorkshop;
+    private WorkshopUserUpsertRequest userRequest = new();
+    private int editingUserId = 0;
+    private string? newPassword;
+    private string? confirmPassword;
+    private bool showNewPassword;
+
+    private IEnumerable<RoleDto> RolesForTargetWorkshop =>
+        (availableRoles ?? new List<RoleDto>())
+            .Where(r => r.WorkshopId == null || r.WorkshopId == targetWorkshop?.Id)
+            .OrderBy(r => r.TitleFa);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        isSuperAdmin = user.IsInRole("super_admin");
+        canEditOwn = user.HasClaim("perm", "admin.workshops.editown");
+        canManageStaff = user.HasClaim("perm", "workshop.users.manage");
+
+        if (!isSuperAdmin && !canEditOwn && !canManageStaff)
+        {
+            Navigation.NavigateTo("/", forceLoad: true);
+            return;
+        }
+
+        await LoadProvinces();
+        await Load();
+        await LoadRoles();
+        if (!isSuperAdmin) activeTab = WorkshopPageTab.Manage;
+        ResetForm();
+    }
+
+    private async Task LoadRoles()
+    {
+        try
+        {
+            var resp = await Http.GetAsync("api/roles");
+            if (resp.IsSuccessStatusCode)
+            {
+                availableRoles = await resp.Content.ReadFromJsonAsync<List<RoleDto>>();
+                roleTitleMap = (availableRoles ?? new List<RoleDto>())
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Key) && !string.IsNullOrWhiteSpace(x.TitleFa))
+                    .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.First().TitleFa, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+        catch { }
+    }
+
+    private string GetRoleTitle(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return string.Empty;
+        return roleTitleMap.TryGetValue(key, out var title) ? title : key;
+    }
+
+    private async Task LoadProvinces()
+    {
+        provinces = await Http.GetFromJsonAsync<List<ProvinceDto>>("api/locations/provinces");
+    }
+
+    private async Task LoadCities(int provinceId)
+    {
+        if (provinceId <= 0)
+        {
+            cities = new List<CityDto>();
+            return;
+        }
+
+        cities = await Http.GetFromJsonAsync<List<CityDto>>($"api/locations/cities/{provinceId}");
+    }
+
+    private async Task Load() => items = await Http.GetFromJsonAsync<List<WorkshopDto>>("api/workshops");
+
+    private async Task OnProvinceChanged(int provinceId)
+    {
+        model.ProvinceId = provinceId;
+        model.CityId = 0;
+        cities = new List<CityDto>();
+        await LoadCities(provinceId);
+        if (cities != null && cities.Any())
+        {
+            model.CityId = cities.First().Id;
+        }
+        StateHasChanged();
+    }
+
+    private Task OnCityChanged(int cityId)
+    {
+        model.CityId = cityId;
+        return Task.CompletedTask;
+    }
+
+    private void SetActiveTab(WorkshopPageTab tab) => activeTab = tab;
+
+    private async Task ScrollToPageTopAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", "window.scrollTo({ top: 0, behavior: 'smooth' });");
+            await JS.InvokeVoidAsync("eval", "document.getElementById('workshops-page-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });");
+        }
+        catch
+        {
+            // ignore scroll errors (prerender / disconnected circuit)
+        }
+    }
+
+    private async Task StartNewWorkshop()
+    {
+        ResetForm();
+        activeTab = WorkshopPageTab.Register;
+        await ScrollToPageTopAsync();
+    }
+
+    private void ResetForm()
+    {
+        editingId = 0;
+        model = new WorkshopUpsertRequest
+        {
+            ProvinceId = provinces?.FirstOrDefault()?.Id ?? 0,
+            CityId = 0,
+            IsActive = true,
+            ShowInCustomersRow = false,
+            MaxMonitoringConnections = 2,
+            ImageUrl = null
+        };
+        _ = LoadCities(model.ProvinceId);
+    }
+
+    private async Task Edit(WorkshopDto dto)
+    {
+        activeTab = WorkshopPageTab.Register;
+        editingId = dto.Id;
+        model = new WorkshopUpsertRequest
+        {
+            WorkshopName = dto.WorkshopName,
+            OwnerFullName = dto.OwnerFullName,
+            MobileNumber = dto.MobileNumber,
+            ProvinceId = dto.ProvinceId,
+            CityId = dto.CityId,
+            Address = dto.Address,
+            IsActive = dto.IsActive,
+            ImageUrl = dto.ImageUrl,
+            ShowInCustomersRow = dto.ShowInCustomersRow,
+            MaxMonitoringConnections = dto.MaxMonitoringConnections
+        };
+        await LoadCities(model.ProvinceId);
+        await InvokeAsync(StateHasChanged);
+        await ScrollToPageTopAsync();
+    }
+
+    private async Task HandleLogoFile(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        if (file.Size > 5_000_000)
+        {
+            ToastService.ShowError("حجم فایل زیاد است (حداکثر ۵ مگابایت)");
+            return;
+        }
+
+        isUploadingLogo = true;
+        try
+        {
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/workshops/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim().Trim('"');
+                model.ImageUrl = url;
+                ToastService.ShowSuccess("تصویر آپلود شد");
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا در آپلود" : body.Trim('"'));
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطای سیستمی در آپلود");
+        }
+        finally
+        {
+            isUploadingLogo = false;
+        }
+    }
+
+    private void RemoveLogo()
+    {
+        model.ImageUrl = null;
+    }
+
+    private async Task Save()
+    {
+        isSaving = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingId == 0)
+                resp = await Http.PostAsJsonAsync("api/workshops", model);
+            else
+                resp = await Http.PutAsJsonAsync($"api/workshops/{editingId}", model);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(editingId == 0 ? "کارگاه ایجاد شد" : "تغییرات ذخیره شد");
+                await Load();
+                ResetForm();
+                activeTab = WorkshopPageTab.Manage;
+                await ScrollToPageTopAsync();
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا در ذخیره" : body.Trim('"'));
+            }
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void AskDelete(WorkshopDto dto)
+    {
+        itemToDelete = dto;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool ok)
+    {
+        showConfirm = false;
+        if (!ok || itemToDelete == null) return;
+
+        var resp = await Http.DeleteAsync($"api/workshops/{itemToDelete.Id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            ToastService.ShowSuccess("حذف شد");
+            await Load();
+            ResetForm();
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "حذف ناموفق" : body.Trim('"'));
+        }
+    }
+
+    private void AskDeleteUser(WorkshopUserDto user, WorkshopDto ws)
+    {
+        _ = AskDeleteUserAsync(user, ws);
+    }
+
+    private async Task AskDeleteUserAsync(WorkshopUserDto user, WorkshopDto ws)
+    {
+        userToDelete = user;
+        userToDeleteWorkshop = ws;
+
+        userConfirmTitle = "حذف پرسنل";
+        userConfirmMessage = $"آیا از حذف پرسنل \"{user.FullName}\" اطمینان دارید؟";
+        userHasTransactionalRefs = false;
+
+        try
+        {
+            var check = await Http.GetFromJsonAsync<DeleteCheckResponse>($"api/workshop-auth/users/{user.Id}/delete-check");
+            if (check != null && check.HasTransactionalRefs)
+            {
+                userHasTransactionalRefs = true;
+                userConfirmMessage = $"آیا از حذف پرسنل \"{user.FullName}\" اطمینان دارید؟";
+            }
+        }
+        catch
+        {
+            // If delete-check fails, assume no refs
+        }
+
+        showUserConfirm = true;
+    }
+
+    private async Task HandleUserDeleteResult(bool ok)
+    {
+        showUserConfirm = false;
+        if (!ok || userToDelete == null) return;
+
+        var url = userHasTransactionalRefs
+            ? $"api/workshop-auth/users/{userToDelete.Id}?force=true"
+            : $"api/workshop-auth/users/{userToDelete.Id}";
+        var resp = await Http.DeleteAsync(url);
+
+        if (resp.IsSuccessStatusCode)
+        {
+            ToastService.ShowSuccess("پرسنل حذف شد");
+            if (userToDeleteWorkshop != null) await LoadWorkshopUsers(userToDeleteWorkshop.Id);
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "عملیات ناموفق" : body.Trim('"'));
+        }
+    }
+
+    private async Task HandleUserDeactivate()
+    {
+        showUserConfirm = false;
+        if (userToDelete == null) return;
+
+        var resp = await Http.PutAsync($"api/workshop-auth/users/{userToDelete.Id}/deactivate", content: null);
+
+        if (resp.IsSuccessStatusCode)
+        {
+            ToastService.ShowSuccess("پرسنل غیرفعال شد");
+            if (userToDeleteWorkshop != null) await LoadWorkshopUsers(userToDeleteWorkshop.Id);
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "عملیات ناموفق" : body.Trim('"'));
+        }
+    }
+
+    private sealed class DeleteCheckResponse
+    {
+        public bool CanHardDelete { get; set; }
+        public bool HasTransactionalRefs { get; set; }
+    }
+
+    private async Task ToggleStatus(WorkshopDto dto)
+    {
+        var resp = await Http.PatchAsync($"api/workshops/{dto.Id}/toggle-status", content: null);
+        if (resp.IsSuccessStatusCode)
+        {
+            ToastService.ShowSuccess("وضعیت بروزرسانی شد");
+            await Load();
+        }
+        else
+        {
+            ToastService.ShowError("خطا در بروزرسانی وضعیت");
+        }
+    }
+
+    // Workshop User Logic
+    private async Task ToggleDetails(int id)
+    {
+        if (expandedIds.Contains(id))
+        {
+            expandedIds.Remove(id);
+        }
+        else
+        {
+            expandedIds.Add(id);
+            await LoadWorkshopUsers(id);
+        }
+    }
+
+    private async Task LoadWorkshopUsers(int workshopId)
+    {
+        try
+        {
+            var users = await Http.GetFromJsonAsync<List<WorkshopUserDto>>($"api/workshop-auth/users?workshopId={workshopId}");
+            if (users != null)
+            {
+                workshopUsersMap[workshopId] = users;
+            }
+        }
+        catch { }
+    }
+
+    private static string GetStaffInitial(WorkshopUserDto u)
+    {
+        var name = (u.FullName ?? string.Empty).Trim();
+        return string.IsNullOrEmpty(name) ? "?" : name[0].ToString();
+    }
+
+    private string GetStaffInitialFromRequest()
+    {
+        var name = (userRequest.FullName ?? string.Empty).Trim();
+        return string.IsNullOrEmpty(name) ? "?" : name[0].ToString();
+    }
+
+    private void ResetUserPasswordFields()
+    {
+        newPassword = null;
+        confirmPassword = null;
+        showNewPassword = false;
+    }
+
+    private void OpenAddUserModal(WorkshopDto ws)
+    {
+        targetWorkshop = ws;
+        userRequest = new WorkshopUserUpsertRequest { WorkshopId = ws.Id, IsActive = true, IsTechnician = false };
+        editingUserId = 0;
+        ResetUserPasswordFields();
+        showUserModal = true;
+    }
+
+    private void EditUser(WorkshopUserDto user, WorkshopDto ws)
+    {
+        targetWorkshop = ws;
+        editingUserId = user.Id;
+        userRequest = new WorkshopUserUpsertRequest
+        {
+            WorkshopId = user.WorkshopId,
+            FullName = user.FullName,
+            PhoneNumber = user.PhoneNumber,
+            IsActive = user.IsActive,
+            IsTechnician = user.IsTechnician,
+            RoleKeys = new List<string>(user.RoleKeys)
+        };
+        ResetUserPasswordFields();
+        showUserModal = true;
+    }
+
+    private void CloseUserModal()
+    {
+        showUserModal = false;
+        isSavingUser = false;
+        ResetUserPasswordFields();
+    }
+
+    private void AskDeleteCurrentEditingUser()
+    {
+        if (targetWorkshop == null || editingUserId <= 0) return;
+        var user = workshopUsersMap.GetValueOrDefault(targetWorkshop.Id)?.FirstOrDefault(x => x.Id == editingUserId);
+        if (user != null)
+        {
+            CloseUserModal();
+            AskDeleteUser(user, targetWorkshop);
+        }
+    }
+
+    private async Task ToggleUserStatusInList(WorkshopUserDto user, WorkshopDto ws)
+    {
+        try
+        {
+            var resp = await Http.PutAsync($"api/workshop-auth/users/{user.Id}/toggle-status", content: null);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(user.IsActive ? "پرسنل غیرفعال شد" : "پرسنل فعال شد");
+                await LoadWorkshopUsers(ws.Id);
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا در تغییر وضعیت" : body.Trim('"'));
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+    }
+
+    private void ToggleUserRole(string key, bool isChecked)
+    {
+        if (isChecked) { if (!userRequest.RoleKeys.Contains(key)) userRequest.RoleKeys.Add(key); }
+        else { userRequest.RoleKeys.Remove(key); }
+    }
+
+    private async Task SaveUser()
+    {
+        if (isSavingUser) return;
+
+        if (editingUserId == 0)
+        {
+            if (editingUserId == 0 && string.IsNullOrWhiteSpace(newPassword))
+            {
+                ToastService.ShowError("رمز عبور اولیه باید حداقل ۴ کاراکتر باشد");
+                return;
+            }
+            userRequest.Password = newPassword.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(newPassword))
+        {
+            if (newPassword.Trim().Length < 4)
+            {
+                ToastService.ShowError("رمز جدید باید حداقل ۴ کاراکتر باشد");
+                return;
+            }
+            userRequest.Password = newPassword.Trim();
+        }
+        else
+        {
+            userRequest.Password = null;
+        }
+
+        isSavingUser = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingUserId == 0)
+                resp = await Http.PostAsJsonAsync("api/workshop-auth/users", userRequest);
+            else
+                resp = await Http.PutAsJsonAsync($"api/workshop-auth/users/{editingUserId}", userRequest);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(editingUserId == 0 ? "پرسنل اضافه شد" : "اطلاعات پرسنل ذخیره شد");
+                if (targetWorkshop != null) await LoadWorkshopUsers(targetWorkshop.Id);
+                CloseUserModal();
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا در ذخیره کاربر" : body.Trim('"'));
+            }
+        }
+        finally { isSavingUser = false; }
+    }
+}

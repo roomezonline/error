@@ -1,0 +1,675 @@
+@using Microsoft.AspNetCore.SignalR.Client
+@using System.Net.Http.Json
+@using ErrorService.Shared
+@using ErrorService.Client.Utils
+@implements IDisposable
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+@if (_settingsLoaded && (!_settings.EnableOnlineChat || (!_settings.AllowGuestChat && !_isLoggedIn)))
+{
+    return;
+}
+
+<div class="chat-widget @(_isOpen ? "chat-open" : "")">
+    @if (!_isOpen)
+    {
+        <button class="chat-fab" @onclick="ToggleOpen" title="پشتیبانی آنلاین">
+            <svg class="chat-fab-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2Z"/><circle cx="9" cy="13" r="1" fill="currentColor"/><circle cx="15" cy="13" r="1" fill="currentColor"/><path d="M12 7.5V3"/><path d="M10 3h4"/></svg>
+            <svg class="chat-fab-ring" width="64" height="64" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="29" stroke="currentColor" stroke-width="2" opacity=".3"/></svg>
+            @if (_unreadCount > 0)
+            {
+                <span class="chat-badge">@_unreadCount</span>
+            }
+        </button>
+    }
+    else
+    {
+        <div class="chat-panel">
+            <div class="chat-header">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="fw-bold">پشتیبانی آنلاین</span>
+                    <span class="bale-badge">🟢 از طریق بله</span>
+                </div>
+                <button class="chat-header-btn" @onclick="ToggleOpen" title="بستن"><span class="oi oi-x"></span></button>
+            </div>
+
+            @if (_status == ChatWidgetStatus.UserInfo)
+            {
+                <div class="chat-body d-flex flex-column justify-content-center p-4">
+                    <div class="text-center mb-4">
+                        <div class="display-5 mb-2">💬</div>
+                        <h6 class="fw-bold">شروع گفتگو</h6>
+                        <p class="text-muted small mb-0">پیام شما به اپراتور ارسال می‌شود و در سریع‌ترین زمان پاسخ می‌گیرید.</p>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">نام شما</label>
+                        <input class="form-control form-control-sm rounded-pill" @bind="_userName" placeholder="نام خود را وارد کنید..." />
+                    </div>
+                    <button class="btn btn-primary btn-sm rounded-pill py-2 fw-bold" @onclick="StartChat" disabled="@string.IsNullOrWhiteSpace(_userName)">
+                        شروع گفتگو
+                    </button>
+                </div>
+            }
+            else if (_status == ChatWidgetStatus.Loading)
+            {
+                <div class="chat-body d-flex align-items-center justify-content-center">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary mb-2"></div>
+                        <div class="text-muted small">در حال اتصال...</div>
+                    </div>
+                </div>
+            }
+            else if (_status == ChatWidgetStatus.Closed)
+            {
+                <div class="chat-body d-flex flex-column align-items-center justify-content-center p-4 text-center">
+                    <div class="display-5 text-muted mb-3">👋</div>
+                    <h6 class="fw-bold">مکالمه پایان یافت</h6>
+                    <p class="text-muted small mb-3">@_statusMessage</p>
+                    @if (_showRating && _lastSessionId > 0)
+                    {
+                        <div class="w-100 border-top pt-3 mt-1">
+                            <p class="small fw-bold mb-2">امتیاز شما به این گفتگو</p>
+                            <div class="d-flex justify-content-center gap-1 mb-2" style="font-size:1.6rem;">
+                                @for (int i = 1; i <= 5; i++)
+                                {
+                                    <span class="star @(i <= _ratingValue ? "star-on" : "")" @onclick="() => SetRating(i)" style="cursor:pointer;color:@(i <= _ratingValue ? "#f5a623" : "#ddd");transition:color .15s;">★</span>
+                                }
+                            </div>
+                            <textarea class="form-control form-control-sm mb-2" rows="2" placeholder="نظر شما..." @bind="_ratingComment" style="font-size:.8rem;"></textarea>
+                            <button class="btn btn-primary btn-sm rounded-pill px-4 w-100" @onclick="SubmitRating" disabled="@(_ratingValue == 0)">
+                                ثبت امتیاز
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <button class="btn btn-primary btn-sm rounded-pill px-4" @onclick="RestartChat">شروع مکالمه جدید</button>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="chat-body" @ref="_messagesContainer">
+                    @foreach (var msg in _messages)
+                    {
+                        <div class="chat-msg @(msg.SenderType == ChatSenderTypeDto.Operator || msg.SenderType == ChatSenderTypeDto.System ? "chat-msg-op" : "chat-msg-user")">
+                            @if (msg.MessageType == ChatMessageTypeDto.Text)
+                            {
+                                <div class="chat-bubble">@msg.Content</div>
+                            }
+                            else if (msg.MessageType == ChatMessageTypeDto.Image)
+                            {
+                                <div class="chat-bubble">
+                                    <img src="@msg.MediaUrl" class="chat-media-img" alt="تصویر" loading="lazy" @onclick="() => OpenImage(msg.MediaUrl)" />
+                                    @if (!string.IsNullOrEmpty(msg.Content))
+                                    {
+                                        <div class="mt-1 small">@msg.Content</div>
+                                    }
+                                </div>
+                            }
+                            else if (msg.MessageType == ChatMessageTypeDto.Voice)
+                            {
+                                <div class="chat-bubble">
+                                    <audio src="@msg.MediaUrl" controls class="chat-audio" preload="none"></audio>
+                                </div>
+                            }
+                            else if (msg.MessageType == ChatMessageTypeDto.File)
+                            {
+                                <div class="chat-bubble">
+                                    <a href="@msg.MediaUrl" target="_blank" class="chat-file-link" download>
+                                        <span class="oi oi-file"></span>
+                                        @(!string.IsNullOrEmpty(msg.Content) ? msg.Content : "فایل")
+                                    </a>
+                                </div>
+                            }
+                            else if (msg.MessageType == ChatMessageTypeDto.System)
+                            {
+                                <div class="chat-bubble chat-bubble-system">@msg.Content</div>
+                            }
+                            <div class="chat-time">
+                            @if (msg.SenderType == ChatSenderTypeDto.User)
+                            {
+                                @if (msg.Status == ChatMessageStatusDto.Sending)
+                                {
+                                    <span class="chat-status sending">⏳</span>
+                                }
+                                else if (msg.Status == ChatMessageStatusDto.Read)
+                                {
+                                    <span class="chat-status read">✓✓</span>
+                                }
+                                else
+                                {
+                                    <span class="chat-status">✓</span>
+                                }
+                            }
+                                @PersianDate.ToTime(msg.CreatedAt)
+                            </div>
+                        </div>
+                    }
+                    @if (_operatorTyping)
+                    {
+                        <div class="chat-msg chat-msg-op">
+                            <div class="chat-bubble chat-typing"><span></span><span></span><span></span></div>
+                        </div>
+                    }
+                </div>
+
+                <div class="chat-footer">
+                    <div class="chat-input-row">
+                        <input class="chat-input" @bind="_inputText" @bind:event="oninput"
+                               placeholder="پیام خود را بنویسید..."
+                               @onkeydown="HandleKeyDown"
+                               disabled="@(_status != ChatWidgetStatus.Active)" />
+                        <button class="chat-btn" @onclick="SendImage" title="ارسال تصویر" disabled="@(_status != ChatWidgetStatus.Active)">
+                            <span class="oi oi-image"></span>
+                        </button>
+                        @if (_voiceSupported)
+                        {
+                            <button class="chat-btn @(_isRecording ? "chat-btn-rec" : "")" @onclick="ToggleVoice" title="@(_isRecording ? "توقف ضبط" : "ضبط صدا")" disabled="@(_status != ChatWidgetStatus.Active)">
+                                <span class="oi oi-microphone"></span>
+                            </button>
+                        }
+                        <button class="chat-btn chat-btn-send" @onclick="SendText" title="ارسال" disabled="@(string.IsNullOrWhiteSpace(_inputText) || _status != ChatWidgetStatus.Active)">
+                            <span class="oi oi-arrow-left"></span>
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(_lightboxUrl))
+{
+    <div class="chat-lightbox-overlay" @onclick="CloseLightbox">
+        <img src="@_lightboxUrl" class="chat-lightbox-img" alt="تصویر" />
+    </div>
+}
+
+<style>
+    /* ── Root ── */
+    .chat-widget { position: fixed; bottom: 24px; left: 20px; z-index: 9999; direction: rtl; }
+    .chat-fab { width: 60px; height: 60px; border-radius: 50%; border: none; background: linear-gradient(135deg,#0d6efd,#4361ee); color: #fff; cursor: pointer; box-shadow: 0 4px 20px rgba(13,110,253,.4); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; transition: transform .25s cubic-bezier(.34,1.56,.64,1),box-shadow .25s; }
+    .chat-fab:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(13,110,253,.55); }
+    .chat-fab:active { transform: scale(.95); }
+    .chat-fab-icon { position:relative;z-index:2; }
+    .chat-fab-ring { position:absolute;inset:0;width:100%;height:100%;color:rgba(255,255,255,.25);animation:chat-ring 2.5s ease-in-out infinite; }
+    @@keyframes chat-ring { 0%,100%{opacity:.3;transform:scale(1)} 50%{opacity:0;transform:scale(1.15)} }
+    .chat-fab::after { content:'';position:absolute;inset:0;border-radius:50%;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.3) 45%,transparent 60%);animation:chat-shine 3s ease-in-out infinite;pointer-events:none; }
+    @@keyframes chat-shine { 0%{transform:translateX(-100%)rotate(25deg)} 20%{transform:translateX(100%)rotate(25deg)} 100%{transform:translateX(100%)rotate(25deg)} }
+    .chat-badge { position: absolute; top: -2px; right: -2px; background: #dc3545; color: #fff; border-radius: 50%; width: 22px; height: 22px; font-size: .7rem; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; z-index:3; }
+    .chat-panel { width: 340px; height: 520px; max-height: calc(100vh - 100px); background: #fff; border-radius: 16px; box-shadow: 0 8px 40px rgba(0,0,0,.15); display: flex; flex-direction: column; overflow: hidden; animation: chat-in .25s ease; }
+    @@keyframes chat-in { from { opacity:0; transform:translateY(16px) scale(.95); } to { opacity:1; transform:translateY(0) scale(1); } }
+    .chat-header { background: #0d6efd; color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
+    .chat-header-btn { background: rgba(255,255,255,.15); border: none; color: #fff; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: .8rem; }
+    .chat-body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #f8f9fa; scroll-behavior: smooth; }
+    .chat-msg { max-width: 85%; display: flex; flex-direction: column; gap: 2px; animation: msgIn .2s ease; }
+    @@keyframes msgIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    .chat-msg-user { align-self: flex-start; }
+    .chat-msg-op { align-self: flex-end; }
+    .chat-bubble { padding: 10px 14px; border-radius: 16px; font-size: .85rem; line-height: 1.55; word-break: break-word; }
+    .chat-msg-user .chat-bubble { background: #0d6efd; color: #fff; border-bottom-left-radius: 4px; }
+    .chat-msg-op .chat-bubble { background: #e9ecef; color: #212529; border-bottom-right-radius: 4px; }
+    .chat-bubble-system { background: transparent; color: #6c757d; font-size: .75rem; text-align: center; padding: 4px 8px; }
+    .chat-time { font-size: .65rem; color: #adb5bd; padding: 4px 4px 0; display: flex; align-items: center; gap: 3px; }
+    .chat-status { font-size: .6rem; font-weight: 700; color: #adb5bd; }
+    .chat-status.sending { font-size: .55rem; }
+    .chat-status.read { color: #0d6efd; }
+    .chat-status.read::before { content: ""; }
+    .chat-media-img { max-width: 200px; max-height: 180px; border-radius: 10px; cursor: pointer; }
+    .chat-audio { width: 100%; height: 36px; }
+    .chat-file-link { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 6px; }
+    .chat-typing { display: flex; gap: 4px; padding: 12px 16px; }
+    .chat-typing span { width: 7px; height: 7px; border-radius: 50%; background: #6c757d; animation: chat-bounce 1.4s infinite; }
+    .chat-typing span:nth-child(2) { animation-delay: .2s; }
+    .chat-typing span:nth-child(3) { animation-delay: .4s; }
+    @@keyframes chat-bounce { 0%,60%,100% { transform:translateY(0); } 30% { transform:translateY(-6px); } }
+    .chat-footer { padding: 8px 10px; border-top: 1px solid #e9ecef; background: #fff; }
+    .chat-input-row { display: flex; gap: 4px; align-items: center; }
+    .chat-input { flex: 1; border: 1.5px solid #e9ecef; border-radius: 24px; padding: 10px 16px; font-size: .85rem; outline: none; transition: border-color .2s; }
+    .chat-input:focus { border-color: #0d6efd; }
+    .chat-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: #f1f3f5; color: #495057; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; flex-shrink: 0; font-size: .9rem; }
+    .chat-btn:hover { background: #e9ecef; }
+    .chat-btn:disabled { opacity: .4; cursor: default; }
+    .chat-btn-send { background: #0d6efd; color: #fff; }
+    .chat-btn-send:hover { background: #0b5ed7; }
+    .chat-btn-rec { background: #dc3545; color: #fff; animation: chat-pulse .8s infinite; }
+    @@keyframes chat-pulse { 0%,100% { box-shadow:0 0 0 0 rgba(220,53,69,.4); } 50% { box-shadow:0 0 0 8px rgba(220,53,69,0); } }
+    .chat-lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px; cursor: pointer; }
+    .chat-lightbox-img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+    .star-on { color: #f5a623 !important; }
+
+    /* ── Mobile ── */
+    @@media (max-width: 480px) {
+        .chat-widget { bottom: 0; left: 0; right: 0; }
+        .chat-fab { position: fixed; bottom: 80px; left: 12px; width: 56px; height: 56px; }
+        .chat-panel { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; box-shadow: none; }
+        .chat-body { padding-bottom: env(safe-area-inset-bottom, 8px); }
+        .chat-footer { padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px)); }
+        .chat-msg { max-width: 88%; }
+        .chat-input { padding: 12px 16px; font-size: 1rem; }
+        .chat-btn { width: 44px; height: 44px; }
+        .chat-media-img { max-width: 180px; max-height: 160px; }
+    }
+</style>
+
+@code {
+    private enum ChatWidgetStatus { UserInfo, Loading, Active, Closed }
+    private ChatWidgetStatus _status = ChatWidgetStatus.UserInfo;
+    private HubConnection? _hub;
+    private List<ChatMessageDto> _messages = new();
+    private string _inputText = "";
+    private bool _operatorTyping;
+    private int _sessionId;
+    private int _unreadCount;
+    private string? _statusMessage;
+    private bool _isOpen;
+    private bool _isRecording;
+    private bool _voiceSupported;
+    private string? _lightboxUrl;
+    private ElementReference _messagesContainer;
+    private SiteSettingsDto _settings = new();
+    private bool _settingsLoaded;
+    private bool _isLoggedIn;
+    private string _userName = "";
+    private string _userEmail = "";
+    private DateTime _lastTypingSent = DateTime.MinValue;
+    private bool _hasConnectedOnce;
+    private bool _showRating;
+    private int _ratingValue;
+    private string _ratingComment = "";
+    private int _lastSessionId;
+
+    protected override async Task OnInitializedAsync()
+    {
+            try { _settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/SiteSettings") ?? new(); }
+        catch { }
+        _settingsLoaded = true;
+
+        try
+        {
+            var token = await JS.InvokeAsync<string>("localStorage.getItem", "auth_token");
+            _isLoggedIn = !string.IsNullOrEmpty(token);
+            var savedName = await JS.InvokeAsync<string>("localStorage.getItem", "chat_user_name");
+            var savedEmail = await JS.InvokeAsync<string>("localStorage.getItem", "chat_user_email");
+            if (!string.IsNullOrEmpty(savedName)) _userName = savedName;
+            if (!string.IsNullOrEmpty(savedEmail)) _userEmail = savedEmail;
+        }
+        catch { }
+    }
+
+    private DotNetObjectReference<ChatWidget>? _dotNetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { _voiceSupported = await JS.InvokeAsync<bool>("__chatVoiceRecorder.isSupported"); } catch { }
+            _dotNetRef = DotNetObjectReference.Create(this);
+            try { await JS.InvokeVoidAsync("window.__chatSetDotNetRef", _dotNetRef); } catch { }
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckExistingSession()
+    {
+        try
+        {
+            var visitorId = await GetVisitorId();
+            var active = await Http.GetFromJsonAsync<ChatSessionDto?>($"api/chat/active?visitorId={visitorId}");
+            if (active != null)
+            {
+                _sessionId = active.Id;
+                _userName = active.UserName ?? _userName;
+                _status = ChatWidgetStatus.Active;
+                if (_hub != null)
+                    await _hub.InvokeAsync("JoinSession", _sessionId);
+                await LoadMessages();
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    [JSInvokable]
+    public async Task OnVoiceRecorded(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            if (_pendingTempIds.TryDequeue(out var failedId))
+                _messages.RemoveAll(m => m.Id == failedId);
+            StateHasChanged();
+            return;
+        }
+        if (_hub != null)
+        {
+            var tempId = _nextTempId--;
+            _pendingTempIds.Enqueue(tempId);
+            _messages.Add(new ChatMessageDto
+            {
+                Id = tempId,
+                SessionId = _sessionId,
+                SenderType = ChatSenderTypeDto.User,
+                MessageType = ChatMessageTypeDto.Voice,
+                MediaUrl = url,
+                CreatedAt = DateTime.UtcNow,
+                Status = ChatMessageStatusDto.Sending
+            });
+            ScrollToBottom();
+            StateHasChanged();
+            await _hub.InvokeAsync("SendMessage", _sessionId, "", ChatMessageTypeDto.Voice, url);
+        }
+    }
+
+    private async Task ConnectHub()
+    {
+        if (_hub != null)
+        {
+            if (_hub.State == HubConnectionState.Connected) return;
+            await _hub.DisposeAsync();
+            _hub = null;
+        }
+
+        var visitorId = await GetVisitorId();
+        _hub = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri($"/hubs/chat?visitorId={visitorId}"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hub.On<ChatMessageDto>("NewMessage", msg =>
+        {
+            if (_pendingTempIds.TryDequeue(out var tempId))
+                _messages.RemoveAll(m => m.Id == tempId);
+            _messages.Add(msg);
+            _messages.Sort((a, b) => a.CreatedAt.CompareTo(b.CreatedAt));
+            if (msg.SenderType == ChatSenderTypeDto.Operator)
+            {
+                _operatorTyping = false;
+                _ = _hub.InvokeAsync("MarkAsRead", msg.SessionId, new List<int> { msg.Id });
+            }
+            if (!_isOpen && msg.SenderType != ChatSenderTypeDto.User)
+            {
+                _unreadCount++;
+                _ = JS.InvokeVoidAsync("__chatPlayNotification");
+            }
+            _ = ScrollToBottom();
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<bool>("OperatorTyping", isTyping =>
+        {
+            _operatorTyping = isTyping;
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<int>("SessionClosed", sessionId =>
+        {
+            _status = ChatWidgetStatus.Closed;
+            _statusMessage = "مکالمه توسط اپراتور پایان یافت.";
+            _lastSessionId = _sessionId;
+            _sessionId = 0;
+            _showRating = true;
+            _ratingValue = 0;
+            _ratingComment = "";
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<int, List<int>>("MessagesRead", (sessionId, messageIds) =>
+        {
+            if (_sessionId == sessionId)
+            {
+                foreach (var msg in _messages.Where(m => messageIds.Contains(m.Id)))
+                {
+                    msg.IsRead = true;
+                    msg.Status = ChatMessageStatusDto.Read;
+                }
+                InvokeAsync(StateHasChanged);
+            }
+        });
+
+        _hub.Reconnecting += _ => { _pendingTempIds.Clear(); _status = ChatWidgetStatus.Loading; InvokeAsync(StateHasChanged); return Task.CompletedTask; };
+        _hub.Reconnected += async _ =>
+        {
+            _pendingTempIds.Clear();
+            _messages.RemoveAll(m => m.Id < 0);
+            if (_sessionId > 0)
+            {
+                await _hub.InvokeAsync("JoinSession", _sessionId);
+                await LoadMessages();
+            }
+            InvokeAsync(StateHasChanged);
+        };
+
+        await _hub.StartAsync();
+        _hasConnectedOnce = true;
+    }
+
+    private async Task ToggleOpen()
+    {
+        _isOpen = !_isOpen;
+        if (_isOpen)
+        {
+            _unreadCount = 0;
+            if (!_hasConnectedOnce)
+            {
+                await ConnectHub();
+                await CheckExistingSession();
+            }
+            else if (_sessionId > 0)
+            {
+                await _hub!.InvokeAsync("JoinSession", _sessionId);
+                await LoadMessages();
+                await ScrollToBottom();
+            }
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartChat()
+    {
+        if (string.IsNullOrWhiteSpace(_userName)) return;
+
+        await JS.InvokeVoidAsync("localStorage.setItem", "chat_user_name", _userName);
+
+        _status = ChatWidgetStatus.Loading;
+        StateHasChanged();
+
+        try
+        {
+            await ConnectHub();
+            var result = await _hub!.InvokeAsync<StartChatResult>("StartChat", _userName, _userEmail);
+            _sessionId = result.SessionId;
+            _status = ChatWidgetStatus.Active;
+            _statusMessage = null;
+            await LoadMessages();
+        }
+        catch
+        {
+            _status = ChatWidgetStatus.Closed;
+            _statusMessage = "خطا در برقراری ارتباط.";
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadMessages()
+    {
+        if (_sessionId == 0) return;
+        try
+        {
+            var visitorId = await GetVisitorId();
+            var resp = await Http.GetFromJsonAsync<System.Text.Json.JsonElement>($"api/chat/sessions/{_sessionId}/messages?visitorId={visitorId}&take=200");
+            if (resp.ValueKind == System.Text.Json.JsonValueKind.Object && resp.TryGetProperty("items", out var items))
+            {
+                _messages = System.Text.Json.JsonSerializer.Deserialize<List<ChatMessageDto>>(items.GetRawText(), new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+            }
+            await ScrollToBottom();
+        }
+        catch { }
+
+        // Mark unread operator messages as read
+        var unreadIds = _messages
+            .Where(m => m.SenderType == ChatSenderTypeDto.Operator && !m.IsRead)
+            .Select(m => m.Id)
+            .ToList();
+        if (unreadIds.Count > 0 && _hub?.State == HubConnectionState.Connected)
+        {
+            try { await _hub.InvokeAsync("MarkAsRead", _sessionId, unreadIds); } catch { }
+        }
+    }
+
+    private int _nextTempId = -1;
+    private Queue<int> _pendingTempIds = new();
+
+    private async Task SendText()
+    {
+        var text = _inputText.Trim();
+        if (string.IsNullOrWhiteSpace(text) || _sessionId == 0) return;
+        if (_hub == null) return;
+        if (_hub.State != HubConnectionState.Connected)
+        {
+            try { await _hub.StartAsync(); } catch { return; }
+        }
+        _inputText = "";
+        _operatorTyping = false;
+
+        var tempId = _nextTempId--;
+        _pendingTempIds.Enqueue(tempId);
+        _messages.Add(new ChatMessageDto
+        {
+            Id = tempId,
+            SessionId = _sessionId,
+            SenderType = ChatSenderTypeDto.User,
+            Content = text,
+            MessageType = ChatMessageTypeDto.Text,
+            CreatedAt = DateTime.UtcNow,
+            Status = ChatMessageStatusDto.Sending
+        });
+        ScrollToBottom();
+        StateHasChanged();
+
+        try { await _hub.InvokeAsync("SendMessage", _sessionId, text, ChatMessageTypeDto.Text, null); }
+        catch { }
+    }
+
+    private async Task SendImage()
+    {
+        await JS.InvokeVoidAsync("__chatPickImage", DotNetObjectReference.Create(this));
+    }
+
+    [JSInvokable]
+    public async Task OnImagePicked(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            if (_pendingTempIds.TryDequeue(out var failedId))
+                _messages.RemoveAll(m => m.Id == failedId);
+            StateHasChanged();
+            return;
+        }
+        if (_hub != null)
+        {
+            var tempId = _nextTempId--;
+            _pendingTempIds.Enqueue(tempId);
+            _messages.Add(new ChatMessageDto
+            {
+                Id = tempId,
+                SessionId = _sessionId,
+                SenderType = ChatSenderTypeDto.User,
+                Content = "",
+                MessageType = ChatMessageTypeDto.Image,
+                MediaUrl = url,
+                CreatedAt = DateTime.UtcNow,
+                Status = ChatMessageStatusDto.Sending
+            });
+            ScrollToBottom();
+            StateHasChanged();
+            await _hub.InvokeAsync("SendMessage", _sessionId, "", ChatMessageTypeDto.Image, url);
+        }
+    }
+
+    private async Task ToggleVoice()
+    {
+        if (_isRecording)
+        {
+            try { await JS.InvokeVoidAsync("__chatVoiceRecorder.stop"); } catch { }
+            _isRecording = false;
+        }
+        else
+        {
+            try
+            {
+                var ok = await JS.InvokeAsync<bool>("__chatVoiceRecorder.start");
+                if (ok) _isRecording = true;
+            }
+            catch { }
+        }
+        StateHasChanged();
+    }
+
+    private void HandleTyping()
+    {
+        if (_hub == null || _sessionId == 0) return;
+        if ((DateTime.UtcNow - _lastTypingSent).TotalSeconds > 2)
+        {
+            _ = _hub.InvokeAsync("Typing", _sessionId, true);
+            _lastTypingSent = DateTime.UtcNow;
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_inputText))
+            await SendText();
+    }
+
+    private async Task ScrollToBottom()
+    {
+        await Task.Delay(50);
+        await JS.InvokeVoidAsync("__chatScrollToBottom", ".chat-body");
+    }
+
+    private void OpenImage(string? url) => _lightboxUrl = url;
+    private void CloseLightbox() => _lightboxUrl = null;
+
+    private void SetRating(int val)
+    {
+        _ratingValue = val;
+    }
+
+    private async Task SubmitRating()
+    {
+        if (_ratingValue == 0 || _lastSessionId == 0) return;
+        try
+        {
+            await Http.PostAsJsonAsync($"api/Chat/sessions/{_lastSessionId}/rate?visitorId={await GetVisitorId()}", new { rating = _ratingValue, comment = _ratingComment });
+            _showRating = false;
+        }
+        catch { }
+    }
+
+    private async Task RestartChat()
+    {
+        _messages.Clear();
+        _sessionId = 0;
+        _status = ChatWidgetStatus.UserInfo;
+        _statusMessage = null;
+    }
+
+    private async Task<string> GetVisitorId()
+    {
+        var id = await JS.InvokeAsync<string>("localStorage.getItem", "chat_visitor_id");
+        if (string.IsNullOrEmpty(id))
+        {
+            id = Guid.NewGuid().ToString("N");
+            await JS.InvokeVoidAsync("localStorage.setItem", "chat_visitor_id", id);
+        }
+        return id;
+    }
+
+    public void Dispose()
+    {
+        _hub?.DisposeAsync().AsTask().ConfigureAwait(false);
+    }
+}

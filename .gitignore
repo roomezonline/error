@@ -1,0 +1,35 @@
+# Build outputs
+bin/
+obj/
+publish/
+publish_test/
+
+# Secrets - DO NOT COMMIT
+appsettings.json
+appsettings.Development.json
+.deploy-config.json
+PublishProfiles/
+
+# IDE & runtime artifacts
+.vs/
+*.user
+temp_file/
+app_offline.htm
+
+# Logs & junk
+*.log
+server_out.*
+server_err.*
+build.log
+0
+0.1
+0.15
+0.2
+0.3
+-0.3
+0.940622291481193
+\### My Bosch Dishwasher is displaying an.txt
+
+# OS
+.DS_Store
+Thumbs.db

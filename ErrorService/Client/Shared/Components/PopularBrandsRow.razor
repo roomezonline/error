@@ -1,0 +1,112 @@
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+
+@if (items == null)
+{
+    <div class="container my-4" dir="rtl">
+        <div class="card border-0 shadow-sm rounded-4 p-4">
+            <div class="d-flex align-items-center justify-content-center gap-3">
+                <div class="spinner-border text-primary" role="status"></div>
+                <div class="fw-bold">در حال بارگذاری برندها...</div>
+            </div>
+        </div>
+    </div>
+}
+else if (items.Count == 0)
+{
+    <div></div>
+}
+else
+{
+    var durationSeconds = Math.Clamp(items.Count * 6, 30, 120);
+
+    <div class="container my-4" dir="rtl">
+        <div class="brands-card shadow-sm rounded-4">
+            <div class="brands-card__header">
+                <div class="brands-card__title">
+                    محبوب‌ترین برندها
+                    <span class="brands-card__spark">✨</span>
+                </div>
+            </div>
+
+            <div class="brands-marquee" style="--brands-marquee-duration: @(durationSeconds)s" aria-label="محبوب‌ترین برندها">
+                <div class="brands-marquee__track" aria-hidden="true">
+                    @for (var i = 0; i < 10; i++)
+                    {
+                        <div class="brands-marquee__segment">
+                            @foreach (var it in items.OrderBy(x => x.SortOrder))
+                            {
+                                <a class="brand-item" href="@GetHref(it)" target="@GetTarget(it)" rel="@GetRel(it)">
+                                    <div class="brand-item__inner">
+                                        @if (!string.IsNullOrWhiteSpace(it.ImageUrl))
+                                        {
+                                            <img class="brand-item__img" src="@it.ImageUrl" alt="@it.Title" loading="lazy" decoding="async" />
+                                        }
+                                        else
+                                        {
+                                            <div class="brand-item__fallback">@GetFallback(it.Title)</div>
+                                        }
+                                    </div>
+                                </a>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<PopularBrandItemDto>? items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            items = await Http.GetFromJsonAsync<List<PopularBrandItemDto>>("api/popular-brands/active");
+            items ??= new();
+        }
+        catch
+        {
+            items = new();
+        }
+    }
+
+    private static string GetFallback(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "B";
+        var t = title.Trim();
+        return t.Length <= 3 ? t : t.Substring(0, 3);
+    }
+
+    private static string GetHref(PopularBrandItemDto it)
+    {
+        if (string.IsNullOrWhiteSpace(it.LinkUrl))
+            return "#";
+        return it.LinkUrl;
+    }
+
+    private static string GetTarget(PopularBrandItemDto it)
+    {
+        if (string.IsNullOrWhiteSpace(it.LinkUrl))
+            return "_self";
+
+        if (Uri.TryCreate(it.LinkUrl, UriKind.Absolute, out _))
+            return "_blank";
+
+        return "_self";
+    }
+
+    private static string GetRel(PopularBrandItemDto it)
+    {
+        if (string.IsNullOrWhiteSpace(it.LinkUrl))
+            return string.Empty;
+
+        if (Uri.TryCreate(it.LinkUrl, UriKind.Absolute, out _))
+            return "noopener noreferrer";
+
+        return string.Empty;
+    }
+}

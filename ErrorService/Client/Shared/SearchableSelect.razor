@@ -1,0 +1,143 @@
+@typeparam TItem
+
+<div class="searchable-select" tabindex="0">
+    <input class="form-control" value="@DisplayText" placeholder="@Placeholder" readonly disabled="@Disabled" @onclick="Toggle" />
+
+    @if (isOpen)
+    {
+        <div class="ss-backdrop" @onclick="Close"></div>
+        <div class="dropdown-panel shadow-sm" @onclick:stopPropagation>
+            @if (!string.IsNullOrWhiteSpace(Hint))
+            {
+                <div class="hint-text">@Hint</div>
+            }
+
+            <input class="form-control form-control-sm rounded-3 mb-2" @bind="search" @bind:event="oninput" placeholder="جستجو..." />
+
+            <div class="list-group list-group-flush options">
+                @if (FilteredItems.Count == 0)
+                {
+                    <div class="text-muted small px-2 py-2">موردی یافت نشد</div>
+                }
+                else
+                {
+                    @foreach (var item in FilteredItems)
+                    {
+                        var v = GetValue(item);
+                        var text = GetText(item);
+                        <button type="button" class="list-group-item list-group-item-action" @onclick="() => Select(v)">
+                            @text
+                        </button>
+                    }
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<TItem> Items { get; set; } = Array.Empty<TItem>();
+    [Parameter] public int Value { get; set; }
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+    [Parameter] public Func<TItem, int> GetValue { get; set; } = default!;
+    [Parameter] public Func<TItem, string> GetText { get; set; } = default!;
+    [Parameter] public string Placeholder { get; set; } = "انتخاب کنید";
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private bool isOpen;
+    private string search = string.Empty;
+
+    private string DisplayText
+    {
+        get
+        {
+            if (Disabled) return "";
+
+            var selected = Items.FirstOrDefault(x => GetValue(x) == Value);
+            if (selected == null) return string.Empty;
+            return GetText(selected);
+        }
+    }
+
+    private List<TItem> FilteredItems =>
+        Items
+            .Where(x => string.IsNullOrWhiteSpace(search) || (GetText(x) ?? string.Empty).Contains(search, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    private void Toggle()
+    {
+        if (Disabled) return;
+        isOpen = !isOpen;
+    }
+
+    private void Close()
+    {
+        isOpen = false;
+        search = string.Empty;
+    }
+
+    private async Task Select(int value)
+    {
+        search = string.Empty;
+        isOpen = false;
+        Value = value;
+        await ValueChanged.InvokeAsync(value);
+    }
+}
+
+<style>
+    .searchable-select {
+        position: relative;
+        outline: none;
+        box-sizing: border-box;
+    }
+
+    .dropdown-panel {
+        position: absolute;
+        z-index: 3000;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 10px;
+        width: 100%;
+        margin-top: 6px;
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+    }
+
+    .ss-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1990;
+        background: transparent;
+    }
+
+    .hint-text {
+        color: #dc2626;
+        font-size: 0.75rem;
+        font-weight: 700;
+        margin-bottom: 6px;
+        text-align: right;
+    }
+
+    .options {
+        max-height: 340px;
+        overflow: auto;
+        border-radius: 10px;
+    }
+
+    .options .list-group-item {
+        border: none;
+        border-radius: 10px;
+        margin-bottom: 4px;
+        text-align: right;
+        color: #0f172a;
+        background: #fff;
+    }
+
+    .options .list-group-item:hover,
+    .options .list-group-item:focus {
+        background: #f1f5f9;
+        color: #0f172a;
+    }
+</style>

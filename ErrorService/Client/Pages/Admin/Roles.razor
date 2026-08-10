@@ -1,0 +1,730 @@
+@page "/admin/roles"
+@layout AdminLayout
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authorization
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+@inject ToastService ToastService
+@inject AdminWorkshopSelectionService AdminWorkshopSelection
+@attribute [Authorize(Policy = "perm:security.roles.manage")]
+@implements IDisposable
+
+<div class="pr-page" dir="rtl">
+    <header class="pr-header">
+        <div class="pr-header__top">
+            <div>
+                <h1 class="pr-header__title">مدیریت نقش‌ها</h1>
+                <p class="pr-header__sub">سطوح دسترسی و مجوزهای سیستم</p>
+            </div>
+            <button class="pr-fab" @onclick="() => OpenModal()" title="ایجاد نقش جدید">
+                <span>+</span>
+            </button>
+        </div>
+
+        <div class="pr-toolbar">
+            <div class="pr-search">
+                <span class="oi oi-magnifying-glass pr-search__icon"></span>
+                <input type="text" class="pr-search__input" placeholder="جستجوی نقش..." 
+                       value="@searchQuery" @oninput="OnSearchInput" />
+            </div>
+            <div class="pr-chips">
+                <button class="pr-chip @(showSystemOnly ? "pr-chip--on" : "")" @onclick="ToggleSystemOnly">
+                    <span class="oi oi-shield"></span>
+                    سیستمی
+                </button>
+                <button class="pr-chip @(showCustomOnly ? "pr-chip--on" : "")" @onclick="ToggleCustomOnly">
+                    <span class="oi oi-people"></span>
+                    سفارشی
+                </button>
+                @if (showSystemOnly || showCustomOnly || !string.IsNullOrEmpty(searchQuery))
+                {
+                    <button class="pr-chip pr-chip--clear" @onclick="ClearFilters">
+                        <span class="oi oi-x"></span> پاک کردن
+                    </button>
+                }
+            </div>
+        </div>
+    </header>
+
+    <main class="pr-main">
+        @if (roles == null)
+        {
+            <div class="pr-state">
+                <div class="pr-spinner"></div>
+                <div>در حال بارگذاری...</div>
+            </div>
+        }
+        else if (!FilteredRoles.Any())
+        {
+            <div class="pr-state">
+                <div class="pr-state__icon"><span class="oi oi-shield" style="font-size:2.5rem;opacity:0.3;"></span></div>
+                <h3>نقشی یافت نشد</h3>
+                <p class="text-muted">هیچ نقشی با این مشخصات وجود ندارد</p>
+                <button class="pr-btn pr-btn--outline" @onclick="ClearFilters">نمایش همه</button>
+            </div>
+        }
+        else
+        {
+            <div class="pr-grid">
+                @foreach (var role in FilteredRoles)
+                {
+                    var permCount = role.PermissionKeys.Count;
+                    var groupSummary = GetPermissionGroupSummary(role);
+
+                    <div class="pr-card @(role.IsSystem ? "pr-card--system" : "")">
+                        <div class="pr-card__head">
+                            <div class="pr-card__title-row">
+                                <h3 class="pr-card__title">@role.TitleFa</h3>
+                                @if (role.IsSystem)
+                                {
+                                    <span class="pr-badge pr-badge--system">سیستمی</span>
+                                }
+                            </div>
+                            <div class="pr-card__meta">
+                                <span class="pr-card__key">@role.Key</span>
+                                <span class="pr-card__count">@permCount مجوز</span>
+                            </div>
+                        </div>
+
+                        <div class="pr-card__body">
+                            <p class="pr-card__desc">
+                                @(string.IsNullOrWhiteSpace(role.DescriptionFa) ? "توضیحی ثبت نشده" : role.DescriptionFa)
+                            </p>
+
+                            @if (permCount > 0)
+                            {
+                                <div class="pr-groups">
+                                    @foreach (var g in groupSummary)
+                                    {
+                                        <div class="pr-group-chip">
+                                            <span class="pr-group-chip__name">@g.Group</span>
+                                            <span class="pr-group-chip__count">@g.Count</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <div class="pr-perms">
+                                @{
+                                    var expanded = expandedRoleIds.Contains(role.Id);
+                                    var perms = role.PermissionKeys;
+                                    var permLookup = allPermissions?.ToDictionary(x => x.Key, x => x.TitleFa);
+                                }
+                                @foreach (var p in (expanded ? perms : perms.Take(3)))
+                                {
+                                    var title = permLookup != null && permLookup.TryGetValue(p, out var t) ? t : p;
+                                    <span class="pr-perm-tag" title="@p">@title</span>
+                                }
+                                @if (perms.Count > 3)
+                                {
+                                    <button class="pr-perm-more" @onclick="() => ToggleExpanded(role.Id)">
+                                        @(expanded ? "بستن" : $"+{perms.Count - 3}")
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="pr-card__actions">
+                            @if (!role.IsSystem || isSuperAdmin)
+                            {
+                                <button class="pr-action pr-action--primary" @onclick="() => OpenModal(role)">
+                                    <span class="oi oi-pencil"></span> ویرایش
+                                </button>
+                            }
+                            @if (!role.IsSystem || (isSuperAdmin && role.Key != "super_admin"))
+                            {
+                                <button class="pr-action pr-action--danger" @onclick="() => ConfirmDelete(role)">
+                                    <span class="oi oi-trash"></span> حذف
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="pr-action pr-action--ghost" disabled>
+                                    <span class="oi oi-lock-locked"></span> سیستمی
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+                    </div>
+                }
+            </main>
+
+        </div>
+
+    <!-- Role Modal -->
+@if (showModal)
+{
+    <div class="pr-overlay" @onclick="CloseModal"></div>
+    <div class="pr-drawer" @onclick:stopPropagation>
+        <div class="pr-drawer__head">
+            <div>
+                <h2 class="pr-drawer__title">
+                    @(editingRole.Id == 0 ? "ایجاد نقش جدید" : "ویرایش نقش")
+                </h2>
+                <p class="pr-drawer__sub">@(editingRole.Id == 0 ? "تعریف سطح دسترسی جدید برای سیستم" : "ویرایش مجوزها و اطلاعات نقش")</p>
+            </div>
+            <button class="pr-drawer__close" @onclick="CloseModal"><span class="oi oi-x"></span></button>
+        </div>
+
+        <div class="pr-drawer__body">
+            <EditForm Model="request" OnValidSubmit="SaveRole">
+                <DataAnnotationsValidator />
+
+                <div class="pr-meta-grid">
+                    <div class="pr-field">
+                        <label class="pr-field__label">کلید نقش <span class="text-danger">*</span></label>
+                        <input class="pr-field__input" @bind="request.Key" 
+                               placeholder="مثال: technician" disabled="@(editingRole.Id != 0)" dir="ltr" />
+                        <ValidationMessage For="@(() => request.Key)" />
+                    </div>
+
+                    <div class="pr-field">
+                        <label class="pr-field__label">عنوان فارسی <span class="text-danger">*</span></label>
+                        <input class="pr-field__input" @bind="request.TitleFa" placeholder="مثال: تکنسین فنی" />
+                        <ValidationMessage For="@(() => request.TitleFa)" />
+                    </div>
+
+                    <div class="pr-field pr-field--full">
+                        <label class="pr-field__label">توضیحات</label>
+                        <textarea class="pr-field__input pr-field__textarea" @bind="request.DescriptionFa" 
+                                  placeholder="توضیح مختصری درباره این نقش..." rows="2"></textarea>
+                    </div>
+
+                    @if (isSuperAdmin)
+                    {
+                        <div class="pr-field pr-field--full">
+                            <label class="pr-field__label">کارگاه</label>
+                            <select class="pr-field__input pr-field__select" @bind="request.WorkshopId">
+                                <option value="">سراسری (بدون محدودیت کارگاه)</option>
+                                @if (workshops != null)
+                                {
+                                    @foreach (var w in workshops)
+                                    {
+                                        <option value="@w.Id">@w.WorkshopName</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                    }
+                </div>
+
+                <div class="pr-perm-section">
+                    <div class="pr-perm-section__header">
+                        <div class="pr-perm-section__title">مجوزهای دسترسی</div>
+                        <div class="pr-perm-section__info">@request.PermissionKeys.Count از @allPermissions?.Count مجوز انتخاب شده</div>
+                    </div>
+
+                    <div class="pr-perm-search">
+                        <span class="oi oi-magnifying-glass"></span>
+                        <input type="text" class="pr-perm-search__input" placeholder="جستجوی مجوز..." @bind="permSearch" />
+                        @if (!string.IsNullOrEmpty(permSearch))
+                        {
+                            <button class="pr-perm-search__clear" @onclick="() => permSearch = null"><span class="oi oi-x"></span></button>
+                        }
+                    </div>
+
+                    @if (allPermissions == null)
+                    {
+                        <div class="pr-state">در حال بارگذاری مجوزها...</div>
+                    }
+                    else
+                    {
+                        var allSelected = allPermissions.Count > 0 && allPermissions.All(p => request.PermissionKeys.Contains(p.Key));
+                        var someSelected = allPermissions.Any(p => request.PermissionKeys.Contains(p.Key));
+
+                        <div class="pr-perm-group">
+                            <div class="pr-perm-group__head pr-perm-group__head--all" @onclick="() => ToggleAllPermissions(!allSelected)">
+                                <div class="pr-perm-group__check @(allSelected ? "pr-perm-group__check--all" : someSelected ? "pr-perm-group__check--some" : "")">
+                                    @if (allSelected) { <span class="oi oi-check"></span> }
+                                    else if (someSelected) { <span class="oi oi-minus"></span> }
+                                </div>
+                                <span class="pr-perm-group__title">انتخاب همه مجوزها</span>
+                                <span class="pr-perm-group__count">@request.PermissionKeys.Count/@allPermissions.Count</span>
+                            </div>
+                        </div>
+
+                        var grouped = allPermissions
+                            .Where(x => string.IsNullOrEmpty(permSearch) 
+                                || x.TitleFa.Contains(permSearch, StringComparison.OrdinalIgnoreCase)
+                                || (x.Key ?? "").Contains(permSearch, StringComparison.OrdinalIgnoreCase))
+                            .GroupBy(x => x.GroupFa ?? "سایر")
+                            .OrderBy(g => g.Key);
+
+                        @foreach (var group in grouped)
+                        {
+                            var groupPerms = group.ToList();
+                            var grpAll = groupPerms.All(p => request.PermissionKeys.Contains(p.Key));
+                            var grpSome = groupPerms.Any(p => request.PermissionKeys.Contains(p.Key));
+
+                            <div class="pr-perm-group">
+                                <div class="pr-perm-group__head" @onclick="() => ToggleGroup(group.Key, !grpAll)">
+                                    <div class="pr-perm-group__check @(grpAll ? "pr-perm-group__check--all" : grpSome ? "pr-perm-group__check--some" : "")">
+                                        @if (grpAll) { <span class="oi oi-check"></span> }
+                                        else if (grpSome) { <span class="oi oi-minus"></span> }
+                                    </div>
+                                    <span class="pr-perm-group__title">@group.Key</span>
+                                    <span class="pr-perm-group__count">@groupPerms.Count(p => request.PermissionKeys.Contains(p.Key))/@groupPerms.Count</span>
+                                </div>
+                                <div class="pr-perm-group__body">
+                                    @foreach (var perm in groupPerms)
+                                    {
+                                        var isSelected = request.PermissionKeys.Contains(perm.Key);
+                                        <div class="pr-perm-item @(isSelected ? "pr-perm-item--on" : "")"
+                                             @onclick="() => TogglePermission(perm.Key, !isSelected)">
+                                            <div class="pr-perm-item__check">
+                                                @if (isSelected) { <span class="oi oi-check"></span> }
+                                            </div>
+                                            <div class="pr-perm-item__info">
+                                                <div class="pr-perm-item__title">@perm.TitleFa</div>
+                                                @if (!string.IsNullOrEmpty(perm.DescriptionFa))
+                                                {
+                                                    <div class="pr-perm-item__desc">@perm.DescriptionFa</div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+
+                <div class="pr-drawer__actions">
+                    <button type="button" class="pr-btn pr-btn--ghost" @onclick="CloseModal">انصراف</button>
+                    <button type="submit" class="pr-btn pr-btn--primary" disabled="@isSaving">
+                        @if (isSaving) { <span class="pr-spinner-sm"></span> }
+                        <span class="oi oi-check"></span> ذخیره نقش
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+<ConfirmDialog IsVisible="showDeleteModal"
+               Title="حذف نقش"
+               Message="@($"آیا از حذف نقش \"{roleToDelete?.TitleFa}\" اطمینان دارید؟")"
+               ConfirmText="حذف"
+               IsDanger="true"
+               OnResult="HandleDeleteResult" />
+
+<style>
+    /* ===== Variables ===== */
+    :root { --p: #4f46e5; --p-light: rgba(79,70,229,0.08); --p-dark: #4338ca; --danger: #ef4444; --bg: #f8fafc; --surface: #fff; --border: #e2e8f0; --text: #0f172a; --text-muted: #64748b; --radius: 12px; --radius-lg: 16px; }
+    .pr-page { min-height: 100vh; background: var(--bg); font-size: 14px; max-width: 960px; margin: 0 auto; padding: 0 12px; }
+    .pr-page *, .pr-page *::before, .pr-page *::after { box-sizing: border-box; }
+
+    /* ===== Header ===== */
+    .pr-header { position: sticky; top: 0; z-index: 50; background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 0; margin: 0 -12px; padding-inline: 12px; }
+    .pr-header__top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .pr-header__title { font-size: 1.25rem; font-weight: 800; color: var(--text); margin: 0; }
+    .pr-header__sub { font-size: 0.78rem; color: var(--text-muted); margin: 4px 0 0; }
+    .pr-fab { width: 48px; height: 48px; border-radius: 50%; border: none; background: var(--p); color: #fff; font-size: 1.5rem; cursor: pointer; box-shadow: 0 6px 16px rgba(79,70,229,0.3); display: grid; place-items: center; flex-shrink: 0; transition: transform .15s; }
+    .pr-fab:hover { transform: scale(1.06); }
+
+    /* ===== Toolbar ===== */
+    .pr-toolbar { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .pr-search { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 10px 16px; }
+    .pr-search__icon { color: var(--text-muted); font-size: 0.85rem; }
+    .pr-search__input { flex: 1; border: none; background: transparent; outline: none; font-size: 0.85rem; color: var(--text); }
+    .pr-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pr-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px; font-size: 0.78rem; font-weight: 700; background: var(--surface); color: var(--text-muted); cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .pr-chip:hover { border-color: var(--p); color: var(--p); }
+    .pr-chip--on { background: var(--p); border-color: var(--p); color: #fff; }
+    .pr-chip--clear { background: transparent; border-color: transparent; color: var(--danger); }
+    .pr-chip--clear:hover { background: rgba(239,68,68,0.08); }
+
+    /* ===== States ===== */
+    .pr-state { text-align: center; padding: 60px 16px; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .pr-spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--p); border-radius: 50%; animation: pr-spin .8s linear infinite; }
+    @@keyframes pr-spin { to { transform: rotate(360deg); } }
+
+    /* ===== Grid ===== */
+    .pr-grid { display: grid; gap: 14px; padding: 16px 0; }
+
+    /* ===== Card ===== */
+    .pr-card { background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border); overflow: hidden; transition: box-shadow .2s; }
+    .pr-card:hover { box-shadow: 0 8px 24px rgba(15,23,42,0.06); }
+    .pr-card--system { border-right: 4px solid #f59e0b; background: linear-gradient(135deg, #fffbeb, var(--surface)); }
+    .pr-card__head { padding: 16px; border-bottom: 1px solid var(--border); }
+    .pr-card__title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+    .pr-card__title { font-size: 1rem; font-weight: 800; color: var(--text); margin: 0; }
+    .pr-badge { font-size: 0.65rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+    .pr-badge--system { background: #fef3c7; color: #d97706; }
+    .pr-card__meta { display: flex; gap: 10px; font-size: 0.72rem; }
+    .pr-card__key { background: var(--bg); color: var(--text-muted); padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+    .pr-card__count { color: var(--text-muted); }
+    .pr-card__body { padding: 14px 16px; }
+    .pr-card__desc { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 12px; line-height: 1.5; }
+
+    /* ===== Group Chips in Card ===== */
+    .pr-groups { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .pr-group-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: var(--p-light); font-size: 0.68rem; font-weight: 700; color: var(--p); }
+    .pr-group-chip__count { background: var(--p); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 0.6rem; min-width: 18px; text-align: center; }
+
+    /* ===== Permission Tags ===== */
+    .pr-perms { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+    .pr-perm-tag { background: var(--bg); color: var(--text); padding: 4px 10px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid var(--border); }
+    .pr-perm-more { border: none; background: transparent; color: var(--p); font-size: 0.72rem; font-weight: 700; cursor: pointer; padding: 4px 8px; }
+
+    /* ===== Card Actions ===== */
+    .pr-card__actions { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+    .pr-action { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border: none; border-radius: var(--radius); font-size: 0.78rem; font-weight: 700; cursor: pointer; transition: all .15s; }
+    .pr-action--primary { background: var(--p); color: #fff; }
+    .pr-action--primary:hover { background: var(--p-dark); }
+    .pr-action--danger { background: var(--danger); color: #fff; }
+    .pr-action--danger:hover { background: #dc2626; }
+    .pr-action--ghost { background: var(--bg); color: var(--text-muted); cursor: not-allowed; }
+
+    /* ===== Overlay / Drawer ===== */
+    .pr-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(15,23,42,0.5); backdrop-filter: blur(3px); }
+    .pr-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 1001; width: min(640px, 100%); background: var(--surface); display: flex; flex-direction: column; box-shadow: 0 0 40px rgba(0,0,0,0.15); animation: pr-slide .25s ease; }
+    .pr-drawer--sm { width: min(440px, 100%); }
+    @@keyframes pr-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .pr-drawer__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, rgba(79,70,229,0.06), transparent); }
+    .pr-drawer__title { font-size: 1.05rem; font-weight: 800; color: var(--text); margin: 0; }
+    .pr-drawer__sub { font-size: 0.75rem; color: var(--text-muted); margin: 4px 0 0; }
+    .pr-drawer__close { width: 36px; height: 36px; border: none; border-radius: 10px; background: var(--surface); color: var(--text-muted); cursor: pointer; display: grid; place-items: center; flex-shrink: 0; }
+    .pr-drawer__close:hover { background: var(--bg); }
+    .pr-drawer__body { flex: 1; overflow-y: auto; padding: 18px 20px; }
+    .pr-drawer__actions { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; background: var(--surface); }
+
+    /* ===== Meta Fields ===== */
+    .pr-meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .pr-field { display: flex; flex-direction: column; gap: 5px; }
+    .pr-field--full { grid-column: 1 / -1; }
+    .pr-field__label { font-size: 0.78rem; font-weight: 700; color: var(--text); }
+    .pr-field__input { padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.85rem; color: var(--text); outline: none; background: var(--surface); transition: border-color .15s; }
+    .pr-field__input:focus { border-color: var(--p); box-shadow: 0 0 0 3px var(--p-light); }
+    .pr-field__textarea { resize: vertical; min-height: 70px; }
+    .pr-field__select { cursor: pointer; }
+    .pr-field ::deep .validation-message { font-size: 0.7rem; color: var(--danger); font-weight: 600; }
+
+    /* ===== Permission Section ===== */
+    .pr-perm-section { }
+    .pr-perm-section__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .pr-perm-section__title { font-size: 0.95rem; font-weight: 800; color: var(--text); }
+    .pr-perm-section__info { font-size: 0.72rem; color: var(--text-muted); font-weight: 600; }
+
+    /* ===== Permission Search ===== */
+    .pr-perm-search { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px; margin-bottom: 14px; font-size: 0.8rem; color: var(--text-muted); }
+    .pr-perm-search__input { flex: 1; border: none; background: transparent; outline: none; font-size: 0.8rem; color: var(--text); }
+    .pr-perm-search__clear { border: none; background: transparent; color: var(--text-muted); cursor: pointer; padding: 2px; }
+
+    /* ===== Permission Group ===== */
+    .pr-perm-group { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 10px; }
+    .pr-perm-group__head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg); cursor: pointer; transition: background .15s; user-select: none; }
+    .pr-perm-group__head:hover { background: #f1f5f9; }
+    .pr-perm-group__head--all { background: var(--p-light); border-bottom: 2px solid var(--p); margin-bottom: 2px; }
+    .pr-perm-group__head--all:hover { background: rgba(79,70,229,0.15); }
+    .pr-perm-group__check { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--border); display: grid; place-items: center; font-size: 0.7rem; color: #fff; transition: all .15s; flex-shrink: 0; }
+    .pr-perm-group__check--all { background: var(--p); border-color: var(--p); }
+    .pr-perm-group__check--some { background: var(--p); border-color: var(--p); opacity: 0.6; }
+    .pr-perm-group__title { font-weight: 700; font-size: 0.82rem; color: var(--text); flex: 1; }
+    .pr-perm-group__count { font-size: 0.7rem; color: var(--text-muted); font-weight: 600; }
+    .pr-perm-group__body { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; padding: 10px 14px; }
+
+    /* ===== Permission Item ===== */
+    .pr-perm-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); cursor: pointer; transition: all .15s; background: var(--surface); }
+    .pr-perm-item:hover { border-color: var(--p); background: var(--p-light); }
+    .pr-perm-item--on { background: var(--p); border-color: var(--p); color: #fff; }
+    .pr-perm-item__check { width: 20px; height: 20px; border-radius: 5px; border: 2px solid var(--border); display: grid; place-items: center; font-size: 0.65rem; color: transparent; transition: all .15s; flex-shrink: 0; margin-top: 1px; }
+    .pr-perm-item--on .pr-perm-item__check { background: #fff; border-color: #fff; color: var(--p); }
+    .pr-perm-item__info { flex: 1; min-width: 0; }
+    .pr-perm-item__title { font-size: 0.78rem; font-weight: 600; }
+    .pr-perm-item__desc { font-size: 0.65rem; opacity: 0.75; margin-top: 2px; line-height: 1.4; }
+
+    /* ===== Buttons ===== */
+    .pr-btn { padding: 10px 18px; border: none; border-radius: var(--radius); font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; }
+    .pr-btn--primary { background: var(--p); color: #fff; }
+    .pr-btn--primary:hover { background: var(--p-dark); }
+    .pr-btn--ghost { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .pr-btn--ghost:hover { background: #f1f5f9; }
+    .pr-btn--danger { background: var(--danger); color: #fff; }
+    .pr-btn--danger:hover { background: #dc2626; }
+    .pr-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .pr-spinner-sm { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: pr-spin .6s linear infinite; }
+
+    /* ===== Responsive ===== */
+    @@media (min-width: 768px) {
+        .pr-grid { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+    }
+    @@media (max-width: 640px) {
+        .pr-page { padding: 0 8px; }
+        .pr-header { padding-inline: 8px; margin-inline: -8px; }
+        .pr-meta-grid { grid-template-columns: 1fr; }
+        .pr-perm-group__body { grid-template-columns: 1fr; }
+        .pr-drawer { width: 100%; }
+    }
+</style>
+
+@code {
+    private List<RoleDto>? roles;
+    private List<PermissionDto>? allPermissions;
+    private List<WorkshopDto>? workshops;
+    private bool showModal;
+    private bool showDeleteModal;
+    private bool isSaving;
+    private RoleDto editingRole = new();
+    private RoleDto? roleToDelete;
+    private RoleUpsertRequest request = new();
+
+    private string searchQuery = string.Empty;
+    private string? permSearch;
+    private bool showSystemOnly;
+    private bool showCustomOnly;
+    private readonly HashSet<int> expandedRoleIds = new();
+
+    private bool isSuperAdmin = false;
+    private string? selectedWorkshopId = null;
+
+    private IEnumerable<RoleDto> FilteredRoles
+    {
+        get
+        {
+            if (roles == null) return Array.Empty<RoleDto>();
+            IEnumerable<RoleDto> q = roles;
+
+            if (showSystemOnly) q = q.Where(r => r.IsSystem);
+            if (showCustomOnly) q = q.Where(r => !r.IsSystem);
+
+            var s = (searchQuery ?? string.Empty).Trim();
+            if (s.Length > 0)
+                q = q.Where(r =>
+                    (r.TitleFa ?? string.Empty).Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                    (r.Key ?? string.Empty).Contains(s, StringComparison.OrdinalIgnoreCase));
+
+            return q;
+        }
+    }
+
+    private List<(string Group, int Count)> GetPermissionGroupSummary(RoleDto role)
+    {
+        if (allPermissions == null || role.PermissionKeys.Count == 0)
+            return new();
+
+        var lookup = allPermissions
+            .Where(p => role.PermissionKeys.Contains(p.Key))
+            .GroupBy(p => p.GroupFa ?? "سایر")
+            .Select(g => (Group: g.Key, Count: g.Count()))
+            .OrderByDescending(x => x.Count)
+            .ToList();
+
+        return lookup;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        AdminWorkshopSelection.OnChanged += HandleAdminWorkshopChanged;
+        await AdminWorkshopSelection.InitializeAsync();
+        selectedWorkshopId = AdminWorkshopSelection.SelectedWorkshopId?.ToString();
+        await LoadData();
+    }
+
+    public void Dispose()
+    {
+        AdminWorkshopSelection.OnChanged -= HandleAdminWorkshopChanged;
+    }
+
+    private void HandleAdminWorkshopChanged(int? workshopId)
+    {
+        selectedWorkshopId = workshopId?.ToString();
+        _ = LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var authState = await Http.GetFromJsonAsync<AuthStateDto>("api/auth/auth-state");
+            isSuperAdmin = authState?.IsSuperAdmin ?? false;
+
+            var workshopIdParam = selectedWorkshopId == null ? null : $"?workshopId={selectedWorkshopId}";
+            roles = await Http.GetFromJsonAsync<List<RoleDto>>($"api/roles{workshopIdParam}");
+            allPermissions = await Http.GetFromJsonAsync<List<PermissionDto>>("api/roles/permissions");
+
+            if (isSuperAdmin)
+                workshops = await Http.GetFromJsonAsync<List<WorkshopDto>>("api/workshops");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            ToastService.ShowError("شما دسترسی لازم برای مشاهده نقش‌ها را ندارید.");
+            roles = new(); allPermissions = new();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+        {
+            ToastService.ShowError("خطای داخلی سرور.");
+            roles = new(); allPermissions = new();
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در بارگذاری اطلاعات.");
+            roles = new(); allPermissions = new();
+        }
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? string.Empty;
+    }
+
+    private void ToggleSystemOnly()
+    {
+        showSystemOnly = !showSystemOnly;
+        if (showSystemOnly) showCustomOnly = false;
+    }
+
+    private void ToggleCustomOnly()
+    {
+        showCustomOnly = !showCustomOnly;
+        if (showCustomOnly) showSystemOnly = false;
+    }
+
+    private void ClearFilters()
+    {
+        searchQuery = string.Empty;
+        showSystemOnly = false;
+        showCustomOnly = false;
+    }
+
+    private void ToggleExpanded(int roleId)
+    {
+        if (!expandedRoleIds.Add(roleId))
+            expandedRoleIds.Remove(roleId);
+    }
+
+    private void OpenModal(RoleDto? role = null)
+    {
+        permSearch = null;
+        if (role == null)
+        {
+            editingRole = new RoleDto();
+            request = new RoleUpsertRequest();
+
+            if (selectedWorkshopId != null)
+                request.WorkshopId = int.Parse(selectedWorkshopId);
+            else if (isSuperAdmin)
+                request.WorkshopId = AdminWorkshopSelection.SelectedWorkshopId;
+        }
+        else
+        {
+            editingRole = role;
+            request = new RoleUpsertRequest
+            {
+                Key = role.Key,
+                TitleFa = role.TitleFa,
+                DescriptionFa = role.DescriptionFa,
+                PermissionKeys = new List<string>(role.PermissionKeys),
+                WorkshopId = role.WorkshopId
+            };
+        }
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        isSaving = false;
+    }
+
+    private void TogglePermission(string key, bool add)
+    {
+        if (add) { if (!request.PermissionKeys.Contains(key)) request.PermissionKeys.Add(key); }
+        else { request.PermissionKeys.Remove(key); }
+    }
+
+    private void ToggleGroup(string group, bool selectAll)
+    {
+        if (allPermissions == null) return;
+        var keys = allPermissions
+            .Where(p => (p.GroupFa ?? "سایر") == group)
+            .Select(p => p.Key)
+            .ToList();
+
+        foreach (var k in keys)
+            TogglePermission(k, selectAll);
+    }
+
+    private void ToggleAllPermissions(bool selectAll)
+    {
+        if (allPermissions == null) return;
+        if (selectAll)
+            request.PermissionKeys = new List<string>(allPermissions.Select(p => p.Key));
+        else
+            request.PermissionKeys.Clear();
+    }
+
+    private async Task SaveRole()
+    {
+        if (isSaving) return;
+        isSaving = true;
+
+        try
+        {
+            HttpResponseMessage response;
+            if (editingRole.Id == 0)
+                response = await Http.PostAsJsonAsync("api/roles", request);
+            else
+                response = await Http.PutAsJsonAsync($"api/roles/{editingRole.Id}", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadData();
+                CloseModal();
+                ToastService.ShowSuccess("نقش با موفقیت ذخیره شد");
+            }
+            else
+            {
+                var msg = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ذخیره نقش" : msg);
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطای غیرمنتظره در ذخیره نقش");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void ConfirmDelete(RoleDto role)
+    {
+        roleToDelete = role;
+        showDeleteModal = true;
+    }
+
+    private async Task HandleDeleteResult(bool confirmed)
+    {
+        showDeleteModal = false;
+        if (!confirmed || isSaving || roleToDelete == null) return;
+        isSaving = true;
+        try
+        {
+            var response = await Http.DeleteAsync($"api/roles/{roleToDelete.Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadData();
+                ToastService.ShowSuccess("نقش با موفقیت حذف شد");
+            }
+            else
+            {
+                var msg = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در حذف نقش" : msg);
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطای غیرمنتظره در حذف نقش");
+        }
+        finally
+        {
+            isSaving = false;
+            roleToDelete = null;
+        }
+    }
+}

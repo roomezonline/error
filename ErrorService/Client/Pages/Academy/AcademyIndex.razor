@@ -1,0 +1,178 @@
+@page "/academy"
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+
+<PageTitle>آکادمی آموزش - ارورسرویس</PageTitle>
+
+<SeoHeader 
+    Title="آکادمی آموزش تعمیرات لوازم خانگی | ارورسرویس"
+    Description="دوره‌های تخصصی آموزش تعمیرات لوازم خانگی، مقالات فنی و ویدیوهای آموزشی عیب‌یابی و تعمیر"
+    Keywords="آموزش تعمیرات لوازم خانگی, دوره تعمیرات, آموزش تعمیر یخچال, آموزش تعمیر ماشین لباسشویی"
+    OgType="website"
+    JsonLd="@academyJsonLd" />
+
+<div class="academy-page py-5 bg-light" dir="rtl">
+    <div class="container">
+        <div class="text-center mb-5">
+            <h1 class="fw-bold mb-2">آکادمی آموزش</h1>
+            <p class="text-muted">دوره های تخصصی برای ارتقای مهارت های شما</p>
+        </div>
+
+        @if (combinedContent == null)
+        {
+            <div class="row g-4">
+                @for (int i = 0; i < 3; i++)
+                {
+                    <div class="col-md-4">
+                        <div class="card border-0 shadow-sm rounded-4 overflow-hidden animate-pulse">
+                            <div style="height: 200px; background: #e5e7eb;"></div>
+                            <div class="card-body p-4">
+                                <div style="height: 20px; background: #e5e7eb; width: 70%;" class="mb-2 rounded"></div>
+                                <div style="height: 15px; background: #e5e7eb; width: 90%;" class="mb-3 rounded"></div>
+                                <div style="height: 35px; background: #e5e7eb;" class="rounded-pill"></div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else if (!combinedContent.Any())
+        {
+            <div class="text-center py-5">
+                <div class="mb-3">
+                    <span class="oi oi-book display-1 text-muted opacity-25"></span>
+                </div>
+                <h3 class="text-muted">هنوز محتوایی منتشر نشده است.</h3>
+            </div>
+        }
+        else
+        {
+            <div class="row g-4">
+                @foreach (var item in combinedContent)
+                {
+                    <div class="col-md-4">
+                        <div class="course-card card border-0 shadow-sm rounded-4 overflow-hidden h-100">
+                            <div class="course-card__img-wrap position-relative">
+                                <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-product.svg" : item.ImageUrl)" loading="lazy" class="card-img-top" alt="@item.Title" />
+                                
+                                <div class="position-absolute top-0 start-0 m-3">
+                                    @if (item.IsCourse)
+                                    {
+                                        <span class="badge bg-primary text-white rounded-pill px-3 shadow-sm">دوره</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-success text-white rounded-pill px-3 shadow-sm">آموزش</span>
+                                    }
+                                </div>
+
+                                @if (item.IsPremium)
+                                {
+                                    <div class="position-absolute top-0 end-0 m-3">
+                                        <span class="badge bg-warning text-dark rounded-pill px-3 shadow-sm">ویژه</span>
+                                    </div>
+                                }
+                            </div>
+                            <div class="card-body p-4 d-flex flex-column">
+                                <h3 class="h5 fw-bold text-dark mb-2">@item.Title</h3>
+                                <p class="text-muted small mb-4 flex-grow-1">@item.Summary</p>
+                                <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                                    @if (item.IsCourse)
+                                    {
+                                        <span class="text-muted small"><span class="oi oi-list me-1"></span> @item.SubItemsCount قسمت</span>
+                                        <a href="@SeoUrl.Course(item.Id, item.Slug)" class="btn btn-primary rounded-pill px-4 btn-sm">شروع یادگیری</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small"><span class="oi oi-document me-1"></span> مطالعه</span>
+                                        <a href="@SeoUrl.Article(item.Id, item.Slug)" class="btn btn-outline-primary rounded-pill px-4 btn-sm">مشاهده آموزش</a>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .course-card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
+    .course-card:hover { transform: translateY(-5px); box-shadow: 0 15px 35px rgba(0,0,0,0.1) !important; }
+    .course-card__img-wrap { height: 200px; overflow: hidden; }
+    .course-card__img-wrap img { width: 100%; height: 100%; object-fit: cover; }
+    .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+</style>
+
+@code {
+    private List<AcademyItem>? combinedContent;
+    private string academyJsonLd = @"{""@context"":""https://schema.org"",""@type"":""CollectionPage"",""name"":""آکادمی آموزش تعمیرات لوازم خانگی"",""description"":""دوره‌های تخصصی آموزش تعمیرات لوازم خانگی، مقالات فنی و ویدیوهای آموزشی"",""url"":""https://errorservice.ir/academy""}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var coursesTask = Http.GetFromJsonAsync<List<TrainingCourseDto>>("api/trainings/courses?onlyPublished=true");
+            var articlesTask = Http.GetFromJsonAsync<List<TrainingArticleDto>>("api/trainingarticles?onlyPublished=true");
+            
+            await Task.WhenAll(coursesTask, articlesTask);
+            
+            var courses = await coursesTask;
+            var articles = await articlesTask;
+
+            combinedContent = new List<AcademyItem>();
+
+            if (courses != null)
+            {
+                combinedContent.AddRange(courses.Select(c => new AcademyItem 
+                { 
+                    Id = c.Id, 
+                    Title = c.Title, 
+                    Slug = c.Slug, 
+                    Summary = c.Summary, 
+                    ImageUrl = c.CoverImageUrl, 
+                    IsCourse = true, 
+                    IsPremium = c.IsPremium, 
+                    CreatedAt = c.CreatedAt,
+                    SubItemsCount = c.LessonsCount
+                }));
+            }
+
+            if (articles != null)
+            {
+                combinedContent.AddRange(articles.Select(a => new AcademyItem 
+                { 
+                    Id = a.Id, 
+                    Title = a.Title, 
+                    Slug = a.Slug, 
+                    Summary = a.Summary, 
+                    ImageUrl = a.CoverImageUrl, 
+                    IsCourse = false, 
+                    IsPremium = a.IsPremium, 
+                    CreatedAt = a.CreatedAt 
+                }));
+            }
+
+            combinedContent = combinedContent.OrderByDescending(x => x.CreatedAt).ToList();
+        }
+        catch { 
+            combinedContent = new();
+        }
+    }
+
+    private class AcademyItem
+    {
+        public int Id { get; set; }
+        public string? Slug { get; set; }
+        public string Title { get; set; } = "";
+        public string? Summary { get; set; }
+        public string? ImageUrl { get; set; }
+        public bool IsCourse { get; set; }
+        public bool IsPremium { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
+        public int SubItemsCount { get; set; }
+    }
+}

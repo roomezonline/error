@@ -1,0 +1,324 @@
+@page "/technical/error-codes"
+@using ErrorService.Shared.Models
+@using System.Text.Json
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ThemeService Theme
+
+<SeoHeader 
+    Title="بانک کدهای خطا | عیب‌یابی هوشمند لوازم خانگی" 
+    Description="جستجو و مشاهده لیست کامل کدهای خطای یخچال، ماشین لباسشویی، ظرفشویی و پکیج برندهای سامسونگ، ال‌جی، بوش و..."
+    Keywords="کد خطا، ارور یخچال، ارور لباسشویی، لیست کدهای خطا، تعمیرات لوازم خانگی"
+    JsonLd="@errorCodesJsonLd" />
+
+<div class="container py-4">
+    <div class="text-center mb-5">
+        <h2 class="fw-black text-primary mb-2">بانک کدهای خطا</h2>
+        <p class="text-muted">عیب‌یابی سریع لوازم خانگی و بردهای الکترونیکی</p>
+    </div>
+
+    <div class="search-card p-4 rounded-4 shadow-sm mb-4">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label fw-bold">برند دستگاه</label>
+                <select class="form-select custom-input" @bind="selectedBrand">
+                    <option value="">همه برندها</option>
+                    @foreach (var brand in brands)
+                    {
+                        <option value="@brand">@brand</option>
+                    }
+                </select>
+                @if (brandRequired)
+                {
+                    <div class="small text-danger mt-2">انتخاب برند الزامی است.</div>
+                }
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-bold">نوع دستگاه</label>
+                <select class="form-select custom-input" @bind="selectedDevice">
+                    <option value="">همه دستگاه‌ها</option>
+                    @foreach (var device in devices)
+                    {
+                        <option value="@device">@device</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-bold">کد خطا</label>
+                <div class="input-group">
+                    <input type="text" class="form-control custom-input" placeholder="مثلاً: E01 یا F1" @bind="searchCode" @bind:event="oninput" />
+                    <button class="btn btn-primary px-4" @onclick="SearchErrors">
+                        <span class="oi oi-magnifying-glass"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">در حال جستجو...</p>
+        </div>
+    }
+    else if (!hasSearched)
+    {
+        <div class="text-center py-5 opacity-75">
+            <span class="oi oi-magnifying-glass display-1 d-block mb-3"></span>
+            <h5>برای شروع جستجو کنید</h5>
+            <p class="mb-0">برند را انتخاب کنید. نوع دستگاه و کد خطا اختیاری هستند و جستجو را دقیق‌تر می‌کنند.</p>
+        </div>
+    }
+    else if (filteredErrors.Any())
+    {
+        <div class="row g-4">
+            @foreach (var error in filteredErrors)
+            {
+                <div class="col-md-6 col-lg-4">
+                    <a href="@($"/technical/error-codes/{Uri.EscapeDataString(error.Brand)}/{Uri.EscapeDataString(error.DeviceType)}/{Uri.EscapeDataString(error.Code)}")" class="text-decoration-none">
+                    <div class="error-card h-100 p-4 rounded-4 shadow-sm border-0 position-relative overflow-hidden">
+                        <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                            <div class="d-flex flex-wrap gap-2">
+                                <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">@error.Brand</span>
+                                <span class="badge bg-success-subtle text-success rounded-pill px-3 py-2">@error.DeviceType</span>
+                            </div>
+                            <div class="error-badge p-3 bg-primary text-white fw-black">
+                                @error.Code
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(error.ImageUrl))
+                        {
+                            <div class="error-image-wrapper mb-3">
+                                <img src="@error.ImageUrl" alt="@error.Code" class="error-image" />
+                            </div>
+                        }
+                        <h5 class="fw-bold mb-3">@error.Description</h5>
+                        <div class="solution-box p-3 rounded-3 bg-light mt-3">
+                            <label class="fw-bold text-success d-block mb-1">راه حل پیشنهادی:</label>
+                            <p class="small mb-0 text-dark">@error.Solution</p>
+                        </div>
+                        @if (!string.IsNullOrEmpty(error.TechnicalNotes))
+                        {
+                            <div class="mt-3">
+                                <label class="fw-bold text-muted small d-block">نکات فنی:</label>
+                                <p class="small mb-0 text-muted italic">@error.TechnicalNotes</p>
+                            </div>
+                        }
+
+                        @if (error.Documents != null && error.Documents.Any())
+                        {
+                            <div class="docs-box mt-3 p-3 rounded-3">
+                                <div class="fw-bold text-muted small mb-2">مستندات مرتبط:</div>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var doc in error.Documents.OrderBy(d => d.SortOrder))
+                                    {
+                                        <a class="doc-chip" href="@doc.Url" target="_blank" rel="noopener noreferrer" title="@doc.Title">
+                                            <span class="oi oi-document me-1"></span>
+                                            @doc.Title
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    </a>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="text-center py-5 opacity-50">
+            <span class="oi oi-warning display-1 d-block mb-3"></span>
+            <h5>موردی یافت نشد</h5>
+            <p>لطفاً معیارهای جستجو را تغییر دهید</p>
+        </div>
+    }
+</div>
+
+<style>
+    .search-card {
+        background: var(--app-surface);
+        border: 1px solid var(--app-border);
+    }
+    .custom-input {
+        border-radius: 12px;
+        padding: 12px;
+        background: var(--app-bg);
+        border: 1px solid var(--app-border);
+        color: var(--app-text);
+    }
+    .custom-input:focus {
+        background: var(--app-surface);
+        border-color: var(--app-primary);
+        box-shadow: 0 0 0 0.25rem rgba(37, 99, 235, 0.1);
+    }
+    .error-card {
+        background: var(--app-surface);
+        border: 1px solid var(--app-border) !important;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .error-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 30px rgba(0,0,0,0.1) !important;
+    }
+    .error-image-wrapper {
+        max-height: 200px;
+        overflow: hidden;
+        border-radius: 12px;
+        background: #f8fafc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .error-image {
+        max-width: 100%;
+        max-height: 200px;
+        object-fit: contain;
+        border-radius: 12px;
+    }
+
+    .error-badge {
+        border-bottom-left-radius: 20px;
+        font-size: 1.2rem;
+        min-width: 70px;
+        text-align: center;
+    }
+    .bg-primary-subtle { background: rgba(37, 99, 235, 0.1); }
+    .bg-success-subtle { background: rgba(16, 185, 129, 0.1); }
+    .solution-box {
+        border-right: 4px solid #10b981;
+        background: rgba(16, 185, 129, 0.05) !important;
+    }
+
+    .docs-box {
+        background: rgba(37, 99, 235, 0.05);
+        border: 1px solid rgba(37, 99, 235, 0.12);
+    }
+
+    .doc-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 10px;
+        border-radius: 999px;
+        background: var(--app-surface);
+        border: 1px solid var(--app-border);
+        color: var(--app-text);
+        text-decoration: none;
+        font-size: 0.85rem;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        max-width: 100%;
+    }
+
+    .doc-chip:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 18px rgba(0,0,0,0.08);
+        border-color: rgba(37, 99, 235, 0.25);
+    }
+</style>
+
+@code {
+    private string? errorCodesJsonLd;
+    private List<ErrorCode> allErrors = new();
+    private List<ErrorCode> filteredErrors = new();
+    private List<string> brands = new();
+    private List<string> devices = new();
+    
+    private string selectedBrand = "";
+    private string selectedDevice = "";
+    private string searchCode = "";
+    private bool isLoading = true;
+    private bool hasSearched = false;
+    private bool brandRequired = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        errorCodesJsonLd = BuildErrorCodesJsonLd();
+        await LoadBrands();
+    }
+
+    private string BuildErrorCodesJsonLd()
+    {
+        var baseUrl = "https://errorservice.ir";
+        var webPage = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "WebPage",
+            ["name"] = "بانک کدهای خطا",
+            ["description"] = "عیب‌یابی سریع لوازم خانگی و بردهای الکترونیکی",
+            ["url"] = $"{baseUrl}/technical/error-codes"
+        };
+
+        return JsonSerializer.Serialize(webPage);
+    }
+
+    private void BuildFaqJsonLd()
+    {
+        if (filteredErrors == null || filteredErrors.Count == 0)
+        {
+            errorCodesJsonLd = BuildErrorCodesJsonLd();
+            return;
+        }
+
+        var faqEntities = filteredErrors.Take(20).Select(error => new Dictionary<string, object?>
+        {
+            ["@type"] = "Question",
+            ["name"] = $"کد خطای {error.Code} {error.Brand} {error.DeviceType} - {error.Description}",
+            ["acceptedAnswer"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "Answer",
+                ["text"] = string.IsNullOrEmpty(error.TechnicalNotes)
+                    ? error.Solution
+                    : $"{error.Solution}\n\nنکات فنی: {error.TechnicalNotes}"
+            }
+        }).ToList();
+
+        var faqPage = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "FAQPage",
+            ["mainEntity"] = faqEntities
+        };
+
+        errorCodesJsonLd = JsonSerializer.Serialize(faqPage);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadBrands()
+    {
+        isLoading = true;
+        try
+        {
+            brands = await Http.GetFromJsonAsync<List<string>>("api/technical/error-codes/brands") ?? new();
+            devices = await Http.GetFromJsonAsync<List<string>>("api/technical/error-codes/devices") ?? new();
+            filteredErrors = new();
+        }
+        catch
+        {
+            brands = new();
+            devices = new();
+            filteredErrors = new();
+        }
+        isLoading = false;
+    }
+
+    private async Task SearchErrors()
+    {
+        hasSearched = true;
+        brandRequired = string.IsNullOrWhiteSpace(selectedBrand);
+        if (brandRequired)
+        {
+            filteredErrors = new();
+            return;
+        }
+
+        isLoading = true;
+        var search = string.IsNullOrWhiteSpace(searchCode) ? "" : searchCode;
+        var query = $"api/technical/error-codes?brand={selectedBrand}&deviceType={selectedDevice}&search={search}";
+        filteredErrors = await Http.GetFromJsonAsync<List<ErrorCode>>(query) ?? new();
+        isLoading = false;
+        BuildFaqJsonLd();
+    }
+}

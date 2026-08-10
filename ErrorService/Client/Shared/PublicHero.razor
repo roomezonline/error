@@ -1,0 +1,385 @@
+@implements IDisposable
+@using System.Net.Http.Json
+@using ErrorService.Shared
+@using Microsoft.JSInterop
+
+@if (_loading)
+{
+    <section class="hero hero--loading" dir="rtl">
+        <div class="hero__wrap">
+            <div class="hero__slider hero__slider--skeleton">
+                <div class="hero__skeleton-img"></div>
+                <div class="hero__caption">
+                    <div class="hero__contentCard">
+                        <div class="hero__skeleton-line w-75"></div>
+                        <div class="hero__skeleton-line w-50" style="height: 14px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+}
+else if (Slides.Count > 0)
+{
+    <section class="hero" dir="rtl">
+        <div class="hero__wrap">
+            <div class="hero__slider" role="region" aria-label="Hero slider" @ref="_sliderElement">
+                @for (var i = 0; i < Slides.Count; i++)
+                {
+                    <div class="hero__slide @(i == activeIndex ? $"is-active {activeFxClass}" : "")" @(i == activeIndex ? "" : "aria-hidden=\"true\"")>
+                        <div class="hero__media">
+                            <picture>
+                                @if (!string.IsNullOrWhiteSpace(Slides[i].MobileImageUrl))
+                                {
+                                    <source media="(max-width: 899.98px)" srcset="@Slides[i].MobileImageUrl" />
+                                }
+                                <img class="hero__imgFg" src="@Slides[i].ImageUrl" alt="@Slides[i].Title" loading="@(i == activeIndex ? "eager" : "lazy")" decoding="async" />
+                            </picture>
+                        </div>
+
+                        <div class="hero__caption">
+                            <div class="hero__contentCard">
+                                <div class="hero__typed">
+                                    <h1 class="hero__typedTitle" data-text="@Slides[i].Title"></h1>
+                                    <div class="hero__typedSubtitle" data-text="@(string.IsNullOrWhiteSpace(Slides[i].Subtitle) ? Slides[i].Tagline : Slides[i].Subtitle)"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+            </div>
+
+            @if (Slides.Count > 1)
+            {
+                <div class="hero__dots" role="tablist" aria-label="انتخاب اسلاید">
+                    @for (var i = 0; i < Slides.Count; i++)
+                    {
+                        <button type="button" class="hero__dot @(i == activeIndex ? "hero__dot--active" : "")" @onclick="() => GoTo(i)" role="tab" aria-selected="@(i == activeIndex ? "true" : "false")" aria-label="اسلاید @(i+1)">
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+}
+
+<script>
+    window.__initHeroSwipe = function(element, dotnetRef) {
+        if (!element) return;
+        var startX = 0, startY = 0, isSwiping = false;
+        var handler = function(e) {
+            if (e.type === 'touchstart') {
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                isSwiping = false;
+            } else if (e.type === 'touchmove') {
+                if (!startX) return;
+                var diffX = e.touches[0].clientX - startX;
+                var diffY = e.touches[0].clientY - startY;
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 30) {
+                    isSwiping = true;
+                }
+            } else if (e.type === 'touchend') {
+                if (!isSwiping) { startX = 0; return; }
+                var diffX = e.changedTouches[0].clientX - startX;
+                if (Math.abs(diffX) > 50) {
+                    if (diffX > 0) dotnetRef.invokeMethodAsync('Prev');
+                    else dotnetRef.invokeMethodAsync('Next');
+                }
+                startX = 0;
+                isSwiping = false;
+            }
+        };
+        element.addEventListener('touchstart', handler, { passive: true });
+        element.addEventListener('touchmove', handler, { passive: true });
+        element.addEventListener('touchend', handler, { passive: true });
+        return handler;
+    };
+    window.__removeHeroSwipe = function(element, handler) {
+        if (!element) return;
+        element.removeEventListener('touchstart', handler);
+        element.removeEventListener('touchmove', handler);
+        element.removeEventListener('touchend', handler);
+    };
+    window.__initVisibilityPause = function(dotnetRef) {
+        var handler = function() {
+            dotnetRef.invokeMethodAsync('OnVisibilityChanged', !document.hidden);
+        };
+        document.addEventListener('visibilitychange', handler);
+        handler();
+        return handler;
+    };
+    window.__removeVisibilityPause = function(handler) {
+        document.removeEventListener('visibilitychange', handler);
+    };
+</script>
+
+<style>
+    /* ── Loading Skeleton ── */
+    .hero--loading .hero__slider--skeleton {
+        min-height: 260px;
+        background: #f1f5f9;
+        display: flex;
+        flex-direction: column;
+        animation: hero-skeleton-pulse 1.6s ease-in-out infinite;
+    }
+    @@keyframes hero-skeleton-pulse {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
+    }
+    .hero__skeleton-img {
+        flex: 1;
+        min-height: 180px;
+        background: #e2e8f0;
+    }
+    .hero__skeleton-caption,
+    .hero--loading .hero__caption {
+        padding: 16px;
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+    .hero__skeleton-line {
+        height: 18px;
+        border-radius: 6px;
+        background: #e2e8f0;
+    }
+    .w-75 { width: 75%; }
+    .w-50 { width: 50%; }
+    @@media (min-width: 900px) {
+        .hero--loading .hero__slider--skeleton {
+            min-height: 360px;
+        }
+        .hero__skeleton-img {
+            min-height: 280px;
+        }
+    }
+
+    /* ── Slide Indicators (Dots) ── */
+    .hero__dots {
+        position: absolute;
+        bottom: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        z-index: 5;
+        direction: ltr;
+    }
+    .hero__dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.7);
+        background: transparent;
+        cursor: pointer;
+        padding: 0;
+        transition: all 0.25s ease;
+    }
+    .hero__dot:hover {
+        border-color: #fff;
+        background: rgba(255,255,255,0.3);
+    }
+    .hero__dot--active {
+        background: #fff;
+        border-color: #fff;
+        transform: scale(1.2);
+    }
+    @@media (max-width: 899.98px) {
+        .hero__dots {
+            position: relative;
+            bottom: auto;
+            left: auto;
+            transform: none;
+            justify-content: center;
+            padding: 10px 0;
+            z-index: auto;
+        }
+        .hero__dot {
+            border-color: rgba(15,23,42,0.3);
+        }
+        .hero__dot:hover {
+            border-color: #0f172a;
+            background: rgba(15,23,42,0.1);
+        }
+        .hero__dot--active {
+            background: #0f172a;
+            border-color: #0f172a;
+        }
+    }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private bool _loading = true;
+    private ElementReference _sliderElement;
+    private readonly List<HeroSlide> Slides = new();
+    private object? _swipeHandler;
+    private object? _visibilityHandler;
+
+    private static readonly string[] FxClasses =
+    [
+        "hero__fx-fade",
+        "hero__fx-slide-up",
+        "hero__fx-slide-right",
+        "hero__fx-zoom",
+        "hero__fx-soft-blur"
+    ];
+
+    private static readonly Random Rng = new();
+    private string activeFxClass = FxClasses[0];
+
+    private int activeIndex;
+    private PeriodicTimer? timer;
+    private CancellationTokenSource? cts;
+    private bool _pageVisible = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSlidesAsync();
+
+        if (Slides.Count > 0)
+        {
+            cts = new CancellationTokenSource();
+            timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+            _ = RunAutoAdvanceAsync(cts.Token);
+        }
+    }
+
+    private async Task LoadSlidesAsync()
+    {
+        Slides.Clear();
+
+        try
+        {
+            var dbSlides = await Http.GetFromJsonAsync<List<SliderItemDto>>("api/sliders/active");
+            if (dbSlides is not null && dbSlides.Count > 0)
+            {
+                foreach (var s in dbSlides)
+                {
+                    if (string.IsNullOrWhiteSpace(s.ImageUrl)) continue;
+
+                    Slides.Add(new HeroSlide(
+                        s.ImageUrl,
+                        s.MobileImageUrl,
+                        string.IsNullOrWhiteSpace(s.Title) ? "ارورسرویس" : s.Title,
+                        s.Subtitle ?? string.Empty,
+                        string.Empty));
+                }
+            }
+        }
+        catch
+        {
+            // Log or handle error if needed
+        }
+
+        _loading = false;
+        activeIndex = 0;
+        PickFx();
+    }
+
+    private async Task RunAutoAdvanceAsync(CancellationToken cancellationToken)
+    {
+        if (timer is null) return;
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                if (Slides.Count == 0 || !_pageVisible) continue;
+
+                activeIndex = (activeIndex + 1) % Slides.Count;
+                PickFx();
+                await InvokeAsync(StateHasChanged);
+                await TriggerTypewriterAsync();
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    [JSInvokable]
+    public void Prev()
+    {
+        if (Slides.Count == 0) return;
+
+        activeIndex = (activeIndex - 1 + Slides.Count) % Slides.Count;
+        PickFx();
+        _ = TriggerTypewriterAsync();
+    }
+
+    [JSInvokable]
+    public void Next()
+    {
+        if (Slides.Count == 0) return;
+
+        activeIndex = (activeIndex + 1) % Slides.Count;
+        PickFx();
+        _ = TriggerTypewriterAsync();
+    }
+
+    private void GoTo(int index)
+    {
+        if (Slides.Count == 0) return;
+        if (index < 0 || index >= Slides.Count) return;
+
+        activeIndex = index;
+        PickFx();
+        _ = TriggerTypewriterAsync();
+    }
+
+    [JSInvokable]
+    public void OnVisibilityChanged(bool visible)
+    {
+        _pageVisible = visible;
+    }
+
+    private void PickFx()
+    {
+        activeFxClass = FxClasses[Rng.Next(FxClasses.Length)];
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (Slides.Count > 0)
+            {
+                await TriggerTypewriterAsync();
+                await JS.InvokeVoidAsync("__initHeroSwipe", _sliderElement, DotNetObjectReference.Create(this));
+            }
+            _visibilityHandler = await JS.InvokeAsync<object>("__initVisibilityPause", DotNetObjectReference.Create(this));
+        }
+    }
+
+    private async Task TriggerTypewriterAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("heroTypewriter.run", ".hero__slider");
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+        timer?.Dispose();
+
+        if (_swipeHandler != null)
+        {
+            _ = JS.InvokeVoidAsync("__removeHeroSwipe", _sliderElement, _swipeHandler);
+        }
+        if (_visibilityHandler != null)
+        {
+            _ = JS.InvokeVoidAsync("__removeVisibilityPause", _visibilityHandler);
+        }
+    }
+
+    private sealed record HeroSlide(string ImageUrl, string? MobileImageUrl, string Title, string Subtitle, string Tagline);
+}

@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ارورسرویس | تعمیر و سرویس لوازم خانگی، کد خطا و قطعات یدکی</title>
+    <meta name="description" content="ارورسرویس، مرجع تخصصی کدهای خطای لوازم خانگی، آموزش تعمیرات، قطعات یدکی و سرویس در منزل. بانک جامع ارور ماشین لباسشویی، یخچال، ظرفشویی و ماکروفر." />
+    <meta name="keywords" content="کد خطای لوازم خانگی, تعمیر لوازم خانگی, قطعات یدکی, سرویس لوازم خانگی, ارور ماشین لباسشویی, ارور یخچال, تعمیرات لوازم خانگی" />
+    <meta name="robots" content="index, follow" />
+    <meta name="google-site-verification" content="pOLe48KLHLou_2yz7U3J8wttbEFyv14RDjRG6vyW8ts" />
+    <link rel="canonical" href="https://errorservice.ir/" />
+
+    <!-- Preconnect / DNS-Prefetch for PageSpeed -->
+    <link rel="preconnect" href="https://errorservice.ir" />
+    <link rel="dns-prefetch" href="https://errorservice.ir" />
+    <link rel="preload" href="/css/app.css" as="style" />
+    <link rel="preload" href="/css/theme.css" as="style" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://errorservice.ir/" />
+    <meta property="og:title" content="ارورسرویس | مرجع تخصصی کد خطا و تعمیرات لوازم خانگی" />
+    <meta property="og:description" content="ارورسرویس، بانک جامع کدهای خطای لوازم خانگی، آموزش تعمیرات و قطعات یدکی" />
+    <meta property="og:image" content="/images/og-default.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="fa_IR" />
+    <meta property="og:site_name" content="ارورسرویس" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://errorservice.ir/" />
+    <meta name="twitter:title" content="ارورسرویس | مرجع تخصصی کد خطا و تعمیرات لوازم خانگی" />
+    <meta name="twitter:description" content="ارورسرویس، بانک جامع کدهای خطای لوازم خانگی، آموزش تعمیرات و قطعات یدکی" />
+    <meta name="twitter:image" content="/images/og-default.jpg" />
+    <base href="/" />
+    <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/app.css" rel="stylesheet" />
+    <link href="css/theme.css" rel="stylesheet" />
+    <link href="css/dropdown.css" rel="stylesheet" />
+    <link href="vendor/jalalidatepicker/jalalidatepicker.min.css" rel="stylesheet" />
+    <link href="vendor/quill/quill.snow.css" rel="stylesheet" />
+    <link href="vendor/quill-better-table/quill-better-table.css" rel="stylesheet" />
+    <link href="vendor/highlightjs/github-dark.min.css" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="images/branding/logo.svg" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <link href="ErrorService.Client.styles.css" rel="stylesheet" />
+    <link rel="stylesheet" href="vendor/plyr/plyr.css" />
+    <style>
+        /* Force splash visibility during initial load */
+        .app-splash {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(1100px 700px at 75% 20%, rgba(13,110,253,0.18), rgba(248,249,250,0) 60%),
+                        radial-gradient(900px 600px at 15% 80%, rgba(25,135,84,0.16), rgba(248,249,250,0) 55%),
+                        linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.4s ease, visibility 0.4s ease;
+        }
+        .app-splash--hide {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        .app-splash__card {
+            width: min(440px, calc(100vw - 48px));
+            padding: 28px 24px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.72);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.8);
+            box-shadow: 0 18px 50px rgba(15, 23, 42, 0.14);
+            text-align: center;
+            transform: translateY(0);
+            animation: splash-pop 700ms ease both;
+        }
+        @keyframes splash-pop {
+            from { opacity: 0; transform: translateY(8px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .app-splash__logo {
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 12px auto;
+            display: grid;
+            place-items: center;
+            animation: ivSplashFloat 2.8s ease-in-out infinite;
+            filter: drop-shadow(0 8px 24px rgba(37,99,235,0.25));
+        }
+        .app-splash__logo-img { width: 66px; height: 66px; }
+
+        .app-splash__brand {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.3px;
+            color: #0f172a;
+            margin-bottom: 6px;
+        }
+        .app-splash__subtitle {
+            font-size: 13px;
+            color: #475569;
+            margin-bottom: 16px;
+        }
+
+        .app-splash__loader {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: center;
+        }
+        .app-splash__loader span {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #0d6efd;
+            opacity: 0.25;
+            animation: splash-dots 900ms ease-in-out infinite;
+        }
+        .app-splash__loader span:nth-child(2) { animation-delay: 120ms; background: #198754; }
+        .app-splash__loader span:nth-child(3) { animation-delay: 240ms; background: #6f42c1; }
+        @keyframes splash-dots {
+            0%, 100% { transform: translateY(0); opacity: 0.25; }
+            50% { transform: translateY(-5px); opacity: 1; }
+        }
+
+        .lesson-lightbox {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 18px;
+            background: rgba(15, 23, 42, 0.82);
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+        }
+        .lesson-lightbox--show { display: flex; }
+        .lesson-lightbox__img {
+            max-width: min(1100px, 96vw);
+            max-height: 88vh;
+            border-radius: 14px;
+            box-shadow: 0 26px 90px rgba(0,0,0,0.45);
+            background: #0b1220;
+            touch-action: none;
+            user-select: none;
+        }
+        .lesson-lightbox__close {
+            position: fixed;
+            top: 14px;
+            left: 14px;
+            width: 40px;
+            height: 40px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.12);
+            color: #fff;
+            font-size: 20px;
+            line-height: 38px;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+        }
+    </style>
+    <script>
+        window.seoHelper = {
+            _findOrCreate: function(attr, value) {
+                var el = document.querySelector('meta[' + attr + '="' + value + '"]');
+                if (!el) { el = document.createElement('meta'); el.setAttribute(attr, value); document.head.appendChild(el); }
+                return el;
+            },
+            setMeta: function(name, content) {
+                if (!content) return;
+                this._findOrCreate('name', name).setAttribute('content', content);
+            },
+            setMetaProp: function(property, content) {
+                if (!content) return;
+                this._findOrCreate('property', property).setAttribute('content', content);
+            },
+            setTitle: function(title) { if (title) document.title = title; },
+            setCanonical: function(href) {
+                if (!href) return;
+                var el = document.querySelector('link[rel="canonical"]');
+                if (!el) { el = document.createElement('link'); el.setAttribute('rel', 'canonical'); document.head.appendChild(el); }
+                el.setAttribute('href', href);
+            },
+            setJsonLd: function(json) {
+                if (!json) return;
+                var existing = document.querySelector('script[type="application/ld+json"]');
+                if (!existing) { existing = document.createElement('script'); existing.setAttribute('type', 'application/ld+json'); document.head.appendChild(existing); }
+                existing.textContent = json;
+            },
+            replaceAll: function(title, desc, keywords, canonical, ogType, ogImage, jsonLd) {
+                this.setTitle(title);
+                this.setMeta('description', desc);
+                this.setMeta('keywords', keywords);
+                this.setCanonical(canonical);
+                this.setMetaProp('og:type', ogType || 'website');
+                this.setMetaProp('og:title', title);
+                this.setMetaProp('og:description', desc);
+                this.setMeta('twitter:title', title);
+                this.setMeta('twitter:description', desc);
+                if (ogImage) { this.setMetaProp('og:image', ogImage); this.setMeta('twitter:image', ogImage); }
+                this.setJsonLd(jsonLd);
+            }
+        };
+    </script>
+</head>
+
+<body>
+    <div id="app"></div>
+
+    <div id="app-splash" class="app-splash" aria-label="Loading">
+        <div class="app-splash__card">
+            <div class="app-splash__logo" aria-hidden="true">
+                <img class="app-splash__logo-img" src="images/branding/logo.svg" alt="" />
+            </div>
+            <div class="app-splash__brand">ارورسرویس</div>
+            <div class="app-splash__subtitle">در حال بارگذاری…</div>
+            <div class="app-splash__loader" aria-hidden="true">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+    <script src="vendor/jalalidatepicker/jalalidatepicker.min.js"></script>
+    <script src="js/datepicker-init.js?v=1"></script>
+    <script src="js/receipt-photo-zoom.js?v=1"></script>
+    <script src="js/money-input.js?v=1"></script>
+    <script src="js/drag-scroll.js"></script>
+    <script src="js/lazy-video.js?v=@DateTime.Now.Ticks"></script>
+    <script src="vendor/chartjs/Chart.min.js"></script>
+    <script src="vendor/chartjs/html2canvas.min.js"></script>
+    <script src="js/monitoring-chart.js"></script>
+    <script src="vendor/zoom/hammer.min.js"></script>
+    <script src="vendor/zoom/chartjs-plugin-zoom.min.js"></script>
+    <script src="js/monitoring-detailed-chart.js"></script>
+    <script src="js/monitoring-progressive-chart.js"></script>
+    <script src="js/monitoring-timeline.js"></script>
+    <script src="js/monitoring-professional-chart.js"></script>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script src="vendor/plyr/plyr.polyfilled.js"></script>
+    <script src="vendor/hls/hls.min.js"></script>
+    <script src="vendor/tinymce/tinymce.min.js"></script>
+    <script src="vendor/quill/quill.min.js"></script>
+    <script src="vendor/highlightjs/highlight.min.js"></script>
+    <script src="vendor/quill-image-resize/image-resize.min.js"></script>
+    <script src="vendor/quill-better-table/quill-better-table.min.js"></script>
+    <script src="js/hero-typewriter.js?v=1"></script>
+    <script src="js/mobile-interactions.js?v=2"></script>
+    <script src="js/scroll-reveal.js?v=1"></script>
+    <script src="js/chat-voice.js?v=1"></script>
+    <script src="js/clipboard.js?v=1"></script>
+    <script>
+        document.addEventListener('error', function(e) {
+            if (e.target.tagName === 'IMG' && !e.target.src.includes('placeholder')) {
+                e.target.src = '/images/placeholder-product.svg';
+                e.target.onerror = null;
+            }
+        }, true);
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('img:not([loading])').forEach(function(img) {
+                if (!img.closest('#app-splash')) img.loading = 'lazy';
+            });
+        });
+
+        window.downloadFile = function(fileName, base64) {
+            var link = document.createElement('a');
+            link.download = fileName;
+            link.href = 'data:application/octet-stream;base64,' + base64;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        window.scrollToElement = function(element) {
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        };
+
+        window.formatPriceInputs = function() {
+            document.querySelectorAll('.price-input-ltr').forEach(function(el) {
+                if (el.dataset.priceInit) return;
+                el.dataset.priceInit = '1';
+                el.addEventListener('input', function() {
+                    var raw = this.value.replace(/,/g, '').replace(/[^0-9]/g, '');
+                    if (raw) {
+                        this.value = parseInt(raw, 10).toLocaleString('en-US');
+                    } else {
+                        this.value = '';
+                    }
+                });
+            });
+        };
+
+        window.getPriceRawValue = function(id) {
+            var el = document.getElementById(id);
+            if (!el) return '0';
+            return el.value.replace(/,/g, '');
+        };
+    </script>
+    <script>
+        let registration;
+        let deferredPrompt;
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', async () => {
+                try {
+                    registration = await navigator.serviceWorker.register('service-worker.js');
+
+                    // Check for updates every 1 hour
+                    setInterval(() => {
+                        registration.update();
+                    }, 1000 * 60 * 60);
+
+                    registration.onupdatefound = () => {
+                        const installingWorker = registration.installing;
+                        installingWorker.onstatechange = () => {
+                            if (installingWorker.state === 'installed') {
+                                if (navigator.serviceWorker.controller) {
+                                    // New content is available
+                                    handleUpdateAvailable();
+                                }
+                            }
+                        };
+                    };
+                } catch (e) {
+                    console.error('SW registration failed:', e);
+                }
+            });
+        }
+
+        function handleUpdateAvailable() {
+            // If we are in admin panel, we might want to show a notification
+            // If we are on public site, we auto-update
+            const isAdmin = window.location.pathname.startsWith('/admin');
+
+            if (!isAdmin) {
+                // Auto-update for public site
+                if (registration && registration.waiting) {
+                    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                }
+                window.location.reload();
+            } else {
+                // For admin, we let Blazor handle the notification via PwaUpdateDialog
+                window.dispatchEvent(new CustomEvent('PwaUpdateAvailable'));
+            }
+        }
+
+        // PWA Installation
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            // Notify Blazor that installation is possible
+            window.dispatchEvent(new CustomEvent('PwaInstallAvailable'));
+        });
+
+        window.installPWA = async () => {
+            if (!deferredPrompt) return false;
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            deferredPrompt = null;
+            return outcome === 'accepted';
+        };
+
+        window.getPwaInstallStatus = () => {
+            return !!deferredPrompt;
+        };
+
+        window.initPwaHandlers = (dotNetHelper) => {
+            window.addEventListener('PwaUpdateAvailable', () => {
+                dotNetHelper.invokeMethodAsync('NotifyUpdateAvailable');
+            });
+            window.addEventListener('PwaInstallAvailable', () => {
+                dotNetHelper.invokeMethodAsync('NotifyInstallAvailable');
+            });
+        };
+    </script>
+    <script>
+        window.ensureHljs = () => {
+            if (window.hljs && typeof window.hljs.configure === 'function') {
+                try { window.hljs.configure({ ignoreUnescapedHTML: true }); } catch (e) { }
+            }
+            return true;
+        };
+
+        window.uploadEditorFile = async (uploadUrl, file) => {
+            const formData = new FormData();
+            formData.append('file', file, file.name);
+            const resp = await fetch(uploadUrl, { method: 'POST', body: formData });
+            if (!resp.ok) {
+                const txt = await resp.text();
+                throw new Error(txt || ('Upload failed: ' + resp.status));
+            }
+            const url = (await resp.text()).replace(/"/g, '');
+            return url;
+        };
+
+        window.pickAndUploadForQuill = (containerId, kind, uploadUrl) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = kind === 'video' ? 'video/*' : 'image/*';
+            input.style.display = 'none';
+            document.body.appendChild(input);
+
+            input.onchange = async () => {
+                try {
+                    const file = input.files && input.files[0];
+                    if (!file) return;
+                    const url = await window.uploadEditorFile(uploadUrl, file);
+
+                    const quill = container.__quill;
+                    const range = quill.getSelection(true);
+                    const index = range ? range.index : quill.getLength();
+
+                    if (kind === 'video') {
+                        quill.insertEmbed(index, 'video', url, 'user');
+                    } else {
+                        quill.insertEmbed(index, 'image', url, 'user');
+                    }
+
+                    quill.setSelection(index + 1, 0);
+                } catch (e) {
+                    console.error(e);
+                    alert(e.message || 'خطا در آپلود فایل');
+                } finally {
+                    document.body.removeChild(input);
+                }
+            };
+
+            input.click();
+        };
+
+        window.promptAndToggleLinkForQuill = (containerId) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            const range = quill.getSelection(true);
+            if (!range) return;
+
+            const fmt = quill.getFormat(range);
+            const current = fmt && fmt.link ? String(fmt.link) : '';
+            const url = prompt('لینک را وارد کنید (برای حذف لینک، خالی بگذارید)', current);
+            if (url === null) return; // canceled
+
+            const normalizeLink = (raw) => {
+                const v = String(raw || '').trim();
+                if (!v) return '';
+
+                const lower = v.toLowerCase();
+                // Keep explicit schemes
+                if (
+                    lower.startsWith('http://') ||
+                    lower.startsWith('https://') ||
+                    lower.startsWith('mailto:') ||
+                    lower.startsWith('tel:') ||
+                    lower.startsWith('#')
+                ) {
+                    return v;
+                }
+
+                // Protocol-relative //example.com
+                if (v.startsWith('//')) {
+                    return 'https:' + v;
+                }
+
+                // Internal absolute path
+                if (v.startsWith('/')) {
+                    return v;
+                }
+
+                // If it looks like a domain (contains a dot) treat as external
+                // e.g. www.errorservice.ir or errorservice.ir/path
+                if (v.includes('.')) {
+                    return 'https://' + v;
+                }
+
+                // Otherwise treat as internal relative route
+                // e.g. news/12 => /news/12
+                return '/' + v;
+            };
+
+            const val = normalizeLink(url);
+            if (!val) {
+                quill.format('link', false, 'user');
+                return;
+            }
+
+            quill.format('link', val, 'user');
+        };
+
+        window.initQuillEditor = (containerId, content, dotNetHelper) => {
+            const container = document.getElementById(containerId);
+            if (!container) return null;
+
+            // If already initialized, just update content
+            if (container.__quill && container.__quillInitialized) {
+                if (content && container.__quill.root.innerHTML !== content) {
+                    const oldScroll = window.scrollY;
+                    container.__quill.root.innerHTML = content;
+                    window.scrollTo(0, oldScroll);
+                }
+                return container.__quill;
+            }
+
+            const initialHtml = content || '';
+            try {
+                // Clear container completely
+                container.innerHTML = '';
+
+                // Create editor div
+                const editorDiv = document.createElement('div');
+                container.appendChild(editorDiv);
+
+                // Quill Pro: fonts whitelist
+                try {
+                    const Font = Quill.import('formats/font');
+                    Font.whitelist = ['vazirmatn', 'vazir', 'shabnam', 'sahel'];
+                    Quill.register(Font, true);
+
+                    // Register Callout attribute formally in Quill (stable persistence)
+                    // Produces: <p data-callout="info">...</p>
+                    const Parchment = Quill.import('parchment');
+                    const CalloutAttr = new Parchment.Attributor.Attribute('callout', 'data-callout', {
+                        scope: Parchment.Scope.BLOCK
+                    });
+                    Quill.register(CalloutAttr, true);
+                } catch (e) { console.error('Quill register error:', e); }
+
+                // Quill Pro: modules
+                // - syntax highlight (highlight.js)
+                // - image resize
+                // - better table (disabled for now due to browser build incompatibilities)
+                if (window.ImageResize) {
+                    const mod = window.ImageResize.default ? window.ImageResize.default : window.ImageResize;
+                    try { Quill.register('modules/imageResize', mod); } catch (e) { }
+                }
+
+                const quill = new Quill(editorDiv, {
+                    theme: 'snow',
+                    modules: {
+                        toolbar: [
+                            [{ 'font': ['vazirmatn', 'vazir', 'shabnam', 'sahel'] }],
+                            [{ 'size': ['small', false, 'large', 'huge'] }],
+                            ['bold', 'italic', 'underline', 'strike'],
+                            [{ 'color': [] }, { 'background': [] }],
+                            [{ 'align': [] }],
+                            [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                            [{ 'indent': '-1' }, { 'indent': '+1' }],
+                            ['blockquote', 'code-block'],
+                            ['link', 'image', 'video'],
+                            ['clean']
+                        ],
+                        syntax: window.hljs ? { highlight: text => window.hljs.highlightAuto(text).value } : false,
+                        imageResize: window.ImageResize ? {} : undefined,
+                        keyboard: {}
+                    },
+                    placeholder: 'متن خبر را اینجا بنویسید...',
+                    direction: 'rtl',
+                    autofocus: false
+                });
+
+                // Prevent Quill from stealing focus when user is interacting with other inputs.
+                // Allow focus ONLY after user clicks inside editor.
+                try {
+                    container.__allowQuillFocus = false;
+                    const origFocus = quill.focus ? quill.focus.bind(quill) : null;
+                    if (origFocus) {
+                        quill.focus = function () {
+                            if (container.__allowQuillFocus) {
+                                return origFocus();
+                            }
+                            return;
+                        };
+                    }
+
+                    quill.root.addEventListener('mousedown', () => {
+                        container.__allowQuillFocus = true;
+                    }, true);
+                    quill.root.addEventListener('touchstart', () => {
+                        container.__allowQuillFocus = true;
+                    }, { passive: true, capture: true });
+
+                    container.__quillDocMouseDownHandler = (ev) => {
+                        const t = ev.target;
+                        if (!t) return;
+                        // Click outside editor container => disallow Quill focus
+                        if (!container.contains(t)) {
+                            container.__allowQuillFocus = false;
+                        }
+                    };
+                    document.addEventListener('mousedown', container.__quillDocMouseDownHandler, true);
+                    document.addEventListener('touchstart', container.__quillDocMouseDownHandler, true);
+                } catch (e) { }
+
+                window.ensureHljs();
+
+                // Upload handlers (news)
+                const toolbarModule = quill.getModule('toolbar');
+                if (toolbarModule) {
+                    toolbarModule.addHandler('image', function () {
+                        window.pickAndUploadForQuill(containerId, 'image', '/api/news/upload');
+                    });
+                    toolbarModule.addHandler('video', function () {
+                        // Video button: embed/link
+                        window.promptAndInsertVideoLink(containerId);
+                    });
+                    toolbarModule.addHandler('link', function () {
+                        window.promptAndToggleLinkForQuill(containerId);
+                    });
+                }
+
+                // Apply RTL to toolbar
+                const toolbar = container.querySelector('.ql-toolbar');
+                if (toolbar) {
+                    toolbar.style.direction = 'rtl';
+                }
+
+                // Keep editor RTL
+                quill.root.style.direction = 'rtl';
+                quill.root.style.textAlign = 'right';
+
+                // Track last tapped image (mobile-friendly resize)
+                container.__lastImageDom = null;
+                quill.root.addEventListener('click', (ev) => {
+                    const t = ev.target;
+                    if (t && t.tagName === 'IMG') {
+                        container.__lastImageDom = t;
+                        try {
+                            const blot = Quill.find(t);
+                            if (blot) {
+                                const idx = quill.getIndex(blot);
+                                quill.setSelection(idx, 1, 'user');
+                            }
+                        } catch (e) { }
+                    }
+                });
+
+                // Set initial content
+                if (initialHtml) {
+                    quill.root.innerHTML = initialHtml;
+                }
+
+                // Sync with Blazor on text change
+                quill.on('text-change', function (delta, oldDelta, source) {
+                    if (source === 'user' && dotNetHelper) {
+                        dotNetHelper.invokeMethodAsync('UpdateContent', quill.root.innerHTML);
+                    }
+                });
+
+                container.__quill = quill;
+                container.__quillInitialized = true;
+                return quill;
+            } catch (e) {
+                console.error('initQuillEditor failed:', e);
+                // Don't leave a blank editor area
+                container.innerHTML = initialHtml;
+                return null;
+            }
+        };
+
+        window.getQuillContent = (containerId) => {
+            const container = document.getElementById(containerId);
+            if (container && container.__quill) {
+                return container.__quill.root.innerHTML;
+            }
+            return "";
+        };
+
+        window.destroyQuillEditor = (containerId) => {
+            const container = document.getElementById(containerId);
+            if (!container) return false;
+            try {
+                if (container.__quill) {
+                    try { container.__quill.off('text-change'); } catch (e) { }
+                    try { container.__quill.off('selection-change'); } catch (e) { }
+                }
+            } catch (e) { }
+            try {
+                if (container.__quillDocMouseDownHandler) {
+                    document.removeEventListener('mousedown', container.__quillDocMouseDownHandler, true);
+                    document.removeEventListener('touchstart', container.__quillDocMouseDownHandler, true);
+                }
+            } catch (e) { }
+            try {
+                delete container.__quill;
+                delete container.__quillInitialized;
+                delete container.__lastImageDom;
+                delete container.__quillDocMouseDownHandler;
+                delete container.__allowQuillFocus;
+            } catch (e) { }
+            container.innerHTML = '';
+            return true;
+        };
+
+        window.setQuillContent = (containerId, content) => {
+            const container = document.getElementById(containerId);
+            if (container && container.__quill) {
+                container.__quill.root.innerHTML = content || "";
+            }
+        };
+
+        window.insertHtmlAtCursor = (containerId, html) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            const range = quill.getSelection(true);
+            const index = range ? range.index : quill.getLength();
+
+            // Insert HTML at cursor position
+            quill.clipboard.dangerouslyPasteHTML(index, html);
+
+            // Move cursor after inserted content
+            quill.setSelection(index + 1, 0);
+        };
+
+        window.insertImageAtCursor = (containerId, url) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            const range = quill.getSelection(true);
+            const index = range ? range.index : quill.getLength();
+            quill.insertEmbed(index, 'image', url, 'user');
+            quill.setSelection(index + 1, 0);
+        };
+
+        window.applyCalloutToSelection = (containerId, calloutType) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            const range = quill.getSelection(true);
+            if (!range) return;
+
+            const len = Math.max(1, range.length || 0);
+
+            // Clear previous callout on all lines in selection
+            quill.formatLine(range.index, len, 'callout', false, 'user');
+
+            if (!calloutType || calloutType === 'none') return;
+
+            // Apply to all lines in selection
+            quill.formatLine(range.index, len, 'callout', calloutType, 'user');
+        };
+
+        window.exitCalloutAndContinue = (containerId) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            const range = quill.getSelection(true);
+            if (!range) return;
+
+            // Clear current line callout formatting
+            quill.formatLine(range.index, 1, 'callout', false, 'user');
+
+            // Move to end and insert new line
+            const [line] = quill.getLine(range.index);
+            if (line) {
+                const lineIndex = quill.getIndex(line);
+                const lineLength = line.length();
+                quill.setSelection(lineIndex + lineLength, 0, 'user');
+                quill.insertText(lineIndex + lineLength, '\n', 'user');
+                quill.setSelection(lineIndex + lineLength + 1, 0, 'user');
+            }
+        };
+
+        window.bindCalloutSelectorForQuill = (containerId, selectorId) => {
+            const container = document.getElementById(containerId);
+            const selector = document.getElementById(selectorId);
+            if (!container || !container.__quill || !selector) return false;
+
+            const quill = container.__quill;
+
+            const update = () => {
+                const range = quill.getSelection(true);
+                if (!range) return;
+                const fmt = quill.getFormat(range.index, 1);
+                const v = fmt && fmt.callout ? String(fmt.callout) : 'none';
+                if (selector.value !== v) selector.value = v;
+            };
+
+            if (selector.dataset.boundToQuill === '1') {
+                update();
+                return true;
+            }
+            selector.dataset.boundToQuill = '1';
+
+            quill.on('selection-change', () => update());
+            quill.on('text-change', () => update());
+            update();
+            return true;
+        };
+
+        window.insertVideoAtCursor = (containerId, url) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            const range = quill.getSelection(true);
+            const index = range ? range.index : quill.getLength();
+            quill.insertEmbed(index, 'video', url, 'user');
+            quill.setSelection(index + 1, 0);
+        };
+
+        window.insertTableForQuill = (containerId, rows, cols) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            const r = Math.max(1, Math.min(12, Number(rows || 3)));
+            const c = Math.max(1, Math.min(8, Number(cols || 3)));
+
+            let html = '<table><tbody>';
+            for (let i = 0; i < r; i++) {
+                html += '<tr>';
+                for (let j = 0; j < c; j++) {
+                    html += '<td><br></td>';
+                }
+                html += '</tr>';
+            }
+            html += '</tbody></table><p><br></p>';
+
+            const range = quill.getSelection(true);
+            const index = range ? range.index : quill.getLength();
+            quill.clipboard.dangerouslyPasteHTML(index, html);
+            quill.setSelection(index + 1, 0);
+        };
+
+        window.promptAndInsertVideoLink = (containerId) => {
+            const url = prompt('لینک ویدیو را وارد کنید (mp4/webm یا embed)');
+            if (!url) return;
+            window.insertVideoAtCursor(containerId, url);
+        };
+
+        window.promptAndInsertTable = (containerId) => {
+            const rows = prompt('تعداد سطر جدول؟', '3');
+            if (rows === null) return;
+            const cols = prompt('تعداد ستون جدول؟', '3');
+            if (cols === null) return;
+            window.insertTableForQuill(containerId, rows, cols);
+        };
+
+        window.exitCurrentBlockAndAddParagraph = (containerId) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            const range = quill.getSelection(true);
+
+            if (range) {
+                // Get current format
+                const format = quill.getFormat(range);
+
+                // If in a blockquote, move to end and add paragraph
+                if (format.blockquote) {
+                    // Move to end of current block
+                    const currentLine = quill.getLine(range.index)[0];
+                    if (currentLine) {
+                        const lineIndex = quill.getIndex(currentLine);
+                        const lineLength = currentLine.length();
+                        quill.setSelection(lineIndex + lineLength, 0);
+                    }
+                }
+
+                // Add empty paragraph
+                quill.clipboard.dangerouslyPasteHTML(quill.getSelection().index, '<p><br></p>');
+                quill.setSelection(quill.getSelection().index + 1, 0);
+
+                // Remove blockquote format from new line
+                quill.format('blockquote', false);
+            }
+        };
+
+        window.resizeImage = (containerId, width) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            const range = quill.getSelection();
+
+            if (container.__lastImageDom && container.__lastImageDom.tagName === 'IMG') {
+                container.__lastImageDom.style.width = width + '%';
+                container.__lastImageDom.style.maxWidth = '100%';
+                return;
+            }
+
+            if (range) {
+                const [leaf] = quill.getLeaf(range.index);
+                if (leaf && leaf.domNode && leaf.domNode.tagName === 'IMG') {
+                    leaf.domNode.style.width = width + '%';
+                    leaf.domNode.style.maxWidth = '100%';
+                }
+            }
+        };
+
+        window.resizeImageBytes = async (imageBuffer, contentType, maxBytes) => {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const blob = new Blob([imageBuffer], { type: contentType });
+                const url = URL.createObjectURL(blob);
+
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    let quality = 0.9;
+
+                    const resize = () => {
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        canvas.toBlob((blob) => {
+                            if (!blob) {
+                                reject(new Error('Failed to resize image'));
+                                return;
+                            }
+
+                            if (blob.size <= maxBytes || quality <= 0.1 || width <= 300 || height <= 300) {
+                                const reader = new FileReader();
+                                reader.onload = () => resolve(new Uint8Array(reader.result));
+                                reader.onerror = () => reject(new Error('Failed to read resized image'));
+                                reader.readAsArrayBuffer(blob);
+                            } else {
+                                quality -= 0.1;
+                                width = Math.floor(width * 0.9);
+                                height = Math.floor(height * 0.9);
+                                resize();
+                            }
+                        }, contentType, quality);
+                    };
+
+                    resize();
+                };
+
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    reject(new Error('Failed to load image'));
+                };
+
+                img.src = url;
+            });
+        };
+
+        window.initTinyMCE = (selector, dotNetHelper, uploadUrl = '/api/trainings/upload') => {
+            tinymce.remove(selector);
+            tinymce.init({
+                selector: selector,
+                promotion: false,
+                branding: false,
+                directionality: 'rtl',
+                height: 600,
+                menubar: false,
+                plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table code help wordcount',
+                toolbar: 'undo redo | blocks | styles | bold italic forecolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image table | code fullscreen',
+                style_formats: [
+                    { title: 'پاراگراف معمولی', block: 'p' },
+                    { title: 'باکس هایلایت (آبی)', block: 'blockquote', classes: 'article-callout article-callout--info' },
+                    { title: 'باکس هشدار (قرمز)', block: 'blockquote', classes: 'article-callout article-callout--danger' },
+                    { title: 'نقل قول بزرگ', block: 'blockquote', classes: 'large-quote' }
+                ],
+                content_style: `
+                        body { font-family: Vazirmatn, Tahoma; direction: rtl; text-align: justify; font-size: 16px; line-height: 1.8; color: #334155; padding: 10px; }
+                        .article-callout { padding: 20px; border-radius: 12px; margin: 20px 0; border-right: 5px solid #2563eb; background: #f8fafc; font-weight: bold; }
+                        .article-callout--danger { border-right-color: #ef4444; background: #fffafa; }
+                        .large-quote { font-size: 1.25rem; font-style: italic; color: #475569; border-right: 4px solid #ef4444; padding: 15px 25px; margin: 30px 0; background: #fffcfc; }
+                        img { max-width: 100%; height: auto; border-radius: 8px; }
+                    `,
+                image_title: true,
+                automatic_uploads: true,
+                file_picker_types: 'image',
+                images_upload_handler: (blobInfo, progress) => new Promise((resolve, reject) => {
+                    const formData = new FormData();
+                    formData.append('file', blobInfo.blob(), blobInfo.filename());
+
+                    fetch(uploadUrl, {
+                        method: 'POST',
+                        body: formData
+                    })
+                        .then(response => {
+                            if (!response.ok) throw new Error('Upload failed: ' + response.statusText);
+                            return response.text();
+                        })
+                        .then(url => {
+                            resolve(url.replace(/"/g, ''));
+                        })
+                        .catch(error => {
+                            reject('Error: ' + error.message);
+                        });
+                }),
+                setup: function (editor) {
+                    editor.on('change keyup setcontent blur', function () {
+                        dotNetHelper.invokeMethodAsync('UpdateContent', editor.getContent());
+                    });
+                }
+            });
+        };
+
+        window.getTinyContent = (selector) => {
+            const editor = tinymce.get(selector.startsWith('#') ? selector.substring(1) : selector);
+            return editor ? editor.getContent() : "";
+        };
+    </script>
+    <script>
+        window.initPlyr = (selector) => {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(element => {
+                const source = element.querySelector('source')?.src;
+                if (!source) return;
+
+                if (source.endsWith('.ts') || source.endsWith('.m3u8')) {
+                    if (Hls.isSupported()) {
+                        const hls = new Hls({
+                            debug: false,
+                            enableWorker: true,
+                            lowLatencyMode: true,
+                            backBufferLength: 90
+                        });
+                        hls.loadSource(source);
+                        hls.attachMedia(element);
+                        hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                            new Plyr(element);
+                        });
+                    } else if (element.canPlayType('application/vnd.apple.mpegurl')) {
+                        element.src = source;
+                        new Plyr(element);
+                    }
+                } else {
+                    new Plyr(element);
+                }
+            });
+            return true;
+        };
+    </script>
+
+    <div id="lesson-lightbox" class="lesson-lightbox" aria-hidden="true">
+        <div id="lesson-lightbox-close" class="lesson-lightbox__close">×</div>
+        <img id="lesson-lightbox-img" class="lesson-lightbox__img" alt="" />
+    </div>
+
+    <script>
+        window.initLessonLightbox = () => {
+            const lb = document.getElementById('lesson-lightbox');
+            const img = document.getElementById('lesson-lightbox-img');
+            const closeBtn = document.getElementById('lesson-lightbox-close');
+            if (!lb || !img || !closeBtn) return true;
+
+            let scale = 1;
+            let tx = 0;
+            let ty = 0;
+            let isPanning = false;
+            let panStartX = 0;
+            let panStartY = 0;
+            let lastTap = 0;
+            let pinchStartDist = 0;
+            let pinchStartScale = 1;
+            let pinchCenter = { x: 0, y: 0 };
+
+            function applyTransform() {
+                img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+            }
+
+            function resetTransform() {
+                scale = 1;
+                tx = 0;
+                ty = 0;
+                applyTransform();
+            }
+
+            function clampPan() {
+                const max = 520 * Math.max(0, scale - 1);
+                tx = Math.max(-max, Math.min(max, tx));
+                ty = Math.max(-max, Math.min(max, ty));
+            }
+
+            function distance(t1, t2) {
+                const dx = t1.clientX - t2.clientX;
+                const dy = t1.clientY - t2.clientY;
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+
+            function setScale(nextScale, centerX, centerY) {
+                nextScale = Math.max(1, Math.min(4, nextScale));
+                if (nextScale === scale) return;
+
+                const rect = img.getBoundingClientRect();
+                const cx = centerX - (rect.left + rect.width / 2);
+                const cy = centerY - (rect.top + rect.height / 2);
+                const ratio = nextScale / scale;
+
+                tx = cx + (tx - cx) * ratio;
+                ty = cy + (ty - cy) * ratio;
+                scale = nextScale;
+                clampPan();
+                applyTransform();
+            }
+
+            function close() {
+                lb.classList.remove('lesson-lightbox--show');
+                lb.setAttribute('aria-hidden', 'true');
+                img.removeAttribute('src');
+                resetTransform();
+            }
+
+            closeBtn.onclick = close;
+            lb.onclick = (e) => {
+                if (e.target === lb) close();
+            };
+
+            document.onkeydown = (e) => {
+                if (e.key === 'Escape') close();
+            };
+
+            document.querySelectorAll('[data-lightbox-src]').forEach(el => {
+                if (el.dataset.lightboxBound === '1') return;
+                el.dataset.lightboxBound = '1';
+                el.addEventListener('click', () => {
+                    const src = el.getAttribute('data-lightbox-src');
+                    if (!src) return;
+                    img.setAttribute('src', src);
+                    lb.classList.add('lesson-lightbox--show');
+                    lb.setAttribute('aria-hidden', 'false');
+                    resetTransform();
+                });
+            });
+
+            img.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    const now = Date.now();
+                    const dt = now - lastTap;
+                    lastTap = now;
+
+                    // double tap
+                    if (dt > 0 && dt < 280) {
+                        const t = e.touches[0];
+                        setScale(scale === 1 ? 2 : 1, t.clientX, t.clientY);
+                        if (scale === 1) {
+                            tx = 0;
+                            ty = 0;
+                            applyTransform();
+                        }
+                        e.preventDefault();
+                        return;
+                    }
+
+                    if (scale > 1) {
+                        isPanning = true;
+                        panStartX = e.touches[0].clientX - tx;
+                        panStartY = e.touches[0].clientY - ty;
+                        e.preventDefault();
+                    }
+                }
+
+                if (e.touches.length === 2) {
+                    isPanning = false;
+                    pinchStartDist = distance(e.touches[0], e.touches[1]);
+                    pinchStartScale = scale;
+                    pinchCenter = {
+                        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                        y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+                    };
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
+            img.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 1 && isPanning && scale > 1) {
+                    tx = e.touches[0].clientX - panStartX;
+                    ty = e.touches[0].clientY - panStartY;
+                    clampPan();
+                    applyTransform();
+                    e.preventDefault();
+                }
+
+                if (e.touches.length === 2) {
+                    const dist = distance(e.touches[0], e.touches[1]);
+                    const factor = dist / (pinchStartDist || dist);
+                    setScale(pinchStartScale * factor, pinchCenter.x, pinchCenter.y);
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
+            img.addEventListener('touchend', () => {
+                isPanning = false;
+                clampPan();
+                applyTransform();
+            });
+
+            return true;
+        };
+    </script>
+
+    <script>
+        (function () {
+            var splash = document.getElementById('app-splash');
+            var app = document.getElementById('app');
+            if (!splash || !app) return;
+
+            var done = false;
+            function hide() {
+                if (done) return;
+                done = true;
+                splash.classList.add('app-splash--hide');
+                window.setTimeout(function () {
+                    if (splash && splash.parentElement) {
+                        splash.parentElement.removeChild(splash);
+                    }
+                }, 320);
+            }
+
+            var observer = new MutationObserver(function () {
+                if (app.childElementCount > 0) {
+                    hide();
+                    observer.disconnect();
+                }
+            });
+
+            observer.observe(app, { childList: true, subtree: true });
+
+            window.setTimeout(hide, 3000);
+        })();
+    </script>
+
+
+
+    <script>
+        (function () {
+            // تابع ساده پیش‌نمایش بدون نیاز به کتابخانه‌های خارجی
+            window.openPrintPreview = function (html, title) {
+                console.log('openPrintPreview called', title);
+
+                // ایجاد مودال پیش‌نمایش
+                var modalHtml = `
+                    <div id="printPreviewModal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;flex-direction:column;">
+                        <div style="background:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #ddd;flex-wrap:wrap;gap:10px;">
+                            <h3 style="margin:0;font-size:1rem;color:#333;">${escapeHtml(title)}</h3>
+                            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                                <button id="printBtn" style="background:#4f46e5;color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:bold;">🖨️ چاپ مستقیم</button>
+                                <button id="pdfBtn" style="background:#10b981;color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:bold;">📄 چاپ و ذخیره PDF</button>
+                                <button id="closePreviewBtn" style="background:#ef4444;color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;">✖️ بستن</button>
+                            </div>
+                        </div>
+                        <div id="previewFrame" style="flex:1;overflow:auto;background:#eef2f7;padding:20px;"></div>
+                    </div>
+                `;
+
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+                var frameDiv = document.getElementById('previewFrame');
+                frameDiv.innerHTML = html;
+
+                // بستن مودال
+                var closeBtn = document.getElementById('closePreviewBtn');
+                if (closeBtn) {
+                    closeBtn.onclick = function () {
+                        var modal = document.getElementById('printPreviewModal');
+                        if (modal) modal.remove();
+                    };
+                }
+
+                // چاپ مستقیم (از طریق پنجره جدید)
+                var printBtn = document.getElementById('printBtn');
+                if (printBtn) {
+                    printBtn.onclick = function () {
+                        var printWindow = window.open('', '_blank');
+                        printWindow.document.write(html);
+                        printWindow.document.close();
+                        printWindow.print();
+                    };
+                }
+
+                // ذخیره PDF با استفاده از دیالوگ چاپ مرورگر
+                var pdfBtn = document.getElementById('pdfBtn');
+                if (pdfBtn) {
+                    pdfBtn.onclick = function () {
+                        // باز کردن در پنجره جدید و استفاده از قابلیت Save as PDF مرورگر
+                        var printWindow = window.open('', '_blank');
+                        printWindow.document.write(html);
+                        printWindow.document.close();
+                        printWindow.print();
+                        // در دیالوگ چاپ، کاربر می‌تواند "Save as PDF" را انتخاب کند
+                    };
+                }
+
+                // بستن با کلیک روی overlay
+                var modal = document.getElementById('printPreviewModal');
+                if (modal) {
+                    modal.onclick = function (e) {
+                        if (e.target === this) {
+                            this.remove();
+                        }
+                    };
+                }
+            };
+
+            // تابع کمکی برای escape کردن HTML
+            function escapeHtml(str) {
+                if (!str) return '';
+                return str.replace(/[&<>]/g, function (m) {
+                    if (m === '&') return '&amp;';
+                    if (m === '<') return '&lt;';
+                    if (m === '>') return '&gt;';
+                    return m;
+                });
+            }
+
+            // تابع برای نصب Google Analytics
+            window.loadGoogleAnalytics = function (tag) {
+                if (!tag || window._gaLoaded) return;
+                window._gaLoaded = true;
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', tag);
+                var s = document.createElement('script');
+                s.async = true;
+                s.src = 'https://www.googletagmanager.com/gtag/js?id=' + tag;
+                document.head.appendChild(s);
+            };
+
+            // بررسی وجود تابع بعد از بارگذاری
+            window.addEventListener('load', function () {
+                console.log('Page loaded, openPrintPreview exists:', typeof window.openPrintPreview === 'function');
+            });
+        })();
+    </script>
+
+    <script src="js/commitment-export.js"></script>
+</body>
+
+</html>

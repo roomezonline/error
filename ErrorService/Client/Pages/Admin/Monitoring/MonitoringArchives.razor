@@ -1,0 +1,400 @@
+@page "/admin/monitoring/archives"
+@layout AdminLayout
+@implements IDisposable
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.monitoring.view")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ErrorService.Client.Services.ToastService ToastService
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+@inject ErrorService.Client.Services.AdminWorkshopSelectionService AdminWorkshopSelection
+
+<PageTitle>آرشیو مانیتورینگ</PageTitle>
+
+<div class="mar-page" dir="rtl">
+    <div class="mar-header">
+        <a class="mar-back" href="/admin"><span class="oi oi-arrow-right"></span></a>
+        <div>
+            <div class="mar-kicker">پایش و مانیتورینگ</div>
+            <div class="mar-title">آرشیو مانیتورینگ</div>
+        </div>
+        <button type="button" class="mar-refresh" @onclick="Reload" title="بروزرسانی">
+            <span class="oi oi-loop-circular"></span>
+        </button>
+    </div>
+
+    @if (_isLoading)
+    {
+        <div class="mar-card mar-loading">
+            <div class="spinner-border text-primary"></div>
+            <div>در حال دریافت لیست...</div>
+        </div>
+    }
+    else if (_archives == null || _archives.Count == 0)
+    {
+        <div class="mar-card mar-empty">
+            <div class="mar-empty__icon"><span class="oi oi-data-transfer-download"></span></div>
+            <div class="mar-empty__text">آرشیوی برای نمایش وجود ندارد.</div>
+            <a class="mar-btn" href="/admin/monitoring/active-receipts">رفتن به مانیتورینگ‌های فعال</a>
+        </div>
+    }
+    else
+    {
+        <div class="mar-list">
+            @foreach (var a in _archives)
+            {
+                <div class="mar-list__item @(a.Downloaded ? "mar-list__item--done" : "")">
+                    <div class="mar-list__head">
+                        <span class="mar-list__device">@a.DeviceCode</span>
+                        <span class="mar-list__workspace">@a.WorkshopName</span>
+                    </div>
+                    <div class="mar-list__body">
+                        <div class="mar-list__row">
+                            <span class="mar-list__label">مشتری:</span>
+                            <span class="mar-list__value">@a.CustomerFullName</span>
+                        </div>
+                        <div class="mar-list__row">
+                            <span class="mar-list__label">موبایل:</span>
+                            <span class="mar-list__value" dir="ltr">@a.CustomerMobile</span>
+                        </div>
+                        <div class="mar-list__row">
+                            <span class="mar-list__label">دستگاه:</span>
+                            <span class="mar-list__value">@a.CustomerDeviceTitle</span>
+                        </div>
+                        <div class="mar-list__row">
+                            <span class="mar-list__label">شروع:</span>
+                            <span class="mar-list__value">@a.StartedAtFa</span>
+                        </div>
+                        <div class="mar-list__row">
+                            <span class="mar-list__label">پایان:</span>
+                            <span class="mar-list__value">@a.EndedAtFa</span>
+                        </div>
+                        <div class="mar-list__row">
+                            <span class="mar-list__label">رکورد:</span>
+                            <span class="mar-list__value">@a.RecordCount.ToString("N0")</span>
+                        </div>
+                        <div class="mar-list__row">
+                            <span class="mar-list__label">حجم:</span>
+                            <span class="mar-list__value">@a.EstimatedSizeText</span>
+                        </div>
+                        <div class="mar-list__row">
+                            <span class="mar-list__label">وضعیت:</span>
+                            <span class="mar-list__value">
+                                @if (a.Downloaded)
+                                {
+                                    <span class="mar-badge mar-badge--success" title="@a.DownloadedAtFa">دانلود شده</span>
+                                }
+                                else
+                                {
+                                    <span class="mar-badge mar-badge--warning">در انتظار دانلود</span>
+                                }
+                            </span>
+                        </div>
+                    </div>
+                    <div class="mar-list__actions">
+                        <button class="mar-btn mar-btn--download" @onclick="() => DownloadCsv(a.MonitoringReceiptConnectionId)" disabled="@_isDownloading">
+                            <span class="oi oi-data-transfer-download"></span> دانلود CSV
+                        </button>
+                        @if (_canDelete)
+                        {
+                            <button class="mar-btn mar-btn--delete" @onclick="() => ConfirmDelete(a)">
+                                <span class="oi oi-trash"></span> حذف
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="mar-table-wrapper">
+            <table class="mar-table">
+                <thead>
+                    <tr>
+                        <th>کارگاه</th>
+                        <th>دستگاه</th>
+                        <th>مشتری</th>
+                        <th>موبایل</th>
+                        <th>دستگاه مشتری</th>
+                        <th>تاریخ شروع</th>
+                        <th>تاریخ پایان</th>
+                        <th>رکورد</th>
+                        <th>حجم</th>
+                        <th>وضعیت</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in _archives)
+                    {
+                        <tr class="mar-row @(a.Downloaded ? "mar-row--done" : "mar-row--pending")">
+                            <td>@a.WorkshopName</td>
+                            <td><span class="mar-device-code">@a.DeviceCode</span></td>
+                            <td>@a.CustomerFullName</td>
+                            <td dir="ltr">@a.CustomerMobile</td>
+                            <td>@a.CustomerDeviceTitle</td>
+                            <td>@a.StartedAtFa</td>
+                            <td>@a.EndedAtFa</td>
+                            <td>@a.RecordCount.ToString("N0")</td>
+                            <td>@a.EstimatedSizeText</td>
+                            <td>
+                                @if (a.Downloaded)
+                                {
+                                    <span class="mar-badge mar-badge--success" title="@a.DownloadedAtFa">دانلود شده</span>
+                                }
+                                else
+                                {
+                                    <span class="mar-badge mar-badge--warning">در انتظار دانلود</span>
+                                }
+                            </td>
+                            <td class="mar-actions">
+                                <button class="mar-btn-icon mar-btn--download" title="دانلود CSV" @onclick="() => DownloadCsv(a.MonitoringReceiptConnectionId)" disabled="@_isDownloading">
+                                    <span class="oi oi-data-transfer-download"></span>
+                                </button>
+                                @if (_canDelete)
+                                {
+                                    <button class="mar-btn-icon mar-btn--delete" title="حذف آرشیو" @onclick="() => ConfirmDelete(a)">
+                                        <span class="oi oi-trash"></span>
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (_showDeleteConfirm && _deleteTarget != null)
+        {
+            <div class="mar-modal-overlay" @onclick="CancelDelete">
+                <div class="mar-modal" @onclick:stopPropagation>
+                    <div class="mar-modal__head">حذف آرشیو</div>
+                    <div class="mar-modal__body">
+                        <p>آیا از حذف آرشیو مانیتورینگ <strong>@_deleteTarget.DeviceCode</strong> مطمئن هستید؟</p>
+                        <p class="mar-modal__note">با این کار تمام @_deleteTarget.RecordCount.ToString("N0") رکورد مربوط به این مانیتورینگ برای همیشه حذف می‌شوند.</p>
+                    </div>
+                    <div class="mar-modal__foot">
+                        <button class="mar-btn mar-btn--secondary" @onclick="CancelDelete">انصراف</button>
+                        <button class="mar-btn mar-btn--danger" @onclick="ExecuteDelete" disabled="@_deleting">
+                            @if (_deleting)
+                            {
+                                <span class="spinner-border spinner-border-sm"></span>
+                            }
+                            حذف
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .mar-page { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .mar-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+    .mar-back { color: #6B7A8A; font-size: 18px; line-height: 1; text-decoration: none; }
+    .mar-back:hover { color: #1E2A3A; }
+    .mar-kicker { font-size: 11px; font-weight: 600; color: #94a3b8; }
+    .mar-title { font-size: 20px; font-weight: 800; color: #1E2A3A; }
+    .mar-refresh { margin-left: auto; background: none; border: none; color: #6B7A8A; font-size: 18px; cursor: pointer; padding: 6px; border-radius: 8px; transition: .2s; }
+    .mar-refresh:hover { background: #f1f5f9; color: #1E2A3A; }
+
+    .mar-card { background: #fff; border-radius: 16px; padding: 40px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .mar-loading { display: flex; flex-direction: column; align-items: center; gap: 12px; color: #6B7A8A; font-size: 13px; }
+    .mar-empty__icon { font-size: 40px; color: #cbd5e1; margin-bottom: 12px; }
+    .mar-empty__text { font-size: 14px; color: #6B7A8A; margin-bottom: 16px; }
+    .mar-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; text-decoration: none; background: #f1f5f9; color: #1E2A3A; border: none; cursor: pointer; transition: .2s; }
+    .mar-btn:hover { background: #e2e8f0; }
+    .mar-btn--download { background: #e0f2fe; color: #0284c7; }
+    .mar-btn--download:hover { background: #bae6fd; }
+    .mar-btn--delete { background: #fef2f2; color: #dc2626; }
+    .mar-btn--delete:hover { background: #fecaca; }
+
+    .mar-list { display: none; flex-direction: column; gap: 12px; }
+    .mar-list__item { background: #fff; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow: hidden; }
+    .mar-list__item--done { opacity: .7; }
+    .mar-list__head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #fafafa; border-bottom: 1px solid #f1f5f9; }
+    .mar-list__device { font-family: 'Courier New', monospace; font-size: 13px; font-weight: 700; color: #1E2A3A; direction: ltr; }
+    .mar-list__workspace { font-size: 12px; font-weight: 600; color: #94a3b8; }
+    .mar-list__body { padding: 8px 16px; }
+    .mar-list__row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #f8f8f8; }
+    .mar-list__row:last-child { border-bottom: none; }
+    .mar-list__label { color: #94a3b8; font-weight: 600; flex-shrink: 0; }
+    .mar-list__value { color: #1E2A3A; text-align: left; }
+    .mar-list__actions { display: flex; gap: 8px; padding: 8px 16px 12px; border-top: 1px solid #f1f5f9; }
+
+    .mar-table-wrapper { overflow-x: auto; background: #fff; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .mar-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .mar-table th { padding: 12px 16px; text-align: right; font-size: 11px; font-weight: 700; color: #94a3b8; border-bottom: 2px solid #f1f5f9; background: #fafafa; white-space: nowrap; }
+    .mar-table td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; color: #1E2A3A; }
+    .mar-row--done { opacity: .7; }
+    .mar-row--done td { color: #94a3b8; }
+    .mar-row:hover { background: #fafafa; }
+
+    .mar-device-code { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700; background: #f1f5f9; padding: 2px 8px; border-radius: 4px; direction: ltr; display: inline-block; }
+
+    .mar-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .mar-badge--success { background: #dcfce7; color: #16a34a; }
+    .mar-badge--warning { background: #fef3c7; color: #d97706; }
+
+    .mar-actions { white-space: nowrap; }
+    .mar-btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; text-decoration: none; transition: .2s; }
+    .mar-btn-icon:hover { opacity: .85; }
+
+    .mar-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1200; }
+    .mar-modal { background: #fff; border-radius: 16px; width: 400px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+    .mar-modal__head { padding: 20px 24px 0; font-size: 16px; font-weight: 800; color: #1E2A3A; }
+    .mar-modal__body { padding: 16px 24px; font-size: 13px; color: #6B7A8A; line-height: 1.6; }
+    .mar-modal__note { font-size: 12px; color: #dc2626; background: #fef2f2; padding: 8px 12px; border-radius: 8px; margin-top: 8px; }
+    .mar-modal__foot { display: flex; gap: 8px; justify-content: flex-end; padding: 0 24px 20px; }
+    .mar-btn--secondary { background: #f1f5f9; color: #1E2A3A; }
+    .mar-btn--secondary:hover { background: #e2e8f0; }
+    .mar-btn--danger { background: #dc2626; color: #fff; }
+    .mar-btn--danger:hover { background: #b91c1c; }
+    .mar-btn--danger:disabled { opacity: .6; cursor: not-allowed; }
+
+    @@media (max-width: 768px) {
+        .mar-page { padding: 12px; }
+        .mar-header { flex-wrap: wrap; gap: 8px; }
+        .mar-title { font-size: 16px; }
+        .mar-table-wrapper { display: none; }
+        .mar-list { display: flex; }
+        .mar-modal { width: 95vw; }
+        .mar-modal__head { padding: 16px 16px 0; font-size: 14px; }
+        .mar-modal__body { padding: 12px 16px; font-size: 12px; }
+        .mar-modal__foot { padding: 0 16px 16px; }
+    }
+</style>
+
+@code {
+    private List<MonitoringArchiveDto>? _archives;
+    private bool _isLoading = true;
+    private bool _canDelete;
+
+    private bool _showDeleteConfirm;
+    private MonitoringArchiveDto? _deleteTarget;
+    private bool _deleting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _canDelete = authState.User.IsInRole("super_admin") || authState.User.HasClaim("perm", "admin.monitoring.connections.manage");
+
+        AdminWorkshopSelection.OnChanged += OnWorkshopChanged;
+
+        await Reload();
+    }
+
+    public void Dispose()
+    {
+        AdminWorkshopSelection.OnChanged -= OnWorkshopChanged;
+    }
+
+    private void OnWorkshopChanged(int? _)
+    {
+        InvokeAsync(Reload);
+    }
+
+    private async Task Reload()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var url = "api/monitoring/archives";
+            if (AdminWorkshopSelection.SelectedWorkshopId.HasValue && AdminWorkshopSelection.SelectedWorkshopId.Value > 0)
+                url += $"?workshopId={AdminWorkshopSelection.SelectedWorkshopId.Value}";
+
+            _archives = await Http.GetFromJsonAsync<List<MonitoringArchiveDto>>(url) ?? new();
+        }
+        catch
+        {
+            _archives = new();
+        }
+
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    private bool _isDownloading;
+    private async Task DownloadCsv(int monitoringId)
+    {
+        if (_isDownloading) return;
+        _isDownloading = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await Http.GetAsync($"api/monitoring/records/csv/{monitoringId}");
+            if (!response.IsSuccessStatusCode)
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(err) ? $"خطا {response.StatusCode}" : err);
+                return;
+            }
+
+            var contentDisposition = response.Content.Headers.ContentDisposition;
+            var fileName = contentDisposition?.FileName?.Trim('"') ?? $"monitoring_{monitoringId}.csv";
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            var base64 = Convert.ToBase64String(bytes);
+
+            await JS.InvokeVoidAsync("downloadFile", fileName, base64);
+            await Reload();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally
+        {
+            _isDownloading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ConfirmDelete(MonitoringArchiveDto a)
+    {
+        _deleteTarget = a;
+        _showDeleteConfirm = true;
+    }
+
+    private void CancelDelete()
+    {
+        _showDeleteConfirm = false;
+        _deleteTarget = null;
+    }
+
+    private async Task ExecuteDelete()
+    {
+        if (_deleteTarget == null) return;
+        _deleting = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await Http.DeleteAsync($"api/monitoring/archives/{_deleteTarget.Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("آرشیو با موفقیت حذف شد");
+                _showDeleteConfirm = false;
+                _deleteTarget = null;
+                await Reload();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(error.Length > 0 ? error : "خطا در حذف آرشیو");
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در حذف آرشیو");
+        }
+
+        _deleting = false;
+        StateHasChanged();
+    }
+}

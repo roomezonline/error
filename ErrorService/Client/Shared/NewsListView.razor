@@ -1,0 +1,81 @@
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Utils
+
+<div class="news-list-view" dir="rtl">
+    @if (newsList == null)
+    {
+        <div class="text-center p-4">
+            <div class="spinner-border spinner-border-sm text-primary"></div>
+        </div>
+    }
+    else if (!newsList.Any())
+    {
+        <p class="text-muted small text-center">خبری برای نمایش وجود ندارد.</p>
+    }
+    else
+    {
+        <div class="news-list-card card border-0 shadow-sm rounded-4 overflow-hidden">
+            <div class="card-header bg-white border-0 py-3 px-4 d-flex align-items-center justify-content-between">
+                <div class="fw-bold text-dark">آخرین اخبار</div>
+                <a class="small text-decoration-none" href="/news">مشاهده همه</a>
+            </div>
+            <div class="list-group list-group-flush">
+                @foreach (var news in newsList)
+                {
+                    <a href="@SeoUrl.News(news.Id, news.Slug)" class="list-group-item list-group-item-action border-0 px-4 py-3 d-flex align-items-center gap-3">
+                        <div class="news-dot flex-shrink-0"></div>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="news-title-link text-truncate">@news.Title</div>
+                            <div class="news-date-small text-muted">@PersianDate.ToJalaliDateTime(news.CreatedAt)</div>
+                        </div>
+                        <span class="oi oi-chevron-left text-muted small"></span>
+                    </a>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .news-list-card .list-group-item {
+        background: transparent;
+        transition: background-color 0.2s ease, transform 0.2s ease;
+    }
+    .news-list-card .list-group-item:hover {
+        background-color: rgba(13,110,253,0.06);
+        transform: translateX(-2px);
+    }
+    .news-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, #6ea8fe 0%, #0d6efd 55%, #0a58ca 100%);
+        box-shadow: 0 0 0 4px rgba(13,110,253,0.12);
+    }
+    .news-title-link {
+        font-size: 0.9rem;
+        color: #1f2937;
+        font-weight: 600;
+        line-height: 0.9;
+    }
+    .news-date-small {
+        font-size: 0.8rem;
+        margin-top: 2px;
+    }
+</style>
+
+@code {
+    [Parameter] public int Count { get; set; } = 5;
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private List<NewsDto>? newsList;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            newsList = await Http.GetFromJsonAsync<List<NewsDto>>($"api/news?onlyPublished=true&skip=0&take={Count}");
+        }
+        catch { newsList = new(); }
+    }
+}

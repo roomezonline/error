@@ -1,0 +1,987 @@
+@page "/news/{Id:int}"
+@page "/news/{Slug}"
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Utils
+@using ErrorService.Client.Services
+@using System.Text.Json
+
+<PageTitle>ارورسرویس - @(news?.Title ?? "جزییات خبر")</PageTitle>
+
+<div class="news-details-page py-5 bg-white" dir="rtl">
+    <div class="container">
+        @if (isLoading)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-3 text-muted">در حال دریافت محتوای خبر...</p>
+            </div>
+        }
+        else if (news == null)
+        {
+            <SeoHeader Title="خبر یافت نشد | ارور سرویس" Description="متاسفانه خبر مورد نظر شما یافت نشد." />
+            <div class="alert alert-warning text-center py-5 rounded-4 shadow-sm">
+                <h3 class="fw-bold">خبر مورد نظر یافت نشد!</h3>
+                <a href="/news" class="btn btn-primary mt-3 rounded-pill px-4">بازگشت به لیست اخبار</a>
+            </div>
+        }
+        else
+        {
+            <SeoHeader 
+                Title="@($"{news.Title} | ارور سرویس")" 
+                Description="@(string.IsNullOrEmpty(news.Summary) ? $"مشاهده جزئیات خبر: {news.Title}" : (news.Summary.Length > 160 ? news.Summary.Substring(0, 157) + "..." : news.Summary))"
+                OgType="article"
+                OgImage="@(news.ImageUrl ?? "/images/og-default.jpg")"
+                JsonLd="@newsJsonLd" />
+
+            <div class="news-details-page min-vh-100" dir="rtl">
+                <div class="news-header-sticky d-lg-none shadow-sm">
+                    <div class="container d-flex align-items-center justify-content-between h-100 px-2">
+                        @if (news.PreviousNews != null)
+                        {
+                            <a href="@SeoUrl.News(news.PreviousNews.Id, news.PreviousNews.Slug)" class="nav-btn-mobile" title="خبر قبلی">
+                                <div class="nav-btn-mobile__img">
+                                    @if (!string.IsNullOrEmpty(news.PreviousNews.ImageUrl))
+                                    {
+                                        <img src="@news.PreviousNews.ImageUrl" />
+                                    }
+                                    else
+                                    {
+                                        <div class="nav-placeholder-mini"><span class="oi oi-image"></span></div>
+                                    }
+                                </div>
+                                <span class="oi oi-chevron-right nav-btn-mobile__icon"></span>
+                            </a>
+                        }
+                        else
+                        {
+                            <a href="/news" class="nav-btn-mobile" title="لیست اخبار">
+                                <span class="oi oi-grid-three-up nav-btn-mobile__icon ms-0"></span>
+                            </a>
+                        }
+
+                        <div class="header-title-text text-truncate px-2">@news.Title</div>
+
+                        @if (news.NextNews != null)
+                        {
+                            <a href="@SeoUrl.News(news.NextNews.Id, news.NextNews.Slug)" class="nav-btn-mobile" title="خبر بعدی">
+                                <span class="oi oi-chevron-left nav-btn-mobile__icon"></span>
+                                <div class="nav-btn-mobile__img">
+                                    @if (!string.IsNullOrEmpty(news.NextNews.ImageUrl))
+                                    {
+                                        <img src="@news.NextNews.ImageUrl" />
+                                    }
+                                    else
+                                    {
+                                        <div class="nav-placeholder-mini"><span class="oi oi-image"></span></div>
+                                    }
+                                </div>
+                            </a>
+                        }
+                        else
+                        {
+                            <button class="nav-btn-mobile" @onclick="OpenShareModal" title="اشتراک‌گذاری">
+                                <span class="oi oi-share nav-btn-mobile__icon me-0"></span>
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                <div class="container py-3 py-lg-5">
+                    <nav aria-label="breadcrumb" class="d-none d-lg-block mb-4">
+                        <ol class="breadcrumb bg-transparent p-0 mb-0">
+                            <li class="breadcrumb-item"><a href="/" class="text-decoration-none text-muted">خانه</a></li>
+                            <li class="breadcrumb-item"><a href="/news" class="text-decoration-none text-muted">اخبار</a></li>
+                            <li class="breadcrumb-item active text-dark fw-bold text-truncate" style="max-width: 300px;">@news.Title</li>
+                        </ol>
+                    </nav>
+
+                    <div class="row justify-content-center g-4">
+                        <div class="col-lg-8">
+                            <article class="news-article-modern shadow-lg-hover">
+                                <div class="article-meta-top mb-4">
+                                    <h1 class="article-title fw-black mb-4">@news.Title</h1>
+                                    
+                                    <div class="author-info-bar py-3 border-top border-bottom">
+                                        <div class="row g-3 align-items-center">
+                                            <div class="col-auto">
+                                                <div class="author-avatar bg-primary-subtle">
+                                                    <span class="oi oi-person text-primary"></span>
+                                                </div>
+                                            </div>
+                                            <div class="col">
+                                                <div class="author-name fw-bold">@(string.IsNullOrWhiteSpace(news.AuthorName) ? "تحریریه ارور سرویس" : news.AuthorName)</div>
+                                                <div class="publish-date text-muted x-small">
+                                                    @PersianDate.ToLongPersianDate(news.CreatedAt)
+                                                    <span class="mx-1">â€¢</span>
+                                                    @PersianDate.ToTime(news.CreatedAt)
+                                                    <span class="mx-1 d-none d-md-inline">â€¢</span>
+                                                    <span class="d-none d-md-inline"><span class="oi oi-timer me-1"></span> زمان مطالعه: @EstimateReadTime(news.Content) دقیقه</span>
+                                                </div>
+                                            </div>
+                                            <div class="col-auto d-none d-md-block">
+                                                <div class="d-flex gap-2">
+                                                    <button class="btn-action-sm" @onclick="CopyLink" title="کپی لینک"><span class="oi oi-link-intact"></span></button>
+                                                    <button class="btn-action-sm text-primary" title="تلگرام"><span class="oi oi-paper-plane"></span></button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                @if (!string.IsNullOrEmpty(news.ImageUrl))
+                                {
+                                    <div class="article-featured-image mb-5">
+                                        <img src="@news.ImageUrl" loading="lazy" class="w-100 h-100 object-fit-cover" alt="@news.Title" />
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="article-featured-image mb-5 news-placeholder-details">
+                                        <div class="news-placeholder-icon-lg">
+                                            <span class="oi oi-image"></span>
+                                        </div>
+                                        <div class="news-placeholder-text-lg fw-bold">تصویری برای این خبر ثبت نشده است</div>
+                                    </div>
+                                }
+
+                                @if (!string.IsNullOrEmpty(news.Summary))
+                                {
+                                    <div class="article-summary-box mb-5">
+                                        <div class="summary-icon"><span class="oi oi-info"></span></div>
+                                        <div class="summary-text lead">@news.Summary</div>
+                                    </div>
+                                }
+
+                                <div class="article-content-card mb-5">
+                                    <div class="article-content-body">
+                                        @((MarkupString)HtmlSanitizer.Sanitize(news.Content ?? ""))
+                                    </div>
+                                </div>
+
+                                @if (!string.IsNullOrEmpty(news.Tags))
+                                {
+                                    <div class="news-tags-bottom mb-5 pt-4 border-top">
+                                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                                            <span class="text-muted small fw-bold me-2"><span class="oi oi-tags me-1"></span> برچسب‌ها:</span>
+                                            @foreach (var tag in news.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                            {
+                                                <span class="badge-tag">#@tag</span>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+
+                                <div class="article-footer-modern py-4 border-top">
+                                    <div class="row align-items-center justify-content-between g-3">
+                                        <div class="col-md-auto">
+                                            <div class="d-flex align-items-center gap-3">
+                                                <span class="fw-bold small text-muted">اشتراک‌گذاری:</span>
+                                                <div class="d-flex gap-2">
+                                                    <button class="btn-share-modern link" @onclick="CopyLink" title="کپی لینک">
+                                                        <span class="oi oi-link-intact"></span>
+                                                    </button>
+                                                    <button class="btn-share-modern tg" @onclick="OpenShareModal" title="تلگرام">
+                                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/></svg>
+                                                    </button>
+                                                    <button class="btn-share-modern wa" @onclick="OpenShareModal" title="واتس‌اپ">
+                                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2zm.01 1.67c2.2 0 4.26.86 5.82 2.42a8.183 8.183 0 012.41 5.82c0 4.54-3.7 8.23-8.24 8.23-1.57 0-3.09-.45-4.39-1.29l-.32-.2-3.27.86.88-3.18-.23-.37a8.221 8.221 0 01-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23h.01zm-3.11 4.63c-.17 0-.45.07-.69.37-.23.3-.88.86-.88 2.1s.9 2.43 1.02 2.6c.12.17 1.76 2.68 4.25 3.75.59.26 1.05.41 1.41.52.6.19 1.14.16 1.57.08.48-.09 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.07-.07-.23-.12-.48-.23-.25-.12-1.47-.73-1.69-.82-.23-.09-.39-.12-.56.12-.17.25-.64.81-.78.97-.14.17-.29.19-.53.07-.26-.12-1.06-.39-2.02-1.28-.74-.66-1.24-1.47-1.39-1.72-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.35-.77-1.84-.2-.48-.4-.41-.56-.41h-.41z"/></svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-auto text-end">
+                                            <a href="/news" class="btn-return-news">
+                                                <span>لیست اخبار</span>
+                                                <span class="oi oi-arrow-left"></span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </article>
+
+                            @if (relatedNews != null && relatedNews.Any())
+                            {
+                                <div class="related-section-modern mt-5">
+                                    <div class="section-head mb-4 d-flex align-items-center justify-content-between">
+                                        <h4 class="fw-black m-0 d-flex align-items-center gap-2">
+                                            <span class="head-line"></span>
+                                            اخبار مرتبط
+                                        </h4>
+                                        <a href="/news" class="text-primary fw-bold small text-decoration-none">مشاهده همه</a>
+                                    </div>
+                                    <div class="related-horizontal-scroll">
+                                        <div class="row g-3 flex-nowrap flex-md-wrap overflow-auto pb-3">
+                                            @foreach (var item in relatedNews)
+                                            {
+                                                <div class="col-9 col-md-4">
+                                                    <a href="@SeoUrl.News(item.Id, item.Slug)" class="text-decoration-none">
+                                                        <div class="related-card-modern h-100">
+                                                            <div class="card-img-wrap ratio ratio-16x9">
+                                                                <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/news-placeholder.jpg" : item.ImageUrl)" class="object-fit-cover" alt="@item.Title" />
+                                                            </div>
+                                                            <div class="card-body p-3">
+                                                                <h6 class="card-title fw-bold text-dark mb-2">@item.Title</h6>
+                                                                <div class="card-date text-muted x-small">@PersianDate.ToLongPersianDate(item.CreatedAt)</div>
+                                                            </div>
+                                                        </div>
+                                                    </a>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="col-lg-4 d-none d-lg-block">
+                            <div class="news-sidebar">
+                                <div class="sidebar-card mb-3">
+                                    <div class="sidebar-card__title">امکانات</div>
+                                    <div class="d-grid gap-2">
+                                        <button class="btn btn-outline-primary rounded-3" @onclick="CopyLink">
+                                            <span class="oi oi-link-intact me-2"></span>
+                                            کپی لینک
+                                        </button>
+                                        <a class="btn btn-outline-secondary rounded-3" href="/news" role="button">
+                                            <span class="oi oi-grid-three-up me-2"></span>
+                                            لیست اخبار
+                                        </a>
+                                        <button class="btn btn-outline-dark rounded-3" @onclick="() => Nav.NavigateTo(Nav.Uri, true)">
+                                            <span class="oi oi-reload me-2"></span>
+                                            رفرش
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="sidebar-card mb-3">
+                                    <div class="sidebar-card__title">اطلاعات خبر</div>
+                                    <div class="sidebar-info">
+                                        <div class="sidebar-info__row">
+                                            <span class="text-muted">نویسنده</span>
+                                            <span class="fw-bold">@(string.IsNullOrWhiteSpace(news.AuthorName) ? "تحریریه" : news.AuthorName)</span>
+                                        </div>
+                                        <div class="sidebar-info__row">
+                                            <span class="text-muted">زمان مطالعه</span>
+                                            <span class="fw-bold">@EstimateReadTime(news.Content) دقیقه</span>
+                                        </div>
+                                        <div class="sidebar-info__row">
+                                            <span class="text-muted">تاریخ</span>
+                                            <span class="fw-bold">@PersianDate.ToLongPersianDate(news.CreatedAt)</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                @if (news.PreviousNews != null || news.NextNews != null)
+                                {
+                                    <div class="sidebar-card mb-3">
+                                        <div class="sidebar-card__title">ناوبری</div>
+                                        <div class="d-grid gap-2">
+                                            @if (news.NextNews != null)
+                                            {
+                                                <a class="btn btn-light rounded-3 text-start" href="@SeoUrl.News(news.NextNews.Id, news.NextNews.Slug)">
+                                                    <div class="small text-muted">خبر بعدی</div>
+                                                    <div class="fw-bold text-truncate">@news.NextNews.Title</div>
+                                                </a>
+                                            }
+                                            @if (news.PreviousNews != null)
+                                            {
+                                                <a class="btn btn-light rounded-3 text-start" href="@SeoUrl.News(news.PreviousNews.Id, news.PreviousNews.Slug)">
+                                                    <div class="small text-muted">خبر قبلی</div>
+                                                    <div class="fw-bold text-truncate">@news.PreviousNews.Title</div>
+                                                </a>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (!string.IsNullOrEmpty(news.Tags))
+                                {
+                                    <div class="sidebar-card">
+                                        <div class="sidebar-card__title">برچسب‌ها</div>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            @foreach (var tag in news.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                            {
+                                                <a class="badge-tag text-decoration-none" href="/news?tag=@tag">#@tag</a>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<ShareModal Visible="_showShareModal"
+    OnClose="CloseShareModal"
+    HeaderTitle="اشتراک‌گذاری خبر"
+    LinkLabel="خبر"
+    ImageUrl="@news?.ImageUrl"
+    PreviewTitle="@(news?.Title ?? "")"
+    PreviewDescription="@(news?.Summary ?? "")"
+    ShareUrl="@Nav.Uri"
+    GetShareText="@(() => GetShareText())"
+    GetShareTelegramText="@(() => GetShareTextForTelegram())" />
+
+@if (news != null)
+{
+    <div class="container mt-4 pb-5">
+        <CommentSection HeaderTitle="نظرات کاربران"
+                        ShowRating="true"
+                        SubmitEndpoint="@($"api/news/{news?.Id ?? 0}/comments")"
+                        AverageRating="@news.AverageRating"
+                        TotalCount="@news.CommentCount"
+                        Comments="@news.Comments"
+                        SubmitComment="@HandleNewsCommentSubmit" />
+    </div>
+}
+
+<style>
+    .news-details-page {
+        background-color: #f1f5f9 !important;
+    }
+    .fw-black { font-weight: 950; }
+    .x-small { font-size: 0.72rem; }
+
+    /* Mobile Header Sticky */
+    .news-header-sticky {
+        position: sticky;
+        top: 0;
+        z-index: 1020;
+        min-height: 64px;
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        border-bottom: 1px solid rgba(0,0,0,0.08);
+        display: flex;
+        align-items: center;
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    /* Mobile Header Navigation Buttons */
+    .nav-btn-mobile {
+        width: auto;
+        min-width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        background: #f8fafc;
+        color: #475569;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 4px;
+        text-decoration: none;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        border: 1px solid rgba(0,0,0,0.04);
+        flex-shrink: 0;
+    }
+    .nav-btn-mobile:active { transform: scale(0.92); background: #f1f5f9; }
+    .nav-btn-mobile__img {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+    .nav-btn-mobile__img img { width: 100%; height: 100%; object-fit: cover; }
+    .nav-btn-mobile__icon { font-size: 0.9rem; font-weight: bold; }
+
+    .nav-placeholder-mini {
+        width: 100%;
+        height: 100%;
+        background: #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #94a3b8;
+        font-size: 1rem;
+    }
+
+    .header-title-text { 
+        font-weight: 800; 
+        font-size: 0.85rem; 
+        color: #0f172a; 
+        flex: 1; 
+        text-align: center; 
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        line-height: 1.4;
+        padding: 0 8px;
+    }
+
+    /* Modern Share Buttons */
+    .btn-share-modern {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        border: 1px solid rgba(0,0,0,0.06);
+        background: #fff;
+        display: grid;
+        place-items: center;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+        padding: 0;
+    }
+    .btn-share-modern:hover { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(0,0,0,0.06); }
+    .btn-share-modern.link { color: #475569; }
+    .btn-share-modern.tg { color: #fff; background: linear-gradient(135deg, #37aee2 0%, #1e96c8 100%); border: none; }
+    .btn-share-modern.wa { color: #fff; background: linear-gradient(135deg, #25d366 0%, #128c7e 100%); border: none; }
+    
+    .btn-share-modern svg { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); }
+
+
+    .badge-tag {
+        background: #eff6ff;
+        color: #2563eb;
+        padding: 6px 14px;
+        border-radius: 50px;
+        font-size: 0.75rem;
+        font-weight: 800;
+        border: 1px solid #dbeafe;
+    }
+    .article-title { font-size: 2.5rem; line-height: 1.3; color: #0f172a; }
+
+    .news-article-modern {
+        background: #fff;
+        border-radius: 28px;
+        border: 1px solid rgba(15, 23, 42, 0.06);
+        padding: 34px 34px;
+    }
+
+    .author-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        font-size: 1.2rem;
+    }
+    .btn-action-sm {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #64748b;
+        display: grid;
+        place-items: center;
+        transition: all 0.2s;
+    }
+    .btn-action-sm:hover { border-color: #cbd5e1; background: #f8fafc; color: #1e293b; }
+
+    .article-featured-image {
+        height: 480px;
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    }
+
+    .news-featured-img-wrap img {
+        height: 100%;
+        object-fit: cover;
+    }
+    .news-placeholder-details {
+        height: 400px;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        color: #cbd5e1;
+        border-radius: 24px;
+        border: 2px dashed #e2e8f0;
+    }
+    .news-placeholder-icon-lg {
+        font-size: 5rem;
+        opacity: 0.4;
+    }
+    .news-placeholder-text-lg {
+        font-size: 1.1rem;
+        color: #94a3b8;
+    }
+    .article-summary-box {
+        display: flex;
+        gap: 20px;
+        background: #f8fafc;
+        padding: 24px;
+        border-radius: 20px;
+        border-right: 6px solid #2563eb;
+    }
+    .summary-icon {
+        width: 44px;
+        height: 44px;
+        background: #2563eb;
+        color: #fff;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        font-size: 1.2rem;
+    }
+    .summary-text { font-weight: 700; color: #334155; line-height: 1.7; margin: 0; }
+
+    .article-content-card {
+        background: #ffffff;
+        border: 1px solid rgba(15, 23, 42, 0.06);
+        border-radius: 24px;
+        padding: 26px 22px;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+    }
+
+    .article-content-body {
+        font-size: 1.15rem;
+        line-height: 2;
+        color: #1e293b;
+        text-align: right; /* Default to right for RTL */
+    }
+
+    .news-sidebar {
+        position: sticky;
+        top: 92px;
+    }
+    .sidebar-card {
+        background: rgba(255,255,255,0.96);
+        border: 1px solid rgba(15, 23, 42, 0.06);
+        border-radius: 22px;
+        padding: 18px 16px;
+        box-shadow: 0 14px 28px rgba(15, 23, 42, 0.06);
+    }
+    .sidebar-card__title {
+        font-weight: 900;
+        color: #0f172a;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .sidebar-info__row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px dashed rgba(15, 23, 42, 0.08);
+    }
+    .sidebar-info__row:last-child { border-bottom: none; }
+    
+    /* Quill Alignment Classes */
+    .article-content-body .ql-align-center { text-align: center !important; }
+    .article-content-body .ql-align-right { text-align: right !important; }
+    .article-content-body .ql-align-left { text-align: left !important; }
+    .article-content-body .ql-align-justify { text-align: justify !important; }
+
+    .article-content-body ol,
+    .article-content-body ul {
+        padding-right: 1.5em;
+        padding-left: 0 !important;
+        margin-right: 0;
+        margin-left: 0;
+    }
+    .article-content-body li {
+        padding-right: 0.5em;
+        padding-left: 0 !important;
+    }
+    .article-content-body li::before {
+        right: 0.3em !important;
+        left: auto !important;
+        text-align: right !important;
+    }
+    .article-content-body li.ql-indent-1 { padding-right: 3em !important; padding-left: 0 !important; }
+    .article-content-body li.ql-indent-2 { padding-right: 5em !important; padding-left: 0 !important; }
+    .article-content-body li.ql-indent-3 { padding-right: 7em !important; padding-left: 0 !important; }
+
+    .article-content-body [data-callout],
+    .article-content-body p[data-callout],
+    .article-content-body [class*="article-callout--"],
+    .article-content-body p[class*="article-callout--"] {
+        padding: 18px 22px !important;
+        border-radius: 16px !important;
+        margin: 1.5rem 0 !important;
+        border-right: 5px solid #2563eb !important;
+        border-left: none !important;
+        background-color: #f8fafc !important;
+        font-weight: 500 !important;
+        font-size: 0.95em !important;
+        line-height: 1.7 !important;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
+    }
+    .article-content-body [data-callout="info"],
+    .article-content-body p[data-callout="info"],
+    .article-content-body .article-callout--info,
+    .article-content-body p.article-callout--info { border-right-color: #2563eb !important; background-color: #eff6ff !important; }
+    .article-content-body [data-callout="danger"],
+    .article-content-body p[data-callout="danger"],
+    .article-content-body .article-callout--danger,
+    .article-content-body p.article-callout--danger { border-right-color: #ef4444 !important; background-color: #fffafa !important; }
+    .article-content-body [data-callout="success"],
+    .article-content-body p[data-callout="success"],
+    .article-content-body .article-callout--success,
+    .article-content-body p.article-callout--success { border-right-color: #10b981 !important; background-color: #ecfdf5 !important; }
+
+    .article-content-body [data-callout="quote"],
+    .article-content-body p[data-callout="quote"],
+    .article-content-body .article-callout--quote,
+    .article-content-body p.article-callout--quote {
+        margin: 2.5rem 0 !important;
+        padding: 2rem !important;
+        background-color: #fffbeb !important;
+        border-right: 6px solid #f59e0b !important;
+        border-left: none !important;
+        border-radius: 16px !important;
+        font-style: italic !important;
+        position: relative !important;
+        box-shadow: 0 10px 30px rgba(245, 158, 11, 0.08) !important;
+        font-size: 1.25rem !important;
+        display: block !important;
+    }
+    
+    .article-content-body blockquote, 
+    .article-content-body .large-quote,
+    .article-content-body p.large-quote {
+        margin: 2.5rem 0 !important;
+        padding: 2rem !important;
+        background-color: #fffafa !important;
+        border-right: 6px solid #ef4444 !important;
+        border-left: none !important;
+        border-radius: 16px !important;
+        font-style: italic !important;
+        position: relative !important;
+        box-shadow: 0 10px 30px rgba(239, 68, 68, 0.05) !important;
+        font-size: 1.25rem !important;
+        display: block !important;
+    }
+    .article-content-body blockquote::before, 
+    .article-content-body .large-quote::before,
+    .article-content-body p.large-quote::before {
+        content: "\201D";
+        position: absolute;
+        top: -15px;
+        left: 25px;
+        font-size: 5rem;
+        color: #ef4444;
+        opacity: 0.15;
+        font-family: serif;
+    }
+    
+    /* Font family mappings for the website */
+    .ql-font-vazirmatn { font-family: 'Vazirmatn', sans-serif !important; }
+    .ql-font-vazir { font-family: 'Vazir', sans-serif !important; }
+    .ql-font-shabnam { font-family: 'Shabnam', sans-serif !important; }
+    .ql-font-sahel { font-family: 'Sahel', sans-serif !important; }
+
+    .article-content-body img {
+        max-width: 100%;
+        height: auto !important;
+        border-radius: 20px;
+        margin: 2rem 0;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.08);
+    }
+    
+    /* Table styling for website */
+    .article-content-body table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        margin: 2rem 0 !important;
+    }
+    .article-content-body td, .article-content-body th {
+        border: 1px solid #e2e8f0 !important;
+        padding: 12px !important;
+        vertical-align: top !important;
+    }
+
+    .article-content-body h2, .article-content-body h3 {
+        margin-top: 3rem;
+        margin-bottom: 1.5rem;
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    /* Share Buttons */
+    .btn-share-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #475569;
+        display: grid;
+        place-items: center;
+        transition: all 0.2s;
+    }
+    .btn-share-icon:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.05); }
+    .btn-share-icon.tg { color: #0088cc; }
+    .btn-share-icon.wa { color: #25d366; }
+
+    .btn-return-news {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 24px;
+        background: #f1f5f9;
+        color: #475569;
+        border-radius: 50px;
+        text-decoration: none;
+        font-weight: 800;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+    }
+    .btn-return-news:hover { background: #2563eb; color: #fff; }
+
+    /* Related News Modern */
+    .head-line { width: 8px; height: 24px; background: #2563eb; border-radius: 50px; }
+    .related-card-modern {
+        background: #fff;
+        border-radius: 24px;
+        border: 1px solid rgba(0,0,0,0.04);
+        overflow: hidden;
+        transition: all 0.3s;
+    }
+    .related-card-modern:hover { transform: translateY(-8px); box-shadow: 0 15px 35px rgba(0,0,0,0.08); }
+    .related-horizontal-scroll { margin: 0 -15px; padding: 0 15px; }
+
+    /* Responsive Adjustments */
+    @@media (max-width: 768px) {
+        .news-article-modern { padding: 24px 20px; border-radius: 0; margin: 0 -15px; border: none; }
+        .article-title { font-size: 1.6rem; }
+        .article-featured-image { height: 220px; border-radius: 16px; }
+        .article-content-body { font-size: 1.05rem; line-height: 1.8; }
+        .article-summary-box { padding: 18px; }
+        .article-content-body blockquote { padding: 1.2rem; }
+        .related-horizontal-scroll .row { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+        .related-horizontal-scroll .row::-webkit-scrollbar { display: none; }
+        .related-horizontal-scroll .col-9 { scroll-snap-align: start; }
+        .article-content-card { border-radius: 18px; padding: 18px 16px; }
+    }
+
+    .breadcrumb-item + .breadcrumb-item::before {
+        float: right;
+        padding-left: 0.5rem;
+    }
+
+    @@media (prefers-reduced-motion: reduce) {
+        .news-details-page, .header-title-text, .nav-btn-mobile, .btn-share-modern, .related-card-modern {
+            animation: none !important;
+            transition: none !important;
+        }
+    }
+
+    @@media (prefers-color-scheme: dark) {
+        .news-details-page { background: #0f172a !important; }
+        .news-article-modern { background: #1e293b; border-color: #334155; }
+        .article-title { color: #f1f5f9; }
+        .author-info-bar { border-top-color: #334155; border-bottom-color: #334155; }
+        .author-name { color: #f1f5f9; }
+        .publish-date, .text-muted { color: #94a3b8 !important; }
+        .article-summary-box { background: #1e293b; border-right-color: #3b82f6; }
+        .summary-text { color: #cbd5e1; }
+        .article-content-card { background: #1e293b; border-color: #334155; box-shadow: none; }
+        .article-content-body { color: #cbd5e1; }
+        .article-content-body h2, .article-content-body h3 { color: #f1f5f9; }
+        .article-content-body td, .article-content-body th { border-color: #334155 !important; }
+        .article-content-body th { background: #0f172a; }
+        .article-footer-modern { border-top-color: #334155 !important; }
+        .btn-return-news { background: #334155; color: #94a3b8; }
+        .btn-return-news:hover { background: #3b82f6; color: #fff; }
+        .news-header-sticky { background: rgba(15,23,42,0.98); border-bottom-color: #334155; }
+        .nav-btn-mobile { background: #1e293b; color: #94a3b8; border-color: #334155; }
+        .nav-btn-mobile:active { background: #334155; }
+        .header-title-text { color: #f1f5f9; }
+        .sidebar-card { background: rgba(30,41,59,0.96); border-color: #334155; }
+        .sidebar-card__title { color: #f1f5f9; }
+        .sidebar-info__row { border-bottom-color: rgba(148,163,184,0.1); }
+        .btn-action-sm { background: #1e293b; border-color: #334155; color: #94a3b8; }
+        .btn-action-sm:hover { background: #334155; color: #f1f5f9; }
+        .btn-share-modern { background: #1e293b; border-color: #334155; }
+        .btn-share-modern.link { color: #94a3b8; }
+        .related-card-modern { background: #1e293b; border-color: #334155; }
+        .related-card-modern .card-title { color: #f1f5f9 !important; }
+        .news-featured-img-wrap, .news-placeholder-details { background: #1e293b; }
+    }
+</style>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [Parameter] public string? Slug { get; set; }
+    [Inject] private HttpClient Http { get; set; } = default!;
+    
+    private NewsDto? news;
+    private List<NewsDto>? relatedNews;
+    private bool isLoading = true;
+    private string? newsJsonLd;
+    private bool _showShareModal;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        try
+        {
+            NewsDto? loaded = null;
+
+            if (!string.IsNullOrEmpty(Slug))
+            {
+                loaded = await Http.GetFromJsonAsync<NewsDto>($"api/news/slug/{Uri.EscapeDataString(Slug)}");
+            }
+            else if (Id.HasValue)
+            {
+                loaded = await Http.GetFromJsonAsync<NewsDto>($"api/news/{Id}");
+                if (loaded != null && !string.IsNullOrEmpty(loaded.Slug))
+                {
+                    Nav.NavigateTo(SeoUrl.News(loaded.Id, loaded.Slug), replace: true);
+                    return;
+                }
+            }
+
+            news = loaded;
+            if (news != null)
+            {
+                newsJsonLd = BuildNewsJsonLd(news);
+                relatedNews = await Http.GetFromJsonAsync<List<NewsDto>>($"api/news/{news.Id}/related");
+            }
+        }
+        catch { news = null; }
+        finally { isLoading = false; }
+    }
+
+    private async Task CopyLink()
+    {
+        try
+        {
+            var url = Nav.Uri;
+            await JS.InvokeVoidAsync("__copyToClipboard", url);
+            ToastService.ShowSuccess("لینک خبر کپی شد");
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در کپی لینک");
+        }
+    }
+
+    private static int EstimateReadTime(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return 1;
+        // Simple estimation: 200 words per minute for Persian
+        var wordCount = content.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        var minutes = (int)Math.Ceiling(wordCount / 200.0);
+        return Math.Max(1, minutes);
+    }
+
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+    [Inject] private ToastService ToastService { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private void OpenShareModal()
+    {
+        _showShareModal = true;
+    }
+
+    private void CloseShareModal()
+    {
+        _showShareModal = false;
+    }
+
+    private string GetShareText()
+    {
+        if (news == null) return "";
+        var summary = string.IsNullOrEmpty(news.Summary) ? "" : StripHtml(news.Summary);
+        var maxLen = 150;
+        if (summary.Length > maxLen)
+            summary = summary[..maxLen] + "...";
+        var result = $"{news.Title}\n{summary}\nðŸ”— {Nav.Uri}";
+        return result.Length > 500 ? result[..497] + "..." : result;
+    }
+
+    private string GetShareTextForTelegram()
+    {
+        if (news == null) return "";
+        return news.Title;
+    }
+
+    private async Task HandleNewsCommentSubmit(CommentRequest req)
+    {
+        var response = await Http.PostAsJsonAsync($"api/news/{news?.Id ?? 0}/comments", req);
+        if (response.IsSuccessStatusCode)
+        {
+            var fresh = await Http.GetFromJsonAsync<NewsDto>($"api/news/{news?.Id ?? 0}");
+            if (fresh != null)
+            {
+                news!.AverageRating = fresh.AverageRating;
+                news!.CommentCount = fresh.CommentCount;
+                news!.Comments = fresh.Comments;
+            }
+        }
+        else
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException(body ?? "خطا در ثبت نظر");
+        }
+    }
+
+    private static string StripHtml(string html)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(html, @"<[^>]+>", " ").Trim();
+    }
+
+    private string BuildNewsJsonLd(NewsDto news)
+    {
+        var baseUrl = Nav.BaseUri.TrimEnd('/');
+        var newsSchema = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "NewsArticle",
+            ["headline"] = news.Title,
+            ["description"] = (news.Summary ?? news.Title ?? "").Length > 500 ? (news.Summary ?? news.Title ?? "").Substring(0, 497) + "..." : (news.Summary ?? news.Title ?? ""),
+            ["image"] = string.IsNullOrEmpty(news.ImageUrl) ? Array.Empty<string>() : new[] { news.ImageUrl },
+            ["datePublished"] = news.CreatedAt.ToString("yyyy-MM-ddTHH:mm:sszzz"),
+            ["dateModified"] = news.CreatedAt.ToString("yyyy-MM-ddTHH:mm:sszzz"),
+            ["url"] = $"{baseUrl}{SeoUrl.News(news.Id, news.Slug)}",
+            ["author"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "Organization",
+                ["name"] = "ارور سرویس",
+                ["url"] = baseUrl
+            },
+            ["publisher"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "Organization",
+                ["name"] = "ارور سرویس",
+                ["logo"] = new Dictionary<string, object?>
+                {
+                    ["@type"] = "ImageObject",
+                    ["url"] = $"{baseUrl}/favicon.png"
+                }
+            },
+            ["mainEntityOfPage"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "WebPage",
+                ["@id"] = $"{baseUrl}{SeoUrl.News(news.Id, news.Slug)}"
+            }
+        };
+
+        if (!string.IsNullOrEmpty(news.Tags))
+        {
+            newsSchema["keywords"] = news.Tags;
+        }
+
+        var breadcrumb = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "BreadcrumbList",
+            ["itemListElement"] = new List<object>
+            {
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 1, ["name"] = "خانه", ["item"] = baseUrl },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 2, ["name"] = "اخبار", ["item"] = $"{baseUrl}/news" },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 3, ["name"] = news.Title }
+            }
+        };
+
+        return JsonSerializer.Serialize(new object[] { newsSchema, breadcrumb });
+    }
+}

@@ -1,0 +1,637 @@
+@page "/technical/sensor-finder"
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+
+<SeoHeader 
+    Title="سنسور یاب هوشمند | ارورسرویس"
+    Description="سنسور یاب هوشمند ارورسرویس، جستجو و شناسایی سنسورهای لوازم خانگی با مشخصات فنی کامل"
+    Keywords="سنسور لوازم خانگی, سنسور یاب, شناسایی سنسور, سنسور ماشین لباسشویی, سنسور یخچال"
+    OgType="website" />
+
+<div class="sensor-finder-page" dir="rtl">
+    <div class="page-header animate__animated animate__fadeIn">
+        <div class="container">
+            <h1 class="fw-black text-white mb-2">سنسور یاب هوشمند</h1>
+            <p class="text-white-50 mb-0">بانک جامع اطلاعات سنسورهای لوازم خانگی</p>
+        </div>
+    </div>
+
+    <div class="container main-content">
+        <!-- Search Section -->
+        <div class="search-section animate__animated animate__fadeInUp">
+            <div class="search-card">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-9">
+                        <div class="input-wrapper">
+                            <select class="form-select modern-select" @bind="selectedDeviceId">
+                                <option value="0">انتخاب دستگاه (برند و مدل)</option>
+                                @foreach (var d in devices)
+                                {
+                                    <option value="@d.Id">@d.Name</option>
+                                }
+                            </select>
+                            <span class="oi oi-list-rich input-icon"></span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-search w-100" @onclick="Search" disabled="@(selectedDeviceId <= 0 || isLoading)">
+                            @if (isLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                            }
+                            else
+                            {
+                                <span class="oi oi-magnifying-glass me-2"></span>
+                            }
+                            جستجو
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (!hasSearched)
+        {
+            <div class="empty-state animate__animated animate__fadeIn">
+                <div class="empty-icon">
+                    <span class="oi oi-magnifying-glass"></span>
+                </div>
+                <h3>آماده جستجو</h3>
+                <p>ابتدا دستگاه مورد نظر خود را از لیست بالا انتخاب کنید</p>
+            </div>
+        }
+        else if (isLoading)
+        {
+            <div class="loading-state">
+                <div class="spinner-grow text-primary" role="status"></div>
+                <p>در حال واکشی اطلاعات...</p>
+            </div>
+        }
+        else if (records.Count == 0)
+        {
+            <div class="empty-state animate__animated animate__fadeIn">
+                <div class="empty-icon warning">
+                    <span class="oi oi-warning"></span>
+                </div>
+                <h3>نتیجه‌ای یافت نشد</h3>
+                <p>هنوز سنسوری برای این دستگاه ثبت نشده است.</p>
+            </div>
+        }
+        else
+        {
+            <div class="results-header animate__animated animate__fadeIn">
+                <div class="results-stats">
+                    <span class="stat-badge">@records.Count مورد یافت شد</span>
+                </div>
+                <div class="results-hint d-none d-md-block">برای جزئیات فنی روی هر کارت کلیک کنید</div>
+            </div>
+
+            <div class="records-grid">
+                @foreach (var r in records)
+                {
+                    var isOpen = openRecordId == r.Id;
+                    <div class="sensor-card @(isOpen ? "is-open" : "") animate__animated animate__fadeInUp" @onclick="() => ToggleRow(r.Id)">
+                        <div class="card-main">
+                            <div class="sensor-info">
+                                <div class="sensor-visual">
+                                    <span class="oi oi-pulse"></span>
+                                </div>
+                                <div class="sensor-meta">
+                                    <h4 class="sensor-name">@r.SensorName</h4>
+                                    <div class="sensor-tags">
+                                        <span class="tag-item type">@(!string.IsNullOrWhiteSpace(r.SensorType) ? r.SensorType : "N/A")</span>
+                                        <span class="tag-item size">@(!string.IsNullOrWhiteSpace(r.SizeText) ? r.SizeText : "-")</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-action">
+                                <span class="oi @(isOpen ? "oi-chevron-top" : "oi-chevron-bottom")"></span>
+                            </div>
+                        </div>
+
+                        @if (isOpen)
+                        {
+                            <div class="card-details animate__animated animate__slideInDown">
+                                <div class="details-inner">
+                                    @if (!string.IsNullOrWhiteSpace(r.Notes))
+                                    {
+                                        <div class="detail-section">
+                                            <h5 class="section-title"><span class="oi oi-document me-2"></span>یادداشت‌های فنی</h5>
+                                            <p class="section-text">@r.Notes</p>
+                                        </div>
+                                    }
+
+                                    @if (r.Images != null && r.Images.Any())
+                                    {
+                                        <div class="detail-section">
+                                            <h5 class="section-title"><span class="oi oi-camera me-2"></span>گالری تصاویر</h5>
+                                            <div class="image-gallery">
+                                                @foreach (var img in r.Images.OrderBy(x => x.SortOrder))
+                                                {
+                                                    <div class="gallery-item" @onclick:stopPropagation @onclick="() => OpenImage(img.Url, img.Title)">
+                                                        <img src="@img.Url" alt="@img.Title" />
+                                                        <div class="img-overlay"><span class="oi oi-zoom-in"></span></div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                    <div class="detail-section mt-3">
+                                        <a href="@($"/technical/sensor-finder/{r.Id}")" class="btn btn-sm btn-outline-primary" @onclick:stopPropagation>
+                                            <span class="oi oi-external-link me-1"></span> مشاهده صفحه اختصاصی
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@if (showImageModal)
+{
+    <div class="image-modal-overlay animate__animated animate__fadeIn" @onclick="CloseImage">
+        <div class="modal-container animate__animated animate__zoomIn" @onclick:stopPropagation>
+            <div class="modal-header">
+                <span class="modal-title">@selectedImageTitle</span>
+                <button class="btn-close-modal" @onclick="CloseImage">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="zoom-wrap">
+                    <img src="@selectedImageUrl" alt="@selectedImageTitle" class="zoom-image" />
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    :root {
+        --sensor-primary: #2563eb;
+        --sensor-primary-light: #dbeafe;
+        --sensor-bg: #f8fafc;
+        --sensor-card-bg: #ffffff;
+        --sensor-text-dark: #1e293b;
+        --sensor-text-muted: #64748b;
+        --sensor-header-grad: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    }
+
+    .sensor-finder-page {
+        min-height: 100vh;
+        background-color: var(--sensor-bg);
+        font-family: inherit;
+        padding-bottom: 2rem;
+    }
+
+    .page-header {
+        background: var(--sensor-header-grad);
+        padding: 3rem 0 5rem;
+        text-align: center;
+        margin-bottom: -3rem;
+    }
+
+    .fw-black { font-weight: 900; }
+
+    .main-content {
+        position: relative;
+        z-index: 2;
+        max-width: 900px;
+    }
+
+    /* Search Section */
+    .search-card {
+        background: var(--sensor-card-bg);
+        border-radius: 20px;
+        padding: 1.5rem;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .input-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .input-icon {
+        position: absolute;
+        left: 15px;
+        color: var(--sensor-primary);
+        font-size: 1.1rem;
+        pointer-events: none;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    .modern-select {
+        padding-left: 45px;
+        padding-right: 15px;
+        height: 55px;
+        border-radius: 12px;
+        border: 2px solid #e2e8f0;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        background-image: none;
+    }
+    .modern-select::-ms-expand {
+        display: none;
+    }
+
+    .modern-select:focus {
+        border-color: var(--sensor-primary);
+        box-shadow: 0 0 0 4px var(--sensor-primary-light);
+    }
+
+    .btn-search {
+        height: 55px;
+        border-radius: 12px;
+        background: var(--sensor-primary);
+        color: white;
+        font-weight: 800;
+        font-size: 1.1rem;
+        border: none;
+        transition: all 0.3s;
+    }
+
+    .btn-search:hover:not(:disabled) {
+        background: #1d4ed8;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(37, 99, 235, 0.3);
+    }
+
+    /* Results Header */
+    .results-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 2rem 0 1rem;
+    }
+
+    .stat-badge {
+        background: var(--sensor-primary-light);
+        color: var(--sensor-primary);
+        padding: 0.5rem 1.25rem;
+        border-radius: 50px;
+        font-weight: 800;
+        font-size: 0.9rem;
+    }
+
+    .results-hint {
+        color: var(--sensor-text-muted);
+        font-size: 0.85rem;
+    }
+
+    /* Sensor Card */
+    .sensor-card {
+        background: var(--sensor-card-bg);
+        border-radius: 16px;
+        margin-bottom: 1rem;
+        border: 1px solid #e2e8f0;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+        overflow: hidden;
+    }
+
+    .sensor-card:hover {
+        border-color: var(--sensor-primary);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        transform: translateY(-2px);
+    }
+
+    .sensor-card.is-open {
+        border-color: var(--sensor-primary);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+
+    .card-main {
+        padding: 1.25rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .sensor-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sensor-visual {
+        width: 48px;
+        height: 48px;
+        background: var(--sensor-primary-light);
+        color: var(--sensor-primary);
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+
+    .sensor-meta {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sensor-name {
+        margin: 0 0 0.4rem;
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: var(--sensor-text-dark);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sensor-tags {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .tag-item {
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 0.2rem 0.75rem;
+        border-radius: 6px;
+    }
+
+    .tag-item.type { background: #f1f5f9; color: #475569; }
+    .tag-item.size { background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5; }
+
+    .card-action {
+        color: var(--sensor-text-muted);
+        font-size: 0.9rem;
+        padding: 0.5rem;
+    }
+
+    /* Card Details */
+    .card-details {
+        background: #fdfdfd;
+        border-top: 1px solid #f1f5f9;
+    }
+
+    .details-inner {
+        padding: 1.5rem;
+    }
+
+    .detail-section {
+        margin-bottom: 1.5rem;
+    }
+
+    .detail-section:last-child { margin-bottom: 0; }
+
+    .section-title {
+        font-size: 0.9rem;
+        font-weight: 800;
+        color: var(--sensor-primary);
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+    }
+
+    .section-text {
+        font-size: 0.95rem;
+        line-height: 1.7;
+        color: var(--sensor-text-dark);
+        background: white;
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid #f1f5f9;
+        margin: 0;
+    }
+
+    .image-gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 15px;
+        margin-top: 10px;
+    }
+
+    .gallery-item {
+        position: relative;
+        aspect-ratio: 1;
+        border-radius: 16px;
+        overflow: hidden;
+        cursor: zoom-in;
+        border: 2px solid #f1f5f9;
+        transition: all 0.3s ease;
+        background: #fff;
+    }
+
+    .gallery-item:hover {
+        transform: scale(1.05);
+        border-color: var(--sensor-primary);
+        box-shadow: 0 8px 20px rgba(37, 99, 235, 0.15);
+    }
+
+    .gallery-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .img-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(37, 99, 235, 0.4);
+        display: grid;
+        place-items: center;
+        color: white;
+        opacity: 0;
+        transition: 0.3s;
+        backdrop-filter: blur(2px);
+    }
+
+    .gallery-item:hover .img-overlay { opacity: 1; }
+
+    /* States */
+    .empty-state {
+        text-align: center;
+        padding: 4rem 1rem;
+    }
+
+    .empty-icon {
+        width: 80px;
+        height: 80px;
+        background: #f1f5f9;
+        color: #94a3b8;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 2.5rem;
+        margin: 0 auto 1.5rem;
+    }
+
+    .empty-icon.warning { background: #fff7ed; color: #f97316; }
+
+    .empty-state h3 { font-weight: 900; color: var(--sensor-text-dark); }
+    .empty-state p { color: var(--sensor-text-muted); }
+
+    .loading-state {
+        text-align: center;
+        padding: 4rem 1rem;
+        color: var(--sensor-text-muted);
+    }
+
+    /* Modal */
+    .image-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.95);
+        z-index: 20000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 0;
+        backdrop-filter: blur(10px);
+    }
+
+    .modal-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background: transparent;
+    }
+
+    .modal-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        padding: 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+        z-index: 10;
+        color: white;
+    }
+
+    .modal-title { 
+        font-weight: 800; 
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+
+    .btn-close-modal {
+        background: rgba(255,255,255,0.2);
+        border: none;
+        font-size: 1.5rem;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        color: white;
+        display: grid;
+        place-items: center;
+        backdrop-filter: blur(5px);
+        transition: 0.2s;
+    }
+
+    .btn-close-modal:hover {
+        background: rgba(255,255,255,0.3);
+    }
+
+    .modal-body {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    .zoom-wrap {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pinch-zoom;
+    }
+
+    .zoom-image {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        transition: transform 0.1s ease-out;
+    }
+
+    /* Responsive */
+    @@media (max-width: 768px) {
+        .page-header { padding: 2rem 0 4rem; }
+        .search-card { padding: 1rem; border-radius: 16px; margin: 0 10px; }
+        .modern-select { height: 50px; font-size: 0.9rem; }
+        .btn-search { height: 50px; }
+        .sensor-card { border-radius: 14px; }
+        .card-main { padding: 1rem; }
+        .sensor-visual { width: 40px; height: 40px; font-size: 1rem; }
+        .sensor-name { font-size: 1rem; }
+        .tag-item { font-size: 0.7rem; }
+        .image-gallery { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    }
+</style>
+
+@code {
+    private List<SensorFinderDeviceDto> devices = new();
+    private List<SensorFinderRecordDto> records = new();
+    private int selectedDeviceId;
+    private bool isLoading;
+    private bool hasSearched;
+    private int? openRecordId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try {
+            devices = await Http.GetFromJsonAsync<List<SensorFinderDeviceDto>>("api/sensor-finder/devices") ?? new();
+        } catch { }
+    }
+
+    private async Task Search()
+    {
+        if (selectedDeviceId <= 0) return;
+        
+        isLoading = true;
+        hasSearched = true;
+        openRecordId = null;
+        try {
+            records = await Http.GetFromJsonAsync<List<SensorFinderRecordDto>>($"api/sensor-finder/records?deviceId={selectedDeviceId}") ?? new();
+        } catch {
+            records = new();
+        }
+        isLoading = false;
+    }
+
+    private void ToggleRow(int id)
+    {
+        if (openRecordId == id) openRecordId = null;
+        else openRecordId = id;
+    }
+
+    private bool showImageModal;
+    private string? selectedImageUrl;
+    private string? selectedImageTitle;
+
+    private void OpenImage(string url, string title)
+    {
+        selectedImageUrl = url;
+        selectedImageTitle = title;
+        showImageModal = true;
+    }
+
+    private void CloseImage() => showImageModal = false;
+}

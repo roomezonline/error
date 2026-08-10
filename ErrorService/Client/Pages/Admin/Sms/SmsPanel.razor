@@ -1,0 +1,1650 @@
+@page "/admin/sms"
+@layout AdminLayout
+@using System.Net.Http.Json
+@using ErrorService.Shared
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Client.Services
+@using System.Security.Claims
+@using ErrorService.Client.Helpers
+@inject HttpClient Http
+@inject ToastService ToastService
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+
+<div class="sms-container" dir="rtl">
+
+    <!-- Header -->
+    <div class="sms-header">
+        <div class="sms-header__top">
+            <h1 class="sms-header__title">مدیریت پیامک</h1>
+        </div>
+        <div class="sms-tabs">
+            @foreach (var tab in tabs)
+            {
+                <button class="sms-tab @(activeTab == tab.Key ? "sms-tab--active" : "")"
+                        @onclick="() => SwitchTab(tab.Key)">
+                    <span class="oi oi-@tab.Icon"></span>
+                    <span>@tab.Label</span>
+                    @if (tab.Badge > 0)
+                    {
+                        <span class="sms-tab__badge">@tab.Badge</span>
+                    }
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Tab: Dashboard -->
+    @if (activeTab == "dashboard")
+    {
+        <div class="sms-dashboard">
+            @if (_isWorkshopOnlyUser)
+            {
+                <!-- Workshop dashboard -->
+                @if (_wsDashboard != null)
+                {
+                    <div class="sms-own-credit mb-3">
+                        <div class="sms-own-credit__card">
+                            <div class="sms-own-credit__label">اعتبار شما</div>
+                            <div class="sms-own-credit__amount">@($"{_wsDashboard.Balance:N0}")</div>
+                            <div class="sms-own-credit__sub">تومان</div>
+                        </div>
+                        <div class="sms-own-credit__card sms-own-credit__card--pending">
+                            <div class="sms-own-credit__label">درخواست شارژ در انتظار</div>
+                            <div class="sms-own-credit__amount">@_wsDashboard.PendingChargeCount</div>
+                            <div class="sms-own-credit__sub">عدد</div>
+                        </div>
+                    </div>
+                    @if (_wsDashboard.WarningThreshold.HasValue && _wsDashboard.Balance < _wsDashboard.WarningThreshold.Value)
+                    {
+                        <div class="sms-warning-banner">
+                            <span class="sms-warning-banner__icon oi oi-warning"></span>
+                            <span class="sms-warning-banner__text">
+                                <span class="sms-warning-banner__desktop-text">اعتبار شما از حد مجاز کمتر است (کمتر از @($"{_wsDashboard.WarningThreshold.Value:N0}") تومان)</span>
+                                <span class="sms-warning-banner__mobile-text">اعتبار کمتر از حد مجاز</span>
+                            </span>
+                            <button class="sms-warning-banner__link" @onclick='() => SwitchTab("charges")'>
+                                <span class="oi oi-arrow-left"></span> درخواست شارژ
+                            </button>
+                        </div>
+                    }
+                    @if (!_wsDashboard.SmsActive)
+                    {
+                        <div class="sms-alert sms-alert--warn">
+                            <span class="oi oi-warning"></span>
+                            <span>سامانه پیامک برای کارگاه شما غیرفعال است.</span>
+                        </div>
+                    }
+                }
+            }
+            else
+            {
+                <!-- Admin dashboard -->
+                <div class="sms-admin-credit mb-3">
+                    <div class="sms-admin-credit__select-row">
+                        <span class="sms-admin-credit__select-label">کارگاه:</span>
+                        <select class="sms-admin-credit__select" @bind="_selectedWorkshopId" @bind:after="OnSelectedWorkshopChanged">
+                            <option value="">-- انتخاب کنید --</option>
+                            @foreach (var c in _credits)
+                            {
+                                <option value="@c.WorkshopId">@c.WorkshopName</option>
+                            }
+                        </select>
+                    </div>
+                    @if (_selectedWorkshopCredit != null && settings?.WarningThreshold.HasValue == true && _selectedWorkshopCredit.Balance < settings.WarningThreshold.Value)
+                    {
+                        <div class="sms-warning-banner">
+                            <span class="sms-warning-banner__icon oi oi-warning"></span>
+                            <span class="sms-warning-banner__text">
+                                <span class="sms-warning-banner__desktop-text">اعتبار کارگاه @_selectedWorkshopCredit.WorkshopName از حد مجاز کمتر است (کمتر از @($"{settings.WarningThreshold.Value:N0}") تومان)</span>
+                                <span class="sms-warning-banner__mobile-text">اعتبار کمتر از حد مجاز</span>
+                            </span>
+                            <button class="sms-warning-banner__link" @onclick='() => SwitchTab("charges")'>
+                                <span class="oi oi-arrow-left"></span> شارژ حساب
+                            </button>
+                        </div>
+                    }
+                    @if (_selectedWorkshopCredit != null)
+                    {
+                        <div class="sms-own-credit">
+                            <div class="sms-own-credit__card">
+                                <div class="sms-own-credit__label">@_selectedWorkshopCredit.WorkshopName</div>
+                                <div class="sms-own-credit__amount">@($"{_selectedWorkshopCredit.Balance:N0}")</div>
+                                <div class="sms-own-credit__sub">تومان</div>
+                            </div>
+                            <div class="sms-own-credit__card sms-own-credit__card--pending">
+                                <div class="sms-own-credit__label">درخواست شارژ در انتظار</div>
+                                <div class="sms-own-credit__amount">@dashboard?.PendingChargeCount</div>
+                                <div class="sms-own-credit__sub">عدد</div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="sms-own-credit">
+                            <div class="sms-own-credit__card">
+                                <div class="sms-own-credit__label">مجموع اعتبار همه کارگاه‌ها</div>
+                                <div class="sms-own-credit__amount">@($"{dashboard?.TotalBalance:N0}")</div>
+                                <div class="sms-own-credit__sub">تومان</div>
+                            </div>
+                            <div class="sms-own-credit__card sms-own-credit__card--pending">
+                                <div class="sms-own-credit__label">درخواست شارژ در انتظار</div>
+                                <div class="sms-own-credit__amount">@dashboard?.PendingChargeCount</div>
+                                <div class="sms-own-credit__sub">عدد</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="sms-stat-grid">
+                    <div class="sms-stat-card">
+                        <div class="sms-stat-card__icon sms-stat-card__icon--blue"><span class="oi oi-people"></span></div>
+                        <div class="sms-stat-card__body">
+                            <div class="sms-stat-card__value">@dashboard?.TotalActiveWorkshops</div>
+                            <div class="sms-stat-card__label">کارگاه فعال</div>
+                        </div>
+                    </div>
+                    <div class="sms-stat-card">
+                        <div class="sms-stat-card__icon sms-stat-card__icon--green"><span class="oi oi-credit-card"></span></div>
+                        <div class="sms-stat-card__body">
+                            <div class="sms-stat-card__value">@($"{dashboard?.TotalBalance:N0}")</div>
+                            <div class="sms-stat-card__label">مجموع اعتبار (تومان)</div>
+                        </div>
+                    </div>
+                    <div class="sms-stat-card">
+                        <div class="sms-stat-card__icon sms-stat-card__icon--amber"><span class="oi oi-arrow-top"></span></div>
+                        <div class="sms-stat-card__body">
+                            <div class="sms-stat-card__value">@dashboard?.TodaySentCount</div>
+                            <div class="sms-stat-card__label">ارسال امروز</div>
+                        </div>
+                    </div>
+                </div>
+                @if (_canManageGlobal)
+                {
+                    if (settings == null)
+                    {
+                        <div class="sms-empty">
+                            <p>برای شروع، تنظیمات سامانه پیامک را پیکربندی کنید.</p>
+                            <button class="btn btn-primary" @onclick="GoSettingsTab">رفتن به تنظیمات</button>
+                        </div>
+                    }
+                    else if (!settings.IsActive)
+                    {
+                        <div class="sms-alert sms-alert--warn">
+                            <span class="oi oi-warning"></span>
+                            <span>سامانه پیامک در حال حاضر غیرفعال است.</span>
+                        </div>
+                    }
+                }
+            }
+        </div>
+    }
+
+    <!-- Tab: Global Settings -->
+    @if (activeTab == "settings-global")
+    {
+        <div class="sms-section">
+            <div class="sms-form">
+                <div class="sms-form__group">
+                    <label class="sms-form__toggle-label">
+                        <span>فعال/غیرفعال سامانه پیامک</span>
+                        <input type="checkbox" class="sms-toggle" @bind="@settingsEdit.IsActive" />
+                        <span class="sms-toggle-track"></span>
+                    </label>
+                </div>
+                <div class="sms-form__group">
+                    <label class="sms-form__toggle-label">
+                        <span>فعال‌سازی کد تایید (ثبت درخواست آنلاین)</span>
+                        <input type="checkbox" class="sms-toggle" @bind="@settingsEdit.OtpEnabled" />
+                        <span class="sms-toggle-track"></span>
+                    </label>
+                    <small class="sms-form__hint">در صورت غیرفعال بودن، کاربران بدون نیاز به کد تایید می‌توانند درخواست ثبت کنند</small>
+                </div>
+                <div class="sms-form__group">
+                    <label class="sms-form__label">تعرفه هر پیامک (تومان)</label>
+                    <input type="number" class="sms-input" @bind="@settingsEdit.TariffPerSms" @bind:event="oninput" min="0" step="100" />
+                    <small class="sms-form__hint">هزینه هر پیامک به تومان. برای محاسبه تعداد پیامک از این مقدار استفاده می‌شود.</small>
+                </div>
+                <div class="sms-form__group">
+                    <label class="sms-form__label">کلید API</label>
+                    <input type="text" class="sms-input" @bind="@settingsEdit.ApiKey" @bind:event="oninput" placeholder="API Key سامانه پیامکی" />
+                </div>
+                <div class="sms-form__group">
+                    <label class="sms-form__label">شماره ارسال</label>
+                    <input type="text" class="sms-input" @bind="@settingsEdit.SenderNumber" @bind:event="oninput" placeholder="مثلاً ۱۰۰۰۸۰۸۰" />
+                </div>
+                <div class="sms-form__group">
+                    <label class="sms-form__label">سقف ماهانه (عدد)</label>
+                    <input type="number" class="sms-input" @bind="@settingsEdit.MonthlyQuota" @bind:event="oninput" min="0" />
+                    <small class="sms-form__hint">صفر به معنای بدون محدودیت</small>
+                </div>
+                <div class="sms-form__group">
+                    <label class="sms-form__label">آستانه هشدار (عدد)</label>
+                    <input type="number" class="sms-input" @bind="@settingsEdit.WarningThreshold" @bind:event="oninput" min="0" />
+                    <small class="sms-form__hint">زمانی که تعداد پیامک باقی‌مانده کمتر از این مقدار باشد، هشدار نمایش داده شود</small>
+                </div>
+                <button class="btn btn-primary w-100 py-2 mt-3" @onclick="SaveSettings" disabled="@saving">
+                    @(saving ? "در حال ذخیره..." : "ذخیره تنظیمات")
+                </button>
+            </div>
+        </div>
+    }
+
+    <!-- Tab: Workshop Settings (ماژول‌های پیامک کارگاه) -->
+    @if (activeTab == "settings-workshop")
+    {
+        <div class="sms-section">
+            <div class="sms-form">
+                @if (_allWorkshops?.Count > 0)
+                {
+                    <div class="sms-form__group mb-3">
+                        <label class="sms-form__label fw-bold small mb-1">انتخاب کارگاه</label>
+                        <select class="form-select rounded-3 bg-light border-0 fw-bold" @onchange="OnWsWorkshopSelected">
+                            <option value="">انتخاب کارگاه...</option>
+                            @foreach (var w in _allWorkshops)
+                            {
+                                <option value="@w.Id" selected="@(_wsSelectedWorkshopId == w.Id)">@w.WorkshopName</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="sms-form__group">
+                    <label class="sms-form__toggle-label">
+                        <span>فعال/غیرفعال پیامک کارگاه</span>
+                        <input type="checkbox" class="sms-toggle" @bind="@_wsSettingsEdit.IsActive" />
+                        <span class="sms-toggle-track"></span>
+                    </label>
+                    <small class="sms-form__hint">در صورت غیرفعال بودن، هیچ پیامکی برای این کارگاه ارسال نخواهد شد</small>
+                </div>
+                <button class="btn btn-primary w-100 py-2 mt-3" @onclick="SaveWorkshopSettings" disabled="@(_savingWsSettings || (_canManageGlobal && _wsSelectedWorkshopId == null))">
+                    @(_savingWsSettings ? "در حال ذخیره..." : "ذخیره تنظیمات کارگاه")
+                </button>
+            </div>
+
+            <hr class="my-4" />
+
+            <h3 class="sms-section-title">ماژول‌های ارسال پیامک</h3>
+            <p class="sms-form__hint mb-3">تعیین کنید برای هر رویداد، پیامک ارسال شود یا خیر</p>
+
+            @if (_wsModules == null)
+            {
+                <div class="sms-loading">در حال بارگذاری...</div>
+            }
+            else
+            {
+                <div class="sms-module-list">
+                    @foreach (var mod in _wsModules)
+                    {
+                        <div class="sms-module-card">
+                            <div class="sms-module-card__info">
+                                <span class="sms-module-card__title">@mod.ModuleTitle</span>
+                            </div>
+                            <div class="sms-module-card__actions">
+                                <label class="sms-form__toggle-label" style="min-height:unset">
+                                    <input type="checkbox" class="sms-toggle"
+                                           checked="@mod.IsActive"
+                                           @onchange="e => ToggleModule(mod, (bool)e.Value!)" />
+                                    <span class="sms-toggle-track"></span>
+                                </label>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <!-- Tab: Credits -->
+    @if (activeTab == "credits")
+    {
+        <div class="sms-section">
+            @if (_isAdminCredits)
+            {
+                <!-- Admin view: all credits -->
+                <div class="sms-table-toolbar">
+                    <input type="text" class="sms-input sms-input--search"
+                           placeholder="جستجوی کارگاه..." bind="@_creditSearch" @oninput="FilterCredits" />
+                    <button class="btn btn-outline-primary btn-sm" @onclick="LoadAdminCredits">
+                        <span class="oi oi-reload"></span>
+                    </button>
+                </div>
+                @if (_loadingCredits)
+                {
+                    <div class="sms-loading">در حال بارگذاری...</div>
+                }
+                else
+                {
+                    <div class="sms-credit-list">
+                        @foreach (var c in _filteredCredits)
+                        {
+                            <div class="sms-credit-card">
+                                <div class="sms-credit-card__header">
+                                    <span class="sms-credit-card__name">@c.WorkshopName</span>
+                                </div>
+                                <div class="sms-credit-card__body">
+                                    <div class="sms-credit-card__stat">
+                                        <span class="sms-credit-card__stat-label">اعتبار (تومان)</span>
+                                        <span class="sms-credit-card__stat-value">@($"{c.Balance:N0}")</span>
+                                    </div>
+                                    <div class="sms-credit-card__stat">
+                                        <span class="sms-credit-card__stat-label">تعداد پیامک</span>
+                                        <span class="sms-credit-card__stat-value">@c.SmsCount</span>
+                                    </div>
+                                </div>
+                                @if (_canManageCredits)
+                                {
+                                    <div class="sms-credit-card__actions">
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                @onclick="() => OpenAdjustModal(c)">
+                                            <span class="oi oi-plus"></span> شارژ دستی
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                    @if (_filteredCredits.Count == 0)
+                    {
+                        <div class="sms-empty">هیچ کارگاهی یافت نشد.</div>
+                    }
+                }
+            }
+            else
+            {
+                <!-- Workshop view: own credit -->
+                @if (_ownCredit == null)
+                {
+                    <div class="sms-loading">در حال بارگذاری...</div>
+                }
+                else
+                {
+                    <div class="sms-own-credit">
+                        <div class="sms-own-credit__card">
+                            <div class="sms-own-credit__label">اعتبار فعلی شما</div>
+                            <div class="sms-own-credit__amount">@($"{_ownCredit.Balance:N0}")</div>
+                            <div class="sms-own-credit__sub">تومان</div>
+                        </div>
+                        <div class="sms-own-credit__card sms-own-credit__card--secondary">
+                            <div class="sms-own-credit__label">تعداد پیامک قابل ارسال</div>
+                            <div class="sms-own-credit__amount">@_ownCredit.SmsCount</div>
+                            <div class="sms-own-credit__sub">پیامک</div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    }
+
+    <!-- Tab: Charges -->
+    @if (activeTab == "charges")
+    {
+        <div class="sms-section">
+            @if (_isAdminCharges)
+            {
+                <!-- Admin view: all charges + review -->
+                <div class="sms-table-toolbar">
+                    <select class="sms-input sms-input--select" @bind="@_chargeStatusFilter" @bind:after="LoadAdminCharges">
+                        <option value="-1">همه وضعیت‌ها</option>
+                        <option value="0">در انتظار تایید</option>
+                        <option value="1">تایید شده</option>
+                        <option value="2">رد شده</option>
+                    </select>
+                </div>
+                @if (_loadingCharges)
+                {
+                    <div class="sms-loading">در حال بارگذاری...</div>
+                }
+                else
+                {
+                    <div class="sms-charge-list">
+                        @foreach (var ch in _charges)
+                        {
+                            <div class="sms-charge-card @GetChargeCardClass(ch.Status)">
+                                <div class="sms-charge-card__row">
+                                    <span class="sms-charge-card__workshop">@ch.WorkshopName</span>
+                                    <span class="sms-charge-card__status sms-badge sms-badge--@GetChargeBadgeClass(ch.Status)">@ch.StatusTitle</span>
+                                </div>
+                                <div class="sms-charge-card__row">
+                                    <span class="sms-charge-card__amount">@($"{ch.Amount:N0}") تومان</span>
+                                    <span class="sms-charge-card__count">@ch.SmsCount پیامک</span>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(ch.Description))
+                                {
+                                    <div class="sms-charge-card__desc">@ch.Description</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(ch.ReceiptFilePath))
+                                {
+                                    <div class="sms-charge-card__receipt">
+                                        <a href="@ch.ReceiptFilePath" target="_blank" class="btn btn-sm btn-outline-info">
+                                            <span class="oi oi-eye"></span> مشاهده رسید
+                                        </a>
+                                    </div>
+                                }
+                                <div class="sms-charge-card__row sms-charge-card__meta">
+                                    <span>@PersianDateHelper.ToPersianDateTimeString(ch.CreatedAt.ToLocalTime(), true)</span>
+                                    @if (ch.ReviewedBy != null)
+                                    {
+                                        <span>توسط: @ch.ReviewedBy</span>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(ch.ReviewNote))
+                                {
+                                    <div class="sms-charge-card__desc@(ch.Status == 2 ? " sms-charge-card__desc--rejected" : "")">@ch.ReviewNote</div>
+                                }
+                                @if (ch.Status == 0 && _canApproveCharges)
+                                {
+                                    <div class="sms-charge-card__actions">
+                                        <button class="btn btn-sm btn-success" @onclick="() => ReviewCharge(ch.Id, true)">
+                                            <span class="oi oi-check"></span> تایید
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => ReviewCharge(ch.Id, false)">
+                                            <span class="oi oi-x"></span> رد
+                                        </button>
+                                    </div>
+                                }
+                                @if ((ch.Status == 1 || ch.Status == 2) && _canApproveCharges)
+                                {
+                                    <div class="sms-charge-card__actions">
+                                        <button class="btn btn-sm btn-outline-warning" @onclick="() => RevertCharge(ch.Id)">
+                                            <span class="oi oi-action-undo"></span> برگشت به انتظار
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                    @if (_charges.Count == 0)
+                    {
+                        <div class="sms-empty">هیچ درخواست شارژی یافت نشد.</div>
+                    }
+                    @if (_totalCharges > _chargePage * _chargePageSize)
+                    {
+                        <button class="btn btn-outline-primary w-100 mt-2" @onclick="LoadMoreAdminCharges" disabled="@_loadingCharges">
+                            بارگذاری بیشتر
+                        </button>
+                    }
+                }
+            }
+
+            @if (_isWorkshopCharges)
+            {
+                <!-- Workshop view: submit charge + own history -->
+                @if (!_isAdminCharges)
+                {
+                    <!-- Only show submit form if user is NOT admin (admin sees admin view above) -->
+                    <div class="sms-section-card mb-3">
+                        <h3 class="sms-section-title">درخواست شارژ جدید</h3>
+                        <div class="sms-form">
+                            <div class="sms-form__group">
+                                <label class="sms-form__label">مبلغ درخواستی (تومان)</label>
+                                <input type="text" class="sms-input ltr-input"
+                                       inputmode="numeric"
+                                       value="@_chargeRequestDisplay"
+                                       @oninput="OnChargeAmountInput"
+                                       placeholder="مثلاً ۵۰۰,۰۰۰" />
+                            </div>
+                            <div class="sms-form__group">
+                                <label class="sms-form__label">رسید پرداخت (اختیاری)</label>
+                                <div class="sms-receipt-upload">
+                                    <InputFile accept="image/*,.pdf" OnChange="@OnReceiptFileSelected" />
+                                    <div class="sms-receipt-upload__zone">
+                                        @if (_receiptFileName != null)
+                                        {
+                                            @if (_receiptPreviewUrl != null)
+                                            {
+                                                <img class="sms-receipt-upload__preview" src="@_receiptPreviewUrl" alt="رسید" />
+                                            }
+                                            else
+                                            {
+                                                <span class="oi oi-document"></span>
+                                            }
+                                            <span class="sms-receipt-upload__name">@_receiptFileName</span>
+                                            <button class="btn btn-sm btn-outline-danger sms-receipt-upload__remove"
+                                                    @onclick:stopPropagation @onclick="ClearReceiptFile" type="button">حذف</button>
+                                        }
+                                        else
+                                        {
+                                            <span class="oi oi-cloud-upload"></span>
+                                            <span>رسید واریز را انتخاب کنید</span>
+                                        }
+                                    </div>
+                                </div>
+                                <small class="sms-form__hint">تصویر رسید واریزی یا فایل PDF (حداکثر ۲ مگابایت)</small>
+                            </div>
+                            <div class="sms-form__group">
+                                <label class="sms-form__label">توضیحات</label>
+                                <textarea class="sms-input sms-input--textarea" rows="2" bind="@_chargeRequestDesc" placeholder="توضیحات (اختیاری)"></textarea>
+                            </div>
+                            <button class="btn btn-primary w-100 py-2" @onclick="SubmitChargeRequest" disabled="@(_chargeRequestValue < 1000 || _submittingCharge)">
+                                @(_submittingCharge ? "در حال ثبت..." : "ثبت درخواست شارژ")
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                <!-- Own charge history -->
+                <div class="sms-section-card">
+                    <h3 class="sms-section-title">تاریخچه درخواست‌های شارژ</h3>
+                    @if (!_isAdminCharges)
+                    {
+                        <div class="sms-table-toolbar">
+                            <select class="sms-input sms-input--select" @bind="@_myChargeStatusFilter" @bind:after="LoadMyCharges">
+                                <option value="-1">همه وضعیت‌ها</option>
+                                <option value="0">در انتظار تایید</option>
+                                <option value="1">تایید شده</option>
+                                <option value="2">رد شده</option>
+                            </select>
+                        </div>
+                    }
+                    @if (_loadingMyCharges)
+                    {
+                        <div class="sms-loading">در حال بارگذاری...</div>
+                    }
+                    else
+                    {
+                        <div class="sms-charge-list">
+                            @foreach (var ch in _myCharges)
+                            {
+                                <div class="sms-charge-card @GetChargeCardClass(ch.Status)">
+                                    <div class="sms-charge-card__row">
+                                        <span class="sms-charge-card__amount">@($"{ch.Amount:N0}") تومان</span>
+                                        <span class="sms-charge-card__count">@ch.SmsCount پیامک</span>
+                                        <span class="sms-badge sms-badge--@GetChargeBadgeClass(ch.Status)">@ch.StatusTitle</span>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(ch.Description))
+                                    {
+                                        <div class="sms-charge-card__desc">@ch.Description</div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(ch.ReceiptFilePath))
+                                    {
+                                        <div class="sms-charge-card__receipt">
+                                            <a href="@ch.ReceiptFilePath" target="_blank" class="btn btn-sm btn-outline-info">
+                                                <span class="oi oi-eye"></span> رسید پرداخت
+                                            </a>
+                                        </div>
+                                    }
+                                    <div class="sms-charge-card__row sms-charge-card__meta">
+                                        <span>@PersianDateHelper.ToPersianDateTimeString(ch.CreatedAt.ToLocalTime(), true)</span>
+                                        @if (ch.ReviewedBy != null)
+                                        {
+                                            <span>توسط: @ch.ReviewedBy</span>
+                                        }
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(ch.ReviewNote))
+                                    {
+                                        <div class="sms-charge-card__desc@(ch.Status == 2 ? " sms-charge-card__desc--rejected" : "")">@ch.ReviewNote</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        @if (_myCharges.Count == 0)
+                        {
+                            <div class="sms-empty">هیچ درخواستی ثبت نشده است.</div>
+                        }
+                        @if (_totalMyCharges > _myChargePage * _myChargePageSize)
+                        {
+                            <button class="btn btn-outline-primary w-100 mt-2" @onclick="LoadMoreMyCharges" disabled="@_loadingMyCharges">
+                                بارگذاری بیشتر
+                            </button>
+                        }
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- Reject reason modal -->
+        @if (_showRejectModal)
+        {
+            <div class="sms-modal-overlay" @onclick="CloseRejectModal">
+                <div class="sms-modal" @onclick:stopPropagation>
+                    <div class="sms-modal__header">
+                        <h3>دلیل رد شارژ</h3>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="CloseRejectModal">✕</button>
+                    </div>
+                    <div class="sms-modal__body">
+                        <div class="sms-form__group">
+                            <label class="sms-form__label">دلیل رد را وارد کنید</label>
+                            <textarea class="sms-input sms-input--textarea" rows="3"
+                                      @bind="_rejectReason" @bind:event="oninput" placeholder="دلیل رد شارژ (اختیاری)"></textarea>
+                        </div>
+                    </div>
+                    <div class="sms-modal__footer">
+                        <button class="btn btn-outline-secondary" @onclick="CloseRejectModal">انصراف</button>
+                        <button class="btn btn-danger" @onclick="ConfirmReject">تایید و رد شارژ</button>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+    <!-- Tab: Logs -->
+    @if (activeTab == "logs")
+    {
+        <div class="sms-section">
+            @if (_isAdminLogs)
+            {
+                <!-- Admin view: all logs -->
+                <div class="sms-table-toolbar sms-table-toolbar--wrap">
+                    <input type="text" class="sms-input sms-input--search" placeholder="نام کارگاه..." bind="@_logWorkshopSearch" />
+                    <select class="sms-input sms-input--select" @bind="@_logModuleFilter" @bind:after="LoadAdminLogs">
+                        <option value="">همه ماژول‌ها</option>
+                        <option value="1">ثبت سفارش</option>
+                        <option value="2">آماده تحویل</option>
+                        <option value="3">غیر قابل تعمیر</option>
+                        <option value="4">کار جدید تکنسین</option>
+                    </select>
+                    <select class="sms-input sms-input--select" @bind="@_logStatusFilter" @bind:after="LoadAdminLogs">
+                        <option value="-1">همه وضعیت‌ها</option>
+                        <option value="0">در انتظار</option>
+                        <option value="1">ارسال شده</option>
+                        <option value="2">ناموفق</option>
+                    </select>
+                    <button class="sms-btn sms-btn--check" @onclick="CheckDeliveryStatus" disabled="@_checkingDelivery">
+                        @if (_checkingDelivery) { <span class="spinner-border spinner-border-sm"></span> }
+                        <span class="oi oi-loop-circular"></span>
+                        بررسی وضعیت ارسال
+                    </button>
+                </div>
+                @if (_deliveryCheckResult != null)
+                {
+                    <div class="sms-delivery-check-result">
+                        <span class="oi oi-check"></span>
+                        بررسی شد: @_deliveryCheckResult.Checked | به‌روزرسانی: @_deliveryCheckResult.Updated | خطا: @_deliveryCheckResult.Errors
+                    </div>
+                }
+                @if (_loadingLogs)
+                {
+                    <div class="sms-loading">در حال بارگذاری...</div>
+                }
+                else
+                {
+                    @foreach (var log in _logs)
+                    {
+                        <div class="sms-log-card">
+                            <div class="sms-log-card__header">
+                                <span class="sms-log-card__workshop">@log.WorkshopName</span>
+                                @if (log.ModuleTitle != null)
+                                {
+                                    <span class="sms-badge sms-badge--info">@log.ModuleTitle</span>
+                                }
+                            </div>
+                            <div class="sms-log-card__recipient">
+                                <span class="oi oi-phone"></span>
+                                <span dir="ltr">@log.RecipientNumber</span>
+                            </div>
+                            <div class="sms-log-card__text">@log.MessageText</div>
+                            <div class="sms-log-card__footer">
+                                <span class="sms-badge sms-badge--@(log.SendStatus == "ارسال شده" ? "success" : log.SendStatus == "ناموفق" ? "danger" : "warn")">
+                                    @log.SendStatus
+                                </span>
+                                <span class="sms-badge sms-badge--delivery sms-badge--@GetDeliveryBadgeClass(log.DeliveryStatus)">
+                                    @GetDeliveryStatusText(log.DeliveryStatus)
+                                </span>
+                                <span class="sms-log-card__date">@PersianDateHelper.ToPersianDateTimeString(log.CreatedAt.ToLocalTime(), true)</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(log.ErrorMessage))
+                            {
+                                <div class="sms-log-card__error">@log.ErrorMessage</div>
+                            }
+                        </div>
+                    }
+                    @if (_logs.Count == 0)
+                    {
+                        <div class="sms-empty">هیچ پیامکی یافت نشد.</div>
+                    }
+                    @if (_totalLogs > _logPage * _logPageSize)
+                    {
+                        <button class="btn btn-outline-primary w-100 mt-2" @onclick="LoadMoreAdminLogs" disabled="@_loadingLogs">
+                            بارگذاری بیشتر
+                        </button>
+                    }
+                }
+            }
+            else
+            {
+                <!-- Workshop view: own logs -->
+                <div class="sms-table-toolbar sms-table-toolbar--wrap">
+                    <select class="sms-input sms-input--select" @bind="@_myLogModuleFilter" @bind:after="LoadMyLogs">
+                        <option value="">همه ماژول‌ها</option>
+                        <option value="1">ثبت سفارش</option>
+                        <option value="2">آماده تحویل</option>
+                        <option value="3">غیر قابل تعمیر</option>
+                        <option value="4">کار جدید تکنسین</option>
+                    </select>
+                    <select class="sms-input sms-input--select" @bind="@_myLogStatusFilter" @bind:after="LoadMyLogs">
+                        <option value="-1">همه وضعیت‌ها</option>
+                        <option value="0">در انتظار</option>
+                        <option value="1">ارسال شده</option>
+                        <option value="2">ناموفق</option>
+                    </select>
+                </div>
+                @if (_loadingMyLogs)
+                {
+                    <div class="sms-loading">در حال بارگذاری...</div>
+                }
+                else
+                {
+                    @foreach (var log in _myLogs)
+                    {
+                        <div class="sms-log-card">
+                            <div class="sms-log-card__recipient">
+                                <span class="oi oi-phone"></span>
+                                <span dir="ltr">@log.RecipientNumber</span>
+                            </div>
+                            @if (log.ModuleTitle != null)
+                            {
+                                <div class="sms-log-card__module">
+                                    <span class="sms-badge sms-badge--info">@log.ModuleTitle</span>
+                                </div>
+                            }
+                            <div class="sms-log-card__text">@log.MessageText</div>
+                            <div class="sms-log-card__footer">
+                                <span class="sms-badge sms-badge--@(log.SendStatus == "ارسال شده" ? "success" : log.SendStatus == "ناموفق" ? "danger" : "warn")">
+                                    @log.SendStatus
+                                </span>
+                                <span class="sms-badge sms-badge--delivery sms-badge--@GetDeliveryBadgeClass(log.DeliveryStatus)">
+                                    @GetDeliveryStatusText(log.DeliveryStatus)
+                                </span>
+                                <span class="sms-log-card__date">@PersianDateHelper.ToPersianDateTimeString(log.CreatedAt.ToLocalTime(), true)</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(log.ErrorMessage))
+                            {
+                                <div class="sms-log-card__error">@log.ErrorMessage</div>
+                            }
+                        </div>
+                    }
+                    @if (_myLogs.Count == 0)
+                    {
+                        <div class="sms-empty">هیچ پیامکی یافت نشد.</div>
+                    }
+                    @if (_totalMyLogs > _myLogPage * _myLogPageSize)
+                    {
+                        <button class="btn btn-outline-primary w-100 mt-2" @onclick="LoadMoreMyLogs" disabled="@_loadingMyLogs">
+                            بارگذاری بیشتر
+                        </button>
+                    }
+                }
+            }
+        </div>
+    }
+
+    <!-- Adjust Credit Modal -->
+    @if (_showAdjustModal)
+    {
+        <div class="sms-modal-overlay" @onclick="CloseAdjustModal">
+            <div class="sms-modal" @onclick:stopPropagation>
+                <div class="sms-modal__header">
+                    <h3>شارژ دستی اعتبار</h3>
+                    <button class="btn-close" @onclick="CloseAdjustModal"></button>
+                </div>
+                <div class="sms-modal__body">
+                    <div class="sms-form__group mb-2">
+                        <label class="sms-form__label">کارگاه</label>
+                        <div class="sms-form__static">@_adjustWorkshopName</div>
+                    </div>
+                    <div class="sms-form__group mb-2">
+                        <label class="sms-form__label">موجودی فعلی</label>
+                        <div class="sms-form__static">@($"{_adjustCurrentBalance:N0}") تومان</div>
+                    </div>
+                    <div class="sms-form__group mb-2">
+                        <label class="sms-form__label">مبلغ شارژ (تومان)</label>
+                        <input type="text" class="sms-input ltr-input"
+                               inputmode="numeric"
+                               value="@_adjustAmountDisplay"
+                               @oninput="OnAdjustAmountInput" />
+                    </div>
+                    <div class="sms-form__group">
+                        <label class="sms-form__label">دلیل</label>
+                        <input type="text" class="sms-input" bind="@_adjustReason" placeholder="شارژ دستی توسط ادمین" />
+                    </div>
+                </div>
+                <div class="sms-modal__footer">
+                    <button class="btn btn-secondary" @onclick="CloseAdjustModal">انصراف</button>
+                    <button class="btn btn-primary" @onclick="ConfirmAdjust" disabled="@(_adjustAmount <= 0)">تایید شارژ</button>
+                </div>
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+    private string activeTab = "dashboard";
+    private List<TabDef> tabs = new();
+    private bool saving;
+    private SmsSettingsDto? settings;
+    private SmsSettingsUpdateRequest settingsEdit = new();
+    private SmsDashboardDto? dashboard;
+
+    // ─── Permission flags ───
+    private bool _canManageGlobal;
+    private bool _canViewAllCredits;
+    private bool _canManageCredits;
+    private bool _canViewAllCharges;
+    private bool _canApproveCharges;
+    private bool _canViewAllLogs;
+    private bool _canManageWorkshop;
+    private bool _canViewOwnCredit;
+    private bool _canRequestCharge;
+    private bool _canViewOwnCharges;
+    private bool _canViewOwnLogs;
+
+    private bool _isAdminCredits => _canViewAllCredits || _canManageCredits;
+    private bool _isAdminCharges => _canViewAllCharges || _canApproveCharges;
+    private bool _isAdminLogs => _canViewAllLogs;
+    private bool _isWorkshopCharges => _canRequestCharge || _canViewOwnCharges;
+    private bool _isWorkshopOnlyUser; // has workshop perms but NO admin perms
+    private WorkshopSmsDashboardDto? _wsDashboard;
+
+    // ─── Workshop Settings ───
+    private WorkshopSmsSettingDto? _wsSettings;
+    private WorkshopSmsSettingUpdateRequest _wsSettingsEdit = new();
+    private bool _savingWsSettings;
+    private List<WorkshopSmsModuleDto>? _wsModules;
+    private bool _loadingWsSettings;
+    private List<WorkshopDto>? _allWorkshops;
+    private int? _wsSelectedWorkshopId;
+
+    // ─── Credits (Admin) ───
+    private List<WorkshopSmsCreditDto> _credits = new();
+    private List<WorkshopSmsCreditDto> _filteredCredits = new();
+    private bool _loadingCredits;
+    private string _creditSearch = "";
+
+    // ─── Dashboard Workshop Selector ───
+    private int? _selectedWorkshopId;
+    private WorkshopSmsCreditDto? _selectedWorkshopCredit;
+
+    // ─── Credits (Workshop) ───
+    private WorkshopSmsCreditDto? _ownCredit;
+
+    // ─── Charges (Admin) ───
+    private List<SmsChargeTransactionDto> _charges = new();
+    private bool _loadingCharges;
+    private int _chargeStatusFilter = -1;
+    private int _chargePage = 1;
+    private int _totalCharges;
+    private const int _chargePageSize = 20;
+    private bool _showRejectModal;
+    private int _rejectChargeId;
+    private string _rejectReason = "";
+
+    // ─── Charges (Workshop submit) ───
+    private decimal _chargeRequestValue;
+    private string _chargeRequestDisplay = "";
+    private string _chargeRequestDesc = "";
+    private bool _submittingCharge;
+    private IBrowserFile? _receiptFile;
+    private string? _receiptFileName;
+    private string? _receiptPreviewUrl;
+
+    // ─── Charges (Workshop history) ───
+    private List<SmsChargeTransactionDto> _myCharges = new();
+    private bool _loadingMyCharges;
+    private int _myChargeStatusFilter = -1;
+    private int _myChargePage = 1;
+    private int _totalMyCharges;
+    private const int _myChargePageSize = 20;
+
+    // ─── Logs (Admin) ───
+    private List<SmsLogDto> _logs = new();
+    private bool _loadingLogs;
+    private bool _checkingDelivery;
+    private DeliveryCheckBatchResult? _deliveryCheckResult;
+    private string _logWorkshopSearch = "";
+    private int _logModuleFilter;
+    private int _logStatusFilter = -1;
+    private int _logPage = 1;
+    private int _totalLogs;
+    private const int _logPageSize = 20;
+
+    // ─── Logs (Workshop) ───
+    private List<SmsLogDto> _myLogs = new();
+    private bool _loadingMyLogs;
+    private int _myLogModuleFilter;
+    private int _myLogStatusFilter = -1;
+    private int _myLogPage = 1;
+    private int _totalMyLogs;
+    private const int _myLogPageSize = 20;
+
+    // ─── Adjust modal ───
+    private bool _showAdjustModal;
+    private int _adjustWorkshopId;
+    private string _adjustWorkshopName = "";
+    private decimal _adjustCurrentBalance;
+    private decimal _adjustAmount;
+    private string _adjustAmountDisplay = "";
+    private string _adjustReason = "";
+
+    private sealed record TabDef(string Key, string Label, string Icon, int Badge = 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+        var isSuperAdmin = user.HasClaim(ClaimTypes.Role, "super_admin");
+
+        bool HasPerm(string perm) => isSuperAdmin || user.HasClaim("perm", perm);
+
+        _canManageGlobal = HasPerm("admin.sms.manage");
+        _canViewAllCredits = HasPerm("admin.sms.credits.view");
+        _canManageCredits = HasPerm("admin.sms.credits.manage");
+        _canViewAllCharges = HasPerm("admin.sms.charges.view");
+        _canApproveCharges = HasPerm("admin.sms.charges.approve");
+        _canViewAllLogs = HasPerm("admin.sms.logs.view");
+        _canManageWorkshop = HasPerm("workshop.sms.settings.manage");
+        _canViewOwnCredit = user.HasClaim("perm", "workshop.sms.credit.view");
+        _canRequestCharge = user.HasClaim("perm", "workshop.sms.charge.request");
+        _canViewOwnCharges = user.HasClaim("perm", "workshop.sms.charge.history");
+        _canViewOwnLogs = user.HasClaim("perm", "workshop.sms.logs.view");
+
+        var hasAnySmsPerm = _canManageGlobal || _canViewAllCredits || _canManageCredits
+            || _canViewAllCharges || _canApproveCharges || _canViewAllLogs
+            || _canManageWorkshop || _canViewOwnCredit || _canRequestCharge
+            || _canViewOwnCharges || _canViewOwnLogs;
+        if (!hasAnySmsPerm)
+        {
+            Nav.NavigateTo("/admin");
+            return;
+        }
+
+        var hasAdminSmsPerm = _canManageGlobal || _canViewAllCredits || _canManageCredits
+            || _canViewAllCharges || _canApproveCharges || _canViewAllLogs;
+        _isWorkshopOnlyUser = !hasAdminSmsPerm;
+
+        tabs = new();
+        tabs.Add(new("dashboard", "داشبورد", "graph", 0));
+        if (_canManageGlobal) tabs.Add(new("settings-global", "تنظیمات کلی", "wrench", 0));
+        if (_canManageWorkshop) tabs.Add(new("settings-workshop", "تنظیمات کارگاه", "cog", 0));
+        if (_isAdminCredits || _canViewOwnCredit) tabs.Add(new("credits", "اعتبار", "bank", 0));
+        if (_isAdminCharges || _isWorkshopCharges) tabs.Add(new("charges", "شارژ", "cart", 0));
+        if (_isAdminLogs || _canViewOwnLogs) tabs.Add(new("logs", "گزارشات", "envelope-letter", 0));
+
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var tabParam = System.Web.HttpUtility.ParseQueryString(uri.Query).Get("tab");
+        if (!string.IsNullOrEmpty(tabParam) && tabs.Any(t => t.Key == tabParam))
+        {
+            activeTab = tabParam;
+            await SwitchTab(tabParam);
+        }
+        else
+        {
+            await LoadDashboard();
+            if (_canManageGlobal) await LoadSettings();
+        }
+    }
+
+    private async Task SwitchTab(string key)
+    {
+        activeTab = key;
+        switch (key)
+        {
+            case "dashboard": await LoadDashboard(); break;
+            case "settings-global": break;
+            case "settings-workshop":
+                if (_allWorkshops == null && _canManageGlobal)
+                {
+                    await LoadAllWorkshops();
+                    if (_allWorkshops?.Count > 0 && _wsSelectedWorkshopId == null)
+                        _wsSelectedWorkshopId = _allWorkshops[0].Id;
+                }
+                await LoadWorkshopSettings();
+                break;
+            case "credits":
+                if (_isAdminCredits) await LoadAdminCredits();
+                if (_canViewOwnCredit && !_isAdminCredits) await LoadOwnCredit();
+                break;
+            case "charges":
+                if (_isAdminCharges) await LoadAdminCharges();
+                if (_isWorkshopCharges && !_isAdminCharges) await LoadMyCharges();
+                break;
+            case "logs":
+                if (_isAdminLogs) await LoadAdminLogs();
+                if (_canViewOwnLogs && !_isAdminLogs) await LoadMyLogs();
+                break;
+        }
+    }
+
+    // ─── Dashboard ───
+    private async Task LoadDashboard()
+    {
+        try
+        {
+            if (_isWorkshopOnlyUser)
+            {
+                _wsDashboard = await Http.GetFromJsonAsync<WorkshopSmsDashboardDto>("api/workshop-sms/dashboard");
+            }
+            else
+            {
+                dashboard = await Http.GetFromJsonAsync<SmsDashboardDto>("api/sms-admin/dashboard");
+                var chargeIdx = tabs.FindIndex(t => t.Key == "charges");
+                if (chargeIdx >= 0 && dashboard != null)
+                {
+                    tabs[chargeIdx] = tabs[chargeIdx] with { Badge = dashboard.PendingChargeCount };
+                    StateHasChanged();
+                }
+
+                await LoadAdminCredits();
+                if (_credits.Count > 0)
+                {
+                    _selectedWorkshopId = _credits[0].WorkshopId;
+                    _selectedWorkshopCredit = _credits[0];
+                }
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"[SmsPanel] LoadDashboard error: {ex.Message}"); }
+    }
+
+    private void OnSelectedWorkshopChanged()
+    {
+        _selectedWorkshopCredit = _selectedWorkshopId.HasValue
+            ? _credits.FirstOrDefault(c => c.WorkshopId == _selectedWorkshopId.Value)
+            : null;
+    }
+
+    // ─── Global Settings ───
+    private async Task LoadSettings()
+    {
+        try
+        {
+            settings = await Http.GetFromJsonAsync<SmsSettingsDto>("api/sms-settings");
+            if (settings != null)
+            {
+                settingsEdit = new SmsSettingsUpdateRequest
+                {
+                    IsActive = settings.IsActive,
+                    OtpEnabled = settings.OtpEnabled,
+                    TariffPerSms = settings.TariffPerSms,
+                    ApiKey = settings.ApiKey,
+                    SenderNumber = settings.SenderNumber,
+                    MonthlyQuota = settings.MonthlyQuota,
+                    WarningThreshold = settings.WarningThreshold
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("console.error", "[SmsPanel] LoadSettings:", ex.ToString());
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        saving = true;
+        try
+        {
+            await JS.InvokeVoidAsync("console.log", "[SmsPanel] saving tariffPerSms=", settingsEdit.TariffPerSms);
+            var response = await Http.PutAsJsonAsync("api/sms-settings", settingsEdit);
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("تنظیمات با موفقیت ذخیره شد");
+                await LoadSettings();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                await JS.InvokeVoidAsync("console.error", "[SmsPanel] HTTP error:", err);
+                ToastService.ShowError($"خطا در ذخیره: {err}");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("console.error", "[SmsPanel] SaveSettings:", ex.ToString());
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally { saving = false; }
+    }
+
+    private async Task GoSettingsTab() => await SwitchTab("settings-global");
+
+    private async Task LoadAllWorkshops()
+    {
+        try
+        {
+            var all = await Http.GetFromJsonAsync<List<WorkshopDto>>("api/workshops");
+            _allWorkshops = all?.Where(x => x.IsActive).OrderBy(x => x.WorkshopName).ToList();
+        }
+        catch { _allWorkshops = new(); }
+    }
+
+    private async Task OnWsWorkshopSelected(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+            _wsSelectedWorkshopId = id;
+        else
+            _wsSelectedWorkshopId = null;
+        await LoadWorkshopSettings();
+    }
+
+    private string WsSettingsUrl(string path) =>
+        _wsSelectedWorkshopId.HasValue ? $"{path}?workshopId={_wsSelectedWorkshopId.Value}" : path;
+
+    // ─── Workshop Settings ───
+    private async Task LoadWorkshopSettings()
+    {
+        _loadingWsSettings = true;
+        _wsSettings = null;
+        _wsModules = null;
+        try
+        {
+            var urlSettings = WsSettingsUrl("api/workshop-sms/settings");
+            _wsSettings = await Http.GetFromJsonAsync<WorkshopSmsSettingDto>(urlSettings);
+            if (_wsSettings != null)
+            {
+                _wsSettingsEdit = new WorkshopSmsSettingUpdateRequest
+                {
+                    IsActive = _wsSettings.IsActive
+                };
+            }
+            var urlModules = WsSettingsUrl("api/workshop-sms/modules");
+            _wsModules = await Http.GetFromJsonAsync<List<WorkshopSmsModuleDto>>(urlModules);
+        }
+        catch { }
+        finally { _loadingWsSettings = false; }
+    }
+
+    private async Task SaveWorkshopSettings()
+    {
+        _savingWsSettings = true;
+        try
+        {
+            var url = WsSettingsUrl("api/workshop-sms/settings");
+            var response = await Http.PutAsJsonAsync(url, _wsSettingsEdit);
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("تنظیمات کارگاه با موفقیت ذخیره شد");
+                await LoadWorkshopSettings();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError($"خطا: {err}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally { _savingWsSettings = false; }
+    }
+
+    private async Task ToggleModule(WorkshopSmsModuleDto mod, bool isActive)
+    {
+        try
+        {
+            var url = $"api/workshop-sms/modules/{mod.Id}";
+            if (_wsSelectedWorkshopId.HasValue)
+                url += $"?workshopId={_wsSelectedWorkshopId.Value}";
+            var response = await Http.PutAsJsonAsync(url,
+                new WorkshopSmsModuleUpdateRequest { IsActive = isActive, ModuleType = mod.ModuleType });
+            if (response.IsSuccessStatusCode)
+            {
+                mod.IsActive = isActive;
+                if (mod.Id == 0)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<ModuleCreateResult>();
+                    if (result?.id > 0) mod.Id = result.id;
+                }
+                ToastService.ShowSuccess($"ماژول {(isActive ? "فعال" : "غیرفعال")} شد");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+    }
+
+    private sealed class ModuleCreateResult
+    {
+        public int id { get; set; }
+    }
+
+    // ─── Credits (Admin) ───
+    private async Task LoadAdminCredits()
+    {
+        _loadingCredits = true;
+        try
+        {
+            _credits = await Http.GetFromJsonAsync<List<WorkshopSmsCreditDto>>("api/sms-admin/credits") ?? new();
+            FilterCredits();
+        }
+        catch { }
+        finally { _loadingCredits = false; }
+    }
+
+    private void FilterCredits()
+    {
+        if (string.IsNullOrWhiteSpace(_creditSearch))
+            _filteredCredits = _credits.ToList();
+        else
+            _filteredCredits = _credits.Where(c =>
+                c.WorkshopName.Contains(_creditSearch, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private void OpenAdjustModal(WorkshopSmsCreditDto credit)
+    {
+        _adjustWorkshopId = credit.WorkshopId;
+        _adjustWorkshopName = credit.WorkshopName;
+        _adjustCurrentBalance = credit.Balance;
+        _adjustAmount = 0;
+        _adjustAmountDisplay = "";
+        _adjustReason = "";
+        _showAdjustModal = true;
+    }
+
+    private void OnAdjustAmountInput(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString() ?? "";
+        var digits = new string(raw.Where(char.IsAsciiDigit).ToArray());
+        if (string.IsNullOrEmpty(digits))
+        {
+            _adjustAmount = 0;
+            _adjustAmountDisplay = "";
+            return;
+        }
+        _adjustAmount = decimal.Parse(digits);
+        _adjustAmountDisplay = string.Format("{0:N0}", _adjustAmount);
+    }
+
+    private void CloseAdjustModal() => _showAdjustModal = false;
+
+    private async Task ConfirmAdjust()
+    {
+        if (_adjustAmount <= 0) return;
+        try
+        {
+            var url = $"api/sms-admin/credits/adjust?workshopId={_adjustWorkshopId}&amount={_adjustAmount}&reason={Uri.EscapeDataString(_adjustReason)}";
+            var response = await Http.PostAsync(url, null);
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess($"اعتبار {_adjustWorkshopName} با موفقیت افزایش یافت");
+                _showAdjustModal = false;
+                await LoadAdminCredits();
+                await LoadDashboard();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(err);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+    }
+
+    // ─── Credit (Workshop) ───
+    private async Task LoadOwnCredit()
+    {
+        try
+        {
+            _ownCredit = await Http.GetFromJsonAsync<WorkshopSmsCreditDto>("api/workshop-sms/credit");
+        }
+        catch { }
+    }
+
+    // ─── Charges (Admin) ───
+    private async Task LoadAdminCharges()
+    {
+        _loadingCharges = true;
+        _chargePage = 1;
+        _charges.Clear();
+        await LoadMoreAdminCharges();
+    }
+
+    private async Task LoadMoreAdminCharges()
+    {
+        _loadingCharges = true;
+        try
+        {
+            var url = $"api/sms-admin/charges?page={_chargePage}&pageSize={_chargePageSize}";
+            if (_chargeStatusFilter >= 0) url += $"&status={_chargeStatusFilter}";
+            var result = await Http.GetFromJsonAsync<PagedResult<SmsChargeTransactionDto>>(url);
+            if (result != null)
+            {
+                _charges.AddRange(result.Items);
+                _totalCharges = result.Total;
+                _chargePage++;
+            }
+        }
+        catch { }
+        finally { _loadingCharges = false; }
+    }
+
+    private void OpenRejectModal(int chargeId)
+    {
+        _rejectChargeId = chargeId;
+        _rejectReason = "";
+        _showRejectModal = true;
+    }
+
+    private void CloseRejectModal() => _showRejectModal = false;
+
+    private async Task ConfirmReject()
+    {
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"api/sms-admin/charges/{_rejectChargeId}/review",
+                new SmsChargeReviewRequest { Approved = false, ReviewNote = _rejectReason });
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("شارژ رد شد");
+                _showRejectModal = false;
+                await LoadAdminCharges();
+                await LoadDashboard();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(err);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+    }
+
+    private async Task ReviewCharge(int chargeId, bool approved)
+    {
+        if (!approved)
+        {
+            OpenRejectModal(chargeId);
+            return;
+        }
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"api/sms-admin/charges/{chargeId}/review",
+                new SmsChargeReviewRequest { Approved = true });
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("شارژ تایید شد");
+                await LoadAdminCharges();
+                await LoadDashboard();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(err);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+    }
+
+    private async Task RevertCharge(int chargeId)
+    {
+        try
+        {
+            var response = await Http.PostAsync($"api/sms-admin/charges/{chargeId}/revert", null);
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("شارژ با موفقیت برگشت داده شد");
+                await LoadAdminCharges();
+                await LoadDashboard();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(err);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+    }
+
+    // ─── Charge Request (Workshop submit) ───
+    private void OnChargeAmountInput(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString()?.Replace(",", "");
+        if (decimal.TryParse(raw, out var val))
+        {
+            _chargeRequestValue = val;
+        }
+        // Format with commas for display
+        if (string.IsNullOrEmpty(raw))
+        {
+            _chargeRequestDisplay = "";
+            _chargeRequestValue = 0;
+        }
+        else
+        {
+            _chargeRequestDisplay = string.Format("{0:N0}", _chargeRequestValue);
+        }
+    }
+
+    private async Task OnReceiptFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null || file.Size > 2 * 1024 * 1024)
+        {
+            ToastService.ShowError("حجم فایل باید کمتر از ۲ مگابایت باشد");
+            return;
+        }
+        _receiptFile = file;
+        _receiptFileName = file.Name;
+
+        try
+        {
+            var compressed = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            _receiptPreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(compressed)}";
+        }
+        catch
+        {
+            _receiptPreviewUrl = null;
+        }
+    }
+
+    private void ClearReceiptFile()
+    {
+        _receiptFile = null;
+        _receiptFileName = null;
+        _receiptPreviewUrl = null;
+    }
+
+    private async Task SubmitChargeRequest()
+    {
+        if (_chargeRequestValue < 1000) return;
+        _submittingCharge = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/workshop-sms/charges",
+                new SmsChargeSubmitRequest { Amount = _chargeRequestValue, Description = _chargeRequestDesc });
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<Dictionary<string, int>>();
+                var chargeId = result?["id"] ?? 0;
+
+                // Upload receipt if selected
+                if (_receiptFile != null && chargeId > 0)
+                {
+                    try
+                    {
+                        var compressed = await ImageCompressionHelper.CompressIfNeededAsync(_receiptFile, JS);
+                        using var content = new MultipartFormDataContent();
+                        content.Add(new ByteArrayContent(compressed), "file", _receiptFile.Name);
+                        var receiptResponse = await Http.PostAsync($"api/workshop-sms/charges/{chargeId}/receipt", content);
+                        if (!receiptResponse.IsSuccessStatusCode)
+                        {
+                            ToastService.ShowWarning("درخواست شارژ ثبت شد اما آپلود رسید با خطا مواجه شد");
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        ToastService.ShowWarning("درخواست شارژ ثبت شد اما آپلود رسید با خطا مواجه شد");
+                    }
+                }
+
+                ToastService.ShowSuccess("درخواست شارژ با موفقیت ثبت شد");
+                _chargeRequestValue = 0;
+                _chargeRequestDisplay = "";
+                _chargeRequestDesc = "";
+                _receiptFile = null;
+                _receiptFileName = null;
+                await LoadMyCharges();
+                await LoadDashboard();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError($"خطا: {err}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally { _submittingCharge = false; }
+    }
+
+    // ─── My Charges (Workshop history) ───
+    private async Task LoadMyCharges()
+    {
+        _loadingMyCharges = true;
+        _myChargePage = 1;
+        _myCharges.Clear();
+        await LoadMoreMyCharges();
+    }
+
+    private async Task LoadMoreMyCharges()
+    {
+        _loadingMyCharges = true;
+        try
+        {
+            var url = $"api/workshop-sms/charges?page={_myChargePage}&pageSize={_myChargePageSize}";
+            if (_myChargeStatusFilter >= 0) url += $"&status={_myChargeStatusFilter}";
+            var result = await Http.GetFromJsonAsync<PagedResult<SmsChargeTransactionDto>>(url);
+            if (result != null)
+            {
+                _myCharges.AddRange(result.Items);
+                _totalMyCharges = result.Total;
+                _myChargePage++;
+            }
+        }
+        catch { }
+        finally { _loadingMyCharges = false; }
+    }
+
+    // ─── Logs (Admin) ───
+    private async Task LoadAdminLogs()
+    {
+        _loadingLogs = true;
+        _logPage = 1;
+        _logs.Clear();
+        await LoadMoreAdminLogs();
+    }
+
+    private async Task LoadMoreAdminLogs()
+    {
+        _loadingLogs = true;
+        try
+        {
+            var url = $"api/sms-admin/logs?page={_logPage}&pageSize={_logPageSize}";
+            if (!string.IsNullOrWhiteSpace(_logWorkshopSearch))
+                url += $"&workshopId={_logWorkshopSearch}";
+            if (_logModuleFilter > 0)
+                url += $"&moduleType={_logModuleFilter}";
+            if (_logStatusFilter >= 0)
+                url += $"&sendStatus={_logStatusFilter}";
+            var result = await Http.GetFromJsonAsync<PagedResult<SmsLogDto>>(url);
+            if (result != null)
+            {
+                _logs.AddRange(result.Items);
+                _totalLogs = result.Total;
+                _logPage++;
+            }
+        }
+        catch { }
+        finally { _loadingLogs = false; }
+    }
+
+    // ─── My Logs (Workshop) ───
+    private async Task LoadMyLogs()
+    {
+        _loadingMyLogs = true;
+        _myLogPage = 1;
+        _myLogs.Clear();
+        await LoadMoreMyLogs();
+    }
+
+    private async Task LoadMoreMyLogs()
+    {
+        _loadingMyLogs = true;
+        try
+        {
+            var url = $"api/workshop-sms/logs?page={_myLogPage}&pageSize={_myLogPageSize}";
+            if (_myLogModuleFilter > 0)
+                url += $"&moduleType={_myLogModuleFilter}";
+            if (_myLogStatusFilter >= 0)
+                url += $"&sendStatus={_myLogStatusFilter}";
+            var result = await Http.GetFromJsonAsync<PagedResult<SmsLogDto>>(url);
+            if (result != null)
+            {
+                _myLogs.AddRange(result.Items);
+                _totalMyLogs = result.Total;
+                _myLogPage++;
+            }
+        }
+        catch { }
+        finally { _loadingMyLogs = false; }
+    }
+
+    // ─── Helpers ───
+    private static string GetChargeCardClass(int status) => status switch
+    {
+        0 => "sms-charge-card--pending",
+        1 => "sms-charge-card--approved",
+        2 => "sms-charge-card--rejected",
+        _ => ""
+    };
+
+    private static string GetChargeBadgeClass(int status) => status switch
+    {
+        0 => "warn",
+        1 => "success",
+        2 => "danger",
+        _ => "default"
+    };
+
+    // ─── Delivery Status ───
+    private async Task CheckDeliveryStatus()
+    {
+        _checkingDelivery = true;
+        _deliveryCheckResult = null;
+        try
+        {
+            var result = await Http.PostAsync("api/sms-admin/logs/check-delivery", null);
+            if (result.IsSuccessStatusCode)
+            {
+                _deliveryCheckResult = await result.Content.ReadFromJsonAsync<DeliveryCheckBatchResult>();
+                await LoadAdminLogs();
+            }
+        }
+        catch { }
+        finally { _checkingDelivery = false; }
+    }
+
+    private static string GetDeliveryStatusText(int deliveryStatus) => deliveryStatus switch
+    {
+        0 => "در انتظار",
+        1 => "ارسाल به مخابرات",
+        2 => "رسیده",
+        3 => "نرسیده",
+        _ => "نامشخص"
+    };
+
+    private static string GetDeliveryBadgeClass(int deliveryStatus) => deliveryStatus switch
+    {
+        0 => "warn",
+        1 => "info",
+        2 => "success",
+        3 => "danger",
+        _ => "default"
+    };
+}

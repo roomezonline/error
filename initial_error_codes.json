@@ -1,0 +1,123 @@
+[
+  {
+    "Brand": "LG",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "IE",
+    "Description": "خطای ورودی آب (Inlet Error)",
+    "Solution": "شیر آب ورودی را چک کنید که باز باشد. شلنگ ورودی را از نظر تاخوردگی بررسی کنید. فیلتر ورودی آب در پشت دستگاه را تمیز کنید.",
+    "TechnicalNotes": "این خطا زمانی رخ می‌دهد که در مدت زمان مشخص، سنسور هیدروستات تغییری در سطح آب حس نکند.",
+    "Documents": [
+      { "Title": "راهنمای عیب‌یابی رسمی LG", "Url": "https://www.lg.com/us/support/help-library/lg-washer-error-code-list--20150140270078", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "LG",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "OE",
+    "Description": "خطای تخلیه آب (Output Error)",
+    "Solution": "فیلتر پمپ تخلیه در پایین دستگاه را باز و تمیز کنید. شلنگ تخلیه را از نظر گرفتگی یا تاخوردگی چک کنید. ارتفاع شلنگ تخلیه نباید بیش از یک متر باشد.",
+    "TechnicalNotes": "پمپ تخلیه یا مسیر خروجی مسدود شده است.",
+    "Documents": [
+      { "Title": "LG Support OE Guide", "Url": "https://www.lg.com/us/support/help-library/lg-washer-what-is-a-front-load-washing-machine-oe-error-code--1337714738535", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Bosch",
+    "DeviceType": "ماشین ظرفشویی",
+    "Code": "E15",
+    "Description": "سیستم ضدنشتی (Aquastop) فعال شده است",
+    "Solution": "دستگاه را از برق بکشید و کمی به جلو مایل کنید تا آب جمع شده در کف خارج شود. اگر دوباره ظاهر شد، نشتی در سینی کف وجود دارد.",
+    "TechnicalNotes": "سنسور شناور در سینی کف آب حس کرده است.",
+    "Documents": [
+      { "Title": "Bosch Official E15 Support", "Url": "https://www.bosch-home.com/us/owner-support/get-support/support-selfhelp-dishwasher-error-e15", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Bosch",
+    "DeviceType": "ماشین ظرفشویی",
+    "Code": "E24",
+    "Description": "خطای تخلیه یا گرفتگی فیلتر",
+    "Solution": "فیلترهای داخل چاهک را تمیز کنید. چک کنید که پروانه پمپ تخلیه توسط جسم خارجی (هسته خرما، تکه شیشه) قفل نشده باشد.",
+    "TechnicalNotes": "نوسان جریان در پمپ تخلیه نشان‌دهنده گرفتگی است.",
+    "Documents": [
+      { "Title": "Bosch Official E24 Guide", "Url": "https://www.bosch-home.com/us/owner-support/dishwashers/error-codes/e24", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Samsung",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "4C",
+    "Description": "عدم ورود آب کافی",
+    "Solution": "شیر آب را چک کنید. فیلتر توری شلنگ ورودی را تمیز کنید. از باز بودن کامل شیر اطمینان حاصل کنید.",
+    "TechnicalNotes": "معادل کد قدیم 4E است.",
+    "Documents": [
+      { "Title": "Samsung Official 4C Guide", "Url": "https://www.samsung.com/uk/support/home-appliances/the-4e-error-is-displayed-on-the-panel-of-my-washing-machine-what-can-i-do/", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Samsung",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "5C",
+    "Description": "خطای عدم تخلیه آب",
+    "Solution": "فیلتر پمپ تخلیه را تمیز کنید. شلنگ خروجی را بررسی کنید. ممکن است پمپ تخلیه سوخته باشد.",
+    "TechnicalNotes": "معادل کد قدیم 5E است.",
+    "Documents": [
+      { "Title": "Samsung Official 5C Guide", "Url": "https://www.samsung.com/uk/support/home-appliances/how-to-resolve-a-5e-or-5c-error-code-on-a-washing-machine/", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Snowa",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "IE",
+    "Description": "اشکال در ورود آب به دستگاه",
+    "Solution": "شیر آب ورودی بررسی شود. فشار آب ساختمان چک شود. فیلتر ورودی و شیر برقی بررسی گردند.",
+    "TechnicalNotes": "سنسور سطح آب تغییری در فرکانس خروجی در زمان مقرر ثبت نکرده است.",
+    "Documents": [
+      { "Title": "راهنمای ارورهای اسنوا", "Url": "https://technoposhtiban.com/%DA%A9%D8%AF%D9%87%D8%A7%DB%8C-%D8%AE%D8%B7%D8%A7-%D9%85%D8%A7%D8%B4%DB%8C%D9%86-%D9%84%D8%A8%D8%A7%D8%B3%D8%B4%D9%88%DB%8C%DB%8C-%D8%A7%D8%B3%D9%86%D9%88%D8%A7/", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Snowa",
+    "DeviceType": "یخچال فریزر",
+    "Code": "F1",
+    "Description": "خطای سنسور فریزر",
+    "Solution": "سنسور دمای داخل فریزر و اتصالات آن چک شود. احتمال خرابی سنسور یا قطع شدن سیم‌کشی وجود دارد.",
+    "TechnicalNotes": "مقاومت سنسور NTC خارج از محدوده استاندارد است.",
+    "Documents": [
+      { "Title": "عیب‌یابی یخچال اسنوا", "Url": "https://achareh.co/blog/snowa-refrigerator-error/", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Pakshoma",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "E10",
+    "Description": "عدم آبگیری یا کندی در آبگیری",
+    "Solution": "شیر آب ورودی و فیلترها چک شوند. هیدروستات و شیر برقی ممکن است ایراد داشته باشند.",
+    "TechnicalNotes": "زمان آبگیری بیش از حد مجاز طول کشیده است.",
+    "Documents": [
+      { "Title": "ارورهای پاکشوما", "Url": "https://karabama.com/%DA%A9%D8%AF-%D8%AE%D8%B7%D8%A7-%D8%A7%D8%B1%D9%88%D8%B1-%D9%84%D8%A8%D8%A7%D8%B3%D8%B4%D9%88%DB%8C%DB%8C-%D9%BE%D8%A7%DA%A9%D8%B4%D9%88%D9%85%D8%A7/", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Butane",
+    "DeviceType": "پکیج دیواری",
+    "Code": "E01",
+    "Description": "عدم تشکیل یا تشخیص شعله",
+    "Solution": "باز بودن شیر گاز را چک کنید. جرقه زن و یون حسگر شعله تمیز شوند. فشار گاز بررسی شود.",
+    "TechnicalNotes": "پس از جرقه زدن، جریان یونیزاسیون توسط برد حس نشده است.",
+    "Documents": [
+      { "Title": "ارورهای پکیج بوتان", "Url": "https://tamironline.com/%D8%A7%D8%B1%D9%88%D8%B1-%D9%BE%DA%A9%DB%8C%D8%AC-%D8%A8%D9%88%D8%AA%D8%A7%D9%86/", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Daikin",
+    "DeviceType": "کولر گازی",
+    "Code": "U4",
+    "Description": "خطای ارتباطی بین یونیت داخلی و خارجی",
+    "Solution": "سیم‌کشی‌های بین دو یونیت را چک کنید. فیوز مینیاتوری را قطع و وصل کنید. احتمال خرابی برد یکی از یونیت‌ها وجود دارد.",
+    "TechnicalNotes": "Communication error between indoor and outdoor units.",
+    "Documents": [
+      { "Title": "Daikin Official Search", "Url": "https://www.daikin.com/products/ac/services/error_codes", "DocType": 4 }
+    ]
+  }
+]

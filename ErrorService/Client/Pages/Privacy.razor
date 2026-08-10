@@ -1,0 +1,64 @@
+@page "/privacy"
+
+<SeoHeader 
+    Title="حریم خصوصی | ارورسرویس"
+    Description="قوانین حریم خصوصی ارورسرویس - نحوه جمع‌آوری و استفاده از اطلاعات کاربران"
+    Keywords="حریم خصوصی, قوانین سایت, ارورسرویس"
+    OgType="website"
+    JsonLd="@privacyJsonLd" />
+
+<div class="legal-page py-5">
+    <div class="container">
+        <div class="legal-header text-center mb-5">
+            <div class="display-6 text-primary mb-3"><span class="oi oi-lock-locked"></span></div>
+            <h1 class="fw-black">حریم خصوصی</h1>
+            <p class="text-muted">آخرین بروزرسانی: فروردین ۱۴۰۵</p>
+        </div>
+
+        <div class="legal-content p-4 p-md-5 rounded-4 shadow-sm bg-white">
+            <h5 class="fw-bold">۱. جمع‌آوری اطلاعات</h5>
+            <p class="text-muted">ارورسرویس برای ارائه خدمات خود اطلاعات زیر را از کاربران جمع‌آوری می‌کند:</p>
+            <ul class="text-muted">
+                <li>نام و نام خانوادگی</li>
+                <li>شماره موبایل</li>
+                <li>آدرس ایمیل (اختیاری)</li>
+                <li>آدرس پستی (در صورت نیاز به خدمات حضوری)</li>
+                <li>اطلاعات مربوط به دستگاه و مشکل تعمیراتی</li>
+            </ul>
+
+            <h5 class="fw-bold mt-4">۲. استفاده از اطلاعات</h5>
+            <p class="text-muted">اطلاعات کاربران صرفاً برای اهداف زیر استفاده می‌شود:</p>
+            <ul class="text-muted">
+                <li>ارائه خدمات تعمیر و سرویس</li>
+                <li>پیگیری درخواست‌ها و سفارشات</li>
+                <li>ارسال اطلاعات فنی و آموزشی مرتبط</li>
+                <li>بهبود کیفیت خدمات</li>
+            </ul>
+
+            <h5 class="fw-bold mt-4">۳. امنیت اطلاعات</h5>
+            <p class="text-muted">ارورسرویس متعهد است از اطلاعات کاربران خود با بالاترین استانداردهای امنیتی محافظت کند. تمامی ارتباطات با سرور از طریق پروتکل HTTPS رمزنگاری می‌شود و اطلاعات حساس بانکی هرگز در سرورهای ما ذخیره نمی‌شود.</p>
+
+            <h5 class="fw-bold mt-4">۴. اشتراک‌گذاری اطلاعات</h5>
+            <p class="text-muted">اطلاعات شخصی کاربران بدون رضایت قبلی در اختیار اشخاص ثالث قرار نخواهد گرفت، مگر در موارد قانونی و با حکم قضایی.</p>
+
+            <h5 class="fw-bold mt-4">۵. کوکی (Cookies)</h5>
+            <p class="text-muted">این سایت از کوکی‌ها برای بهبود تجربه کاربری استفاده می‌کند. کاربران می‌توانند کوکی‌ها را در مرورگر خود غیرفعال کنند.</p>
+
+            <h5 class="fw-bold mt-4">۶. حقوق کاربران</h5>
+            <p class="text-muted">کاربران حق دارند در هر زمان درخواست حذف اطلاعات خود را از سامانه ما داشته باشند. برای این منظور می‌توانید با ما تماس بگیرید.</p>
+
+            <h5 class="fw-bold mt-4">۷. تغییرات</h5>
+            <p class="text-muted">ارورسرویس حق به‌روزرسانی این قوانین را دارد. تغییرات در همین صفحه اعلام خواهد شد.</p>
+        </div>
+    </div>
+</div>
+
+<style>
+    .legal-content { border: 1px solid rgba(0,0,0,0.05); max-width: 800px; margin: 0 auto; }
+    .legal-content ul { padding-right: 1.5rem; }
+    .legal-content ul li { margin-bottom: 0.5rem; }
+</style>
+
+@code {
+    private string privacyJsonLd = @"{""@context"":""https://schema.org"",""@type"":""WebPage"",""name"":""حریم خصوصی ارورسرویس""}";
+}

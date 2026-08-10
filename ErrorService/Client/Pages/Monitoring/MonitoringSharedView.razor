@@ -1,0 +1,236 @@
+@page "/monitoring/shared"
+@using System.Threading
+@using ErrorService.Client.Shared.Components
+@using ErrorService.Client.Shared
+@implements IDisposable
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+<style>
+    .msv-wrap { max-width: 600px; margin: 0 auto; padding: 12px; font-family: inherit; }
+    .msv-error { text-align: center; padding: 60px 20px; }
+    .msv-error-icon { color: #ef4444; margin-bottom: 12px; }
+    .msv-error-title { font-size: 16px; font-weight: 800; color: #1e293b; margin-bottom: 6px; }
+    .msv-error-msg { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+    .msv-error-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 16px; border: none; border-radius: 8px;
+        background: #3b82f6; color: #fff; font-size: 12px; font-weight: 700;
+        cursor: pointer;
+    }
+    .msv-loading { text-align: center; padding: 60px 20px; font-size: 12px; color: #64748b; }
+    .msv-spinner {
+        width: 24px; height: 24px; border: 3px solid #e2e8f0;
+        border-top-color: #3b82f6; border-radius: 50%;
+        animation: msv-spin 0.7s linear infinite; margin: 0 auto 8px;
+    }
+    @@keyframes msv-spin { to { transform: rotate(360deg); } }
+</style>
+
+<div class="msv-wrap">
+    @if (_error)
+    {
+        <div class="msv-error">
+            <div class="msv-error-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 8v4M12 16h.01"/>
+                </svg>
+            </div>
+            <div class="msv-error-title">لینک نامعتبر</div>
+            <div class="msv-error-msg">@_errorMessage</div>
+            <button class="msv-error-btn" @onclick='() => Navigation.NavigateTo("/")'>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                </svg>
+                <span>صفحه اصلی</span>
+            </button>
+        </div>
+        <Footer />
+    }
+    else if (_loading)
+    {
+        <div class="msv-loading">
+            <div class="msv-spinner"></div>
+            <div>در حال بارگذاری...</div>
+        </div>
+    }
+    else if (!_error && _isValid)
+    {
+        <MonitoringDetailsView
+            Id="@_monitoringId"
+            CustomerReceiptId="@_customerReceiptId"
+            CustomerName="@_customerName"
+            CustomerMobile="@_customerMobile"
+            DeviceTitle="@_deviceTitle"
+            MonitoringDeviceTitle="@_deviceTitle"
+            WorkshopName="@_workshopName"
+            CreatedAtFa="@_createdAtFa"
+            CreatedByUserName="@_createdByUserName"
+            Code="@_deviceCode"
+            IsReadOnly="true"
+            ShareToken="@Token" />
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? Token { get; set; }
+
+    private bool _loading = true;
+    private bool _error;
+    private string? _errorMessage;
+    private bool _isValid;
+    private int _monitoringId;
+    private int _customerReceiptId;
+    private string _customerName = "";
+    private string _customerMobile = "";
+    private string _deviceTitle = "";
+    private string _deviceCode = "";
+    private string _workshopName = "";
+    private string _createdAtFa = "";
+    private string _createdByUserName = "";
+    private string _connectionInfo = "";
+
+    private Timer? _validateTimer;
+    private bool _disposed;
+    private string? _sessionId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Token))
+        {
+            _error = true;
+            _errorMessage = "توکن اشتراک‌گذاری یافت نشد";
+            _loading = false;
+            return;
+        }
+
+        await ValidateAndLoad();
+
+        // Validate every 5 seconds
+        _validateTimer = new Timer(async _ =>
+        {
+            if (_disposed) return;
+            await ValidateToken();
+        }, null, 5000, 5000);
+    }
+
+    private async Task ValidateAndLoad()
+    {
+        try
+        {
+            var info = await Http.GetFromJsonAsync<System.Text.Json.JsonElement>(
+                $"api/monitoring/share/connection-info?token={Token}");
+
+            if (info.ValueKind == System.Text.Json.JsonValueKind.Undefined)
+            {
+                _error = true;
+                _errorMessage = "لینک اشتراک‌گذاری معتبر نیست یا منقضی شده است";
+                _loading = false;
+                return;
+            }
+
+            _isValid = true;
+
+            if (info.TryGetProperty("id", out var idProp))
+                _monitoringId = idProp.GetInt32();
+            if (info.TryGetProperty("customerReceiptId", out var crIdProp))
+                _customerReceiptId = crIdProp.GetInt32();
+            if (info.TryGetProperty("customerName", out var cnProp))
+                _customerName = cnProp.GetString() ?? "";
+            if (info.TryGetProperty("customerMobile", out var cmProp))
+                _customerMobile = cmProp.GetString() ?? "";
+            if (info.TryGetProperty("deviceTitle", out var dtProp))
+                _deviceTitle = dtProp.GetString() ?? "";
+            if (info.TryGetProperty("deviceCode", out var dcProp))
+                _deviceCode = dcProp.GetString() ?? "";
+            if (info.TryGetProperty("workshopName", out var wnProp))
+                _workshopName = wnProp.GetString() ?? "";
+            if (info.TryGetProperty("createdAtFa", out var caProp))
+                _createdAtFa = caProp.GetString() ?? "";
+            if (info.TryGetProperty("createdByUserName", out var cuProp))
+                _createdByUserName = cuProp.GetString() ?? "";
+            if (info.TryGetProperty("id", out var miProp))
+                _connectionInfo = $"شناسه مانیتورینگ: {miProp.GetInt32()}";
+
+            _loading = false;
+            StateHasChanged();
+
+            // Register viewer session
+            _sessionId = Guid.NewGuid().ToString("N");
+            try
+            {
+                await Http.PostAsJsonAsync("api/monitoring/share/viewer-enter", new
+                {
+                    Token,
+                    SessionId = _sessionId,
+                    UserAgent = "",
+                    DeviceInfo = ""
+                });
+            }
+            catch { }
+        }
+        catch
+        {
+            _error = true;
+            _errorMessage = "خطا در برقراری ارتباط با سرور";
+            _loading = false;
+        }
+    }
+
+    private async Task ValidateToken()
+    {
+        if (_disposed || _error || !_isValid) return;
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<System.Text.Json.JsonElement>(
+                $"api/monitoring/share/validate?token={Token}");
+            if (resp.ValueKind == System.Text.Json.JsonValueKind.Undefined ||
+                !resp.TryGetProperty("isValid", out var valid) || !valid.GetBoolean())
+            {
+                _error = true;
+                _errorMessage = "لینک اشتراک‌گذاری توسط مالک غیرفعال شده است";
+                _isValid = false;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            // Ping viewer session
+            if (!string.IsNullOrEmpty(_sessionId))
+            {
+                try
+                {
+                    await Http.PostAsJsonAsync("api/monitoring/share/viewer-ping", new
+                    {
+                        Token,
+                        SessionId = _sessionId
+                    });
+                }
+                catch { }
+            }
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _validateTimer?.Dispose();
+
+        // Send exit via beacon on navigation
+        if (!string.IsNullOrEmpty(_sessionId))
+        {
+            try
+            {
+                _ = Http.PostAsJsonAsync("api/monitoring/share/viewer-exit", new
+                {
+                    Token,
+                    SessionId = _sessionId
+                });
+            }
+            catch { }
+        }
+    }
+}

@@ -1,0 +1,397 @@
+@page "/technical/error-codes/{Brand}/{DeviceType}/{Code}"
+@using ErrorService.Shared.Models
+@using System.Text.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<SeoHeader
+    Title="@pageTitle"
+    Description="@pageDescription"
+    Keywords="@pageKeywords"
+    OgType="article"
+    OgImage="@errorCode?.ImageUrl"
+    JsonLd="@jsonLd" />
+
+<div class="ecd-page" dir="rtl">
+    <!-- Breadcrumb -->
+    <nav class="ecd-breadcrumb">
+        <a href="/" class="ecd-bc-link">خانه</a>
+        <span class="ecd-bc-sep">/</span>
+        <a href="/technical/error-codes" class="ecd-bc-link">بانک کدهای خطا</a>
+        <span class="ecd-bc-sep">/</span>
+        <a href="/technical/error-codes?brand=@Brand" class="ecd-bc-link">@Brand</a>
+        <span class="ecd-bc-sep">/</span>
+        <span class="ecd-bc-current">@Code</span>
+    </nav>
+
+    @if (isLoading)
+    {
+        <div class="ecd-skeleton-wrap">
+            <div class="ecd-skeleton ecd-skeleton--h1"></div>
+            <div class="ecd-skeleton ecd-skeleton--h2"></div>
+            <div class="ecd-skeleton ecd-skeleton--block"></div>
+            <div class="ecd-skeleton ecd-skeleton--block"></div>
+        </div>
+    }
+    else if (errorCode == null)
+    {
+        <div class="ecd-notfound">
+            <span class="oi oi-warning"></span>
+            <h2>کد خطا یافت نشد</h2>
+            <p>کد خطا مورد نظر در پایگاه داده وجود ندارد.</p>
+            <a href="/technical/error-codes" class="ecd-btn">بازگشت به بانک کدهای خطا</a>
+        </div>
+    }
+    else
+    {
+        <!-- Hero -->
+        <div class="ecd-hero">
+            <div class="ecd-hero__badges">
+                <span class="ecd-badge ecd-badge--brand">@errorCode.Brand</span>
+                <span class="ecd-badge ecd-badge--device">@errorCode.DeviceType</span>
+            </div>
+            <div class="ecd-hero__code">@errorCode.Code</div>
+            <h1 class="ecd-hero__title">@errorCode.Description</h1>
+        </div>
+
+        <!-- Image -->
+        @if (!string.IsNullOrEmpty(errorCode.ImageUrl))
+        {
+            <div class="ecd-image-section">
+                <img src="@errorCode.ImageUrl" alt="کد خطا @errorCode.Code - @errorCode.Brand @errorCode.DeviceType" class="ecd-image" loading="lazy" />
+            </div>
+        }
+
+        <!-- Solution -->
+        <div class="ecd-section ecd-section--solution">
+            <div class="ecd-section__header">
+                <span class="oi oi-check-circle ecd-section__icon"></span>
+                <h2 class="ecd-section__title">راه حل پیشنهادی</h2>
+            </div>
+            <div class="ecd-section__content ecd-solution-text">
+                @errorCode.Solution
+            </div>
+        </div>
+
+        <!-- Technical Notes -->
+        @if (!string.IsNullOrEmpty(errorCode.TechnicalNotes))
+        {
+            <div class="ecd-section ecd-section--notes">
+                <div class="ecd-section__header">
+                    <span class="oi oi-info ecd-section__icon"></span>
+                    <h2 class="ecd-section__title">نکات فنی</h2>
+                </div>
+                <div class="ecd-section__content">
+                    @errorCode.TechnicalNotes
+                </div>
+            </div>
+        }
+
+        <!-- Model Names -->
+        @if (!string.IsNullOrEmpty(errorCode.ModelNames))
+        {
+            <div class="ecd-section ecd-section--models">
+                <div class="ecd-section__header">
+                    <span class="oi oi-list ecd-section__icon"></span>
+                    <h2 class="ecd-section__title">مدل‌های سازگار</h2>
+                </div>
+                <div class="ecd-model-tags">
+                    @foreach (var model in errorCode.ModelNames.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        <span class="ecd-model-tag">@model.Trim()</span>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Documents -->
+        @if (errorCode.Documents != null && errorCode.Documents.Any())
+        {
+            <div class="ecd-section ecd-section--docs">
+                <div class="ecd-section__header">
+                    <span class="oi oi-document ecd-section__icon"></span>
+                    <h2 class="ecd-section__title">مستندات مرتبط</h2>
+                </div>
+                <div class="ecd-docs-list">
+                    @foreach (var doc in errorCode.Documents.OrderBy(d => d.SortOrder))
+                    {
+                        <a href="@doc.Url" target="_blank" rel="noopener noreferrer" class="ecd-doc-item">
+                            <span class="oi oi-document"></span>
+                            <span>@doc.Title</span>
+                            <span class="oi oi-external-link ecd-doc-arrow"></span>
+                        </a>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Related Error Codes -->
+        @if (relatedCodes.Any())
+        {
+            <div class="ecd-section ecd-section--related">
+                <div class="ecd-section__header">
+                    <span class="oi oi-layers ecd-section__icon"></span>
+                    <h2 class="ecd-section__title">کدهای خطای مرتبط</h2>
+                </div>
+                <div class="ecd-related-grid">
+                    @foreach (var rel in relatedCodes)
+                    {
+                        <a href="/technical/error-codes/@Uri.EscapeDataString(rel.Brand)/@Uri.EscapeDataString(rel.DeviceType)/@Uri.EscapeDataString(rel.Code)" class="ecd-related-card">
+                            <div class="ecd-related-code">@rel.Code</div>
+                            <div class="ecd-related-desc">@Truncate(rel.Description, 60)</div>
+                        </a>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- CTA -->
+        <div class="ecd-cta">
+            <a href="/technical/error-codes" class="ecd-btn ecd-btn--primary">
+                <span class="oi oi-magnifying-glass"></span>
+                جستجوی کد خطا
+            </a>
+            <a href="/admission/repair" class="ecd-btn ecd-btn--secondary">
+                <span class="oi oi-wrench"></span>
+                درخواست تعمیر
+            </a>
+        </div>
+    }
+</div>
+
+<style>
+    .ecd-page { max-width: 800px; margin: 0 auto; padding: 20px 16px 40px; }
+
+    .ecd-breadcrumb {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+        padding: 12px 0; margin-bottom: 16px;
+        font-size: 0.8rem; color: #94a3b8;
+    }
+    .ecd-bc-link { color: #6366f1; text-decoration: none; font-weight: 600; }
+    .ecd-bc-link:hover { text-decoration: underline; }
+    .ecd-bc-sep { color: #cbd5e1; }
+    .ecd-bc-current { color: #475569; font-weight: 700; }
+
+    .ecd-hero {
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        border-radius: 20px; padding: 28px 24px; color: #fff; margin-bottom: 20px;
+    }
+    .ecd-hero__badges { display: flex; gap: 8px; margin-bottom: 12px; }
+    .ecd-badge {
+        padding: 4px 12px; border-radius: 8px; font-size: 0.75rem; font-weight: 700;
+    }
+    .ecd-badge--brand { background: rgba(99,102,241,0.25); color: #a5b4fc; }
+    .ecd-badge--device { background: rgba(16,185,129,0.25); color: #6ee7b7; }
+    .ecd-hero__code {
+        font-family: monospace; font-size: 2.2rem; font-weight: 900;
+        letter-spacing: 2px; margin-bottom: 8px;
+    }
+    .ecd-hero__title { font-size: 1.1rem; font-weight: 600; line-height: 1.6; opacity: 0.9; margin: 0; }
+
+    .ecd-image-section {
+        margin-bottom: 20px; border-radius: 16px; overflow: hidden;
+        background: #f1f5f9; display: flex; justify-content: center;
+    }
+    .ecd-image { max-width: 100%; max-height: 400px; object-fit: contain; }
+
+    .ecd-section {
+        background: #fff; border-radius: 16px; padding: 20px;
+        margin-bottom: 16px; border: 1px solid rgba(0,0,0,0.04);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .ecd-section__header {
+        display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+    }
+    .ecd-section__icon { font-size: 1.1rem; color: #6366f1; }
+    .ecd-section__title { font-size: 1rem; font-weight: 800; color: #1e293b; margin: 0; }
+
+    .ecd-solution-text {
+        line-height: 1.8; color: #1e293b; font-size: 0.95rem;
+        padding: 16px; border-radius: 12px; background: #f0fdf4;
+        border-right: 4px solid #22c55e;
+    }
+
+    .ecd-section--notes .ecd-section__content {
+        line-height: 1.7; color: #475569; font-size: 0.9rem;
+        padding: 14px; border-radius: 12px; background: #fefce8;
+        border-right: 4px solid #eab308;
+    }
+
+    .ecd-model-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .ecd-model-tag {
+        padding: 6px 14px; border-radius: 10px; font-size: 0.8rem;
+        background: #f1f5f9; color: #475569; font-weight: 600;
+        border: 1px solid #e2e8f0;
+    }
+
+    .ecd-docs-list { display: flex; flex-direction: column; gap: 8px; }
+    .ecd-doc-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 16px; border-radius: 12px; background: #f8fafc;
+        border: 1px solid #e2e8f0; text-decoration: none; color: #1e293b;
+        font-size: 0.85rem; font-weight: 600; transition: all 0.2s;
+    }
+    .ecd-doc-item:hover { background: #eff6ff; border-color: #93c5fd; }
+    .ecd-doc-arrow { margin-right: auto; color: #94a3b8; font-size: 0.75rem; }
+
+    .ecd-related-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+    .ecd-related-card {
+        padding: 14px; border-radius: 12px; background: #f8fafc;
+        border: 1px solid #e2e8f0; text-decoration: none; transition: all 0.2s;
+    }
+    .ecd-related-card:hover { border-color: #6366f1; box-shadow: 0 4px 12px rgba(99,102,241,0.12); }
+    .ecd-related-code {
+        font-family: monospace; font-size: 1.1rem; font-weight: 900;
+        color: #6366f1; margin-bottom: 4px;
+    }
+    .ecd-related-desc { font-size: 0.75rem; color: #64748b; line-height: 1.4; }
+
+    .ecd-cta { display: flex; gap: 10px; margin-top: 24px; }
+    .ecd-btn {
+        flex: 1; display: flex; align-items: center; justify-content: center;
+        gap: 8px; padding: 14px; border-radius: 14px; font-size: 0.9rem;
+        font-weight: 700; text-decoration: none; transition: all 0.2s;
+        border: none; cursor: pointer;
+    }
+    .ecd-btn--primary { background: linear-gradient(135deg, #6366f1, #818cf8); color: #fff; }
+    .ecd-btn--primary:hover { box-shadow: 0 6px 20px rgba(99,102,241,0.3); }
+    .ecd-btn--secondary { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .ecd-btn--secondary:hover { background: #e2e8f0; }
+
+    .ecd-notfound { text-align: center; padding: 60px 20px; }
+    .ecd-notfound span { font-size: 3rem; color: #cbd5e1; display: block; margin-bottom: 12px; }
+    .ecd-notfound h2 { font-weight: 800; color: #475569; }
+    .ecd-notfound p { color: #94a3b8; margin-bottom: 20px; }
+    .ecd-notfound .ecd-btn { display: inline-flex; flex: none; }
+
+    .ecd-skeleton { border-radius: 12px; margin-bottom: 12px;
+        background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+        background-size: 200% 100%; animation: ecd-shimmer 1.5s infinite;
+    }
+    .ecd-skeleton--h1 { height: 40px; width: 60%; }
+    .ecd-skeleton--h2 { height: 24px; width: 80%; }
+    .ecd-skeleton--block { height: 120px; }
+    .ecd-skeleton-wrap { padding: 20px; }
+    @@keyframes ecd-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+    @@media (min-width: 768px) {
+        .ecd-page { padding: 32px 24px 60px; }
+        .ecd-hero { padding: 36px 32px; }
+        .ecd-hero__code { font-size: 2.8rem; }
+    }
+</style>
+
+@code {
+    [Parameter] public string Brand { get; set; } = "";
+    [Parameter] public string DeviceType { get; set; } = "";
+    [Parameter] public string Code { get; set; } = "";
+
+    private ErrorCode? errorCode;
+    private List<ErrorCode> relatedCodes = new();
+    private bool isLoading = true;
+
+    private string pageTitle = "کد خطا | ارورسرویس";
+    private string pageDescription = "";
+    private string pageKeywords = "";
+    private string? jsonLd;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            var brandDecoded = Uri.UnescapeDataString(Brand);
+            var deviceDecoded = Uri.UnescapeDataString(DeviceType);
+            var codeDecoded = Uri.UnescapeDataString(Code);
+
+            var all = await Http.GetFromJsonAsync<List<ErrorCode>>(
+                $"api/technical/error-codes?brand={Uri.EscapeDataString(brandDecoded)}&deviceType={Uri.EscapeDataString(deviceDecoded)}&search={Uri.EscapeDataString(codeDecoded)}"
+            ) ?? new();
+
+            errorCode = all.FirstOrDefault(e =>
+                e.Brand.Equals(brandDecoded, StringComparison.OrdinalIgnoreCase) &&
+                e.DeviceType.Equals(deviceDecoded, StringComparison.OrdinalIgnoreCase) &&
+                e.Code.Equals(codeDecoded, StringComparison.OrdinalIgnoreCase));
+
+            if (errorCode == null)
+            {
+                isLoading = false;
+                return;
+            }
+
+            pageTitle = $"کد خطای {errorCode.Code} {errorCode.Brand} {errorCode.DeviceType} - {errorCode.Description} | ارورسرویس";
+            pageDescription = $"کد خطای {errorCode.Code} مربوط به {errorCode.DeviceType} برند {errorCode.Brand}: {errorCode.Description}. راه حل: {Truncate(errorCode.Solution, 150)}";
+            pageKeywords = $"کد خطا {errorCode.Code}, ارور {errorCode.Brand}, {errorCode.DeviceType}, {errorCode.Description}, تعمیرات {errorCode.Brand}";
+
+            BuildJsonLd();
+
+            try
+            {
+                relatedCodes = await Http.GetFromJsonAsync<List<ErrorCode>>(
+                    $"api/technical/error-codes/related/{errorCode.Id}"
+                ) ?? new();
+            }
+            catch { relatedCodes = new(); }
+        }
+        catch
+        {
+            errorCode = null;
+        }
+        isLoading = false;
+    }
+
+    private void BuildJsonLd()
+    {
+        if (errorCode == null) return;
+
+        var baseUrl = "https://errorservice.ir";
+        var url = $"{baseUrl}/technical/error-codes/{Uri.EscapeDataString(errorCode.Brand)}/{Uri.EscapeDataString(errorCode.DeviceType)}/{Uri.EscapeDataString(errorCode.Code)}";
+
+        var techArticle = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "TechArticle",
+            ["headline"] = $"کد خطای {errorCode.Code} - {errorCode.Brand} {errorCode.DeviceType}",
+            ["description"] = errorCode.Description,
+            ["url"] = url,
+            ["author"] = new Dictionary<string, object?> { ["@type"] = "Organization", ["name"] = "ارورسرویس" },
+            ["publisher"] = new Dictionary<string, object?> { ["@type"] = "Organization", ["name"] = "ارورسرویس", ["logo"] = new Dictionary<string, string?> { ["@type"] = "ImageObject", ["url"] = $"{baseUrl}/favicon.png" } },
+            ["mainEntityOfPage"] = url,
+            ["about"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "Thing",
+                ["name"] = $"کد خطا {errorCode.Code}",
+                ["description"] = errorCode.Description
+            }
+        };
+
+        if (!string.IsNullOrEmpty(errorCode.ImageUrl))
+            techArticle["image"] = errorCode.ImageUrl;
+
+        var breadcrumbList = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "BreadcrumbList",
+            ["itemListElement"] = new object[]
+            {
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 1, ["name"] = "خانه", ["item"] = baseUrl },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 2, ["name"] = "بانک کدهای خطا", ["item"] = $"{baseUrl}/technical/error-codes" },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 3, ["name"] = errorCode.Brand, ["item"] = $"{baseUrl}/technical/error-codes?brand={Uri.EscapeDataString(errorCode.Brand)}" },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 4, ["name"] = errorCode.Code, ["item"] = url }
+            }
+        };
+
+        jsonLd = $"[{JsonSerializer.Serialize(techArticle)},{JsonSerializer.Serialize(breadcrumbList)}]";
+    }
+
+    private string Truncate(string? text, int max)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= max ? text : text[..max] + "...";
+    }
+}

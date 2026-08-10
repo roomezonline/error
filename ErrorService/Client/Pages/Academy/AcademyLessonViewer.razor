@@ -1,0 +1,341 @@
+@page "/academy/{CourseId:int}/{LessonId:int}"
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using System.Text.Json
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject HttpClient Http
+
+<PageTitle>@(lesson?.Title ?? "مشاهده قسمت") - آکادمی</PageTitle>
+
+<SeoHeader 
+    Title="@($"{lesson?.Title ?? "مشاهده قسمت"} - آکادمی ارورسرویس")"
+    Description="@($"{lesson?.Title ?? "مشاهده قسمت آموزشی"} - دوره آموزش تعمیرات لوازم خانگی ارورسرویس")"
+    Keywords="@($"آموزش تعمیرات, {lesson?.Title ?? "قسمت آموزشی"}")"
+    OgType="video.other"
+    JsonLd="@lessonJsonLd" />
+
+<div class="lesson-viewer-page py-4 bg-light" dir="rtl">
+    <div class="container">
+        @if (isLoading)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary"></div>
+            </div>
+        }
+        else if (isForbidden)
+        {
+            <div class="alert alert-warning rounded-4 shadow-sm">
+                این قسمت ویژه (VIP) است. برای مشاهده محتوا باید وارد حساب VIP شوید.
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <a class="btn btn-primary rounded-pill" href="/auth/login">ورود</a>
+                <a class="btn btn-outline-primary rounded-pill" href="/academy/@CourseId">بازگشت به لیست قسمت‌ها</a>
+            </div>
+        }
+        else if (lesson == null)
+        {
+            <div class="alert alert-danger rounded-4 shadow-sm">قسمت مورد نظر یافت نشد.</div>
+        }
+        else
+        {
+            <nav aria-label="breadcrumb" class="mb-4">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/academy">آکادمی</a></li>
+                    <li class="breadcrumb-item"><a href="/academy/@CourseId">@courseTitle</a></li>
+                    <li class="breadcrumb-item active">@lesson.Title</li>
+                </ol>
+            </nav>
+
+            <div class="row g-4">
+                <div class="col-lg-9">
+                    <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+                        <div class="card-body p-4 p-md-5">
+                            <h1 class="fw-bold h2 mb-4">@lesson.Title</h1>
+                            
+                            @if (!string.IsNullOrEmpty(lesson.Summary))
+                            {
+                                <p class="text-muted fs-5 mb-5 leading-relaxed">@lesson.Summary</p>
+                            }
+
+                            <div class="lesson-content-blocks">
+                                @foreach (var block in lesson.Blocks.OrderBy(x => x.SortOrder))
+                                {
+                                    <div class="content-block mb-5">
+                                        @if (!string.IsNullOrEmpty(block.Title))
+                                        {
+                                            <h4 class="fw-bold mb-3">@block.Title</h4>
+                                        }
+
+                                        @switch (block.BlockType)
+                                        {
+                                            case TrainingBlockTypeDto.Text:
+                                                <div class="text-content fs-6 leading-loose">@((MarkupString)(block.Content?.Replace("\n", "<br/>") ?? ""))</div>
+                                                break;
+
+                                            case TrainingBlockTypeDto.Image:
+                                                <div class="lesson-gallery">
+                                                    <button type="button" class="lesson-gallery__item" data-lightbox-src="@block.Url" aria-label="Open image">
+                                                        <img src="@block.Url" class="lesson-gallery__img" alt="@block.Title" />
+                                                    </button>
+                                                </div>
+                                                break;
+
+                                            case TrainingBlockTypeDto.Video:
+                                                <div class="video-content rounded-4 overflow-hidden shadow mb-4">
+                                                    <video class="js-plyr lazy-video" playsinline controls data-poster="@block.ThumbnailUrl" data-src="@GetPlayableUrl(block.Url)">
+                                                        <source src="" type="@GetVideoMime(block.Url)" />
+                                                    </video>
+                                                </div>
+                                                break;
+
+                                            case TrainingBlockTypeDto.Audio:
+                                                <div class="audio-content mb-4 shadow-sm rounded-4">
+                                                    <audio class="js-plyr" controls>
+                                                        <source src="@GetPlayableUrl(block.Url)" type="@GetAudioMime(block.Url)" />
+                                                    </audio>
+                                                </div>
+                                                break;
+
+                                            case TrainingBlockTypeDto.Embed:
+                                                <div class="embed-content rounded-4 overflow-hidden shadow">
+                                                    @((MarkupString)(block.Content ?? ""))
+                                                </div>
+                                                break;
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-3">
+                    @if (lesson.Attachments.Any())
+                    {
+                        <div class="card border-0 shadow-sm rounded-4 p-4 mb-4">
+                            <h5 class="fw-bold mb-3 d-flex align-items-center gap-2">
+                                <span class="oi oi-paperclip text-primary"></span>
+                                فایل‌های ضمیمه
+                            </h5>
+                            <div class="list-group list-group-flush border-0">
+                                @foreach (var att in lesson.Attachments.OrderBy(x => x.SortOrder))
+                                {
+                                    <a href="@att.FileUrl" target="_blank" class="list-group-item list-group-item-action bg-light border-0 rounded-3 mb-2 d-flex align-items-center gap-2 p-3">
+                                        <span class="oi oi-data-transfer-download text-primary"></span>
+                                        <div class="small text-truncate">@att.Title</div>
+                                    </a>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div class="card border-0 shadow-sm rounded-4 p-4 bg-primary text-white">
+                        <h6 class="fw-bold mb-3">دسترسی سریع</h6>
+                        <a href="/academy/@CourseId" class="btn btn-light btn-sm w-100 rounded-pill mb-2">لیست تمام قسمت‌ها</a>
+                        <a href="/academy" class="btn btn-outline-light btn-sm w-100 rounded-pill">بازگشت به آکادمی</a>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .leading-loose { line-height: 2; }
+    .leading-relaxed { line-height: 1.7; }
+    .content-block video, .content-block iframe { max-width: 100%; aspect-ratio: 16/9; }
+    .embed-content ::deep iframe { width: 100% !important; aspect-ratio: 16/9; border-radius: 12px; }
+
+    .lesson-gallery {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    @@media (min-width: 768px) {
+        .lesson-gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+
+    @@media (min-width: 1200px) {
+        .lesson-gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+
+    .lesson-gallery__item {
+        border: 0;
+        padding: 0;
+        background: transparent;
+        border-radius: 16px;
+        overflow: hidden;
+        cursor: pointer;
+        box-shadow: 0 10px 26px rgba(15, 23, 42, 0.12);
+        transform: translateY(0);
+        transition: transform 140ms ease, box-shadow 140ms ease;
+    }
+
+    .lesson-gallery__item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+    }
+
+    .lesson-gallery__img {
+        width: 100%;
+        aspect-ratio: 4/3;
+        object-fit: cover;
+        display: block;
+    }
+</style>
+
+@code {
+    [Parameter] public int CourseId { get; set; }
+    [Parameter] public int LessonId { get; set; }
+
+    private TrainingLessonDto? lesson;
+    private string courseTitle = "...";
+    private bool isLoading = true;
+    private bool isForbidden;
+    private bool plyrInitialized;
+    private string? lessonJsonLd;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (lesson != null && !isLoading && !plyrInitialized)
+        {
+            await Task.Delay(500); // Give time for DOM to settle
+            try
+            {
+                await JS.InvokeVoidAsync("lazyVideoLoader.observe");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"LazyVideoLoader Error: {ex.Message}");
+            }
+            await JS.InvokeVoidAsync("initPlyr", ".js-plyr");
+            await JS.InvokeVoidAsync("initLessonLightbox");
+            plyrInitialized = true;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            isLoading = true;
+            plyrInitialized = false;
+            isForbidden = false;
+
+            var lessonResp = await Http.GetAsync($"api/trainings/lessons/{LessonId}");
+            if (lessonResp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                isForbidden = true;
+                lesson = null;
+            }
+            else             if (lessonResp.IsSuccessStatusCode)
+            {
+                lesson = await lessonResp.Content.ReadFromJsonAsync<TrainingLessonDto>();
+                BuildLessonJsonLd();
+            }
+            else
+            {
+                lesson = null;
+            }
+            
+            // Get course title for breadcrumb
+            var course = await Http.GetFromJsonAsync<TrainingCourseDto>($"api/trainings/courses/{CourseId}");
+            courseTitle = course?.Title ?? "دوره";
+        }
+        catch { }
+        finally { isLoading = false; }
+    }
+
+    private string? GetPlayableUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return url;
+        if (url.StartsWith("/api/trainings/media/", StringComparison.OrdinalIgnoreCase)) return url;
+
+        // Backward compatibility: old uploads path
+        var prefix = "/uploads/academy/";
+        if (url.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var fileName = url.Substring(prefix.Length);
+            fileName = fileName.Split('?', '#')[0];
+            return $"/api/trainings/media/{fileName}";
+        }
+
+        return url;
+    }
+
+    private static string GetVideoMime(string? url)
+    {
+        var ext = GetExt(url);
+        return ext switch
+        {
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".ogv" => "video/ogg",
+            ".avi" => "video/x-msvideo",
+            ".mov" => "video/quicktime",
+            ".mkv" => "video/x-matroska",
+            ".ts" => "application/vnd.apple.mpegurl",
+            ".m3u8" => "application/vnd.apple.mpegurl",
+            _ => "video/mp4"
+        };
+    }
+
+    private static string GetAudioMime(string? url)
+    {
+        var ext = GetExt(url);
+        return ext switch
+        {
+            ".wav" => "audio/wav",
+            ".ogg" => "audio/ogg",
+            _ => "audio/mpeg"
+        };
+    }
+
+    private static string GetExt(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+        var clean = url.Split('?', '#')[0];
+        return Path.GetExtension(clean).ToLowerInvariant();
+    }
+
+    private void BuildLessonJsonLd()
+    {
+        if (lesson == null) return;
+
+        var baseUrl = "https://errorservice.ir";
+        var url = $"{baseUrl}/academy/{CourseId}/{LessonId}";
+
+        var learningResource = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "LearningResource",
+            ["name"] = lesson.Title,
+            ["description"] = lesson.Summary ?? lesson.Title,
+            ["url"] = url,
+            ["learningResourceType"] = "Lesson",
+            ["isPartOf"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "Course",
+                ["name"] = lesson.CourseTitle ?? courseTitle,
+                ["url"] = $"{baseUrl}/academy/{CourseId}"
+            }
+        };
+
+        var breadcrumbList = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "BreadcrumbList",
+            ["itemListElement"] = new object[]
+            {
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 1, ["name"] = "خانه", ["item"] = baseUrl },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 2, ["name"] = "آکادمی", ["item"] = $"{baseUrl}/academy" },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 3, ["name"] = lesson.CourseTitle ?? courseTitle, ["item"] = $"{baseUrl}/academy/{CourseId}" },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 4, ["name"] = lesson.Title, ["item"] = url }
+            }
+        };
+
+        lessonJsonLd = $"[{JsonSerializer.Serialize(learningResource)},{JsonSerializer.Serialize(breadcrumbList)}]";
+    }
+}

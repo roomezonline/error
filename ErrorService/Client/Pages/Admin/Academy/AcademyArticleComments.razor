@@ -1,0 +1,12 @@
+@page "/admin/academy/articles/comments"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.academy.comments.manage")]
+@inject NavigationManager Nav
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.NavigateTo("/admin/comments", replace: true);
+    }
+}

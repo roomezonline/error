@@ -1,0 +1,3162 @@
+@page "/admin/receipts/new"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.receipts.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject ErrorService.Client.Services.ToastService ToastService
+@inject ErrorService.Client.Services.AdminWorkshopSelectionService AdminWorkshopSelection
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+@using ErrorService.Client.Shared
+@using ErrorService.Client.Helpers
+
+<PageTitle>ثبت رسید مشتری</PageTitle>
+
+<div class="wr-page" dir="rtl">
+    @if (isSuperAdmin && !selectedWorkshopId.HasValue)
+    {
+        <div class="workshop-warning-overlay">
+            <div class="workshop-warning-content">
+                <div class="workshop-warning-icon">⚠️</div>
+                <h3 class="workshop-warning-title">انتخاب کارگاه الزامی است</h3>
+                <p class="workshop-warning-text">شما به عنوان سوپر ادمین وارد شده‌اید. برای ثبت رسید، باید ابتدا یک کارگاه را از منوی بالای صفحه انتخاب کنید.</p>
+                <div class="workshop-warning-steps">
+                    <div class="workshop-warning-step">
+                        <span class="step-number">۱</span>
+                        <span class="step-text">روی آیکون کارگاه در بالای صفحه کلیک کنید</span>
+                    </div>
+                    <div class="workshop-warning-step">
+                        <span class="step-number">۲</span>
+                        <span class="step-text">کارگاه مورد نظر را از لیست انتخاب کنید</span>
+                    </div>
+                    <div class="workshop-warning-step">
+                        <span class="step-number">۳</span>
+                        <span class="step-text">سپس می‌توانید ثبت رسید را ادامه دهید</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="wr-header">
+        <div class="wr-header__main">پذیرش دستگاه</div>
+    </div>
+    <div class="wr-steps">
+            <div class="wr-step @(step == 1 ? "wr-step--active" : step > 1 ? "wr-step--done" : "")">1</div>
+            <div class="wr-step-line"></div>
+            <div class="wr-step @(step == 2 ? "wr-step--active" : step > 2 ? "wr-step--done" : "")">2</div>
+            <div class="wr-step-line"></div>
+            <div class="wr-step @(step == 3 ? "wr-step--active" : step > 3 ? "wr-step--done" : "")">3</div>
+            <div class="wr-step-line"></div>
+            <div class="wr-step @(step == 4 ? "wr-step--active" : step > 4 ? "wr-step--done" : "")">4</div>
+            <div class="wr-step-line"></div>
+            <div class="wr-step @(step == 5 ? "wr-step--active" : step > 5 ? "wr-step--done" : "")">5</div>
+        </div>
+
+    <div class="wr-shell @(isSuperAdmin && !selectedWorkshopId.HasValue ? "wr-shell--disabled" : "")">
+        @if (isLoading)
+        {
+            <div class="wr-card">
+                <div class="wr-loading">
+                    <div class="spinner-border text-primary"></div>
+                    <div class="wr-loading__text">در حال آماده‌سازی فرم...</div>
+                </div>
+            </div>
+        }
+        else
+        {
+            @if (step == 1)
+            {
+                <div class="wr-card">
+                    <div class="wr-card__title">مرحله 1: انتخاب یا ثبت مشتری</div>
+
+                    @if (selectedCustomer == null)
+                    {
+                        <div class="wr-field">
+                            <div class="wr-label">انتخاب مشتری</div>
+                            <button type="button" class="wr-btn wr-btn--select-customer" @onclick="OpenCustomerModal">
+                                <span class="oi oi-magnifying-glass"></span>
+                                جستجو و انتخاب مشتری
+                            </button>
+                            <div class="wr-hint">با کلیک، لیست مشتریان را جستجو و انتخاب کنید</div>
+                        </div>
+                    }
+
+                    <CustomerSearchModal WorkshopId="@uploadWorkshopId"
+                                         Visible="@showCustomerModal"
+                                         OnCustomerSelected="OnModalCustomerSelected"
+                                         OnDismiss="CloseCustomerModal" />
+
+                    @if (selectedCustomer != null)
+                    {
+                        <div class="wr-customer-card">
+                            <div class="wr-customer-card__body">
+                                <div class="wr-customer-avatar" aria-hidden="true">@GetCustomerInitial(selectedCustomer)</div>
+                                <div class="wr-customer-card__info">
+                                    <div class="wr-customer-card__name">@selectedCustomer.FirstName @selectedCustomer.LastName</div>
+                                    <div class="wr-customer-card__mobile ltr">@selectedCustomer.Mobile</div>
+                                    @if (!string.IsNullOrWhiteSpace(selectedCustomer.Address))
+                                    {
+                                        <div class="wr-customer-card__addr">@selectedCustomer.Address</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="wr-customer-card__addr wr-customer-card__addr--empty">آدرس ثبت نشده</div>
+                                    }
+                                </div>
+                            </div>
+                            <div class="wr-customer-card__actions">
+                                <button type="button" class="wr-customer-card__btn wr-customer-card__btn--edit" @onclick="OpenCustomerEditSheet">
+                                    <span class="oi oi-pencil"></span>
+                                    <span>ویرایش</span>
+                                </button>
+                                <button type="button" class="wr-customer-card__btn wr-customer-card__btn--clear" title="لغو انتخاب مشتری" @onclick="ClearCustomerSelection">
+                                    <span class="oi oi-x"></span>
+                                    <span>لغو</span>
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="wr-divider"></div>
+
+                    <div class="wr-card__subtitle">ثبت مشتری جدید</div>
+
+                    <EditForm Model="newCustomer" OnValidSubmit="CreateCustomer">
+                        <DataAnnotationsValidator />
+
+                        <div class="wr-grid">
+                            <div class="wr-field">
+                                <div class="wr-label">نام</div>
+                                <input class="wr-input" @bind="newCustomer.FirstName" placeholder="مثلاً علی (اختیاری)" />
+                            </div>
+                            <div class="wr-field">
+                                <div class="wr-label">نام خانوادگی</div>
+                                <input class="wr-input" @bind="newCustomer.LastName" placeholder="مثلاً قنواتی" />
+                                <ValidationMessage For="() => newCustomer.LastName" />
+                            </div>
+                            <div class="wr-field">
+                                <div class="wr-label">موبایل</div>
+                                <input class="wr-input ltr" @bind="newCustomer.Mobile" placeholder="09xxxxxxxxx" inputmode="numeric" pattern="[0-9]*" @onblur="NormalizeMobile" />
+                                <ValidationMessage For="() => newCustomer.Mobile" />
+                            </div>
+                            <div class="wr-field">
+                                <div class="wr-label">آدرس</div>
+                                <input class="wr-input" @bind="newCustomer.Address" placeholder="اختیاری" />
+                                <ValidationMessage For="() => newCustomer.Address" />
+                            </div>
+                        </div>
+
+                        <div class="wr-actions">
+                            <button type="submit" class="wr-btn wr-btn--secondary" disabled="@(!CanWorkOnWorkshop)">ثبت مشتری</button>
+                            @if (selectedCustomer != null)
+                            {
+                                <button type="button" class="wr-btn" @onclick="Next">مرحله بعد</button>
+                            }
+                        </div>
+                    </EditForm>
+                </div>
+            }
+            else if (step == 2)
+            {
+                <div class="wr-card">
+                    <div class="wr-card__title">مرحله 2: انتخاب دستگاه و برند</div>
+
+                    <div class="wr-field">
+                        <div class="wr-label">نوع دستگاه</div>
+                        <div class="wr-input-row">
+                            <select class="wr-select wr-select--flex" @bind="deviceTypeId" @bind:after="OnDeviceTypeChanged">
+                                <option value="0">انتخاب کنید...</option>
+                                @if (deviceTypes != null)
+                                {
+                                    @foreach (var dt in deviceTypes)
+                                    {
+                                        <option value="@dt.Id">@dt.Name</option>
+                                    }
+                                }
+                            </select>
+                            <AuthorizeView Policy="perm:admin.technical.devices.manage">
+                                <Authorized>
+                                    <button type="button" class="wr-mini-btn" @onclick="async () => { await LoadAllDeviceTypes(); showDeviceTypeModal = true; }" title="مدیریت نوع دستگاه‌ها">
+                                        <span class="oi oi-plus"></span>
+                                    </button>
+                                </Authorized>
+                            </AuthorizeView>
+                        </div>
+                    </div>
+
+                    <div class="wr-field">
+                        <div class="wr-label">برند</div>
+                        <div class="wr-input-row">
+                            <select class="wr-select wr-select--flex" @bind="deviceBrandId" disabled="@(deviceTypeId <= 0)">
+                                <option value="">(اختیاری) انتخاب کنید...</option>
+                                @if (deviceBrands != null)
+                                {
+                                    @foreach (var b in deviceBrands)
+                                    {
+                                        <option value="@b.Id">@b.Name</option>
+                                    }
+                                }
+                            </select>
+                            <AuthorizeView Policy="perm:admin.technical.brands.manage">
+                                <Authorized>
+                                    <button type="button" class="wr-mini-btn" @onclick="async () => { await LoadAllDeviceBrands(); showDeviceBrandModal = true; }" title="مدیریت برندها" disabled="@(deviceTypeId <= 0)">
+                                        <span class="oi oi-plus"></span>
+                                    </button>
+                                </Authorized>
+                            </AuthorizeView>
+                        </div>
+                        <div class="wr-hint">برند بر اساس نوع دستگاه فیلتر می‌شود.</div>
+                    </div>
+
+                    <div class="wr-actions">
+                        <button type="button" class="wr-btn wr-btn--ghost" @onclick="Prev">بازگشت</button>
+                        <button type="button" class="wr-btn" @onclick="Next" disabled="@(deviceTypeId <= 0)">مرحله بعد</button>
+                    </div>
+                </div>
+            }
+            else if (step == 3)
+            {
+                <div class="wr-card">
+                    <div class="wr-card__title">مرحله 3: شرح مشکل و تکنسین</div>
+
+                    <div class="wr-field">
+                        <div class="wr-label">شرح مشکل / ایراد دستگاه</div>
+                        <textarea class="wr-textarea" @bind="problemDescription" placeholder="جزئیات خرابی و قطعات همراه..."></textarea>
+                    </div>
+
+                    <div class="wr-field">
+                        <div class="wr-label">ارجاع به تکنسین (اختیاری)</div>
+                        <select class="wr-select" @bind="technicianId">
+                            <option value="">-- انتخاب تکنسین --</option>
+                            @if (technicians != null)
+                            {
+                                @foreach (var tech in technicians)
+                                {
+                                    <option value="@tech.Id">@tech.FullName</option>
+                                }
+                            }
+                        </select>
+                        <div class="wr-hint">در صورت عدم انتخاب، رسید در صف انتظار عمومی باقی می‌ماند.</div>
+                    </div>
+
+                    <div class="wr-field">
+                        <div class="wr-label">تاریخ ثبت (شمسی)</div>
+                        <input class="wr-input ltr" data-jdp @bind="registeredAtPersian" placeholder="انتخاب تاریخ..." />
+                        <div class="wr-hint">پیش‌فرض: امروز</div>
+                    </div>
+
+                    <div class="wr-actions">
+                        <button type="button" class="wr-btn wr-btn--ghost" @onclick="Prev">بازگشت</button>
+                        <button type="button" class="wr-btn" @onclick="Next" disabled="@(string.IsNullOrWhiteSpace(problemDescription) || problemDescription.Trim().Length < 5)">مرحله بعد</button>
+                    </div>
+                </div>
+            }
+            else if (step == 4)
+            {
+                <div class="wr-card">
+                    <div class="wr-card__title">مرحله 4: آپلود تصویر رسید</div>
+
+                    <div class="wr-field mb-4">
+                        <div class="wr-label">تصویر دستگاه/رسید</div>
+                        <ImageUploader @bind-ImageUrl="previewUrl"
+                                       UploadUrl="api/customer-receipts/upload"
+                                       WorkshopId="@uploadWorkshopId"
+                                       RequireWorkshopId="@isSuperAdmin" />
+                    </div>
+
+                    <div class="wr-actions">
+                        <button type="button" class="wr-btn wr-btn--ghost" @onclick="Prev">بازگشت</button>
+                        <button type="button" class="wr-btn" @onclick="Next">مرحله بعد</button>
+                    </div>
+                </div>
+            }
+            else if (step == 5)
+            {
+                <div class="wr-card">
+                    <div class="wr-card__title">مرحله 5: تایید نهایی</div>
+                    
+                    <div class="wr-preview-bill">
+                        <div class="wr-pb-row">
+                            <span class="wr-pb-label">پذیرش توسط</span>
+                            <span class="wr-pb-dots"></span>
+                            <span class="wr-pb-val">@(string.IsNullOrWhiteSpace(currentUserFullName) ? "-" : currentUserFullName)</span>
+                        </div>
+                        <div class="wr-pb-row">
+                            <span class="wr-pb-label">تاریخ ثبت</span>
+                            <span class="wr-pb-dots"></span>
+                            <span class="wr-pb-val ltr">@registeredAtPersian</span>
+                        </div>
+                        <div class="wr-pb-row wr-pb-row--with-action">
+                            <span class="wr-pb-label">مشتری</span>
+                            <span class="wr-pb-dots"></span>
+                            <span class="wr-pb-val">@selectedCustomer?.FirstName @selectedCustomer?.LastName</span>
+                            @if (selectedCustomer != null)
+                            {
+                                <button type="button" class="wr-pb-edit" title="ویرایش مشتری" @onclick="OpenCustomerEditSheet">
+                                    <span class="oi oi-pencil"></span>
+                                </button>
+                            }
+                        </div>
+                        <div class="wr-pb-row">
+                            <span class="wr-pb-label">موبایل</span>
+                            <span class="wr-pb-dots"></span>
+                            <span class="wr-pb-val ltr">@selectedCustomer?.Mobile</span>
+                        </div>
+                        <div class="wr-pb-row">
+                            <span class="wr-pb-label">دستگاه</span>
+                            <span class="wr-pb-dots"></span>
+                            <span class="wr-pb-val">
+                                @(deviceTypes?.FirstOrDefault(x => x.Id == deviceTypeId)?.Name)
+                                @if (deviceBrandId.HasValue)
+                                {
+                                    <span> - @(deviceBrands?.FirstOrDefault(x => x.Id == deviceBrandId.Value)?.Name)</span>
+                                }
+                            </span>
+                        </div>
+                        <div class="wr-pb-row">
+                            <span class="wr-pb-label">تکنسین</span>
+                            <span class="wr-pb-dots"></span>
+                            <span class="wr-pb-val">@(technicians?.FirstOrDefault(x => x.Id == technicianId)?.FullName ?? "نامشخص")</span>
+                        </div>
+                        
+                        <div class="wr-pb-chip-title">شرح مشکل</div>
+                        <div class="wr-pb-chip">@problemDescription</div>
+
+                        @if (!string.IsNullOrEmpty(previewUrl))
+                        {
+                            <div class="wr-pb-chip-title">تصویر ضمیمه</div>
+                            <div class="wr-pb-img-wrap">
+                                <img src="@previewUrl" class="wr-pb-img" />
+                            </div>
+                        }
+                    </div>
+
+                    <div class="wr-actions">
+                        <button type="button" class="wr-btn wr-btn--ghost" @onclick="Prev">ویرایش</button>
+                        <button type="button" class="wr-btn" @onclick="Submit" disabled="@isSubmitting">
+                            @if (isSubmitting) { <span class="spinner-border spinner-border-sm"></span> }
+                            تایید و ثبت نهایی
+                        </button>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@if (showCustomerEditSheet && selectedCustomer != null)
+{
+    <div class="wr-sheet-backdrop @(customerSheetVisible ? "wr-sheet-backdrop--visible" : "")" @onclick="CloseCustomerEditSheet"></div>
+    <div class="wr-bottom-sheet @(customerSheetVisible ? "wr-bottom-sheet--visible" : "")" @onclick:stopPropagation>
+        <div class="wr-bottom-sheet__handle" aria-hidden="true"></div>
+        <div class="wr-bottom-sheet__header">
+            <h3 class="wr-bottom-sheet__title">ویرایش اطلاعات مشتری</h3>
+            <button type="button" class="wr-bottom-sheet__close" title="بستن" @onclick="CloseCustomerEditSheet">
+                <span class="oi oi-x"></span>
+            </button>
+        </div>
+
+        <EditForm Model="editCustomer" OnValidSubmit="SaveCustomerEdit">
+            <DataAnnotationsValidator />
+
+            <div class="wr-sheet-customer-preview">
+                <div class="wr-customer-avatar wr-customer-avatar--lg">@GetCustomerInitial(selectedCustomer)</div>
+                <div class="wr-sheet-customer-preview__meta">
+                    <div class="wr-sheet-customer-preview__label">شماره موبایل فعلی</div>
+                    <div class="wr-sheet-customer-preview__mobile ltr">@selectedCustomer.Mobile</div>
+                </div>
+            </div>
+
+            <div class="wr-sheet-form">
+                <div class="wr-field">
+                    <div class="wr-label">نام</div>
+                    <input class="wr-input" @bind="editCustomer.FirstName" placeholder="نام" />
+                    <ValidationMessage For="() => editCustomer.FirstName" />
+                </div>
+                <div class="wr-field">
+                    <div class="wr-label">نام خانوادگی</div>
+                    <input class="wr-input" @bind="editCustomer.LastName" placeholder="نام خانوادگی" />
+                    <ValidationMessage For="() => editCustomer.LastName" />
+                </div>
+                <div class="wr-field">
+                    <div class="wr-label">شماره موبایل جدید</div>
+                    <input class="wr-input ltr" @bind="editCustomer.Mobile" placeholder="09xxxxxxxxx" inputmode="tel" @onblur="NormalizeEditMobile" />
+                    <ValidationMessage For="() => editCustomer.Mobile" />
+                    @if (!string.IsNullOrWhiteSpace(editCustomer.Mobile) && editCustomer.Mobile != selectedCustomer.Mobile)
+                    {
+                        <div class="wr-hint wr-hint--warning">توجه: با تغییر شماره موبایل، تاریخچه مشتری به شماره جدید منتقل می‌شود.</div>
+                    }
+                </div>
+                <div class="wr-field">
+                    <div class="wr-label">آدرس</div>
+                    <textarea class="wr-textarea wr-textarea--compact" rows="3" @bind="editCustomer.Address" placeholder="اختیاری"></textarea>
+                    <ValidationMessage For="() => editCustomer.Address" />
+                </div>
+            </div>
+
+            <div class="wr-bottom-sheet__footer">
+                <button type="button" class="wr-btn wr-btn--ghost wr-btn--block" @onclick="CloseCustomerEditSheet" disabled="@isSavingCustomerEdit">انصراف</button>
+                <button type="submit" class="wr-btn wr-btn--block" disabled="@isSavingCustomerEdit">
+                    @if (isSavingCustomerEdit) { <span class="spinner-border spinner-border-sm"></span> }
+                    ذخیره تغییرات
+                </button>
+            </div>
+        </EditForm>
+    </div>
+}
+
+<!-- Device Type Modal -->
+@if (showDeviceTypeModal)
+{
+    <div class="modal-overlay" @onclick="() => { showDeviceTypeModal = false; ResetDeviceTypeForm(); }">
+        <div class="modal-content modal-content--large" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3 class="modal-title">مدیریت نوع دستگاه‌ها</h3>
+                <button class="modal-close" @onclick="() => { showDeviceTypeModal = false; ResetDeviceTypeForm(); }">
+                    <span class="oi oi-x"></span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-form-section">
+                    <div class="modal-field">
+                        <label class="modal-label">@(!isEditingDeviceType ? "افزودن نوع دستگاه جدید" : "ویرایش نوع دستگاه")</label>
+                        <div class="modal-input-row">
+                            <input class="modal-input modal-input--flex" @bind="newDeviceType.Name" placeholder="مثلاً: یخچال، تلویزیون، ماشین لباسشویی" />
+                            <button class="modal-btn modal-btn--primary modal-btn--small" @onclick="AddDeviceType" disabled="@isSavingDeviceType">
+                                @if (isSavingDeviceType) { <span class="spinner-border spinner-border-sm"></span> }
+                                @(isEditingDeviceType ? "ذخیره" : "افزودن")
+                            </button>
+                            @if (isEditingDeviceType)
+                            {
+                                <button class="modal-btn modal-btn--ghost modal-btn--small" @onclick="ResetDeviceTypeForm">انصراف</button>
+                            }
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="modal-divider"></div>
+                
+                <div class="modal-list-section">
+                    <label class="modal-label">لیست نوع دستگاه‌ها</label>
+                    @if (allDeviceTypes == null || allDeviceTypes.Count == 0)
+                    {
+                        <div class="modal-empty">نوع دستگاهی یافت نشد</div>
+                    }
+                    else
+                    {
+                        <div class="modal-list">
+                            @foreach (var dt in allDeviceTypes)
+                            {
+                                <div class="modal-list-item">
+                                    <span class="modal-list-item__name">@dt.Name</span>
+                                    <div class="modal-list-item__actions">
+                                        <button class="modal-action-btn modal-action-btn--edit" @onclick="() => EditDeviceType(dt)" title="ویرایش">
+                                            <span class="oi oi-pencil"></span>
+                                        </button>
+                                        <button class="modal-action-btn modal-action-btn--delete" @onclick="() => DeleteDeviceType(dt.Id)" title="حذف">
+                                            <span class="oi oi-trash"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Device Brand Modal -->
+@if (showDeviceBrandModal)
+{
+    <div class="modal-overlay" @onclick="() => { showDeviceBrandModal = false; ResetDeviceBrandForm(); }">
+        <div class="modal-content modal-content--large" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3 class="modal-title">مدیریت برندها</h3>
+                <button class="modal-close" @onclick="() => { showDeviceBrandModal = false; ResetDeviceBrandForm(); }">
+                    <span class="oi oi-x"></span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-form-section">
+                    <div class="modal-field">
+                        <label class="modal-label">@(!isEditingDeviceBrand ? "افزودن برند جدید" : "ویرایش برند")</label>
+                        <div class="modal-input-row">
+                            <input class="modal-input modal-input--flex" @bind="newDeviceBrand.Name" placeholder="مثلاً: سامسونگ، ال‌جی، امرسان" />
+                            <button class="modal-btn modal-btn--primary modal-btn--small" @onclick="AddDeviceBrand" disabled="@isSavingDeviceBrand">
+                                @if (isSavingDeviceBrand) { <span class="spinner-border spinner-border-sm"></span> }
+                                @(isEditingDeviceBrand ? "ذخیره" : "افزودن")
+                            </button>
+                            @if (isEditingDeviceBrand)
+                            {
+                                <button class="modal-btn modal-btn--ghost modal-btn--small" @onclick="ResetDeviceBrandForm">انصراف</button>
+                            }
+                        </div>
+                        @if (!isEditingDeviceBrand && deviceTypeId <= 0)
+                        {
+                            <div class="modal-hint">برای افزودن برند، ابتدا نوع دستگاه را انتخاب کنید</div>
+                        }
+                    </div>
+                </div>
+                
+                <div class="modal-divider"></div>
+                
+                <div class="modal-list-section">
+                    <label class="modal-label">لیست برندها</label>
+                    @if (allDeviceBrands == null || allDeviceBrands.Count == 0)
+                    {
+                        <div class="modal-empty">برندی یافت نشد</div>
+                    }
+                    else
+                    {
+                        <div class="modal-list">
+                            @foreach (var db in allDeviceBrands)
+                            {
+                                <div class="modal-list-item">
+                                    <div class="modal-list-item__info">
+                                        <span class="modal-list-item__name">@db.Name</span>
+                                        @if (!string.IsNullOrWhiteSpace(db.DeviceTypeName))
+                                        {
+                                            <span class="modal-list-item__sub">@db.DeviceTypeName</span>
+                                        }
+                                    </div>
+                                    <div class="modal-list-item__actions">
+                                        <button class="modal-action-btn modal-action-btn--edit" @onclick="() => EditDeviceBrand(db)" title="ویرایش">
+                                            <span class="oi oi-pencil"></span>
+                                        </button>
+                                        <button class="modal-action-btn modal-action-btn--delete" @onclick="() => DeleteDeviceBrand(db.Id)" title="حذف">
+                                            <span class="oi oi-trash"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<ConfirmDialog IsVisible="showDeleteDeviceTypeConfirm"
+               Title="حذف نوع دستگاه"
+               Message="آیا از حذف این نوع دستگاه اطمینان دارید؟"
+               OnResult="HandleDeleteDeviceTypeConfirm" />
+
+ <ConfirmDialog IsVisible="showDeleteDeviceBrandConfirm"
+               Title="حذف برند"
+               Message="آیا از حذف این برند اطمینان دارید؟"
+               OnResult="HandleDeleteDeviceBrandConfirm" />
+
+<!-- SMS Confirmation Modal -->
+@if (showSmsModal && createdReceipt != null)
+{
+    var customerName = $"{createdReceipt.CustomerFirstName} {createdReceipt.CustomerLastName}";
+    var regDate = PersianDateHelper.ToPersianDateTimeString(createdReceipt.RegisteredAt, false);
+
+    <div class="sms-overlay @(smsSent ? "sms-overlay--sent" : "")" @onclick="CloseSmsModal">
+        <div class="sms-sheet" @onclick:stopPropagation>
+            <div class="sms-sheet-handle"></div>
+
+            <div class="sms-sheet-header">
+                <div class="sms-sheet-icon">
+                    <span class="oi oi-envelope-open"></span>
+                </div>
+                <h3 class="sms-sheet-title">ارسال پیامک تأیید پذیرش</h3>
+                <p class="sms-sheet-subtitle">پس از تأیید، پیامک برای مشتری ارسال می‌شود</p>
+            </div>
+
+            <div class="sms-sheet-body">
+                <!-- Receipt Summary Chips -->
+                <div class="sms-chips-row">
+                    <span class="sms-chip sms-chip--customer">
+                        <span class="sms-chip-icon oi oi-person"></span>
+                        @customerName
+                    </span>
+                    <span class="sms-chip sms-chip--mobile">
+                        <span class="sms-chip-icon oi oi-phone"></span>
+                        @createdReceipt.CustomerMobile
+                    </span>
+                    <span class="sms-chip sms-chip--device">
+                        <span class="sms-chip-icon oi oi-wrench"></span>
+                        @createdReceipt.DeviceTypeName (@(createdReceipt.DeviceBrandName ?? ""))
+                    </span>
+                    <span class="sms-chip sms-chip--workshop">
+                        <span class="sms-chip-icon oi oi-briefcase"></span>
+                        @createdReceipt.WorkshopName
+                    </span>
+                    <span class="sms-chip sms-chip--date">
+                        <span class="sms-chip-icon oi oi-calendar"></span>
+                        @regDate
+                    </span>
+                    <span class="sms-chip sms-chip--id">
+                        <span class="sms-chip-icon oi oi-tag"></span>
+                        #@createdReceipt.Id
+                    </span>
+                </div>
+
+                <!-- SMS Preview -->
+                <div class="sms-preview-section">
+                    <div class="sms-preview-header">
+                        <span class="oi oi-comment-square"></span>
+                        پیش‌نمایش پیامک
+                    </div>
+                    <div class="sms-preview-bubble">
+                        <pre class="sms-preview-text">@smsPreviewText</pre>
+                    </div>
+                </div>
+
+                @if (smsSent)
+                {
+                    <div class="sms-success-banner">
+                        <span class="oi oi-circle-check"></span>
+                        پیامک با موفقیت ارسال شد
+                    </div>
+                }
+            </div>
+
+            <div class="sms-sheet-footer">
+                @if (!smsSent)
+                {
+                    <button class="sms-btn sms-btn--primary" @onclick="SendSms" disabled="@isSendingSms">
+                        @if (isSendingSms) { <span class="spinner-border spinner-border-sm"></span> }
+                        <span class="oi oi-envelope-closed"></span>
+                        ارسال پیامک
+                    </button>
+                    <button class="sms-btn sms-btn--ghost" @onclick="CloseSmsModal">بعداً ارسال می‌کنم</button>
+                }
+                else
+                {
+                    <button class="sms-btn sms-btn--primary" @onclick="NavToList">
+                        <span class="oi oi-arrow-right"></span>
+                        بازگشت به لیست رسیدها
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    :root {
+        --wr-bg: #f6f7ff;
+        --wr-surface: #ffffff;
+        --wr-text: #0f172a;
+        --wr-muted: #64748b;
+        --wr-border: rgba(2, 6, 23, 0.06);
+        --wr-primary: #4f46e5;
+        --wr-primary-2: #7c3aed;
+        --wr-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+        --wr-radius: 22px;
+    }
+
+    .ltr { direction: ltr; }
+
+    .wr-page {
+        min-height: 100vh;
+        background:
+            radial-gradient(900px 240px at 90% 0%, rgba(124, 58, 237, 0.12), rgba(124, 58, 237, 0) 60%),
+            radial-gradient(700px 220px at 10% 0%, rgba(79, 70, 229, 0.14), rgba(79, 70, 229, 0) 55%),
+            var(--wr-bg);
+        padding-bottom: 80px;
+    }
+
+    .wr-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        background: rgba(246, 247, 255, 0.78);
+        border-bottom: 1px solid rgba(2, 6, 23, 0.06);
+        padding: 14px 16px 12px;
+    }
+
+    .wr-header__row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+    }
+
+    .wr-back {
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        border-radius: 16px;
+        text-decoration: none;
+        background: rgba(255,255,255,0.8);
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        color: var(--wr-text);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    .wr-header__kicker {
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: rgba(79, 70, 229, 0.95);
+    }
+
+    .wr-header__main {
+        font-size: 1.05rem;
+        font-weight: 900;
+        color: var(--wr-text);
+        line-height: 1.2;
+    }
+
+    .wr-steps {
+        display: grid;
+        grid-template-columns: 28px 1fr 28px 1fr 28px 1fr 28px 1fr 28px;
+        align-items: center;
+        gap: 8px;
+        margin-top: 16px;
+        padding: 0 16px;
+    }
+
+    .wr-step {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        font-weight: 900;
+        font-size: 0.85rem;
+        background: rgba(15, 23, 42, 0.06);
+        color: rgba(15, 23, 42, 0.55);
+    }
+
+    .wr-step--active {
+        background: rgba(79, 70, 229, 0.14);
+        color: var(--wr-primary);
+        border: 1px solid rgba(79, 70, 229, 0.22);
+    }
+
+    .wr-step--done {
+        background: rgba(16, 185, 129, 0.12);
+        color: rgba(16, 185, 129, 0.95);
+        border: 1px solid rgba(16, 185, 129, 0.22);
+    }
+
+    .wr-step-line {
+        height: 2px;
+        background: rgba(2, 6, 23, 0.08);
+        border-radius: 999px;
+    }
+
+    .wr-shell {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 16px 1px;
+    }
+
+    .wr-card {
+        background: var(--wr-surface);
+        border: 1px solid var(--wr-border);
+        border-radius: var(--wr-radius);
+        box-shadow: var(--wr-shadow);
+        padding: 16px;
+    }
+
+    .wr-card__title {
+        font-weight: 900;
+        color: var(--wr-text);
+        margin-bottom: 14px;
+    }
+
+    .wr-card__subtitle {
+        font-weight: 900;
+        color: rgba(15, 23, 42, 0.85);
+        margin: 12px 0 10px;
+        font-size: 0.9rem;
+    }
+
+    .wr-field { margin-bottom: 12px; }
+
+    .wr-label {
+        font-weight: 900;
+        font-size: 0.8rem;
+        color: rgba(15, 23, 42, 0.80);
+        margin-bottom: 8px;
+    }
+
+    .wr-hint {
+        font-size: 0.75rem;
+        color: var(--wr-muted);
+        margin-top: 4px;
+    }
+
+    .wr-mini-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        border: 1px solid var(--wr-border);
+        background: var(--wr-surface);
+        color: var(--wr-primary);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 0.9rem;
+    }
+
+    .wr-mini-btn:hover:not(:disabled) {
+        background: var(--wr-primary);
+        color: white;
+        border-color: var(--wr-primary);
+        transform: scale(1.05);
+    }
+
+    .wr-mini-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .wr-input-wrap { position: relative; }
+
+    .wr-input-icon {
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: rgba(100, 116, 139, 0.9);
+        font-size: 1rem;
+    }
+
+    .wr-input, .wr-select, .wr-textarea {
+        width: 100%;
+        border-radius: 18px;
+        border: 1px solid rgba(79, 70, 229, 0.18);
+        background: rgba(79, 70, 229, 0.05);
+        padding: 12px 14px;
+        outline: none;
+        font-weight: 800;
+        color: var(--wr-text);
+    }
+
+    .wr-select--flex {
+        flex: 1;
+    }
+
+    .wr-input-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .wr-input { padding-right: 42px; }
+
+    .wr-input--has-clear { padding-left: 42px; }
+
+    .wr-input-clear {
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 32px;
+        height: 32px;
+        border: none;
+        border-radius: 10px;
+        background: rgba(100, 116, 139, 0.12);
+        color: rgba(71, 85, 105, 0.95);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .wr-input-clear:hover {
+        background: rgba(239, 68, 68, 0.12);
+        color: rgba(220, 38, 38, 0.95);
+    }
+
+    .wr-textarea {
+        min-height: 140px;
+        resize: vertical;
+        padding-right: 14px;
+    }
+
+    .wr-input:focus, .wr-select:focus, .wr-textarea:focus {
+        border-color: var(--wr-primary);
+        box-shadow: 0 0 0 5px rgba(79, 70, 229, 0.08);
+        background: var(--wr-surface);
+    }
+
+    .wr-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .wr-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: space-between;
+        margin-top: 12px;
+    }
+
+    .wr-btn {
+        border: 0;
+        border-radius: 999px;
+        padding: 12px 16px;
+        background: linear-gradient(135deg, var(--wr-primary), var(--wr-primary-2));
+        color: #fff;
+        font-weight: 900;
+        box-shadow: 0 14px 34px rgba(79, 70, 229, 0.22);
+        min-width: 140px;
+    }
+
+    .wr-btn:disabled {
+        opacity: 0.55;
+        box-shadow: none;
+    }
+
+    .wr-btn--secondary {
+        background: rgba(15, 23, 42, 0.06);
+        color: rgba(15, 23, 42, 0.85);
+        box-shadow: none;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+    }
+
+    .wr-btn--ghost {
+        background: transparent;
+        color: rgba(15, 23, 42, 0.85);
+        box-shadow: none;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+    }
+
+    .wr-btn--select-customer {
+        width: 100%;
+        padding: 14px 20px;
+        font-size: 0.95rem;
+        justify-content: center;
+        background: #f8fafc;
+        color: #0f172a;
+        border: 2px dashed #cbd5e1;
+        box-shadow: none;
+        min-width: unset;
+        border-radius: 14px;
+    }
+
+    .wr-btn--select-customer:hover {
+        background: #f1f5f9;
+        border-color: #6366f1;
+    }
+
+    .wr-divider {
+        height: 1px;
+        background: rgba(2, 6, 23, 0.06);
+        margin: 14px 0;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+        z-index: 2000;
+        display: grid;
+        place-items: center;
+        padding: 16px;
+    }
+
+    .modal-content {
+        background: var(--wr-surface);
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+        max-width: 400px;
+        width: 100%;
+        max-height: 85vh;
+        overflow: hidden;
+        animation: modal-in 0.3s ease;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-content--large {
+        max-width: 500px;
+    }
+
+    @@keyframes modal-in {
+        from {
+            opacity: 0;
+            transform: scale(0.95) translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+    }
+
+    .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 20px 16px;
+        border-bottom: 1px solid var(--wr-border);
+        flex-shrink: 0;
+    }
+
+    .modal-title {
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: var(--wr-text);
+        margin: 0;
+    }
+
+    .modal-close {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: none;
+        background: rgba(0, 0, 0, 0.05);
+        color: var(--wr-muted);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 1.1rem;
+    }
+
+    .modal-close:hover {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    .modal-body {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-form-section {
+        padding-bottom: 16px;
+        flex-shrink: 0;
+    }
+
+    .modal-divider {
+        height: 1px;
+        background: var(--wr-border);
+        margin: 16px 0;
+        flex-shrink: 0;
+    }
+
+    .modal-list-section {
+        padding-top: 8px;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-list {
+        display: grid;
+        gap: 8px;
+        overflow-y: auto;
+        max-height: 300px;
+        padding-right: 4px;
+    }
+
+    .modal-list::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .modal-list::-webkit-scrollbar-track {
+        background: var(--wr-bg);
+        border-radius: 3px;
+    }
+
+    .modal-list::-webkit-scrollbar-thumb {
+        background: var(--wr-border);
+        border-radius: 3px;
+    }
+
+    .modal-list::-webkit-scrollbar-thumb:hover {
+        background: var(--wr-muted);
+    }
+
+    .modal-empty {
+        text-align: center;
+        padding: 24px;
+        color: var(--wr-muted);
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+
+    .modal-list-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        background: var(--wr-bg);
+        border-radius: 12px;
+        border: 1px solid var(--wr-border);
+        transition: all 0.2s ease;
+    }
+
+    .modal-list-item:hover {
+        border-color: var(--wr-primary);
+        background: rgba(79, 70, 229, 0.03);
+    }
+
+    .modal-list-item__info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1;
+    }
+
+    .modal-list-item__name {
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: var(--wr-text);
+    }
+
+    .modal-list-item__sub {
+        font-size: 0.75rem;
+        color: var(--wr-muted);
+        font-weight: 600;
+    }
+
+    .modal-list-item__actions {
+        display: flex;
+        gap: 6px;
+    }
+
+    .modal-action-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: none;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 0.85rem;
+    }
+
+    .modal-action-btn--edit {
+        background: rgba(79, 70, 229, 0.1);
+        color: var(--wr-primary);
+    }
+
+    .modal-action-btn--edit:hover {
+        background: var(--wr-primary);
+        color: white;
+    }
+
+    .modal-action-btn--delete {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    .modal-action-btn--delete:hover {
+        background: #ef4444;
+        color: white;
+    }
+
+    .modal-input-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .modal-input--flex {
+        flex: 1;
+    }
+
+    .modal-btn--small {
+        padding: 10px 16px;
+        font-size: 0.85rem;
+        min-width: auto;
+    }
+
+    .modal-hint {
+        font-size: 0.75rem;
+        color: var(--wr-muted);
+        margin-top: 6px;
+        font-weight: 600;
+    }
+
+    .modal-field {
+        margin-bottom: 16px;
+    }
+
+    .modal-label {
+        display: block;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--wr-text);
+        margin-bottom: 8px;
+    }
+
+    .modal-input {
+        width: 100%;
+        padding: 12px 16px;
+        border-radius: 12px;
+        border: 1px solid var(--wr-border);
+        background: var(--wr-bg);
+        color: var(--wr-text);
+        font-size: 0.9rem;
+        font-weight: 600;
+        outline: none;
+        transition: all 0.2s ease;
+    }
+
+    .modal-input:focus {
+        border-color: var(--wr-primary);
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    }
+
+    .modal-btn {
+        flex: 1;
+        padding: 12px 20px;
+        border-radius: 12px;
+        border: none;
+        font-size: 0.9rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .modal-btn--ghost {
+        background: rgba(0, 0, 0, 0.05);
+        color: var(--wr-text);
+    }
+
+    .modal-btn--ghost:hover {
+        background: rgba(0, 0, 0, 0.1);
+    }
+
+    .modal-btn--primary {
+        background: var(--wr-primary);
+        color: white;
+    }
+
+    .modal-btn--primary:hover:not(:disabled) {
+        background: var(--wr-primary-2);
+        transform: translateY(-1px);
+    }
+
+    .modal-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    @@media (max-width: 576px) {
+        .modal-content,
+        .modal-content--large {
+            max-width: 100%;
+            border-radius: 16px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 16px;
+            flex-shrink: 0;
+        }
+
+        .modal-body {
+            padding-left: 16px;
+            padding-right: 16px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .modal-list {
+            max-height: 250px;
+        }
+
+        .modal-input-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .modal-btn--small {
+            width: 100%;
+        }
+    }
+
+    .wr-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 10px;
+    }
+
+    .wr-list-item {
+        width: 100%;
+        text-align: right;
+        border-radius: 18px;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        background: #fff;
+        padding: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .wr-list-item__title { font-weight: 900; color: var(--wr-text); }
+    .wr-list-item__sub { font-weight: 800; color: rgba(100, 116, 139, 0.95); font-size: 0.78rem; direction: ltr; text-align: left; }
+    .wr-list-item__meta { font-weight: 900; color: rgba(79, 70, 229, 0.95); font-size: 0.78rem; }
+
+    .wr-empty {
+        margin-top: 10px;
+        border-radius: 18px;
+        border: 1px dashed rgba(239, 68, 68, 0.3);
+        background: rgba(239, 68, 68, 0.05);
+        padding: 12px;
+        font-weight: 800;
+        color: rgba(239, 68, 68, 0.95);
+        font-size: 0.8rem;
+    }
+
+    .wr-customer-card {
+        margin-top: 12px;
+        border-radius: 20px;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(79, 70, 229, 0.04));
+        padding: 14px;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+    }
+
+    .wr-customer-card__body {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .wr-customer-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(79, 70, 229, 0.95), rgba(16, 185, 129, 0.9));
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-weight: 900;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+        box-shadow: 0 8px 18px rgba(79, 70, 229, 0.25);
+    }
+
+    .wr-customer-avatar--lg {
+        width: 56px;
+        height: 56px;
+        font-size: 1.25rem;
+        border-radius: 18px;
+    }
+
+    .wr-customer-card__info { flex: 1; min-width: 0; }
+
+    .wr-customer-card__name {
+        font-weight: 900;
+        color: var(--wr-text);
+        font-size: 1rem;
+        line-height: 1.3;
+    }
+
+    .wr-customer-card__mobile {
+        margin-top: 4px;
+        font-weight: 800;
+        color: rgba(71, 85, 105, 0.95);
+        font-size: 0.85rem;
+    }
+
+    .wr-customer-card__addr {
+        margin-top: 6px;
+        color: rgba(100, 116, 139, 0.95);
+        font-weight: 700;
+        font-size: 0.78rem;
+        line-height: 1.5;
+    }
+
+    .wr-customer-card__addr--empty {
+        color: rgba(148, 163, 184, 0.9);
+        font-style: italic;
+    }
+
+    .wr-customer-card__actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(15, 23, 42, 0.06);
+    }
+
+    .wr-customer-card__btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border: none;
+        border-radius: 14px;
+        padding: 10px 12px;
+        font-weight: 800;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .wr-customer-card__btn:active {
+        transform: scale(0.98);
+    }
+
+    .wr-customer-card__btn--edit {
+        background: rgba(79, 70, 229, 0.12);
+        color: rgba(67, 56, 202, 0.98);
+        box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.18);
+    }
+
+    .wr-customer-card__btn--edit:hover {
+        background: rgba(79, 70, 229, 0.18);
+    }
+
+    .wr-customer-card__btn--clear {
+        background: rgba(239, 68, 68, 0.1);
+        color: rgba(220, 38, 38, 0.95);
+    }
+
+    .wr-customer-card__btn--clear:hover {
+        background: rgba(239, 68, 68, 0.16);
+    }
+
+    .wr-pb-row--with-action {
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .wr-pb-edit {
+        margin-right: auto;
+        width: 34px;
+        height: 34px;
+        border: none;
+        border-radius: 12px;
+        background: rgba(79, 70, 229, 0.1);
+        color: rgba(67, 56, 202, 0.98);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
+    .wr-pb-edit:hover {
+        background: rgba(79, 70, 229, 0.18);
+    }
+
+    .wr-sheet-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        background: rgba(15, 23, 42, 0.45);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.22s ease;
+    }
+
+    .wr-sheet-backdrop--visible {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .wr-bottom-sheet {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1201;
+        max-height: min(88vh, 720px);
+        overflow: auto;
+        background: #fff;
+        border-radius: 24px 24px 0 0;
+        padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+        box-shadow: 0 -20px 50px rgba(15, 23, 42, 0.18);
+        transform: translateY(100%);
+        transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    .wr-bottom-sheet--visible {
+        transform: translateY(0);
+    }
+
+    .wr-bottom-sheet__handle {
+        width: 42px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.55);
+        margin: 6px auto 12px;
+    }
+
+    .wr-bottom-sheet__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+
+    .wr-bottom-sheet__title {
+        margin: 0;
+        font-weight: 900;
+        font-size: 1.05rem;
+        color: var(--wr-text);
+    }
+
+    .wr-bottom-sheet__close {
+        width: 38px;
+        height: 38px;
+        border: none;
+        border-radius: 12px;
+        background: rgba(241, 245, 249, 0.95);
+        color: rgba(71, 85, 105, 0.95);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+    }
+
+    .wr-sheet-customer-preview {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border-radius: 16px;
+        background: rgba(241, 245, 249, 0.75);
+        margin-bottom: 14px;
+    }
+
+    .wr-sheet-customer-preview__label {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: rgba(100, 116, 139, 0.95);
+    }
+
+    .wr-sheet-customer-preview__mobile {
+        font-weight: 900;
+        color: var(--wr-text);
+        font-size: 0.95rem;
+        margin-top: 2px;
+    }
+
+    .wr-sheet-form {
+        display: grid;
+        gap: 12px;
+    }
+
+    .wr-textarea--compact {
+        min-height: 88px;
+    }
+
+    .wr-bottom-sheet__footer {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(15, 23, 42, 0.06);
+    }
+
+    .wr-btn--block {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .wr-upload {
+        border-radius: var(--wr-radius);
+        border: 2px dashed rgba(79, 70, 229, 0.22);
+        background: rgba(79, 70, 229, 0.05);
+        padding: 18px;
+        position: relative;
+        min-height: 260px;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+    }
+
+    .wr-upload__input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+    }
+
+    .wr-upload__placeholder {
+        text-align: center;
+    }
+
+    .wr-upload__icon {
+        width: 72px;
+        height: 72px;
+        border-radius: 24px;
+        background: #fff;
+        display: grid;
+        place-items: center;
+        color: var(--wr-primary);
+        font-size: 2rem;
+        margin: 0 auto 10px;
+        box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+    }
+
+    .wr-upload__title { font-weight: 900; color: var(--wr-text); }
+    .wr-upload__sub { font-weight: 800; color: rgba(100, 116, 139, 0.95); font-size: 0.78rem; margin-top: 6px; }
+
+    .wr-preview { width: 100%; }
+    .wr-preview__img {
+        width: 100%;
+        max-height: 320px;
+        object-fit: contain;
+        border-radius: 18px;
+        background: #fff;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        padding: 8px;
+    }
+
+    .wr-preview__actions {
+        display: flex;
+        justify-content: center;
+        margin-top: 10px;
+    }
+
+    /* Preview Bill Styles */
+    .wr-preview-bill {
+        background: #fff;
+        border: 1px solid var(--wr-border);
+        border-radius: 24px;
+        padding: 24px;
+        margin-bottom: 24px;
+        position: relative;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.03);
+    }
+
+    .wr-pb-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 16px;
+        font-size: 0.95rem;
+    }
+
+    .wr-pb-label {
+        font-weight: 800;
+        color: var(--wr-muted);
+        white-space: nowrap;
+        font-size: 0.85rem;
+    }
+
+    .wr-pb-dots {
+        flex: 1;
+        border-bottom: 2px dotted #cbd5e1;
+        margin: 0 12px;
+        height: 12px;
+        opacity: 0.5;
+    }
+
+    .wr-pb-val {
+        font-weight: 900;
+        color: var(--wr-text);
+        background: #f8fafc;
+        padding: 4px 12px;
+        border-radius: 10px;
+        font-size: 0.9rem;
+    }
+
+    .wr-pb-chip-title {
+        font-weight: 900;
+        font-size: 0.8rem;
+        color: var(--wr-primary);
+        margin: 20px 0 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    
+    .wr-pb-chip-title::before {
+        content: '';
+        width: 4px;
+        height: 16px;
+        background: var(--wr-primary);
+        border-radius: 2px;
+    }
+
+    .wr-pb-chip {
+        background: #f1f5f9;
+        border-radius: 16px;
+        padding: 16px;
+        font-weight: 800;
+        color: var(--wr-text);
+        font-size: 0.9rem;
+        line-height: 1.7;
+        border: 1px solid rgba(0,0,0,0.02);
+    }
+
+    .wr-pb-img-wrap {
+        margin-top: 10px;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid var(--wr-border);
+    }
+
+    .wr-pb-img {
+        width: 100%;
+        max-height: 200px;
+        object-fit: cover;
+    }
+
+    .wr-alert {
+        border-radius: 18px;
+        padding: 12px;
+        font-weight: 900;
+        margin-bottom: 12px;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+    }
+
+    .wr-alert--warning {
+        background: rgba(245, 158, 11, 0.10);
+        border-color: rgba(245, 158, 11, 0.18);
+        color: rgba(120, 53, 15, 0.95);
+    }
+
+    .wr-loading {
+        display: grid;
+        place-items: center;
+        padding: 30px 0;
+        gap: 10px;
+    }
+
+    .wr-loading__text {
+        font-weight: 900;
+        color: rgba(100, 116, 139, 0.95);
+    }
+
+    @@media (min-width: 768px) {
+        .wr-card { padding: 20px; }
+        .wr-grid { grid-template-columns: 1fr 1fr; }
+        .wr-actions { justify-content: flex-end; }
+    }
+
+    @@media (max-width: 576px) {
+        .wr-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .wr-input-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .wr-mini-btn {
+            width: 100%;
+            height: 36px;
+        }
+
+        .wr-select--flex {
+            width: 100%;
+        }
+    }
+
+    /* Workshop Warning Overlay */
+    .workshop-warning-overlay {
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(252, 165, 165, 0.12));
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 16px;
+        border: 1px solid rgba(245, 158, 11, 0.25);
+        backdrop-filter: blur(8px);
+    }
+
+    .workshop-warning-content {
+        text-align: center;
+        color: #92400e;
+    }
+
+    .workshop-warning-icon {
+        font-size: 32px;
+        margin-bottom: 8px;
+        animation: workshop-pulse 2.5s ease-in-out infinite;
+    }
+
+    @@keyframes workshop-pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.05); opacity: 0.9; }
+    }
+
+    .workshop-warning-title {
+        font-size: 1.1rem;
+        font-weight: 800;
+        margin-bottom: 6px;
+        color: #92400e;
+    }
+
+    .workshop-warning-text {
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-bottom: 14px;
+        opacity: 0.9;
+        line-height: 1.5;
+        color: #78350f;
+    }
+
+    .workshop-warning-steps {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        text-align: right;
+    }
+
+    .workshop-warning-step {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: rgba(255, 255, 255, 0.6);
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(245, 158, 11, 0.15);
+    }
+
+    .step-number {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        background: linear-gradient(135deg, #f59e0b, #f97316);
+        color: white;
+        border-radius: 50%;
+        font-weight: 800;
+        font-size: 0.8rem;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.25);
+    }
+
+    .step-text {
+        font-weight: 600;
+        font-size: 0.82rem;
+        color: #78350f;
+    }
+
+    /* Disabled Shell */
+    .wr-shell--disabled {
+        opacity: 0.5;
+        pointer-events: none;
+        filter: grayscale(0.6);
+    }
+
+    @@media (max-width: 576px) {
+        .workshop-warning-overlay {
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 12px;
+        }
+
+        .workshop-warning-icon {
+            font-size: 28px;
+            margin-bottom: 6px;
+        }
+
+        .workshop-warning-title {
+            font-size: 1rem;
+            margin-bottom: 4px;
+        }
+
+        .workshop-warning-text {
+            font-size: 0.8rem;
+            margin-bottom: 10px;
+        }
+
+        .workshop-warning-step {
+            padding: 8px 10px;
+            gap: 8px;
+        }
+
+        .step-number {
+            width: 24px;
+            height: 24px;
+            font-size: 0.75rem;
+        }
+
+        .step-text {
+            font-size: 0.78rem;
+        }
+    }
+
+    /* SMS Confirmation Modal - Bottom Sheet / Center Modal */
+    .sms-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1060;
+        padding: 16px;
+        animation: sms-fade-in 0.2s ease;
+    }
+
+    .sms-sheet {
+        background: #fff;
+        border-radius: 20px;
+        max-width: 480px;
+        width: 100%;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+        animation: sms-scale-in 0.25s ease;
+        direction: rtl;
+    }
+
+    .sms-sheet-handle {
+        display: none;
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: #cbd5e1;
+        margin: 8px auto 0;
+    }
+
+    .sms-sheet-header {
+        text-align: center;
+        padding: 24px 24px 16px;
+        border-bottom: 2px dashed #e2e8f0;
+    }
+
+    .sms-sheet-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 12px;
+        font-size: 1.3rem;
+        color: #fff;
+    }
+
+    .sms-sheet-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0 0 4px;
+    }
+
+    .sms-sheet-subtitle {
+        font-size: 0.8rem;
+        color: #64748b;
+        margin: 0;
+    }
+
+    .sms-sheet-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px 24px;
+    }
+
+    .sms-chips-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 20px;
+    }
+
+    .sms-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        font-weight: 500;
+        border: 1.5px dashed;
+        line-height: 1.5;
+    }
+
+    .sms-chip-icon {
+        font-size: 0.7rem;
+        opacity: 0.8;
+    }
+
+    .sms-chip--customer {
+        background: #eef2ff;
+        color: #4338ca;
+        border-color: #a5b4fc;
+    }
+
+    .sms-chip--mobile {
+        background: #f0f9ff;
+        color: #0369a1;
+        border-color: #7dd3fc;
+    }
+
+    .sms-chip--device {
+        background: #fef2f2;
+        color: #b91c1c;
+        border-color: #fca5a5;
+    }
+
+    .sms-chip--workshop {
+        background: #f0fdf4;
+        color: #15803d;
+        border-color: #86efac;
+    }
+
+    .sms-chip--date {
+        background: #fffbeb;
+        color: #a16207;
+        border-color: #fde68a;
+    }
+
+    .sms-chip--id {
+        background: #f5f3ff;
+        color: #6d28d9;
+        border-color: #c4b5fd;
+    }
+
+    /* Preview Section */
+    .sms-preview-section {
+        margin-bottom: 16px;
+    }
+
+    .sms-preview-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #475569;
+        margin-bottom: 10px;
+    }
+
+    .sms-preview-bubble {
+        background: #fefce8;
+        border: 1.5px dashed #facc15;
+        border-radius: 14px;
+        padding: 16px;
+        direction: rtl;
+    }
+
+    .sms-preview-text {
+        margin: 0;
+        font-family: inherit;
+        font-size: 0.85rem;
+        line-height: 1.9;
+        color: #1e293b;
+        white-space: pre-wrap;
+        word-break: break-word;
+        direction: ltr;
+        text-align: right;
+        unicode-bidi: embed;
+    }
+
+    .sms-success-banner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        background: #f0fdf4;
+        border: 1.5px solid #86efac;
+        border-radius: 12px;
+        padding: 12px;
+        color: #15803d;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    .sms-success-banner .oi-circle-check {
+        font-size: 1.2rem;
+    }
+
+    .sms-sheet-footer {
+        display: flex;
+        gap: 10px;
+        padding: 16px 24px 24px;
+        border-top: 2px dashed #e2e8f0;
+    }
+
+    .sms-btn {
+        flex: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 12px 20px;
+        border-radius: 12px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .sms-btn--primary {
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: #fff;
+    }
+
+    .sms-btn--primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+    }
+
+    .sms-btn--primary:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .sms-btn--ghost {
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .sms-btn--ghost:hover {
+        background: #e2e8f0;
+    }
+
+    @@keyframes sms-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @@keyframes sms-scale-in {
+        from { opacity: 0; transform: scale(0.92) translateY(12px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    /* Mobile: Bottom Sheet */
+    @@media (max-width: 576px) {
+        .sms-overlay {
+            align-items: flex-end;
+            padding: 0;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .sms-overlay--sent {
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .sms-sheet {
+            max-width: 100%;
+            max-height: 92vh;
+            border-radius: 24px 24px 0 0;
+            animation: sms-slide-up 0.3s ease;
+        }
+
+        .sms-sheet-handle {
+            display: block;
+        }
+
+        .sms-sheet-header {
+            padding: 8px 20px 12px;
+        }
+
+        .sms-sheet-icon {
+            width: 40px;
+            height: 40px;
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+
+        .sms-sheet-body {
+            padding: 16px 20px;
+        }
+
+        .sms-sheet-footer {
+            padding: 12px 20px 20px;
+        }
+
+        .sms-chips-row {
+            gap: 6px;
+        }
+
+        .sms-chip {
+            font-size: 0.72rem;
+            padding: 4px 10px;
+        }
+
+        @@keyframes sms-slide-up {
+            from { opacity: 0; transform: translateY(60px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    }
+</style>
+
+@code {
+    private int step = 1;
+
+    private bool isLoading = true;
+    private bool isSubmitting;
+
+    private bool isSuperAdmin;
+    private int? selectedWorkshopId;
+
+    private string? currentUserFullName;
+
+    private WorkshopCustomerDto? selectedCustomer;
+    private WorkshopCustomerUpdateRequest editCustomer = new();
+    private bool showCustomerEditSheet;
+    private bool customerSheetVisible;
+    private bool isSavingCustomerEdit;
+
+    private bool showCustomerModal;
+
+    private WorkshopCustomerUpsertRequest newCustomer = new();
+
+    private List<WorkshopUserDto>? technicians;
+    private int? technicianId;
+
+    private List<DeviceTypeDto>? deviceTypes;
+    private List<DeviceBrandDto>? deviceBrands;
+    private int deviceTypeId;
+    private int? deviceBrandId;
+
+    // Device Type Management
+    private bool showDeviceTypeModal;
+    private DeviceTypeDto newDeviceType = new();
+    private bool isSavingDeviceType;
+    private bool isEditingDeviceType;
+    private int? editingDeviceTypeId;
+    private List<DeviceTypeDto>? allDeviceTypes;
+    private bool showDeleteDeviceTypeConfirm;
+    private int? deviceTypeIdToDelete;
+
+    // Device Brand Management
+    private bool showDeviceBrandModal;
+    private DeviceBrandUpsertRequest newDeviceBrand = new();
+    private bool isSavingDeviceBrand;
+    private bool isEditingDeviceBrand;
+    private int? editingDeviceBrandId;
+    private List<DeviceBrandDto>? allDeviceBrands;
+    private bool showDeleteDeviceBrandConfirm;
+    private int? deviceBrandIdToDelete;
+
+    private string registeredAtPersian = string.Empty;
+
+    private string problemDescription = string.Empty;
+    private string status = CustomerReceiptStatuses.Pending;
+
+    private byte[]? fileBuffer;
+    private string? fileName;
+    private string? fileContentType;
+    private string? previewUrl;
+
+    // SMS Confirmation Modal
+    private bool showSmsModal;
+    private bool isSendingSms;
+    private CustomerReceiptDto? createdReceipt;
+    private string smsPreviewText = string.Empty;
+    private bool smsSent;
+
+    private bool CanWorkOnWorkshop => !isSuperAdmin || selectedWorkshopId.HasValue;
+
+    private int? uploadWorkshopId => WorkshopApiHelper.ResolveWorkshopId(isSuperAdmin, selectedWorkshopId);
+
+    private string WorkshopQs(string? additionalQuery = null)
+        => WorkshopApiHelper.BuildWorkshopQuery(isSuperAdmin, selectedWorkshopId, additionalQuery: additionalQuery);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadContext();
+        isLoading = false;
+    }
+
+    private async Task LoadContext()
+    {
+        await AdminWorkshopSelection.InitializeAsync();
+        
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        isSuperAdmin = state.User.IsInRole("super_admin");
+
+        currentUserFullName = state.User.Identity?.Name;
+
+        if (isSuperAdmin)
+        {
+            selectedWorkshopId = AdminWorkshopSelection.SelectedWorkshopId;
+            AdminWorkshopSelection.OnChanged += HandleWorkshopChanged;
+        }
+
+        registeredAtPersian = PersianDateHelper.ToPersianDateTimeString(DateTimeOffset.Now, includeTime: false);
+
+        await LoadTechnicians();
+        await LoadDeviceTypes();
+    }
+
+    private void HandleWorkshopChanged(int? workshopId)
+    {
+        selectedWorkshopId = workshopId;
+        _ = InvokeAsync(async () =>
+        {
+            selectedCustomer = null;
+            deviceTypeId = 0;
+            deviceBrandId = null;
+            deviceBrands = null;
+            registeredAtPersian = PersianDateHelper.ToPersianDateTimeString(DateTimeOffset.Now, includeTime: false);
+            await LoadTechnicians();
+            await LoadDeviceTypes();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadDeviceTypes()
+    {
+        if (!CanWorkOnWorkshop)
+        {
+            deviceTypes = new List<DeviceTypeDto>();
+            return;
+        }
+
+        try
+        {
+            deviceTypes = await Http.GetFromJsonAsync<List<DeviceTypeDto>>("api/device-types");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            deviceTypes = new List<DeviceTypeDto>();
+            ToastService.ShowError("شما دسترسی لازم برای مشاهده انواع دستگاه را ندارید. لطفاً از مدیر سیستم بخواهید دسترسی شما را بررسی کند.");
+        }
+        catch (Exception ex)
+        {
+            deviceTypes = new List<DeviceTypeDto>();
+            ToastService.ShowError($"خطا در بارگذاری انواع دستگاه: {ex.Message}");
+        }
+    }
+
+    private async Task LoadTechnicians()
+    {
+        if (!CanWorkOnWorkshop)
+        {
+            technicians = new List<WorkshopUserDto>();
+            return;
+        }
+
+        try
+        {
+            var qs = WorkshopQs();
+            var allUsers = await Http.GetFromJsonAsync<List<WorkshopUserDto>>($"api/workshop-auth/users{qs}");
+            technicians = allUsers?.Where(x => x.IsTechnician && x.IsActive).ToList() ?? new List<WorkshopUserDto>();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized || ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            technicians = new List<WorkshopUserDto>();
+        }
+        catch (Exception ex)
+        {
+            technicians = new List<WorkshopUserDto>();
+        }
+    }
+
+    private async Task LoadBrandsForType()
+    {
+        deviceBrands = null;
+        deviceBrandId = null;
+
+        if (deviceTypeId <= 0 || !CanWorkOnWorkshop)
+            return;
+
+        try
+        {
+            deviceBrands = await Http.GetFromJsonAsync<List<DeviceBrandDto>>($"api/device-brands?deviceTypeId={deviceTypeId}");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            deviceBrands = new List<DeviceBrandDto>();
+            ToastService.ShowError("شما دسترسی لازم برای مشاهده برندهای دستگاه را ندارید. لطفاً از مدیر سیستم بخواهید دسترسی شما را بررسی کند.");
+        }
+        catch (Exception ex)
+        {
+            deviceBrands = new List<DeviceBrandDto>();
+            ToastService.ShowError($"خطا در بارگذاری برندهای دستگاه: {ex.Message}");
+        }
+    }
+
+    private async Task OnDeviceTypeChanged()
+    {
+        await LoadBrandsForType();
+    }
+
+    private void ClearCustomerSelection()
+    {
+        showCustomerEditSheet = false;
+        customerSheetVisible = false;
+        selectedCustomer = null;
+    }
+
+    private static string GetCustomerInitial(WorkshopCustomerDto c)
+    {
+        var name = (c.FirstName ?? string.Empty).Trim();
+        return string.IsNullOrEmpty(name) ? "?" : name[0].ToString();
+    }
+
+    private async Task OpenCustomerEditSheet()
+    {
+        if (selectedCustomer == null) return;
+
+        editCustomer = new WorkshopCustomerUpdateRequest
+        {
+            FirstName = selectedCustomer.FirstName,
+            LastName = selectedCustomer.LastName,
+            Mobile = selectedCustomer.Mobile,
+            Address = selectedCustomer.Address
+        };
+
+        showCustomerEditSheet = true;
+        customerSheetVisible = false;
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(16);
+        customerSheetVisible = true;
+    }
+
+    private async Task CloseCustomerEditSheet()
+    {
+        if (!showCustomerEditSheet) return;
+
+        customerSheetVisible = false;
+        await Task.Delay(220);
+        showCustomerEditSheet = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveCustomerEdit()
+    {
+        if (selectedCustomer == null || !CanWorkOnWorkshop) return;
+
+        isSavingCustomerEdit = true;
+        try
+        {
+            var qs = WorkshopQs();
+            var resp = await Http.PutAsJsonAsync($"api/workshop-customers/{selectedCustomer.Id}{qs}", editCustomer);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    ToastService.ShowError("شما دسترسی لازم برای ویرایش مشتری را ندارید.");
+                    return;
+                }
+
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ویرایش مشتری" : msg.Trim('"'));
+                return;
+            }
+
+            var updated = await resp.Content.ReadFromJsonAsync<WorkshopCustomerDto>();
+            if (updated != null)
+            {
+                SelectCustomer(updated);
+                ToastService.ShowSuccess("اطلاعات مشتری به‌روزرسانی شد");
+            }
+
+            await CloseCustomerEditSheet();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            ToastService.ShowError("شما دسترسی لازم برای ویرایش مشتری را ندارید.");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در ویرایش مشتری: {ex.Message}");
+        }
+        finally
+        {
+            isSavingCustomerEdit = false;
+        }
+    }
+
+    private void OpenCustomerModal()
+    {
+        showCustomerModal = true;
+    }
+
+    private void CloseCustomerModal()
+    {
+        showCustomerModal = false;
+    }
+
+    private void OnModalCustomerSelected(WorkshopCustomerDto c)
+    {
+        SelectCustomer(c);
+        showCustomerModal = false;
+    }
+
+    private void SelectCustomer(WorkshopCustomerDto c)
+    {
+        selectedCustomer = c;
+    }
+
+    private static string CleanMobile(string raw)
+    {
+        var m = System.Text.RegularExpressions.Regex.Replace(raw ?? "", @"\D", "");
+        if (m.StartsWith("0098")) m = m[4..];
+        else if (m.StartsWith("9898")) m = m[2..];
+        else if (m.StartsWith("98") && m.Length == 12) m = m[2..];
+        if (m.Length == 10) m = "0" + m;
+        return m;
+    }
+    private void NormalizeMobile() { newCustomer.Mobile = CleanMobile(newCustomer.Mobile); }
+    private void NormalizeEditMobile() { editCustomer.Mobile = CleanMobile(editCustomer.Mobile); }
+
+    private async Task CreateCustomer()
+    {
+        if (!CanWorkOnWorkshop)
+        {
+            ToastService.ShowWarning("ابتدا کارگاه را انتخاب کنید");
+            return;
+        }
+
+        try
+        {
+            var qs = WorkshopQs();
+            var content = JsonContent.Create(newCustomer);
+            var resp = await Http.PostAsync($"api/workshop-customers{qs}", content);
+            
+            if (!resp.IsSuccessStatusCode)
+            {
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    ToastService.ShowError("شما دسترسی لازم برای ثبت مشتری جدید را ندارید. لطفاً از مدیر سیستم بخواهید دسترسی شما را بررسی کند.");
+                    return;
+                }
+                
+                if (resp.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+                {
+                    var serverMsg = await resp.Content.ReadAsStringAsync();
+                    var errorMsg = string.IsNullOrWhiteSpace(serverMsg) 
+                        ? "خطای داخلی سرور. لطفاً با پشتیبانی تماس بگیرید." 
+                        : "خطای سرور: " + serverMsg.Trim('"');
+                    ToastService.ShowError(errorMsg);
+                    return;
+                }
+                
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ثبت مشتری" : msg.Trim('"'));
+                return;
+            }
+
+            var created = await resp.Content.ReadFromJsonAsync<WorkshopCustomerDto>();
+            if (created != null)
+            {
+                SelectCustomer(created);
+                ToastService.ShowSuccess("مشتری ثبت شد");
+                newCustomer = new WorkshopCustomerUpsertRequest();
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            ToastService.ShowError("شما دسترسی لازم برای ثبت مشتری جدید را ندارید. لطفاً از مدیر سیستم بخواهید دسترسی شما را بررسی کند.");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در ارتباط با سرور: {ex.Message}");
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        if (file.Size > 10 * 1024 * 1024)
+        {
+            ToastService.ShowError("حجم فایل بیش از حد مجاز است");
+            return;
+        }
+
+        fileName = file.Name;
+        fileContentType = file.ContentType;
+
+        try
+        {
+            fileBuffer = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            previewUrl = $"data:{fileContentType};base64,{Convert.ToBase64String(fileBuffer)}";
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در خواندن فایل");
+        }
+    }
+
+    private void ClearFile()
+    {
+        fileBuffer = null;
+        fileName = null;
+        fileContentType = null;
+        previewUrl = null;
+    }
+
+    private async Task Next()
+    {
+        if (!CanWorkOnWorkshop)
+        {
+            ToastService.ShowWarning("ابتدا کارگاه را از منوی بالای صفحه انتخاب کنید");
+            return;
+        }
+
+        if (step < 5) step++;
+        await OnStepChanged();
+    }
+
+    private async Task Prev()
+    {
+        if (step > 1) step--;
+        await OnStepChanged();
+    }
+
+    private async Task OnStepChanged()
+    {
+        await JS.InvokeVoidAsync("scrollTo", 0, 0);
+        if (step == 3)
+        {
+            await Task.Delay(100);
+            try
+            {
+                await JS.InvokeVoidAsync("initJalali");
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+
+    private async Task Submit()
+    {
+        if (isSubmitting) return;
+        if (!CanWorkOnWorkshop)
+        {
+            ToastService.ShowWarning("ابتدا کارگاه را انتخاب کنید");
+            return;
+        }
+
+        if (selectedCustomer == null)
+        {
+            ToastService.ShowError("مشتری انتخاب نشده است");
+            return;
+        }
+
+        if (deviceTypeId <= 0)
+        {
+            ToastService.ShowError("نوع دستگاه انتخاب نشده است");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(problemDescription) || problemDescription.Trim().Length < 5)
+        {
+            ToastService.ShowError("توضیحات مشکل کافی نیست");
+            return;
+        }
+
+        isSubmitting = true;
+        try
+        {
+            DateTimeOffset registeredAtDate;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(registeredAtPersian)) throw new Exception();
+                var parts = registeredAtPersian.Split('/');
+                if (parts.Length != 3) throw new Exception();
+
+                var jy = int.Parse(parts[0]);
+                var jm = int.Parse(parts[1]);
+                var jd = int.Parse(parts[2]);
+                registeredAtDate = PersianDateHelper.FromPersianDate(jy, jm, jd);
+            }
+            catch
+            {
+                ToastService.ShowError("تاریخ ثبت نامعتبر است");
+                return;
+            }
+
+            // Auto-capture current time
+            var now = DateTimeOffset.Now;
+            var registeredAt = new DateTimeOffset(
+                registeredAtDate.Year, registeredAtDate.Month, registeredAtDate.Day,
+                now.Hour, now.Minute, now.Second, now.Offset);
+
+            var content = new MultipartFormDataContent();
+            content.Add(new StringContent(selectedCustomer.Id.ToString()), "customerId");
+            content.Add(new StringContent(deviceTypeId.ToString()), "deviceTypeId");
+            if (deviceBrandId.HasValue)
+                content.Add(new StringContent(deviceBrandId.Value.ToString()), "deviceBrandId");
+            content.Add(new StringContent(problemDescription.Trim()), "problemDescription");
+            content.Add(new StringContent(status), "status");
+            if (technicianId.HasValue)
+                content.Add(new StringContent(technicianId.Value.ToString()), "technicianId");
+            content.Add(new StringContent(registeredAt.ToString("O")), "registeredAt");
+
+            if (!string.IsNullOrWhiteSpace(previewUrl))
+            {
+                content.Add(new StringContent(previewUrl), "receiptImageUrl");
+            }
+
+            var qs = WorkshopQs();
+            var resp = await Http.PostAsync($"api/customer-receipts{qs}", content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    ToastService.ShowError("شما دسترسی لازم برای ثبت رسید را ندارید. لطفاً از مدیر سیستم بخواهید دسترسی شما را بررسی کند.");
+                    return;
+                }
+                
+                if (resp.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+                {
+                    var serverMsg = await resp.Content.ReadAsStringAsync();
+                    var errorMsg = string.IsNullOrWhiteSpace(serverMsg) 
+                        ? "خطای داخلی سرور. لطفاً با پشتیبانی تماس بگیرید." 
+                        : "خطای سرور: " + serverMsg.Trim('"');
+                    ToastService.ShowError(errorMsg);
+                    return;
+                }
+                
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ثبت رسید" : msg.Trim('"'));
+                return;
+            }
+
+            createdReceipt = await resp.Content.ReadFromJsonAsync<CustomerReceiptDto>();
+            if (createdReceipt != null)
+            {
+                var smsAllowed = false;
+                if (createdReceipt.WorkshopId > 0)
+                {
+                    try
+                    {
+                        var moduleResp = await Http.GetAsync($"api/workshop-sms/module-status?workshopId={createdReceipt.WorkshopId}&moduleType=1");
+                        if (moduleResp.IsSuccessStatusCode)
+                            smsAllowed = await moduleResp.Content.ReadFromJsonAsync<bool>();
+                    }
+                    catch { }
+                }
+                if (smsAllowed)
+                {
+                    var customerName = $"{createdReceipt.CustomerFirstName} {createdReceipt.CustomerLastName}";
+                    var date = PersianDateHelper.ToPersianDateTimeString(createdReceipt.RegisteredAt, false);
+                    smsPreviewText = $"\u200Fمشتری گرامی\n{customerName}\nدستگاه {createdReceipt.DeviceTypeName} ({createdReceipt.DeviceBrandName ?? ""}) در تاریخ {date} در {createdReceipt.WorkshopName}\nبا موفقیت ثبت گردید.\nشماره پذیرش: {createdReceipt.Id}\nمجموعه فنی و مهندسی ارور سرویس";
+                    smsSent = false;
+                    showSmsModal = true;
+                }
+                else
+                {
+                    ToastService.ShowSuccess("رسید با موفقیت ثبت شد");
+                    NavToList();
+                }
+            }
+            else
+            {
+                ToastService.ShowSuccess("رسید با موفقیت ثبت شد");
+                NavToList();
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            ToastService.ShowError("شما دسترسی لازم برای ثبت رسید را ندارید. لطفاً از مدیر سیستم بخواهید دسترسی شما را بررسی کند.");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در ارتباط با سرور: {ex.Message}");
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    [Inject] private Microsoft.AspNetCore.Components.NavigationManager Nav { get; set; } = default!;
+
+    private async Task SendSms()
+    {
+        if (createdReceipt == null || isSendingSms) return;
+        isSendingSms = true;
+        try
+        {
+            var qs = WorkshopQs();
+            var resp = await Http.PostAsync($"api/customer-receipts/{createdReceipt.Id}/send-registration-sms{qs}", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                smsSent = true;
+                ToastService.ShowSuccess("پیامک با موفقیت ارسال شد");
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ارسال پیامک" : msg.Trim('"'));
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در ارتباط با سرور: {ex.Message}");
+        }
+        finally
+        {
+            isSendingSms = false;
+        }
+    }
+
+    private void CloseSmsModal()
+    {
+        showSmsModal = false;
+        createdReceipt = null;
+        NavToList();
+    }
+
+    private void NavToList() => Nav.NavigateTo("/admin/receipts");
+
+    // Device Type Management
+    private async Task AddDeviceType()
+    {
+        if (!CanWorkOnWorkshop)
+        {
+            ToastService.ShowWarning("ابتدا کارگاه را انتخاب کنید");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newDeviceType.Name))
+        {
+            ToastService.ShowWarning("نام نوع دستگاه الزامی است");
+            return;
+        }
+
+        isSavingDeviceType = true;
+        try
+        {
+            if (isEditingDeviceType && editingDeviceTypeId.HasValue)
+            {
+                newDeviceType.Id = editingDeviceTypeId.Value;
+                var resp = await Http.PutAsJsonAsync($"api/device-types/{editingDeviceTypeId.Value}", newDeviceType);
+                
+                if (!resp.IsSuccessStatusCode)
+                {
+                    if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        ToastService.ShowError("شما دسترسی لازم برای ویرایش نوع دستگاه را ندارید.");
+                        return;
+                    }
+                    
+                    var msg = await resp.Content.ReadAsStringAsync();
+                    ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ویرایش نوع دستگاه" : msg.Trim('"'));
+                    return;
+                }
+
+                ToastService.ShowSuccess("نوع دستگاه با موفقیت ویرایش شد");
+            }
+            else
+            {
+                var qs = WorkshopQs();
+                var resp = await Http.PostAsJsonAsync($"api/device-types{qs}", newDeviceType);
+                
+                if (!resp.IsSuccessStatusCode)
+                {
+                    if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        ToastService.ShowError("شما دسترسی لازم برای افزودن نوع دستگاه را ندارید.");
+                        return;
+                    }
+                    
+                    var msg = await resp.Content.ReadAsStringAsync();
+                    ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در افزودن نوع دستگاه" : msg.Trim('"'));
+                    return;
+                }
+
+                ToastService.ShowSuccess("نوع دستگاه با موفقیت اضافه شد");
+            }
+
+            ResetDeviceTypeForm();
+            await LoadAllDeviceTypes();
+            await LoadDeviceTypes();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            ToastService.ShowError("شما دسترسی لازم برای مدیریت نوع دستگاه را ندارید.");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در ارتباط با سرور: {ex.Message}");
+        }
+        finally
+        {
+            isSavingDeviceType = false;
+        }
+    }
+
+    private async Task LoadAllDeviceTypes()
+    {
+        if (!CanWorkOnWorkshop)
+        {
+            allDeviceTypes = new List<DeviceTypeDto>();
+            return;
+        }
+
+        try
+        {
+            allDeviceTypes = await Http.GetFromJsonAsync<List<DeviceTypeDto>>("api/device-types");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            allDeviceTypes = new List<DeviceTypeDto>();
+            ToastService.ShowError("شما دسترسی لازم برای مشاهده نوع دستگاه‌ها را ندارید.");
+        }
+        catch (Exception ex)
+        {
+            allDeviceTypes = new List<DeviceTypeDto>();
+        }
+    }
+
+    private void EditDeviceType(DeviceTypeDto dt)
+    {
+        isEditingDeviceType = true;
+        editingDeviceTypeId = dt.Id;
+        newDeviceType = new DeviceTypeDto { Id = dt.Id, Name = dt.Name, SortOrder = dt.SortOrder };
+    }
+
+    private async Task DeleteDeviceType(int id)
+    {
+        if (!CanWorkOnWorkshop)
+        {
+            ToastService.ShowWarning("ابتدا کارگاه را انتخاب کنید");
+            return;
+        }
+
+        deviceTypeIdToDelete = id;
+        showDeleteDeviceTypeConfirm = true;
+    }
+
+    private async Task HandleDeleteDeviceTypeConfirm(bool confirmed)
+    {
+        showDeleteDeviceTypeConfirm = false;
+        if (!confirmed || deviceTypeIdToDelete == null) return;
+
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/device-types/{deviceTypeIdToDelete}");
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    ToastService.ShowError("شما دسترسی لازم برای حذف نوع دستگاه را ندارید.");
+                    return;
+                }
+
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در حذف نوع دستگاه" : msg.Trim('"'));
+                return;
+            }
+
+            ToastService.ShowSuccess("نوع دستگاه با موفقیت حذف شد");
+            await LoadAllDeviceTypes();
+            await LoadDeviceTypes();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            ToastService.ShowError("شما دسترسی لازم برای حذف نوع دستگاه را ندارید.");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در ارتباط با سرور: {ex.Message}");
+        }
+        finally
+        {
+            deviceTypeIdToDelete = null;
+        }
+    }
+
+    private void ResetDeviceTypeForm()
+    {
+        isEditingDeviceType = false;
+        editingDeviceTypeId = null;
+        newDeviceType = new DeviceTypeDto();
+    }
+
+    // Device Brand Management
+    private async Task AddDeviceBrand()
+    {
+        if (!CanWorkOnWorkshop)
+        {
+            ToastService.ShowWarning("ابتدا کارگاه را انتخاب کنید");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newDeviceBrand.Name))
+        {
+            ToastService.ShowWarning("نام برند الزامی است");
+            return;
+        }
+
+        if (deviceTypeId <= 0 && !isEditingDeviceBrand)
+        {
+            ToastService.ShowWarning("ابتدا نوع دستگاه را انتخاب کنید");
+            return;
+        }
+
+        if (!isEditingDeviceBrand)
+        {
+            newDeviceBrand.DeviceTypeId = deviceTypeId;
+        }
+
+        isSavingDeviceBrand = true;
+        try
+        {
+            if (isEditingDeviceBrand && editingDeviceBrandId.HasValue)
+            {
+                var resp = await Http.PutAsJsonAsync($"api/device-brands/{editingDeviceBrandId.Value}", newDeviceBrand);
+                
+                if (!resp.IsSuccessStatusCode)
+                {
+                    if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        ToastService.ShowError("شما دسترسی لازم برای ویرایش برند را ندارید.");
+                        return;
+                    }
+                    
+                    var msg = await resp.Content.ReadAsStringAsync();
+                    ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ویرایش برند" : msg.Trim('"'));
+                    return;
+                }
+
+                ToastService.ShowSuccess("برند با موفقیت ویرایش شد");
+            }
+            else
+            {
+                var resp = await Http.PostAsJsonAsync("api/device-brands", newDeviceBrand);
+                
+                if (!resp.IsSuccessStatusCode)
+                {
+                    if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        ToastService.ShowError("شما دسترسی لازم برای افزودن برند را ندارید.");
+                        return;
+                    }
+                    
+                    var msg = await resp.Content.ReadAsStringAsync();
+                    ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در افزودن برند" : msg.Trim('"'));
+                    return;
+                }
+
+                ToastService.ShowSuccess("برند با موفقیت اضافه شد");
+            }
+
+            ResetDeviceBrandForm();
+            await LoadAllDeviceBrands();
+            await LoadBrandsForType();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            ToastService.ShowError("شما دسترسی لازم برای مدیریت برند را ندارید.");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در ارتباط با سرور: {ex.Message}");
+        }
+        finally
+        {
+            isSavingDeviceBrand = false;
+        }
+    }
+
+    private async Task LoadAllDeviceBrands()
+    {
+        if (!CanWorkOnWorkshop)
+        {
+            allDeviceBrands = new List<DeviceBrandDto>();
+            return;
+        }
+
+        try
+        {
+            allDeviceBrands = await Http.GetFromJsonAsync<List<DeviceBrandDto>>($"api/device-brands?deviceTypeId={deviceTypeId}");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            allDeviceBrands = new List<DeviceBrandDto>();
+            ToastService.ShowError("شما دسترسی لازم برای مشاهده برندها را ندارید.");
+        }
+        catch (Exception ex)
+        {
+            allDeviceBrands = new List<DeviceBrandDto>();
+        }
+    }
+
+    private void EditDeviceBrand(DeviceBrandDto db)
+    {
+        isEditingDeviceBrand = true;
+        editingDeviceBrandId = db.Id;
+        newDeviceBrand = new DeviceBrandUpsertRequest { Name = db.Name, DeviceTypeId = db.DeviceTypeId, SortOrder = db.SortOrder };
+    }
+
+    private async Task DeleteDeviceBrand(int id)
+    {
+        if (!CanWorkOnWorkshop)
+        {
+            ToastService.ShowWarning("ابتدا کارگاه را انتخاب کنید");
+            return;
+        }
+
+        deviceBrandIdToDelete = id;
+        showDeleteDeviceBrandConfirm = true;
+    }
+
+    private async Task HandleDeleteDeviceBrandConfirm(bool confirmed)
+    {
+        showDeleteDeviceBrandConfirm = false;
+        if (!confirmed || deviceBrandIdToDelete == null) return;
+
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/device-brands/{deviceBrandIdToDelete}");
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    ToastService.ShowError("شما دسترسی لازم برای حذف برند را ندارید.");
+                    return;
+                }
+
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در حذف برند" : msg.Trim('"'));
+                return;
+            }
+
+            ToastService.ShowSuccess("برند با موفقیت حذف شد");
+            await LoadAllDeviceBrands();
+            await LoadBrandsForType();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            ToastService.ShowError("شما دسترسی لازم برای حذف برند را ندارید.");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در حذف برند: {ex.Message}");
+        }
+    }
+
+    private void ResetDeviceBrandForm()
+    {
+        isEditingDeviceBrand = false;
+        editingDeviceBrandId = null;
+        newDeviceBrand = new DeviceBrandUpsertRequest();
+    }
+
+    public void Dispose()
+    {
+        if (isSuperAdmin)
+            AdminWorkshopSelection.OnChanged -= HandleWorkshopChanged;
+    }
+}

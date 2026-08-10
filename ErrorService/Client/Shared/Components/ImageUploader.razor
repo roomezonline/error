@@ -1,0 +1,240 @@
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Client.Helpers
+
+<div class="modern-uploader @(string.IsNullOrEmpty(ImageUrl) ? "empty" : "has-image") @(IsUploading ? "uploading" : "")">
+    <div class="modern-uploader__container">
+        @if (!string.IsNullOrEmpty(ImageUrl))
+        {
+            <div class="modern-uploader__preview">
+                <img src="@ImageUrl" alt="Preview" />
+                <div class="modern-uploader__overlay">
+                    <button type="button" class="modern-uploader__action-btn delete" @onclick="RemoveImage" title="حذف تصویر">
+                        <span class="oi oi-trash"></span>
+                    </button>
+                    <label class="modern-uploader__action-btn edit" title="تغییر تصویر">
+                        <span class="oi oi-pencil"></span>
+                        <InputFile OnChange="HandleFileSelected" accept="@Accept" class="d-none" />
+                    </label>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="modern-uploader__dropzone-wrapper">
+                <label class="modern-uploader__dropzone">
+                    <div class="modern-uploader__icon-wrapper">
+                        <div class="modern-uploader__icon">
+                            <span class="oi oi-cloud-upload"></span>
+                        </div>
+                    </div>
+                    <div class="modern-uploader__text">
+                        <span class="modern-uploader__title">انتخاب از گالری</span>
+                        <span class="modern-uploader__hint">یک تصویر (حداکثر @(MaxSizeMb) مگابایت)</span>
+                    </div>
+                    <InputFile OnChange="HandleFileSelected" accept="@Accept" class="d-none" />
+                </label>
+                @if (ShowCamera)
+                {
+                    <label class="modern-uploader__dropzone modern-uploader__dropzone--camera">
+                    <div class="modern-uploader__icon-wrapper">
+                        <div class="modern-uploader__icon">
+                            <svg viewBox="0 0 8 8" fill="currentColor">
+                                <path d="M4.5 0c-.28 0-.5.22-.5.5s.22.5.5.5.5-.22.5-.5-.22-.5-.5-.5zm-2.5 1c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1h-.5l-.28-.72c-.15-.38-.52-.63-.94-.63h-1.56c-.42 0-.79.25-.94.63l-.28.72h-.5zm.5 1h1l.28-.72c.05-.13.19-.28.38-.28h.69c.19 0 .33.15.38.28l.28.72h1.5c.28 0 .5.22.5.5v3c0 .28-.22.5-.5.5h-4c-.28 0-.5-.22-.5-.5v-3c0-.28.22-.5.5-.5zm2 1c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0 1c.28 0 .5.22.5.5s-.22.5-.5.5-.5-.22-.5-.5.22-.5.5-.5z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="modern-uploader__text">
+                        <span class="modern-uploader__title">گرفتن عکس</span>
+                        <span class="modern-uploader__hint">دوربین گوشی</span>
+                    </div>
+                    <InputFile OnChange="HandleFileSelected" accept="image/*" capture="environment" class="d-none" />
+                </label>
+                }
+            </div>
+        }
+    </div>
+
+    @if (IsUploading)
+    {
+        <div class="modern-uploader__progress">
+            <div class="spinner-border spinner-border-sm text-primary"></div>
+            <span>در حال آپلود...</span>
+        </div>
+    }
+
+    @if (_showConfirmWarning)
+    {
+        <div class="modern-uploader__modal-overlay" @onclick="CancelWarning">
+            <div class="modern-uploader__modal" @onclick:stopPropagation>
+                <div class="modern-uploader__modal-icon">⚠️</div>
+                <div class="modern-uploader__modal-text">@_warningMessage</div>
+                <div class="modern-uploader__modal-actions">
+                    <button type="button" class="modern-uploader__modal-btn confirm" @onclick="RetryWithForce">بله، ادامه بده</button>
+                    <button type="button" class="modern-uploader__modal-btn cancel" @onclick="CancelWarning">خیر</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? ImageUrl { get; set; }
+    [Parameter] public EventCallback<string?> ImageUrlChanged { get; set; }
+    [Parameter] public string Accept { get; set; } = "image/*";
+    [Parameter] public int MaxSizeMb { get; set; } = 10;
+    [Parameter] public string UploadUrl { get; set; } = "api/workshops/upload";
+    /// <summary>برای سوپر ادمین: شناسه کارگاه انتخاب‌شده (در querystring ارسال می‌شود).</summary>
+    [Parameter] public int? WorkshopId { get; set; }
+    /// <summary>اگر true باشد و WorkshopId مقدار نداشته باشد، آپلود انجام نمی‌شود.</summary>
+    [Parameter] public bool RequireWorkshopId { get; set; }
+    /// <summary>در صورت true، پاسخ‌های WARN_SIZE/WARN_RATIO از سرور با دیالوگ تأیید به کاربر نشان داده می‌شود.</summary>
+    [Parameter] public bool ShowConfirmOnWarning { get; set; }
+    /// <summary>نمایش دکمه دوربین (برای موبایل).</summary>
+    [Parameter] public bool ShowCamera { get; set; } = true;
+
+    [Inject] private HttpClient Http { get; set; } = default!;
+    [Inject] private ErrorService.Client.Services.ToastService ToastService { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private bool IsUploading { get; set; }
+    private bool _showConfirmWarning;
+    private string _warningMessage = "";
+    private byte[]? _pendingImageBytes;
+    private string? _pendingContentType;
+    private string? _pendingFileName;
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        if (file.Size > MaxSizeMb * 1024 * 1024)
+        {
+            ToastService.ShowError($"حجم فایل زیاد است (حداکثر {MaxSizeMb} مگابایت)");
+            return;
+        }
+
+        if (RequireWorkshopId && WorkshopId is not > 0)
+        {
+            ToastService.ShowWarning("ابتدا کارگاه را از منوی بالای صفحه انتخاب کنید");
+            return;
+        }
+
+        IsUploading = true;
+        try
+        {
+            var resizedImage = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+
+            using var content = new MultipartFormDataContent();
+            var byteArrayContent = new ByteArrayContent(resizedImage);
+            byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteArrayContent, "file", file.Name);
+
+            var uploadUrl = BuildUploadUrl();
+            var resp = await Http.PostAsync(uploadUrl, content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim().Trim('"');
+                ImageUrl = url;
+                await ImageUrlChanged.InvokeAsync(ImageUrl);
+                ToastService.ShowSuccess("تصویر با موفقیت آپلود شد");
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                var cleanBody = (body ?? "").Trim().Trim('"');
+
+                if (ShowConfirmOnWarning && (cleanBody.StartsWith("WARN_SIZE:") || cleanBody.StartsWith("WARN_RATIO:")))
+                {
+                    _pendingImageBytes = resizedImage;
+                    _pendingContentType = file.ContentType;
+                    _pendingFileName = file.Name;
+                    _warningMessage = cleanBody;
+                    _showConfirmWarning = true;
+                }
+                else
+                {
+                    ToastService.ShowError(string.IsNullOrWhiteSpace(cleanBody) ? "خطا در آپلود" : cleanBody);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطای سیستمی در آپلود");
+        }
+        finally
+        {
+            if (!_showConfirmWarning)
+            {
+                IsUploading = false;
+            }
+        }
+    }
+
+    private async Task RetryWithForce()
+    {
+        _showConfirmWarning = false;
+        IsUploading = true;
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var byteArrayContent = new ByteArrayContent(_pendingImageBytes!);
+            byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(_pendingContentType);
+            content.Add(byteArrayContent, "file", _pendingFileName);
+
+            var baseUrl = BuildUploadUrl();
+            var separator = baseUrl.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+            var forceUrl = $"{baseUrl}{separator}force=true";
+            var resp = await Http.PostAsync(forceUrl, content);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim().Trim('"');
+                ImageUrl = url;
+                await ImageUrlChanged.InvokeAsync(ImageUrl);
+                ToastService.ShowSuccess("تصویر با موفقیت آپلود شد");
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا در آپلود" : body.Trim('"'));
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطای سیستمی در آپلود");
+        }
+        finally
+        {
+            IsUploading = false;
+            _pendingImageBytes = null;
+            _pendingContentType = null;
+            _pendingFileName = null;
+        }
+    }
+
+    private void CancelWarning()
+    {
+        _showConfirmWarning = false;
+        IsUploading = false;
+        _pendingImageBytes = null;
+        _pendingContentType = null;
+        _pendingFileName = null;
+    }
+
+    private async Task RemoveImage()
+    {
+        ImageUrl = null;
+        await ImageUrlChanged.InvokeAsync(null);
+    }
+
+    private string BuildUploadUrl()
+    {
+        if (WorkshopId is not > 0)
+            return UploadUrl;
+
+        var separator = UploadUrl.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+        return $"{UploadUrl}{separator}workshopId={WorkshopId.Value}";
+    }
+}

@@ -1,0 +1,288 @@
+@page "/admin/sliders"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.sliders.manage")]
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@inject ToastService ToastService
+@inject IJSRuntime JS
+
+<h3 class="admin-page-title">مدیریت اسلایدرها</h3>
+
+<ConfirmDialog IsVisible="showConfirm" 
+               Title="حذف اسلایدر" 
+               Message=@($"آیا از حذف اسلایدر \"{itemToDelete?.Title}\" اطمینان دارید؟")
+               OnResult="HandleDeleteResult" />
+
+<div class="sliders-shell">
+    <div class="sliders-list">
+        <div class="sliders-list__header">
+            <div class="sliders-list__title">لیست اسلایدرها</div>
+            <button class="btn btn-success" @onclick="NewItem">جدید</button>
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="sliders-empty">در حال بارگذاری…</div>
+        }
+        else if (items.Count == 0)
+        {
+            <div class="sliders-empty">هیچ اسلایدی ثبت نشده است.</div>
+        }
+        else
+        {
+            <div class="sliders-cards">
+                @foreach (var it in items)
+                {
+                    <div class="slider-card">
+                        <div class="slider-card__thumb">
+                            @if (!string.IsNullOrWhiteSpace(it.ImageUrl))
+                            {
+                                <img src="@it.ImageUrl" alt="@it.Title" />
+                            }
+                            else
+                            {
+                                <div class="slider-card__thumb--empty">بدون تصویر</div>
+                            }
+                        </div>
+                        <div class="slider-card__body">
+                            <div class="slider-card__title">@it.Title</div>
+                            @if (!string.IsNullOrWhiteSpace(it.Subtitle))
+                            {
+                                <div class="slider-card__subtitle">@it.Subtitle</div>
+                            }
+                            <div class="slider-card__meta">
+                                <span>ترتیب: @it.SortOrder</span>
+                                <span class="@(it.IsActive ? "badge bg-success" : "badge bg-secondary")">@(it.IsActive ? "فعال" : "غیرفعال")</span>
+                            </div>
+                        </div>
+                        <div class="slider-card__actions">
+                            <button class="btn btn-outline-primary btn-sm" @onclick="(() => EditItem(it))">ویرایش</button>
+                            <button class="btn btn-outline-danger btn-sm" @onclick="(() => DeleteItem(it))">حذف</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="sliders-editor">
+        <div class="sliders-editor__header">
+            <div class="sliders-editor__title">@(editingId is null ? "ایجاد اسلاید" : "ویرایش اسلاید")</div>
+        </div>
+
+        <EditForm Model="model" OnValidSubmit="Save">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="form-group mb-2">
+                <label class="form-label">عنوان</label>
+                <InputText class="form-control" @bind-Value="model.Title" />
+            </div>
+
+            <div class="form-group mb-2">
+                <label class="form-label">زیرعنوان</label>
+                <InputText class="form-control" @bind-Value="model.Subtitle" />
+            </div>
+
+            <div class="form-group mb-2">
+                <label class="form-label">لینک (اختیاری)</label>
+                <InputText class="form-control" @bind-Value="model.LinkUrl" />
+            </div>
+
+            <div class="row g-2 mb-2">
+                <div class="col-6">
+                    <label class="form-label">ترتیب</label>
+                    <InputNumber class="form-control" @bind-Value="model.SortOrder" />
+                </div>
+                <div class="col-6 d-flex align-items-end">
+                    <div class="form-check">
+                        <InputCheckbox class="form-check-input" @bind-Value="model.IsActive" />
+                        <label class="form-check-label">فعال</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group mb-4">
+                <label class="form-label fw-bold small text-muted mb-2">تصویر اسلایدر (دسکتاپ)</label>
+                <ImageUploader @bind-ImageUrl="model.ImageUrl" 
+                               UploadUrl="api/sliders/upload?variant=desktop"
+                               ShowConfirmOnWarning="true" />
+                <div class="upload-guide mt-2">
+                    <div class="upload-guide__title">راهنمای سایز عکس اسلایدر</div>
+                    <div class="upload-guide__text">استاندارد: 2880×600 px</div>
+                </div>
+            </div>
+
+            <div class="form-group mb-4">
+                <label class="form-label fw-bold small text-muted mb-2">تصویر موبایل (اختیاری)</label>
+                <ImageUploader @bind-ImageUrl="model.MobileImageUrl" 
+                               UploadUrl="api/sliders/upload?variant=mobile"
+                               ShowConfirmOnWarning="true" />
+                <div class="upload-guide mt-2">
+                    <div class="upload-guide__title">راهنمای سایز عکس موبایل</div>
+                    <div class="upload-guide__text">پیشنهاد: 1080×540 px</div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit" disabled="@isSaving">ذخیره</button>
+                <button class="btn btn-outline-secondary" type="button" @onclick="Reset">پاک کردن</button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(error))
+            {
+                <div class="alert alert-danger mt-3 small">@error</div>
+            }
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private List<SliderItemDto> items = new();
+    private SliderUpsertRequest model = new();
+    private int? editingId;
+
+    private bool isLoading;
+    private bool isSaving;
+    private string? error;
+
+    private SliderItemDto? itemToDelete;
+    private bool showConfirm;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        isLoading = true;
+        error = null;
+        try
+        {
+            var result = await Http.GetFromJsonAsync<List<SliderItemDto>>("api/sliders");
+            items = result ?? new List<SliderItemDto>();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void NewItem()
+    {
+        editingId = null;
+        model = new SliderUpsertRequest { IsActive = true, SortOrder = 0 };
+        error = null;
+    }
+
+    private void EditItem(SliderItemDto it)
+    {
+        editingId = it.Id;
+        model = new SliderUpsertRequest
+        {
+            Title = it.Title,
+            Subtitle = it.Subtitle,
+            ImageUrl = it.ImageUrl,
+            MobileImageUrl = it.MobileImageUrl,
+            LinkUrl = it.LinkUrl,
+            SortOrder = it.SortOrder,
+            IsActive = it.IsActive
+        };
+        error = null;
+    }
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(model.Title))
+        {
+            ToastService.ShowWarning("عنوان الزامی است");
+            return;
+        }
+
+        isSaving = true;
+        error = null;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingId is null)
+            {
+                resp = await Http.PostAsJsonAsync("api/sliders", model);
+            }
+            else
+            {
+                resp = await Http.PutAsJsonAsync($"api/sliders/{editingId.Value}", model);
+            }
+
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(editingId is null ? "اسلایدر با موفقیت ایجاد شد" : "تغییرات اسلایدر ذخیره شد");
+                await Load();
+                Reset();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در عملیات اسلایدر" : msg);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void DeleteItem(SliderItemDto it)
+    {
+        itemToDelete = it;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool result)
+    {
+        showConfirm = false;
+        if (result && itemToDelete != null)
+        {
+            try
+            {
+                var resp = await Http.DeleteAsync($"api/sliders/{itemToDelete.Id}");
+                if (resp.IsSuccessStatusCode)
+                {
+                    ToastService.ShowSuccess("اسلایدر با موفقیت حذف شد");
+                    await Load();
+                }
+                else
+                {
+                    ToastService.ShowError("خطا در حذف اسلایدر");
+                }
+            }
+            catch (Exception ex)
+            {
+                ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+            }
+        }
+        itemToDelete = null;
+    }
+
+    private void Reset()
+    {
+        editingId = null;
+        model = new SliderUpsertRequest { IsActive = true, SortOrder = 0 };
+        error = null;
+    }
+
+
+}

@@ -1,0 +1,301 @@
+@page "/admin/settings"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.settings.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService ToastService
+
+<div class="admin-container" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="admin-page-title m-0">تنظیمات ظاهر سایت</h3>
+        <button class="btn btn-primary shadow-sm rounded-3 px-4" @onclick="SaveSettings" disabled="@isSaving">
+            @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+            ذخیره تغییرات
+        </button>
+    </div>
+
+    @if (settings == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary"></div>
+            <p class="text-muted mt-2">در حال بارگذاری تنظیمات...</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h5 class="fw-bold mb-4 border-bottom pb-3">نمایش ماژول‌های صفحه اصلی</h5>
+
+                    @foreach (var module in settings.HomeModules.OrderBy(x => x.SortOrder))
+                    {
+                        <div class="setting-item d-flex justify-content-between align-items-center mb-4 p-3 bg-light rounded-3">
+                            <div>
+                                <h6 class="fw-bold mb-1">@GetModuleTitle(module.Key)</h6>
+                                <p class="small text-muted mb-0">@GetModuleDescription(module.Key)</p>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="d-flex flex-column gap-1">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary px-2" title="بالا" @onclick="(() => MoveModule(module.Key, -1))">▲</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary px-2" title="پایین" @onclick="(() => MoveModule(module.Key, 1))">▼</button>
+                                </div>
+                                <div class="form-check form-switch fs-4 m-0">
+                                    <input class="form-check-input" type="checkbox" @bind="module.IsEnabled">
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mt-4 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">خرید بدون لاگین</h6>
+                            <p class="small text-muted mb-0">در صورت فعال بودن، کاربران بدون ورود هم می‌توانند ثبت سفارش کنند.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4">
+                            <input class="form-check-input" type="checkbox" @bind="settings.AllowGuestCheckout">
+                        </div>
+                    </div>
+                    <div class="setting-item d-flex justify-content-between align-items-center mt-2 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">فعال بودن چت آنلاین</h6>
+                            <p class="small text-muted mb-0">در صورت غیرفعال بودن، ویجت و آیکون چت در سایت نمایش داده نمی‌شود.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableOnlineChat">
+                        </div>
+                    </div>
+                    <div class="setting-item d-flex justify-content-between align-items-center mt-2 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">چت آنلاین برای مهمان‌ها</h6>
+                            <p class="small text-muted mb-0">در صورت غیرفعال بودن، فقط کاربران لاگین‌شده می‌توانند چت کنند.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4">
+                            <input class="form-check-input" type="checkbox" @bind="settings.AllowGuestChat">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100 bg-primary text-white">
+                    <div class="d-flex flex-column h-100 justify-content-center align-items-center text-center">
+                        <div class="display-1 mb-4 opacity-50"><span class="oi oi-cog"></span></div>
+                        <h4 class="fw-bold mb-3">کنترل کامل محتوا</h4>
+                        <p class="opacity-75">با استفاده از این بخش می‌توانید هر زمان که نیاز بود، بخش‌های مختلف صفحه اصلی سایت را فعال یا غیرفعال کنید تا ظاهر سایت را بر اساس نیاز خود شخصی‌سازی کنید.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h5 class="fw-bold mb-4 border-bottom pb-3">تنظیمات آپلود تصویر</h5>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label fw-bold">حداکثر حجم مجاز تصاویر (کیلوبایت)</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control custom-input" @bind="settings.MaxImageUploadSizeKb" min="10" max="5000" />
+                                <span class="input-group-text">KB</span>
+                            </div>
+                            <div class="form-text">تصاویر بزرگ‌تر از این مقدار هنگام آپلود به صورت خودکار فشرده می‌شوند. (پیش‌فرض: 200 KB)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h5 class="fw-bold mb-4 border-bottom pb-3">سایر تنظیمات</h5>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">عنوان پیش‌فرض سایت (SEO Title)</label>
+                            <input type="text" class="form-control custom-input" @bind="settings.SeoTitle" placeholder="مثلاً: ارور سرویس | مرجع کدهای خطا" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">کلمات کلیدی (جدا شده با کاما)</label>
+                            <input type="text" class="form-control custom-input" @bind="settings.SeoKeywords" placeholder="تعمیرات، کد خطا، قطعات یدکی" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold">توضیحات متای پیش‌فرض (Meta Description)</label>
+                            <textarea class="form-control custom-input" @bind="settings.SeoDescription" rows="3"></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">شناسه Google Analytics (G-XXXXXXX)</label>
+                            <input type="text" class="form-control custom-input" @bind="settings.GoogleAnalyticsTag" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">تصویر پیش‌فرض اشتراک‌گذاری (OG Image URL)</label>
+                            <input type="text" class="form-control custom-input" @bind="settings.DefaultOgImage" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">آدرس پایه چارت (Chart Base URL)</label>
+                            <input type="text" class="form-control custom-input" @bind="settings.ChartBaseUrl" placeholder="مثلاً: https://errorservice.ir/chart" />
+                            <div class="form-text">این آدرس برای لینک‌دهی به صفحات chart.aspx و chart1.aspx استفاده می‌شود.</div>
+                        </div>
+                        <div class="col-12 mt-3">
+                            <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-warning-subtle rounded-3 border border-warning-subtle">
+                                <div>
+                                    <h6 class="fw-bold mb-1 text-warning">اجبار به HTTPS (SSL)</h6>
+                                    <p class="small text-warning opacity-75 mb-0">
+                                        در صورت فعال بودن، درخواست‌های HTTP به HTTPS هدایت می‌شوند و هدر امنیتی HSTS ارسال می‌گردد.
+                                        در صورت غیرفعال بودن، سایت فقط روی HTTP کار می‌کند.
+                                    </p>
+                                </div>
+                                <div class="form-check form-switch fs-4">
+                                    <input class="form-check-input" type="checkbox" @bind="settings.EnableSsl">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12 mt-3">
+                            <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-danger-subtle rounded-3 border border-danger-subtle">
+                                <div>
+                                    <h6 class="fw-bold mb-1 text-danger">وضعیت تعمیر و نگهداری (Maintenance Mode)</h6>
+                                    <p class="small text-danger opacity-75 mb-0">با فعال‌سازی این بخش، سایت برای کاربران عادی غیرقابل دسترس شده و پیام بروزرسانی نمایش داده می‌شود.</p>
+                                </div>
+                                <div class="form-check form-switch fs-4">
+                                    <input class="form-check-input" type="checkbox" @bind="settings.IsMaintenanceMode">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <button class="btn btn-primary shadow-sm rounded-3 px-5 py-2" @onclick="SaveSettings" disabled="@isSaving">
+                @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                ذخیره تغییرات
+            </button>
+        </div>
+    }
+</div>
+
+<style>
+    .setting-item {
+        transition: all 0.2s ease;
+        border: 1px solid transparent;
+    }
+    .setting-item:hover {
+        background: #fff !important;
+        border-color: rgba(37, 99, 235, 0.1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    }
+    .form-check-input:checked {
+        background-color: #2563eb;
+        border-color: #2563eb;
+    }
+</style>
+
+@code {
+    private SiteSettingsDto? settings;
+    private bool isSaving = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+
+        if (settings != null && (settings.HomeModules == null || settings.HomeModules.Count == 0))
+        {
+            settings.HomeModules = new List<SiteHomeModuleDto>
+            {
+                new() { Key = SiteHomeModuleKey.SpecialOffers, IsEnabled = settings.ShowSpecialOffers, SortOrder = 10 },
+                new() { Key = SiteHomeModuleKey.LatestNews, IsEnabled = settings.ShowLatestNews, SortOrder = 20 },
+                new() { Key = SiteHomeModuleKey.LatestProducts, IsEnabled = settings.ShowLatestProducts, SortOrder = 30 },
+                new() { Key = SiteHomeModuleKey.LatestAcademy, IsEnabled = settings.ShowLatestAcademy, SortOrder = 40 },
+                new() { Key = SiteHomeModuleKey.TeamMembers, IsEnabled = settings.ShowTeamMembers, SortOrder = 50 },
+                new() { Key = SiteHomeModuleKey.HomeCategories, IsEnabled = settings.ShowHomeCategories, SortOrder = 5 },
+                new() { Key = SiteHomeModuleKey.FeatureCards, IsEnabled = settings.ShowFeatureCards, SortOrder = 18 },
+                new() { Key = SiteHomeModuleKey.PopularBrands, IsEnabled = true, SortOrder = 19 },
+                new() { Key = SiteHomeModuleKey.SomeCustomers, IsEnabled = true, SortOrder = 21 },
+                new() { Key = SiteHomeModuleKey.Stories, IsEnabled = true, SortOrder = 3 }
+            };
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        if (settings == null) return;
+        isSaving = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync("api/sitesettings", settings);
+            if (resp.IsSuccessStatusCode)
+            {
+                ImageCompressionHelper.DefaultMaxBytes = (settings.MaxImageUploadSizeKb > 0 ? settings.MaxImageUploadSizeKb : 200) * 1024;
+                ToastService.ShowSuccess("تنظیمات با موفقیت ذخیره شد");
+            }
+            else
+            {
+                ToastService.ShowError("خطا در ذخیره تنظیمات");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError(ex.Message);
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void MoveModule(SiteHomeModuleKey key, int direction)
+    {
+        if (settings?.HomeModules == null || settings.HomeModules.Count < 2) return;
+
+        var ordered = settings.HomeModules.OrderBy(x => x.SortOrder).ToList();
+        var idx = ordered.FindIndex(x => x.Key == key);
+        if (idx < 0) return;
+
+        var newIdx = idx + direction;
+        if (newIdx < 0 || newIdx >= ordered.Count) return;
+
+        var a = ordered[idx];
+        var b = ordered[newIdx];
+
+        (a.SortOrder, b.SortOrder) = (b.SortOrder, a.SortOrder);
+    }
+
+    private static string GetModuleTitle(SiteHomeModuleKey key)
+    {
+        return key switch
+        {
+            SiteHomeModuleKey.SpecialOffers => "پیشنهادات شگفت‌انگیز",
+            SiteHomeModuleKey.LatestNews => "آخرین اخبار",
+            SiteHomeModuleKey.LatestProducts => "آخرین محصولات",
+            SiteHomeModuleKey.LatestAcademy => "آکادمی (قدیمی)",
+            SiteHomeModuleKey.LatestCourses => "جدیدترین دوره‌ها",
+            SiteHomeModuleKey.LatestArticles => "جدیدترین آموزش‌ها (تکی)",
+            SiteHomeModuleKey.TeamMembers => "همکاران ما (تیم)",
+            SiteHomeModuleKey.HomeCategories => "دسته بندی های ویژه",
+            SiteHomeModuleKey.FeatureCards => "کارت‌های خدمات (۴گانه)",
+            SiteHomeModuleKey.Stories => "استوری‌ها (اینستاگرامی)",
+            SiteHomeModuleKey.PopularBrands => "محبوب‌ترین برندها",
+            SiteHomeModuleKey.SomeCustomers => "همکاران ما",
+            _ => key.ToString()
+        };
+    }
+
+    private static string GetModuleDescription(SiteHomeModuleKey key)
+    {
+        return key switch
+        {
+            SiteHomeModuleKey.SpecialOffers => "نمایش ردیف محصولات تخفیف‌دار و تایمردار",
+            SiteHomeModuleKey.LatestNews => "نمایش بخش خبرها و اطلاعیه‌های جدید",
+            SiteHomeModuleKey.LatestProducts => "نمایش جدیدترین ابزارها و قطعات",
+            SiteHomeModuleKey.LatestAcademy => "نمایش جدیدترین مقالات و دوره‌های آموزشی (یکجا)",
+            SiteHomeModuleKey.LatestCourses => "نمایش ردیف اختصاصی جدیدترین دوره‌های آموزشی",
+            SiteHomeModuleKey.LatestArticles => "نمایش ردیف اختصاصی جدیدترین آموزش‌های تکی",
+            SiteHomeModuleKey.TeamMembers => "نمایش اعضای تیم ارور سرویس در صفحه اصلی",
+            SiteHomeModuleKey.HomeCategories => "نمایش دسته بندی های اصلی سایت بصورت دایره ای",
+            SiteHomeModuleKey.FeatureCards => "نمایش ۴ کارت خدمات زیر اسلایدر",
+            SiteHomeModuleKey.Stories => "نمایش استوری‌های ۲۴ ساعت اخیر یا ۳ استوری آخر به سبک اینستاگرام",
+            SiteHomeModuleKey.PopularBrands => "نمایش ردیف لوگو برندهای محبوب به صورت اسکرولی",
+            SiteHomeModuleKey.SomeCustomers => "نمایش ردیف برخی مشتریان (کارگاه‌ها) به صورت اسکرولی",
+            _ => string.Empty
+        };
+    }
+}

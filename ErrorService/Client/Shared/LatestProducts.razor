@@ -1,0 +1,367 @@
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using System.Threading
+@implements IDisposable
+@inject IJSRuntime JS
+@using ErrorService.Client.Services
+@inject CartService CartService
+@inject ToastService ToastService
+@using ErrorService.Client.Shared
+
+@if (settings != null && settings.ShowLatestProducts)
+{
+    @if (products == null)
+    {
+        <div class="d-flex gap-3 overflow-hidden px-2">
+            @for (int i = 0; i < 4; i++)
+            {
+                <div style="flex: 0 0 280px; min-width: 280px;">
+                    <div class="product-card-skeleton rounded-4 bg-white shadow-sm p-3">
+                        <div class="skeleton-img rounded-3 mb-3"></div>
+                        <div class="skeleton-text mb-2"></div>
+                        <div class="skeleton-text w-50"></div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (!products.Any())
+    {
+        <div class="text-center py-5">
+            <span class="oi oi-box display-1 text-light mb-3"></span>
+            <p class="text-muted">در حال حاضر محصولی برای نمایش وجود ندارد.</p>
+        </div>
+    }
+    else
+    {
+        <section class="latest-products py-5 bg-light" dir="rtl">
+            <div class="container-fluid px-2 px-md-4">
+                <div class="d-flex justify-content-between align-items-center mb-4 px-2">
+                    <div>
+                        <h2 class="section-title fw-bold mb-1">آخرین محصولات</h2>
+                        <p class="text-muted small">بهترین ابزارها برای پروژه‌های حرفه‌ای شما</p>
+                    </div>
+                    <a href="/products" class="btn btn-outline-primary rounded-pill px-4 btn-sm">مشاهده همه</a>
+                </div>
+
+                <div class="products-scroll-container" @ref="scrollContainer">
+                    @foreach (var prod in products)
+                    {
+                        <div class="product-scroll-item">
+                            <a href="@SeoUrl.Product(prod.Id, prod.Slug)" class="text-decoration-none d-block h-100">
+                                <div class="product-card rounded-4 bg-white shadow-sm overflow-hidden h-100 border-0 @(prod.IsAvailable ? "" : "product-card--unavailable")">
+                                    <div class="product-card__img-wrap bg-light position-relative">
+                                        @if (prod.DiscountPrice.HasValue)
+                                        {
+                                            <div class="discount-badge">ویژه</div>
+                                        }
+                                        @if (!prod.IsAvailable)
+                                        {
+                                            <span class="badge bg-secondary position-absolute top-0 end-0 m-2 rounded-pill">ناموجود</span>
+                                        }
+                                        <img src="@(string.IsNullOrEmpty(prod.MainImageUrl) ? "/images/placeholder-product.svg" : prod.MainImageUrl)" loading="lazy" class="product-card__img" alt="@prod.Name" />
+                                        <div class="product-card__actions">
+                                            <QuantityControl Quantity="@CartService.GetQuantity(prod.Id)"
+                                                             Disabled="@(!prod.IsAvailable)"
+                                                             OnAdd="() => Add(prod)"
+                                                             OnIncrease="() => Inc(prod)"
+                                                             OnDecrease="() => Dec(prod.Id)" />
+                                        </div>
+                                    </div>
+                                    <div class="product-card__body p-3 d-flex flex-column">
+                                        <div class="small text-muted mb-1">@prod.CategoryName</div>
+                                        <h3 class="product-card__title h6 fw-bold mb-2 text-dark">@prod.Name</h3>
+                                        
+                                        <div class="discount-timer-wrapper mb-2">
+                                            @if (prod.DiscountPrice.HasValue && prod.DiscountExpiryDate.HasValue && prod.DiscountExpiryDate > DateTimeOffset.Now)
+                                            {
+                                                <div class="discount-timer shadow-sm animate__animated animate__pulse animate__infinite">
+                                                    <span class="oi oi-timer"></span>
+                                                    <span class="timer-text">@GetCountdown(prod.Id)</span>
+                                                </div>
+                                            }
+                                        </div>
+
+                                        <div class="d-flex justify-content-between align-items-center mt-auto">
+                                            <div class="product-card__price">
+                                                @if (prod.DiscountPrice.HasValue)
+                                                {
+                                                    <div class="small text-muted text-decoration-line-through">@prod.Price.ToString("N0")</div>
+                                                    <div class="fw-bold text-primary">@prod.DiscountPrice.Value.ToString("N0") <small>تومان</small></div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="fw-bold text-primary">@prod.Price.ToString("N0") <small>تومان</small></div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                    }
+                </div>
+            </div>
+        </section>
+    }
+}
+
+<style>
+    .latest-products {
+        padding: 60px 0 !important;
+        overflow: hidden;
+    }
+
+    @@media (min-width: 900px) {
+        .latest-products {
+            padding: 32px 0 !important;
+        }
+
+        .products-scroll-container {
+            padding: 8px 8px 18px 8px;
+        }
+    }
+
+    .products-scroll-container {
+        display: flex;
+        gap: 20px;
+        overflow-x: auto;
+        padding: 10px 8px 30px 8px;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        cursor: grab;
+        touch-action: pan-x pan-y;
+        overscroll-behavior-x: none;
+        -webkit-overflow-scrolling: touch;
+    }
+    .products-scroll-container::-webkit-scrollbar {
+        display: none;
+    }
+    .product-scroll-item {
+        flex: 0 0 280px;
+        min-width: 280px;
+    }
+    @@media (max-width: 768px) {
+        .product-scroll-item {
+            flex: 0 0 220px;
+            min-width: 220px;
+        }
+        .products-scroll-container {
+            gap: 15px;
+        }
+    }
+
+    .discount-badge {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        background: linear-gradient(135deg, #ef4444, #b91c1c);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        z-index: 2;
+        box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
+    }
+
+    .discount-timer-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .discount-timer-label {
+        color: #64748b;
+        font-size: 0.7rem;
+    }
+
+    .discount-timer {
+        color: #fff;
+        font-size: 0.75rem;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: linear-gradient(135deg, #ef4444, #b91c1c);
+        padding: 4px 10px;
+        border-radius: 6px;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .timer-text {
+        font-family: 'Vazirmatn', sans-serif;
+        letter-spacing: 0.5px;
+    }
+
+    .product-card {
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+        border: 1px solid #f1f5f9 !important;
+        border-radius: 24px !important;
+    }
+    .product-card--unavailable {
+        opacity: 0.65;
+        filter: grayscale(0.35);
+    }
+    .product-card--unavailable .product-card__img-wrap {
+        background: #f3f4f6 !important;
+    }
+    .product-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.06) !important;
+    }
+    .product-card__img-wrap {
+        height: 200px;
+        overflow: hidden;
+        border-radius: 24px 24px 0 0;
+    }
+    .product-card__img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.5s ease;
+    }
+    .product-card:hover .product-card__img {
+        transform: scale(1.08);
+    }
+    .product-card__title {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        height: 2.8em;
+        line-height: 1.4;
+    }
+    .btn-white {
+        background: #fff;
+        color: #333;
+    }
+    .product-card__actions {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        opacity: 1;
+        transform: none;
+        transition: all 0.3s ease;
+    }
+
+    /* Skeleton Styles */
+    .product-card-skeleton .skeleton-img {
+        height: 160px;
+        background: linear-gradient(90deg, #f0f0f0 25%, #f8f8f8 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: skeleton-loading 1.5s infinite;
+    }
+    .skeleton-text {
+        height: 15px;
+        background: #f0f0f0;
+        border-radius: 4px;
+        animation: skeleton-loading 1.5s infinite;
+    }
+    @@keyframes skeleton-loading {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private List<ProductDto>? products;
+    private SiteSettingsDto? settings;
+    private ElementReference scrollContainer;
+    private Timer? timer;
+    private Dictionary<int, string> countDowns = new();
+    private bool _dragScrollInitialized;
+
+    protected override void OnInitialized()
+    {
+        CartService.OnChange += StateHasChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+            if (settings != null && !settings.ShowLatestProducts) return;
+
+            products = await Http.GetFromJsonAsync<List<ProductDto>>("api/products?onlyAvailable=true&skip=0&take=10");
+            if (products != null && products.Any(p => p.DiscountPrice.HasValue))
+            {
+                StartTimer();
+            }
+        }
+        catch { products = new(); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_dragScrollInitialized && products != null && products.Any())
+        {
+            _dragScrollInitialized = true;
+            await JS.InvokeVoidAsync("initDragScroll", scrollContainer);
+        }
+    }
+
+    private void StartTimer()
+    {
+        timer = new Timer(_ =>
+        {
+            if (products == null) return;
+            bool changed = false;
+            foreach (var prod in products.Where(p => p.DiscountPrice.HasValue && p.DiscountExpiryDate.HasValue))
+            {
+                var diff = prod.DiscountExpiryDate!.Value - DateTimeOffset.Now;
+                string text;
+                if (diff.TotalSeconds <= 0)
+                {
+                    text = "پایان یافت";
+                }
+                else
+                {
+                    int days = (int)diff.TotalDays;
+                    if (days > 0)
+                        text = $"{days} روز و {diff.Hours:D2}:{diff.Minutes:D2}:{diff.Seconds:D2}";
+                    else
+                        text = $"{diff.Hours:D2}:{diff.Minutes:D2}:{diff.Seconds:D2}";
+                }
+
+                if (!countDowns.ContainsKey(prod.Id) || countDowns[prod.Id] != text)
+                {
+                    countDowns[prod.Id] = text;
+                    changed = true;
+                }
+            }
+            if (changed) InvokeAsync(StateHasChanged);
+        }, null, 0, 1000);
+    }
+
+    private string GetCountdown(int id) => countDowns.TryGetValue(id, out var text) ? text : "";
+
+    private async Task Add(ProductDto p)
+    {
+        await CartService.AddToCartAsync(p, 1);
+        ToastService.ShowSuccess($"{p.Name} به سبد خرید اضافه شد.");
+        StateHasChanged();
+    }
+
+    private async Task Inc(ProductDto p)
+    {
+        await CartService.AddToCartAsync(p, 1);
+        StateHasChanged();
+    }
+
+    private async Task Dec(int productId)
+    {
+        var current = CartService.GetQuantity(productId);
+        await CartService.UpdateQuantityAsync(productId, current - 1);
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        timer?.Dispose();
+        CartService.OnChange -= StateHasChanged;
+    }
+}

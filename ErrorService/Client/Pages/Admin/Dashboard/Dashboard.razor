@@ -1,0 +1,1550 @@
+@page "/admin"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.dashboard.view")]
+@using ErrorService.Shared
+@using ErrorService.Shared.Models
+@using System.Net.Http.Json
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+@inject ErrorService.Client.Services.AdminWorkshopSelectionService AdminWorkshopSelection
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private bool CanSeeWorkshopAndReceiptsSection;
+    private bool CanSeeShopSection;
+    private bool CanSeeContentSection;
+    private bool CanSeeTechnicalAndUsersSection;
+    private bool CanSeeSecurityAndSettingsSection;
+    private bool CanSeeMonitoringView;
+    private bool CanSeeSmsSection;
+    private bool IsSuperAdmin;
+
+    private int pendingCommentsCount = 0;
+    private int pendingProductReviewsCount = 0;
+    private int pendingTestimonialsCount = 0;
+    private int totalPendingComments => pendingCommentsCount + pendingProductReviewsCount + pendingTestimonialsCount;
+    private int newOrdersCount = 0;
+    private int pendingTicketsCount = 0;
+    private int _pendingArchiveCount = 0;
+    private decimal _smsBalance;
+    private int? _smsWarningThreshold;
+    private int _monitoringAlertCount;
+    private ExpiringSummaryDto? _expiringSummary;
+
+    private class CommentAdminDto
+    {
+        public int Id { get; set; }
+        public bool IsApproved { get; set; }
+    }
+
+    private int pendingAdmissionsCount = 0;
+    private int _activeChatSessions = 0;
+    private int _unreadChatCount = 0;
+    private int _pendingSmsChargeCount = 0;
+    private int _pendingRenewalCount = 0;
+    private bool _baleConfigured;
+    private class ChatSessionListResponse { public List<ChatSessionDto> items { get; set; } = new(); public int total { get; set; } }
+    private class BaleSettingsDto { public bool baleConfigured { get; set; } public string baleToken { get; set; } = ""; public string baleGroupId { get; set; } = ""; }
+    private SystemHealthSummaryDto? healthSummary;
+    private string currentVersion = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        IsSuperAdmin = user.IsInRole("super_admin");
+
+        CanSeeWorkshopAndReceiptsSection =
+            IsSuperAdmin ||
+            user.HasClaim("perm", "admin.receipts.view") ||
+            user.HasClaim("perm", "admin.receipts.manage") ||
+            user.HasClaim("perm", "admin.workshops.manage") ||
+            user.HasClaim("perm", "workshop.users.manage") ||
+            user.HasClaim("perm", "admin.monitoring.view") ||
+            user.HasClaim("perm", "admin.monitoring.devices.manage") ||
+            user.HasClaim("perm", "admin.monitoring.assignments.manage") ||
+            user.HasClaim("perm", "admin.monitoring.connections.manage");
+
+        CanSeeShopSection =
+            user.HasClaim("perm", "admin.products.manage") ||
+            user.HasClaim("perm", "admin.categories.view") ||
+            user.HasClaim("perm", "admin.orders.view") ||
+            user.HasClaim("perm", "admin.bankaccounts.manage");
+
+        CanSeeContentSection =
+            user.HasClaim("perm", "admin.academy.view") ||
+            user.HasClaim("perm", "admin.news.view") ||
+            user.HasClaim("perm", "admin.stories.view") ||
+            user.HasClaim("perm", "admin.sliders.view") ||
+            user.HasClaim("perm", "admin.popularbrands.manage") ||
+            user.HasClaim("perm", "admin.team.view") ||
+            user.HasClaim("perm", "admin.trust.view");
+
+        CanSeeTechnicalAndUsersSection =
+            user.HasClaim("perm", "admin.users.manage") ||
+            user.HasClaim("perm", "admin.technical.devices.view") ||
+            user.HasClaim("perm", "admin.technical.brands.view") ||
+            user.HasClaim("perm", "admin.technical.errorcodes.view") ||
+            user.HasClaim("perm", "admin.technical.sensorfinder.view") ||
+            user.HasClaim("perm", "admin.consultation.view");
+
+        CanSeeSecurityAndSettingsSection =
+            user.HasClaim("perm", "security.roles.manage") ||
+            user.HasClaim("perm", "admin.settings.manage");
+
+        CanSeeMonitoringView =
+            IsSuperAdmin ||
+            user.HasClaim("perm", "admin.monitoring.view");
+
+        CanSeeSmsSection =
+            IsSuperAdmin ||
+            user.HasClaim("perm", "admin.sms.view") ||
+            user.HasClaim("perm", "admin.sms.manage") ||
+            user.HasClaim("perm", "admin.sms.charges.manage") ||
+            user.HasClaim("perm", "admin.sms.credits.view") ||
+            user.HasClaim("perm", "admin.sms.credits.manage") ||
+            user.HasClaim("perm", "admin.sms.charges.view") ||
+            user.HasClaim("perm", "admin.sms.charges.approve") ||
+            user.HasClaim("perm", "admin.sms.logs.view") ||
+            user.HasClaim("perm", "workshop.sms.manage") ||
+            user.HasClaim("perm", "workshop.sms.settings.manage") ||
+            user.HasClaim("perm", "workshop.sms.credit.view") ||
+            user.HasClaim("perm", "workshop.sms.charge.request") ||
+            user.HasClaim("perm", "workshop.sms.charge.history") ||
+            user.HasClaim("perm", "workshop.sms.logs.view");
+
+
+
+        try
+        {
+            // Load current version from releases.json
+            var cacheBuster = $"?v={DateTimeOffset.UtcNow.Ticks}";
+            var releases = await Http.GetFromJsonAsync<List<ReleaseNote>>($"releases.json{cacheBuster}");
+            if (releases != null && releases.Any())
+            {
+                currentVersion = releases.First().Version;
+            }
+        }
+        catch { }
+
+        try
+        {
+            var tasks = new List<Task>();
+
+            Task<SystemHealthSummaryDto?>? healthTask = null;
+            if (IsSuperAdmin)
+            {
+                healthTask = Http.GetFromJsonAsync<SystemHealthSummaryDto>("api/systemevents/summary");
+                tasks.Add(healthTask);
+            }
+
+            Task<List<CommentAdminDto>?>? commentsTask = null;
+            if (user.HasClaim("perm", "admin.news.view"))
+            {
+                commentsTask = Http.GetFromJsonAsync<List<CommentAdminDto>>("api/trainingarticles/all-comments");
+                tasks.Add(commentsTask);
+            }
+
+            Task<List<OrderDto>?>? ordersTask = null;
+            if (user.HasClaim("perm", "admin.orders.view"))
+            {
+                ordersTask = Http.GetFromJsonAsync<List<OrderDto>>("api/orders/admin/all");
+                tasks.Add(ordersTask);
+            }
+
+            Task<List<ConsultationTicket>?>? ticketsTask = null;
+            if (user.HasClaim("perm", "admin.consultation.view"))
+            {
+                ticketsTask = Http.GetFromJsonAsync<List<ConsultationTicket>>("api/technical/tickets/admin");
+                tasks.Add(ticketsTask);
+            }
+
+            Task<List<TestimonialAdminDto>?>? testimonialsTask = null;
+            if (user.HasClaim("perm", "admin.trust.view"))
+            {
+                testimonialsTask = Http.GetFromJsonAsync<List<TestimonialAdminDto>>("api/trust/admin/testimonials");
+                tasks.Add(testimonialsTask);
+            }
+
+            Task<List<ProductReviewDto>?>? productReviewsTask = null;
+            if (user.HasClaim("perm", "admin.settings.manage"))
+            {
+                productReviewsTask = Http.GetFromJsonAsync<List<ProductReviewDto>>("api/products/0/reviews/all");
+                tasks.Add(productReviewsTask);
+            }
+
+            Task<ChatSessionListResponse?>? chatTask = null;
+            Task<BaleSettingsDto?>? baleSettingsTask = null;
+            if (user.HasClaim("perm", "admin.chat.manage"))
+            {
+                chatTask = Http.GetFromJsonAsync<ChatSessionListResponse>("api/chat/sessions?take=10000");
+                tasks.Add(chatTask);
+                baleSettingsTask = Http.GetFromJsonAsync<BaleSettingsDto>("api/chat/settings");
+                tasks.Add(baleSettingsTask);
+            }
+
+            Task<List<OnlineAdmissionDto>?>? admissionsTask = null;
+            if (IsSuperAdmin || user.HasClaim("perm", "admin.onlineadmission.manage"))
+            {
+                admissionsTask = Http.GetFromJsonAsync<List<OnlineAdmissionDto>>("api/online-admission/admin/list?status=pending");
+                tasks.Add(admissionsTask);
+            }
+
+            Task<PendingArchiveCountDto?>? archiveCountTask = null;
+            if (IsSuperAdmin || user.HasClaim("perm", "admin.monitoring.view"))
+            {
+                archiveCountTask = Http.GetFromJsonAsync<PendingArchiveCountDto>("api/monitoring/archives/count-pending");
+                tasks.Add(archiveCountTask);
+            }
+
+            Task<SmsDashboardDto?>? smsDashboardTask = null;
+            Task<WorkshopSmsDashboardDto?>? wsSmsDashboardTask = null;
+            if (CanSeeSmsSection)
+            {
+                if (IsSuperAdmin)
+                {
+                    smsDashboardTask = Http.GetFromJsonAsync<SmsDashboardDto>("api/sms-admin/dashboard");
+                    tasks.Add(smsDashboardTask);
+                }
+                else
+                {
+                    wsSmsDashboardTask = Http.GetFromJsonAsync<WorkshopSmsDashboardDto>("api/workshop-sms/dashboard");
+                    tasks.Add(wsSmsDashboardTask);
+                }
+            }
+
+            Task<System.Text.Json.JsonElement>? monitoringAlertTask = null;
+            Task<ExpiringSummaryDto?>? expiringSummaryTask = null;
+            if (CanSeeMonitoringView)
+            {
+                await AdminWorkshopSelection.InitializeAsync();
+                var wsId = IsSuperAdmin ? AdminWorkshopSelection.SelectedWorkshopId : null;
+                var qs = wsId.HasValue ? $"?workshopId={wsId}" : "";
+                monitoringAlertTask = Http.GetFromJsonAsync<System.Text.Json.JsonElement>($"api/monitoring/alert/workshop-count{qs}");
+                tasks.Add(monitoringAlertTask);
+                expiringSummaryTask = Http.GetFromJsonAsync<ExpiringSummaryDto>($"api/monitoring-devices/expiring-summary{qs}");
+                tasks.Add(expiringSummaryTask);
+            }
+
+            Task<List<RenewalRequestDto>?>? renewalTask = null;
+            if (IsSuperAdmin)
+            {
+                renewalTask = Http.GetFromJsonAsync<List<RenewalRequestDto>>("api/monitoring/renewal-requests?status=Pending");
+                tasks.Add(renewalTask);
+            }
+
+            if (tasks.Any())
+            {
+                await Task.WhenAll(tasks);
+
+                if (commentsTask != null)
+                {
+                    var comments = await commentsTask;
+                    pendingCommentsCount = comments?.Count(x => !x.IsApproved) ?? 0;
+                }
+
+                if (ordersTask != null)
+                {
+                    var orders = await ordersTask;
+                    newOrdersCount = orders?.Count(x => x.Status == OrderStatus.PendingPayment || x.Status == OrderStatus.ReceiptUploaded) ?? 0;
+                }
+
+                if (ticketsTask != null)
+                {
+                    var tickets = await ticketsTask;
+                    pendingTicketsCount = tickets?.Count(x => !x.IsAdminRead) ?? 0;
+                }
+
+                if (testimonialsTask != null)
+                {
+                    var testimonials = await testimonialsTask;
+                    pendingTestimonialsCount = testimonials?.Count(x => !x.IsApproved) ?? 0;
+                }
+
+                if (productReviewsTask != null)
+                {
+                    var reviews = await productReviewsTask;
+                    pendingProductReviewsCount = reviews?.Count(x => !x.IsApproved) ?? 0;
+                }
+
+                if (admissionsTask != null)
+                {
+                    var admissions = await admissionsTask;
+                    pendingAdmissionsCount = admissions?.Count ?? 0;
+                }
+
+                if (healthTask != null)
+                {
+                    healthSummary = await healthTask;
+                }
+
+                if (archiveCountTask != null)
+                {
+                    var ac = await archiveCountTask;
+                    _pendingArchiveCount = ac?.Count ?? 0;
+                }
+
+                if (smsDashboardTask != null)
+                {
+                    var d = await smsDashboardTask;
+                    _smsBalance = d?.TotalBalance ?? 0;
+                    _pendingSmsChargeCount = d?.PendingChargeCount ?? 0;
+                }
+                if (wsSmsDashboardTask != null)
+                {
+                    var d = await wsSmsDashboardTask;
+                    _smsBalance = d?.Balance ?? 0;
+                    _smsWarningThreshold = d?.WarningThreshold;
+                    _pendingSmsChargeCount = d?.PendingChargeCount ?? 0;
+                }
+
+                if (monitoringAlertTask != null)
+                {
+                    var r = await monitoringAlertTask;
+                    _monitoringAlertCount = r.GetProperty("count").GetInt32();
+                }
+
+                if (expiringSummaryTask != null)
+                    _expiringSummary = await expiringSummaryTask;
+
+                if (renewalTask != null)
+                {
+                    var list = await renewalTask;
+                    _pendingRenewalCount = list?.Count ?? 0;
+                }
+
+                if (CanSeeMonitoringView && IsSuperAdmin)
+                {
+                    AdminWorkshopSelection.OnChanged += async (wsId) =>
+                    {
+                        var qs = wsId.HasValue ? $"?workshopId={wsId}" : "";
+                        try
+                        {
+                            var r = await Http.GetFromJsonAsync<System.Text.Json.JsonElement>($"api/monitoring/alert/workshop-count{qs}");
+                            _monitoringAlertCount = r.GetProperty("count").GetInt32();
+                            StateHasChanged();
+                        }
+                        catch { _monitoringAlertCount = 0; StateHasChanged(); }
+                    };
+                }
+
+                if (chatTask != null)
+                {
+                    var response = await chatTask;
+                    _activeChatSessions = response?.items?.Count(s => s.Status == ChatSessionStatusDto.Active) ?? 0;
+                    _unreadChatCount = response?.items?.Count(s => s.HasUnread) ?? 0;
+                }
+
+                if (baleSettingsTask != null)
+                {
+                    var settings = await baleSettingsTask;
+                    if (settings != null)
+                    {
+                        _baleConfigured = settings.baleConfigured;
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+
+    private class OnlineAdmissionDto { public int Id { get; set; } }
+
+
+    private class TestimonialAdminDto
+    {
+        public int Id { get; set; }
+        public bool IsApproved { get; set; }
+    }
+}
+
+<div class="dash-wrapper" dir="rtl">
+
+    @{
+        var totalPending = _pendingRenewalCount + _pendingSmsChargeCount + _unreadChatCount;
+    }
+    @if (IsSuperAdmin && totalPending > 0)
+    {
+        <div class="admin-alerts">
+            <div class="admin-alerts__inner">
+                <div class="admin-alerts__header">
+                    <span class="admin-alerts__icon"><span class="oi oi-bell"></span></span>
+                    <span class="admin-alerts__title">اعلان‌های مدیریتی</span>
+                    <span class="admin-alerts__count">@totalPending</span>
+                </div>
+                <div class="admin-alerts__list">
+                    @if (_pendingRenewalCount > 0)
+                    {
+                        <a href="/admin/monitoring/renewal-requests" class="admin-alerts__item admin-alerts__item--renewal">
+                            <span class="admin-alerts__dot"></span>
+                            <span class="admin-alerts__text">@_pendingRenewalCount درخواست تمدید مانیتورینگ</span>
+                            <span class="admin-alerts__arrow"><span class="oi oi-chevron-left"></span></span>
+                        </a>
+                    }
+                    @if (_pendingSmsChargeCount > 0)
+                    {
+                        <a href="/admin/sms?tab=charges" class="admin-alerts__item admin-alerts__item--sms">
+                            <span class="admin-alerts__dot"></span>
+                            <span class="admin-alerts__text">@_pendingSmsChargeCount درخواست شارژ پیامک</span>
+                            <span class="admin-alerts__arrow"><span class="oi oi-chevron-left"></span></span>
+                        </a>
+                    }
+                    @if (_unreadChatCount > 0)
+                    {
+                        <a href="/admin/chat" class="admin-alerts__item admin-alerts__item--chat">
+                            <span class="admin-alerts__dot"></span>
+                            <span class="admin-alerts__text">@_unreadChatCount پیام چت خوانده نشده</span>
+                            <span class="admin-alerts__arrow"><span class="oi oi-chevron-left"></span></span>
+                        </a>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (CanSeeSmsSection && !IsSuperAdmin && _smsWarningThreshold.HasValue && _smsWarningThreshold > 0 && _smsBalance < _smsWarningThreshold)
+    {
+        <div class="sms-credit-warn">
+            <div class="sms-credit-warn__inner">
+                <div class="sms-credit-warn__icon">
+                    <span class="oi oi-warning"></span>
+                </div>
+                <div class="sms-credit-warn__body">
+                    <div class="sms-credit-warn__title">اعتبار پیامک شما رو به اتمام است</div>
+                    <div class="sms-credit-warn__desc">موجودی: @($"{_smsBalance:N0}") تومان — کمتر از آستانه هشدار (@(_smsWarningThreshold?.ToString("N0") ?? "—") تومان)</div>
+                </div>
+                <a href="/admin/sms" class="sms-credit-warn__btn">
+                    <span class="oi oi-credit-card"></span>
+                    شارژ اعتبار
+                </a>
+            </div>
+        </div>
+    }
+
+    @if (CanSeeMonitoringView && _monitoringAlertCount > 0)
+    {
+        <div class="monitoring-alert-warn">
+            <div class="monitoring-alert-warn__inner">
+                <div class="monitoring-alert-warn__icon">
+                    <span class="oi oi-warning"></span>
+                </div>
+                <div class="monitoring-alert-warn__body">
+                    <div class="monitoring-alert-warn__title">@_monitoringAlertCount اخطار فعال در مانیتورینگ</div>
+                    <div class="monitoring-alert-warn__desc">@_monitoringAlertCount رسید دارای قطعی یا اخطار — برای مدیریت کلیک کنید</div>
+                </div>
+                <a href="/admin/monitoring/active-receipts" class="monitoring-alert-warn__btn">
+                    <span class="oi oi-pulse"></span>
+                    مشاهده
+                </a>
+            </div>
+        </div>
+    }
+
+    @if (CanSeeMonitoringView && _expiringSummary != null && (_expiringSummary.ExpiringSoonCount > 0 || _expiringSummary.ExpiredCount > 0))
+    {
+        <div class="dev-expire-warn">
+            <div class="dev-expire-warn__inner">
+                <div class="dev-expire-warn__icon">
+                    <span class="oi oi-clock"></span>
+                </div>
+                <div class="dev-expire-warn__body">
+                    <div class="dev-expire-warn__title">
+                        @if (_expiringSummary.ExpiredCount > 0 && _expiringSummary.ExpiringSoonCount > 0)
+                        {
+                            <span>@_expiringSummary.ExpiredCount دستگاه منقضی و @_expiringSummary.ExpiringSoonCount دستگاه در حال انقضا</span>
+                        }
+                        else if (_expiringSummary.ExpiredCount > 0)
+                        {
+                            <span>@_expiringSummary.ExpiredCount دستگاه مانیتورینگ منقضی شده</span>
+                        }
+                        else
+                        {
+                            <span>@_expiringSummary.ExpiringSoonCount دستگاه در حال انقضا</span>
+                        }
+                    </div>
+                    <div class="dev-expire-warn__desc">
+                        @if (_expiringSummary.ExpiredCount > 0)
+                        {
+                            var first = _expiringSummary.ExpiredDevices.FirstOrDefault();
+                            <span>منقضی: @string.Join("، ", _expiringSummary.ExpiredDevices.Take(2).Select(d => $"{d.DeviceTitle}" ))@(_expiringSummary.ExpiredDevices.Count > 2 ? $" +{_expiringSummary.ExpiredDevices.Count - 2}" : "")</span>
+                        }
+                        @if (_expiringSummary.ExpiringSoonCount > 0)
+                        {
+                            var items = _expiringSummary.ExpiringSoonDevices.OrderBy(d => d.RemainingDays).Take(2).ToList();
+                            <span>در شرف انقضا: @string.Join("، ", items.Select(d => $"{d.DeviceTitle} ({d.RemainingDays} روز)"))@(_expiringSummary.ExpiringSoonDevices.Count > 2 ? $" +{_expiringSummary.ExpiringSoonDevices.Count - 2}" : "")</span>
+                        }
+                    </div>
+                </div>
+                <a href="/admin/monitoring/my-devices" class="dev-expire-warn__btn">
+                    <span class="oi oi-hard-drive"></span>
+                    مشاهده دستگاه‌ها
+                </a>
+            </div>
+        </div>
+    }
+
+    <!-- Quick Stats -->
+    <div class="stats-grid mb-4">
+
+      <AuthorizeView Policy="perm:admin.onlineadmission.manage">
+            <div class="stat-card stats-admission shadow-sm p-3 animate__animated animate__fadeIn animate__delay-4s">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon-bg bg-danger-subtle text-danger">
+                        <span class="oi oi-wrench"></span>
+                    </div>
+                    <div>
+                        <div class="stat-value fw-black">@pendingAdmissionsCount</div>
+                        <div class="stat-label">پذیرش‌های معلق</div>
+                    </div>
+                </div>
+                <a href="/admin/online-admission" class="btn btn-danger btn-sm rounded-pill w-100 mt-3 fw-bold border-0 shadow-none">مدیریت پذیرش‌ها</a>
+            </div>
+        </AuthorizeView>
+
+        @if (CanSeeMonitoringView)
+        {
+            <div class="stat-card stats-archives shadow-sm p-3 animate__animated animate__fadeIn animate__delay-4s">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon-bg bg-info-subtle text-info">
+                        <span class="oi oi-pulse"></span>
+                    </div>
+                    <div>
+                        <div class="stat-value fw-black">@_pendingArchiveCount</div>
+                        <div class="stat-label">در انتظار دانلود</div>
+                    </div>
+                </div>
+                <a href="/admin/monitoring/archives" class="btn btn-info btn-sm rounded-pill w-100 mt-3 fw-bold border-0 shadow-none text-white">مشاهده و دانلود</a>
+            </div>
+
+            <div class="stat-card shadow-sm p-3 animate__animated animate__fadeIn animate__delay-4s">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon-bg" style="background:rgba(245,158,11,0.1);color:#d97706;">
+                        <span class="oi oi-clock"></span>
+                    </div>
+                    <div>
+                        <div class="stat-value fw-black">
+                            @if (_expiringSummary != null)
+                            {
+                                <span>@(_expiringSummary.ExpiringSoonCount + _expiringSummary.ExpiredCount)</span>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </div>
+                        <div class="stat-label">در انتظار تمدید</div>
+                        @if (_expiringSummary != null && (_expiringSummary.ExpiringSoonCount > 0 || _expiringSummary.ExpiredCount > 0))
+                        {
+                            <div class="x-small text-muted mt-1">
+                                @(_expiringSummary.ExpiredCount > 0 ? $"منقضی: {_expiringSummary.ExpiredCount}" : "")
+                                @(_expiringSummary.ExpiredCount > 0 && _expiringSummary.ExpiringSoonCount > 0 ? " • " : "")
+                                @(_expiringSummary.ExpiringSoonCount > 0 ? $"در حال انقضا: {_expiringSummary.ExpiringSoonCount}" : "")
+                            </div>
+                        }
+                    </div>
+                </div>
+                <a href="/admin/monitoring/my-devices" class="btn btn-sm rounded-pill w-100 mt-3 fw-bold border-0 shadow-none" style="background:#d97706;color:#fff;">مشاهده دستگاه‌ها</a>
+            </div>
+        }
+
+            <AuthorizeView Policy="perm:admin.orders.view">
+            <div class="stat-card stats-orders shadow-sm p-3 animate__animated animate__fadeIn animate__delay-1s">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon-bg bg-primary-subtle text-primary">
+                        <span class="oi oi-cart"></span>
+                    </div>
+                    <div>
+                        <div class="stat-value fw-black">@newOrdersCount</div>
+                        <div class="stat-label">سفارشات جدید</div>
+                    </div>
+                </div>
+                <a href="/admin/orders" class="btn btn-primary btn-sm rounded-pill w-100 mt-3 fw-bold border-0 shadow-none">مدیریت سفارشات</a>
+            </div>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="perm:admin.news.view">
+            <div class="stat-card stats-comments shadow-sm p-3 animate__animated animate__fadeIn">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon-bg bg-warning-subtle text-warning">
+                        <span class="oi oi-chat"></span>
+                    </div>
+                    <div>
+                        <div class="stat-value fw-black">@totalPendingComments</div>
+                        <div class="stat-label">نظرات در انتظار تایید</div>
+                        <div class="x-small text-muted mt-1">
+                            @(pendingCommentsCount > 0 ? $"مقالات: {pendingCommentsCount}" : "")@(pendingCommentsCount > 0 && pendingProductReviewsCount > 0 ? " • " : "")@(pendingProductReviewsCount > 0 ? $"محصولات: {pendingProductReviewsCount}" : "")@((pendingCommentsCount > 0 || pendingProductReviewsCount > 0) && pendingTestimonialsCount > 0 ? " • " : "")@(pendingTestimonialsCount > 0 ? $"مشتریان: {pendingTestimonialsCount}" : "")
+                        </div>
+                    </div>
+                </div>
+                <a href="/admin/comments" class="btn btn-warning btn-sm rounded-pill w-100 mt-3 fw-bold border-0 shadow-none">
+                    مدیریت نظرات
+                </a>
+            </div>
+        </AuthorizeView>
+
+        @if (CanSeeSmsSection)
+        {
+            <div class="stat-card shadow-sm p-3 animate__animated animate__fadeIn animate__delay-2s">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon-bg" style="background:rgba(79,70,229,0.1);color:#4f46e5;">
+                        <span class="oi oi-envelope-closed"></span>
+                    </div>
+                    <div>
+                        <div class="stat-value fw-black">@($"{_smsBalance:N0}")</div>
+                        <div class="stat-label">اعتبار پیامک (تومان)</div>
+                    </div>
+                </div>
+                <a href="/admin/sms" class="btn btn-sm rounded-pill w-100 mt-3 fw-bold border-0 shadow-none" style="background:#4f46e5;color:#fff;">مدیریت پیامک</a>
+            </div>
+        }
+
+        <AuthorizeView Policy="perm:admin.consultation.view">
+            <div class="stat-card stats-tickets shadow-sm p-3 animate__animated animate__fadeIn animate__delay-2s">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon-bg bg-info-subtle text-info">
+                        <span class="oi oi-chat"></span>
+                    </div>
+                    <div>
+                        <div class="stat-value fw-black">@pendingTicketsCount</div>
+                        <div class="stat-label">مشاوره‌های جدید</div>
+                    </div>
+                </div>
+                <a href="/admin/technical/consultation" class="btn btn-info btn-sm rounded-pill w-100 mt-3 fw-bold border-0 shadow-none text-white">بررسی مشاوره‌ها</a>
+            </div>
+        </AuthorizeView>
+
+        <AuthorizeView Policy="perm:admin.chat.manage">
+            <div class="stat-card stats-chat shadow-sm p-3 animate__animated animate__fadeIn">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon-bg bg-primary-subtle text-primary">
+                        <span class="oi oi-chat"></span>
+                    </div>
+                    <div>
+                        <div class="stat-value fw-black">@_activeChatSessions</div>
+                        <div class="stat-label">چت آنلاین</div>
+                        <div class="x-small text-muted mt-1">@(_baleConfigured ? "🟢 متصل به بله" : "🔴 بله غیرفعال")</div>
+                    </div>
+                </div>
+                <a href="/admin/chat" class="btn btn-primary btn-sm rounded-pill w-100 mt-3 fw-bold border-0 shadow-none">مدیریت چت</a>
+            </div>
+        </AuthorizeView>
+
+
+   
+    </div>
+
+    <!-- Quick Actions (Apps Style) -->
+    <div class="dash-section">
+        <h5 class="fw-black mb-4 px-2">دسترسی سریع</h5>
+
+        <div class="apps-sections">
+            @if (CanSeeWorkshopAndReceiptsSection)
+            {
+                <div class="apps-section">
+                    <div class="apps-section__head">کارگاه و رسیدها</div>
+                    <div class="apps-grid">
+                        <AuthorizeView Policy="perm:admin.onlineadmission.manage">
+                            <a class="app-item shadow-sm" href="/admin/online-admission">
+                                <div class="app-icon-box bg-danger-subtle text-danger">
+                                    <span class="oi oi-wrench"></span>
+                                </div>
+                                <span class="app-name">پذیرش آنلاین</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.receipts.view">
+                            <a class="app-item shadow-sm" href="/admin/receipts">
+                                <div class="app-icon-box bg-secondary-subtle text-secondary">
+                                    <span class="oi oi-list"></span>
+                                </div>
+                                <span class="app-name">لیست رسیدها</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.receipts.manage">
+                            <a class="app-item shadow-sm" href="/admin/receipts/new">
+                                <div class="app-icon-box bg-primary-subtle text-primary">
+                                    <span class="oi oi-plus"></span>
+                                </div>
+                                <span class="app-name">ثبت رسید</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.monitoring.devices.manage">
+                            <a class="app-item shadow-sm" href="/admin/monitoring-devices">
+                                <div class="app-icon-box bg-info-subtle text-info">
+                                    <span class="oi oi-pulse"></span>
+                                </div>
+                                <span class="app-name">مدیریت دستگاه‌ها</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Context="wsCtx">
+                            <Authorized>
+                                @if (wsCtx.User.IsInRole("super_admin") || wsCtx.User.HasClaim("perm", "admin.workshops.editown") || wsCtx.User.HasClaim("perm", "workshop.users.manage"))
+                                {
+                                    <a class="app-item shadow-sm" href="/admin/workshops">
+                                        <div class="app-icon-box bg-primary-subtle text-primary">
+                                            <span class="oi oi-home"></span>
+                                        </div>
+                                        <span class="app-name">کارگاه‌ها</span>
+                                    </a>
+                                }
+                            </Authorized>
+                        </AuthorizeView>
+
+
+                    </div>
+                </div>
+            }
+
+            @if (CanSeeMonitoringView)
+            {
+                <div class="apps-section">
+                    <div class="apps-section__head">پایش دستگاه‌ها</div>
+                    <div class="apps-grid">
+                        <a class="app-item shadow-sm" href="/admin/monitoring/active-receipts">
+                            <div class="app-icon-box bg-danger-subtle text-danger">
+                                <span class="oi oi-pulse"></span>
+                            </div>
+                            <span class="app-name">مانیتورینگ‌های فعال</span>
+                        </a>
+                        <a class="app-item shadow-sm" href="/admin/monitoring/my-devices">
+                            <div class="app-icon-box bg-warning-subtle text-warning">
+                                <span class="oi oi-hard-drive"></span>
+                            </div>
+                            <span class="app-name">دستگاه‌های من</span>
+                        </a>
+                        <a class="app-item shadow-sm" href="/admin/monitoring/archives">
+                            <div class="app-icon-box bg-secondary-subtle text-secondary">
+                                <span class="oi oi-data-transfer-download"></span>
+                            </div>
+                            <span class="app-name">آرشیو مانیتورینگ</span>
+                        </a>
+                        <AuthorizeView Policy="perm:admin.monitoring.devices.manage">
+                            <a class="app-item shadow-sm" href="/admin/monitoring/renewal-requests">
+                                <div class="app-icon-box bg-primary-subtle text-primary">
+                                    <span class="oi oi-loop"></span>
+                                </div>
+                                <span class="app-name">درخواست‌های تمدید</span>
+                            </a>
+                        </AuthorizeView>
+                        <AuthorizeView Policy="perm:admin.monitoring.plans.manage">
+                            <a class="app-item shadow-sm" href="/admin/monitoring/plans">
+                                <div class="app-icon-box bg-success-subtle text-success">
+                                    <span class="oi oi-dollar"></span>
+                                </div>
+                                <span class="app-name">تعرفه پلن‌ها</span>
+                            </a>
+                        </AuthorizeView>
+                    </div>
+                </div>
+            }
+
+            @if (CanSeeSmsSection)
+            {
+                <div class="apps-section">
+                    <div class="apps-section__head">
+                        <span>پیامک</span>
+                        <a href="/admin/sms" class="small fw-bold text-decoration-none text-primary">مشاهده همه</a>
+                    </div>
+                    <div class="apps-grid">
+                        <a class="app-item shadow-sm" href="/admin/sms">
+                            <div class="app-icon-box bg-primary-subtle text-primary">
+                                <span class="oi oi-graph"></span>
+                            </div>
+                            <span class="app-name">مدیریت پیامک</span>
+                        </a>
+                    </div>
+                </div>
+            }
+
+            @if (CanSeeShopSection)
+            {
+                <div class="apps-section">
+                    <div class="apps-section__head">فروشگاه</div>
+                    <div class="apps-grid">
+                        <AuthorizeView Policy="perm:admin.products.manage">
+                            <a class="app-item shadow-sm" href="/admin/products">
+                                <div class="app-icon-box bg-success-subtle text-success">
+                                    <span class="oi oi-box"></span>
+                                </div>
+                                <span class="app-name">محصولات</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.categories.view">
+                            <a class="app-item shadow-sm" href="/admin/categories">
+                                <div class="app-icon-box bg-secondary-subtle text-secondary">
+                                    <span class="oi oi-tags"></span>
+                                </div>
+                                <span class="app-name">دسته‌ها</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.orders.view">
+                            <a class="app-item shadow-sm" href="/admin/orders">
+                                <div class="app-icon-box bg-warning-subtle text-warning">
+                                    <span class="oi oi-cart"></span>
+                                </div>
+                                <span class="app-name">سفارشات</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.bankaccounts.manage">
+                            <a class="app-item shadow-sm" href="/admin/bank-accounts">
+                                <div class="app-icon-box bg-primary-subtle text-primary">
+                                    <span class="oi oi-credit-card"></span>
+                                </div>
+                                <span class="app-name">حساب‌های بانکی</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.settings.manage">
+                            <a class="app-item shadow-sm" href="/admin/coupons">
+                                <div class="app-icon-box bg-success-subtle text-success">
+                                    <span class="oi oi-tag"></span>
+                                </div>
+                                <span class="app-name">کوپن‌های تخفیف</span>
+                            </a>
+                        </AuthorizeView>
+                    </div>
+                </div>
+            }
+
+            @if (CanSeeContentSection)
+            {
+                <div class="apps-section">
+                    <div class="apps-section__head">محتوا</div>
+                    <div class="apps-grid">
+                        <AuthorizeView Policy="perm:admin.academy.view">
+                            <a class="app-item shadow-sm" href="/admin/academy">
+                                <div class="app-icon-box bg-primary-subtle text-primary">
+                                    <span class="oi oi-book"></span>
+                                </div>
+                                <span class="app-name">دوره‌ها</span>
+                            </a>
+                        </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.news.view">
+                        <a class="app-item shadow-sm" href="/admin/academy/articles">
+                            <div class="app-icon-box bg-info-subtle text-info">
+                                <span class="oi oi-document"></span>
+                            </div>
+                            <span class="app-name">آموزشها</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.news.view">
+                        <a class="app-item shadow-sm" href="/admin/news">
+                            <div class="app-icon-box bg-danger-subtle text-danger">
+                                <span class="oi oi-list"></span>
+                            </div>
+                            <span class="app-name">اخبار</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.stories.view">
+                        <a class="app-item shadow-sm" href="/admin/stories">
+                            <div class="app-icon-box bg-danger-subtle text-danger">
+                                <span class="oi oi-video"></span>
+                            </div>
+                            <span class="app-name">استوری‌ها</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.sliders.view">
+                        <a class="app-item shadow-sm" href="/admin/sliders">
+                            <div class="app-icon-box bg-warning-subtle text-warning">
+                                <span class="oi oi-image"></span>
+                            </div>
+                            <span class="app-name">اسلایدرها</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.popularbrands.manage">
+                        <a class="app-item shadow-sm" href="/admin/popular-brands">
+                            <div class="app-icon-box bg-primary-subtle text-primary">
+                                <span class="oi oi-star"></span>
+                            </div>
+                            <span class="app-name">برندهای محبوب</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.team.view">
+                        <a class="app-item shadow-sm" href="/admin/team">
+                            <div class="app-icon-box bg-info-subtle text-info">
+                                <span class="oi oi-people"></span>
+                            </div>
+                            <span class="app-name">همکاران</span>
+                        </a>
+                    </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.news.view">
+                            <a class="app-item shadow-sm" href="/admin/comments">
+                                <div class="app-icon-box bg-warning-subtle text-warning">
+                                    <span class="oi oi-chat"></span>
+                                </div>
+                                <span class="app-name">مدیریت نظرات</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.settings.manage">
+                            <a class="app-item shadow-sm" href="/admin/contact-messages">
+                                <div class="app-icon-box bg-danger-subtle text-danger">
+                                    <span class="oi oi-envelope-open"></span>
+                                </div>
+                                <span class="app-name">پیام‌های تماس</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.settings.manage">
+                            <a class="app-item shadow-sm" href="/admin/newsletter-subscribers">
+                                <div class="app-icon-box bg-primary-subtle text-primary">
+                                    <span class="oi oi-inbox"></span>
+                                </div>
+                                <span class="app-name">مشترکین خبرنامه</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.settings.manage">
+                            <a class="app-item shadow-sm" href="/admin/footer">
+                                <div class="app-icon-box bg-secondary-subtle text-secondary">
+                                    <span class="oi oi-layers"></span>
+                                </div>
+                                <span class="app-name">مدیریت فوتر</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.trust.view">
+                            <a class="app-item shadow-sm" href="/admin/trust/portfolio">
+                                <div class="app-icon-box bg-info-subtle text-info">
+                                    <span class="oi oi-image"></span>
+                                </div>
+                                <span class="app-name">نمونه‌کارها</span>
+                            </a>
+                        </AuthorizeView>
+                    </div>
+                </div>
+            }
+
+            @if (CanSeeTechnicalAndUsersSection)
+            {
+                <div class="apps-section">
+                    <div class="apps-section__head">فنی و کاربران</div>
+                    <div class="apps-grid">
+                        <AuthorizeView Policy="perm:admin.users.manage">
+                            <a class="app-item shadow-sm" href="/admin/site-users">
+                                <div class="app-icon-box bg-dark text-white">
+                                    <span class="oi oi-person"></span>
+                                </div>
+                                <span class="app-name">کاربران سایت</span>
+                            </a>
+                        </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.technical.devices.view">
+                        <a class="app-item shadow-sm" href="/admin/devices/types">
+                            <div class="app-icon-box bg-primary-subtle text-primary">
+                                <span class="oi oi-clipboard"></span>
+                            </div>
+                            <span class="app-name">نوع دستگاه</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.technical.brands.view">
+                        <a class="app-item shadow-sm" href="/admin/devices/brands">
+                            <div class="app-icon-box bg-info-subtle text-info">
+                                <span class="oi oi-badge"></span>
+                            </div>
+                            <span class="app-name">برندها</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.technical.errorcodes.view">
+                        <a class="app-item shadow-sm" href="/admin/technical/error-codes">
+                            <div class="app-icon-box bg-primary-subtle text-primary">
+                                <span class="oi oi-magnifying-glass"></span>
+                            </div>
+                            <span class="app-name">کدهای خطا</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.technical.sensorfinder.view">
+                        <a class="app-item shadow-sm" href="/admin/technical/sensor-finder">
+                            <div class="app-icon-box bg-info-subtle text-info">
+                                <span class="oi oi-rss"></span>
+                            </div>
+                            <span class="app-name">سنسور یاب</span>
+                        </a>
+                    </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.consultation.view">
+                            <a class="app-item shadow-sm" href="/admin/technical/consultation">
+                                <div class="app-icon-box bg-warning-subtle text-warning">
+                                    <span class="oi oi-chat"></span>
+                                </div>
+                                <span class="app-name">مشاوره‌ها</span>
+                            </a>
+                        </AuthorizeView>
+                    </div>
+                </div>
+            }
+
+            @if (CanSeeSecurityAndSettingsSection)
+            {
+                <div class="apps-section">
+                    <div class="apps-section__head">امنیت و تنظیمات</div>
+                    <div class="apps-grid">
+                        <AuthorizeView Policy="perm:security.roles.manage">
+                            <a class="app-item shadow-sm" href="/admin/roles">
+                                <div class="app-icon-box bg-dark text-white shadow">
+                                    <span class="oi oi-shield"></span>
+                                </div>
+                                <span class="app-name">نقش‌ها</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.settings.manage">
+                            <a class="app-item shadow-sm" href="/admin/settings">
+                                <div class="app-icon-box bg-dark text-white">
+                                    <span class="oi oi-cog"></span>
+                                </div>
+                                <span class="app-name">تنظیمات</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <a class="app-item shadow-sm" href="/">
+                            <div class="app-icon-box bg-light text-dark border">
+                                <span class="oi oi-globe"></span>
+                            </div>
+                            <span class="app-name">نمایش سایت</span>
+                        </a>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (IsSuperAdmin)
+    {
+    <!-- Recent Activity Section -->
+    <div class="dash-section mt-5">
+        <div class="d-flex justify-content-between align-items-center mb-4 px-2">
+            <h5 class="fw-black mb-0">گزارش وضعیت سیستم</h5>
+            <a href="/admin/logs" class="text-primary small fw-bold text-decoration-none">مشاهده همه رویدادها</a>
+        </div>
+
+        @if (healthSummary == null)
+        {
+            <div class="card border-0 shadow-sm rounded-5 p-4 bg-white text-center">
+                <div class="spinner-border text-primary spinner-border-sm mb-2"></div>
+                <p class="text-muted small mb-0">در حال تحلیل وضعیت سلامت سیستم...</p>
+            </div>
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-12">
+                    @if (healthSummary.UnresolvedErrors > 0)
+                    {
+                        <div class="card border-0 shadow-sm rounded-5 p-4 bg-white border-start border-danger border-5">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="display-6 text-danger"><span class="oi oi-warning"></span></div>
+                                <div>
+                                    <h6 class="fw-bold mb-1">سیستم نیاز به توجه دارد!</h6>
+                                    <p class="text-muted small mb-0">تعداد @healthSummary.UnresolvedErrors خطای حل نشده شناسایی شده است.</p>
+                                </div>
+                                <div class="ms-auto">
+                                    <a href="/admin/logs?onlyUnresolved=true" class="btn btn-danger btn-sm rounded-pill px-3">بررسی فوری</a>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="card border-0 shadow-sm rounded-5 p-4 bg-white text-center border-start border-success border-5">
+                            <div class="display-6 text-success mb-2"><span class="oi oi-circle-check"></span></div>
+                            <h6 class="fw-bold mb-1">وضعیت سبز: همه چیز مرتب است</h6>
+                            <p class="text-muted small mb-0">در ۲۴ ساعت گذشته هیچ خطای بحرانی حل نشده‌ای ثبت نشده است.</p>
+                        </div>
+                    }
+                </div>
+
+                <!-- Health Cards -->
+                <div class="col-6 col-md-3">
+                    <div class="card border-0 shadow-sm rounded-4 p-3 bg-white h-100 text-center">
+                        <div class="text-muted x-small fw-bold mb-1">رویدادهای ۲۴ ساعت</div>
+                        <div class="h4 fw-black m-0 text-primary">@healthSummary.TotalEvents24h</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card border-0 shadow-sm rounded-4 p-3 bg-white h-100 text-center">
+                        <div class="text-muted x-small fw-bold mb-1">خطاهای بحرانی</div>
+                        <div class="h4 fw-black m-0 @(healthSummary.CriticalErrors24h > 0 ? "text-danger" : "text-success")">@healthSummary.CriticalErrors24h</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card border-0 shadow-sm rounded-4 p-3 bg-white h-100 text-center">
+                        <div class="text-muted x-small fw-bold mb-1">سرعت پاسخ‌دهی</div>
+                        <div class="h4 fw-black m-0 text-info">@((int)healthSummary.AvgResponseTime) <small class="x-small">ms</small></div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card border-0 shadow-sm rounded-4 p-3 bg-white h-100 text-center">
+                        <div class="text-muted x-small fw-bold mb-1">نرخ خطا (API)</div>
+                        <div class="h4 fw-black m-0 @(healthSummary.ErrorRate > 5 ? "text-danger" : "text-success")">@healthSummary.ErrorRate%</div>
+                    </div>
+                </div>
+
+                @if (healthSummary.TopErrors.Any())
+                {
+                    <div class="col-12 mt-2">
+                        <div class="card border-0 shadow-sm rounded-4 p-3 bg-white">
+                            <div class="small fw-bold text-muted mb-3">پرتکرارترین خطاها (۲۴ ساعت اخیر)</div>
+                            <div class="list-group list-group-flush">
+                                @foreach (var err in healthSummary.TopErrors)
+                                {
+                                    <div class="list-group-item px-0 py-2 border-0 d-flex justify-content-between align-items-center">
+                                        <div class="overflow-hidden">
+                                            <div class="fw-bold small text-truncate">@err.PersianTitle</div>
+                                            <div class="x-small text-muted font-monospace">@err.ErrorCode</div>
+                                        </div>
+                                        <span class="badge bg-light text-dark rounded-pill">@err.Count بار</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+    }
+
+    <!-- Version Badge -->
+    @if (!string.IsNullOrEmpty(currentVersion))
+    {
+        <div class="version-badge-container">
+            <a href="/admin/release-history" class="version-badge">
+                <span class="oi oi-tag"></span>
+                <span>نسخه @currentVersion</span>
+            </a>
+        </div>
+    }
+</div>
+
+<style>
+    .fw-black { font-weight: 900; }
+
+    .dash-wrapper {
+        padding-bottom: 20px;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+    }
+
+    .stat-card {
+        background: #fff;
+        border: 1px solid rgba(0,0,0,0.04);
+        border-radius: 20px;
+        transition: all 0.25s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 28px rgba(0,0,0,0.08) !important;
+    }
+
+
+    .stat-icon-bg {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        font-size: 1.4rem;
+    }
+
+    .stat-value { font-size: 1.25rem; line-height: 1; margin-bottom: 4px; }
+    .stat-label { font-size: 0.75rem; color: #64748b; font-weight: 700; }
+
+    /* Apps Grid (Android Style) */
+    .apps-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+    }
+
+    .apps-sections { display: grid; gap: 18px; }
+    .apps-section {
+        border-radius: 22px;
+        padding: 14px;
+        background: rgba(255,255,255,0.75);
+        border: 1px solid rgba(2,6,23,0.06);
+        backdrop-filter: blur(10px);
+    }
+    .apps-section__head {
+        font-weight: 950;
+        color: rgba(15,23,42,0.85);
+        font-size: 0.88rem;
+        margin-bottom: 12px;
+        padding: 0 6px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .app-item {
+        background: #fff;
+        border-radius: 20px;
+        padding: 16px 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+        transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        border: 1px solid rgba(0,0,0,0.03);
+    }
+
+    .app-item:active { transform: scale(0.92); }
+
+    .app-icon-box {
+        width: 54px;
+        height: 54px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        font-size: 1.5rem;
+        transition: all 0.2s ease;
+    }
+
+    .app-name {
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #1e293b;
+        text-align: center;
+    }
+
+    /* Background Subtles */
+    .bg-primary-subtle { background: rgba(37, 99, 235, 0.1); }
+    .bg-success-subtle { background: rgba(16, 185, 129, 0.1); }
+    .bg-warning-subtle { background: rgba(245, 158, 11, 0.1); }
+    .bg-danger-subtle { background: rgba(239, 68, 68, 0.1); }
+    .bg-info-subtle { background: rgba(6, 182, 212, 0.1); }
+    .bg-secondary-subtle { background: rgba(100, 116, 139, 0.1); }
+
+    @@media (max-width: 480px) {
+        .apps-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    @@media (min-width: 992px) {
+        .apps-grid { grid-template-columns: repeat(6, 1fr); }
+        .stats-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+
+    /* Version Badge */
+    .version-badge-container {
+        display: flex;
+        justify-content: center;
+        margin-top: 30px;
+        padding: 10px;
+    }
+
+    .version-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(16, 185, 129, 0.1));
+        border: 1px solid rgba(37, 99, 235, 0.2);
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #2563eb;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+
+    .version-badge:hover {
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.15), rgba(16, 185, 129, 0.15));
+        border-color: rgba(37, 99, 235, 0.3);
+        transform: translateY(-1px);
+    }
+
+    .version-badge .oi {
+        font-size: 0.7rem;
+    }
+
+    /* SMS Credit Warning */
+    .sms-credit-warn {
+        padding: 0;
+        margin-bottom: 16px;
+    }
+
+    .sms-credit-warn__inner {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: linear-gradient(135deg, #fef3c7, #fde68a);
+        border: 1px solid rgba(217, 119, 6, 0.25);
+        border-radius: 16px;
+        padding: 14px 18px;
+        box-shadow: 0 2px 8px rgba(217, 119, 6, 0.08);
+    }
+
+    .sms-credit-warn__icon {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        border-radius: 12px;
+        background: rgba(217, 119, 6, 0.15);
+        color: #d97706;
+        display: grid;
+        place-items: center;
+        font-size: 1.3rem;
+    }
+
+    .sms-credit-warn__body {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sms-credit-warn__title {
+        font-weight: 900;
+        font-size: 0.85rem;
+        color: #78350f;
+        margin-bottom: 2px;
+    }
+
+    .sms-credit-warn__desc {
+        font-size: 0.72rem;
+        color: #92400e;
+        line-height: 1.4;
+    }
+
+    .sms-credit-warn__btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        background: #d97706;
+        color: #fff;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 800;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: all 0.2s ease;
+        border: none;
+        cursor: pointer;
+    }
+
+    .sms-credit-warn__btn:hover {
+        background: #b45309;
+        color: #fff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(217, 119, 6, 0.3);
+    }
+
+    .sms-credit-warn__btn .oi {
+        font-size: 0.7rem;
+    }
+
+    @@media (min-width: 992px) {
+        .sms-credit-warn__inner {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 16px 24px;
+        }
+    }
+
+    .monitoring-alert-warn { padding: 0; margin-bottom: 16px; }
+    .monitoring-alert-warn__inner {
+        display: flex; align-items: center; gap: 12px;
+        background: linear-gradient(135deg, #fef2f2, #fee2e2);
+        border: 1.5px solid rgba(239,68,68,0.25);
+        border-radius: 16px; padding: 14px 18px;
+        box-shadow: 0 2px 10px rgba(239,68,68,0.1);
+    }
+    .monitoring-alert-warn__icon {
+        width: 44px; height: 44px; min-width: 44px;
+        border-radius: 12px;
+        background: rgba(239,68,68,0.18);
+        color: #dc2626;
+        display: grid; place-items: center;
+        font-size: 1.3rem;
+    }
+    .monitoring-alert-warn__body { flex: 1; min-width: 0; }
+    .monitoring-alert-warn__title {
+        font-weight: 900; font-size: 0.85rem; color: #7f1d1d; margin-bottom: 2px;
+    }
+    .monitoring-alert-warn__desc {
+        font-size: 0.72rem; color: #991b1b; line-height: 1.4;
+    }
+    .monitoring-alert-warn__btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 16px; background: #dc2626; color: #fff;
+        border-radius: 999px; font-size: 0.78rem; font-weight: 800;
+        text-decoration: none; white-space: nowrap;
+        transition: all 0.2s ease; border: none; cursor: pointer;
+    }
+    .monitoring-alert-warn__btn:hover {
+        background: #b91c1c; color: #fff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(239,68,68,0.3);
+    }
+    .monitoring-alert-warn__btn .oi { font-size: 0.7rem; }
+
+    /* Expired / Expiring devices warning */
+    .dev-expire-warn { padding: 0; margin-bottom: 16px; }
+    .dev-expire-warn__inner {
+        display: flex; align-items: center; gap: 12px;
+        background: linear-gradient(135deg, #fffbeb, #fef3c7);
+        border: 1.5px solid rgba(245,158,11,0.25);
+        border-radius: 16px; padding: 14px 18px;
+        box-shadow: 0 2px 10px rgba(245,158,11,0.1);
+    }
+    .dev-expire-warn__icon {
+        width: 44px; height: 44px; min-width: 44px;
+        border-radius: 12px;
+        background: rgba(245,158,11,0.18);
+        color: #f59e0b;
+        display: grid; place-items: center;
+        font-size: 1.3rem;
+    }
+    .dev-expire-warn__body { flex: 1; min-width: 0; }
+    .dev-expire-warn__title {
+        font-weight: 900; font-size: 0.85rem; color: #78350f; margin-bottom: 2px;
+    }
+    .dev-expire-warn__desc {
+        font-size: 0.72rem; color: #92400e; line-height: 1.4;
+    }
+    .dev-expire-warn__btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 16px; background: #f59e0b; color: #fff;
+        border-radius: 999px; font-size: 0.78rem; font-weight: 800;
+        text-decoration: none; white-space: nowrap;
+        transition: all 0.2s ease; border: none; cursor: pointer;
+    }
+    .dev-expire-warn__btn:hover {
+        background: #d97706; color: #fff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(245,158,11,0.3);
+    }
+    .dev-expire-warn__btn .oi { font-size: 0.7rem; }
+    @@media (min-width: 992px) { .dev-expire-warn__inner { max-width: 700px; margin: 0 auto; padding: 16px 24px; } }
+
+    /* Admin Alerts - unified notification bar */
+    .admin-alerts { padding: 0; margin-bottom: 20px; }
+    .admin-alerts__inner {
+        background: #fff;
+        border-radius: 22px; overflow: hidden;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.05);
+        border: 1px solid rgba(0,0,0,0.04);
+    }
+    .admin-alerts__header {
+        display: flex; align-items: center; gap: 12px;
+        padding: 16px 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #fff;
+        position: relative; overflow: hidden;
+    }
+    .admin-alerts__header::before {
+        content: ''; position: absolute; inset: 0;
+        background: radial-gradient(circle at 30% 50%, rgba(255,255,255,0.1) 0%, transparent 60%);
+    }
+    .admin-alerts__icon {
+        font-size: 1.2rem; display: flex;
+        animation: alertsBell 2s ease-in-out infinite;
+    }
+    @@keyframes alertsBell { 0%,50%,100% { transform: rotate(0); } 15% { transform: rotate(12deg); } 30% { transform: rotate(-8deg); } 45% { transform: rotate(4deg); } }
+    .admin-alerts__title { font-weight: 900; font-size: 0.88rem; flex: 1; position: relative; letter-spacing: 0.3px; }
+    .admin-alerts__count {
+        min-width: 28px; height: 28px; padding: 0 9px;
+        border-radius: 999px; background: rgba(255,255,255,0.25); color: #fff;
+        font-size: 0.75rem; font-weight: 900; display: grid; place-items: center;
+        position: relative; backdrop-filter: blur(4px);
+        animation: alertsCountPulse 2s ease-in-out infinite;
+    }
+    @@keyframes alertsCountPulse { 0%,100% { transform: scale(1); background: rgba(255,255,255,0.25); } 50% { transform: scale(1.08); background: #ef4444; } }
+    .admin-alerts__list { display: flex; flex-direction: column; padding: 6px; gap: 4px; }
+    .admin-alerts__item {
+        display: flex; align-items: center; gap: 12px;
+        padding: 12px 16px; text-decoration: none;
+        border-radius: 14px;
+        transition: all 0.2s ease;
+    }
+    .admin-alerts__item:hover { background: #f1f5f9; }
+    .admin-alerts__item--renewal:hover { background: rgba(245,158,11,0.06); }
+    .admin-alerts__item--sms:hover { background: rgba(139,92,246,0.06); }
+    .admin-alerts__item--chat:hover { background: rgba(6,182,212,0.06); }
+    .admin-alerts__dot {
+        width: 12px; height: 12px; min-width: 12px;
+        border-radius: 50%; flex-shrink: 0; position: relative;
+    }
+    .admin-alerts__item--renewal .admin-alerts__dot { background: #f59e0b; }
+    .admin-alerts__item--renewal .admin-alerts__dot::after {
+        content: ''; position: absolute; inset: -3px; border-radius: 50%;
+        border: 2px solid rgba(245,158,11,0.25); animation: alertsRipple 2s ease-out infinite;
+    }
+    .admin-alerts__item--sms .admin-alerts__dot { background: #8b5cf6; }
+    .admin-alerts__item--sms .admin-alerts__dot::after {
+        content: ''; position: absolute; inset: -3px; border-radius: 50%;
+        border: 2px solid rgba(139,92,246,0.25); animation: alertsRipple 2s ease-out infinite 0.5s;
+    }
+    .admin-alerts__item--chat .admin-alerts__dot { background: #06b6d4; }
+    .admin-alerts__item--chat .admin-alerts__dot::after {
+        content: ''; position: absolute; inset: -3px; border-radius: 50%;
+        border: 2px solid rgba(6,182,212,0.25); animation: alertsRipple 2s ease-out infinite 1s;
+    }
+    @@keyframes alertsRipple { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
+    .admin-alerts__text { flex: 1; font-weight: 800; font-size: 0.82rem; color: #0f172a; }
+    .admin-alerts__arrow { color: #94a3b8; font-size: 0.7rem; display: flex; transition: all 0.2s; }
+    .admin-alerts__item:hover .admin-alerts__arrow { color: #64748b; transform: translateX(-5px); }
+    @@media (max-width: 576px) {
+        .admin-alerts__header { padding: 14px 16px; }
+        .admin-alerts__item { padding: 10px 14px; }
+        .admin-alerts__text { font-size: 0.75rem; }
+        .admin-alerts__list { padding: 4px; gap: 2px; }
+    }
+
+    @@media (max-width: 576px) {
+        .sms-credit-warn__inner, .monitoring-alert-warn__inner, .dev-expire-warn__inner {
+            flex-wrap: nowrap; gap: 8px; padding: 12px 14px; border-radius: 14px;
+        }
+        .sms-credit-warn__icon, .monitoring-alert-warn__icon, .dev-expire-warn__icon {
+            width: 36px; height: 36px; min-width: 36px; font-size: 1rem;
+        }
+        .sms-credit-warn__body, .monitoring-alert-warn__body, .dev-expire-warn__body {
+            flex: 1; min-width: 0; overflow: hidden;
+        }
+        .sms-credit-warn__title, .monitoring-alert-warn__title, .dev-expire-warn__title {
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem; margin-bottom: 0;
+        }
+        .sms-credit-warn__desc, .monitoring-alert-warn__desc, .dev-expire-warn__desc {
+            font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .sms-credit-warn__btn, .monitoring-alert-warn__btn, .dev-expire-warn__btn {
+            padding: 6px 12px; font-size: 0.7rem; flex-shrink: 0;
+        }
+        .dev-expire-warn__desc {
+            direction: ltr; text-align: right;
+        }
+    }
+</style>
+
+@code {
+    public class ReleaseNote
+    {
+        public string Version { get; set; } = "";
+        public string ReleaseDate { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
+        public List<string> Features { get; set; } = new();
+    }
+}

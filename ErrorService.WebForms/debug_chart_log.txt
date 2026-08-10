@@ -1,0 +1,86 @@
+2026-05-27 12:52:54.449 [12] === GetConnectionStatus: monitorId='18'
+2026-05-27 12:52:54.481 [12] DB opened OK
+2026-05-27 12:52:54.538 [12] Direct count for '18': 5000
+2026-05-27 12:52:54.538 [12] Final effectiveId='18', RecordCount=5000
+2026-05-27 12:52:54.591 [12] Last: raw Timestamp='5/25/2026 12:20:12 PM' (type=System.DateTime), TimestampFa='1405/03/04 12:20'
+2026-05-27 12:52:54.607 [12] Last: Jalali='1405/03/04 12:20', IsOnline=False, diffMin=2912.7
+2026-05-27 12:52:54.659 [12] First: raw Timestamp='4/25/2026 12:20:12 PM' (type=System.DateTime), TimestampFa='1405/02/05 12:20'
+2026-05-27 12:52:54.659 [12] First: Jalali='1405/02/05 12:20'
+2026-05-27 12:52:54.678 [12] GetConnectionStatus response: {"IsOnline":false,"LastTimestamp":"1405/03/04 12:20","RecordCount":5000,"FirstTimestamp":"1405/02/05 12:20"}
+2026-05-27 12:53:08.088 [9] === GetChartDataDecimated START: monitorId=, startJalali=1405/02/05 00:00:00, endJalali=1405/03/04 23:59:59, maxPoints=800
+2026-05-27 12:53:08.089 [9] FAIL: monitorId is null/empty
+2026-05-27 12:58:00.926 [7] === GetConnectionStatus: monitorId='18'
+2026-05-27 12:58:01.250 [7] DB opened OK
+2026-05-27 12:58:01.403 [7] Direct count for '18': 5000
+2026-05-27 12:58:01.403 [7] Final effectiveId='18', RecordCount=5000
+2026-05-27 12:58:01.467 [7] Last: raw Timestamp='5/25/2026 12:20:12 PM' (type=System.DateTime), TimestampFa='1405/03/04 12:20'
+2026-05-27 12:58:01.468 [7] Last: Jalali='1405/03/04 12:20', IsOnline=False, diffMin=2917.8
+2026-05-27 12:58:01.528 [7] First: raw Timestamp='4/25/2026 12:20:12 PM' (type=System.DateTime), TimestampFa='1405/02/05 12:20'
+2026-05-27 12:58:01.528 [7] First: Jalali='1405/02/05 12:20'
+2026-05-27 12:58:01.529 [7] GetConnectionStatus response: {"IsOnline":false,"LastTimestamp":"1405/03/04 12:20","RecordCount":5000,"FirstTimestamp":"1405/02/05 12:20"}
+2026-05-27 12:58:03.997 [6] === GetChartDataDecimated START: monitorId=18, startJalali=1405/02/05 00:00:00, endJalali=1405/03/04 23:59:59, maxPoints=800
+2026-05-27 12:58:03.998 [6] Normalized dates: sStart='1405/02/05 00:00:00', sEnd='1405/03/04 23:59:59'
+2026-05-27 12:58:03.999 [6] Parsed Gregorian: dtStart=2026-04-25 00:00:00, dtEnd=2026-05-25 23:59:59
+2026-05-27 12:58:03.999 [6] ConnectionString found: yes
+2026-05-27 12:58:04.000 [6] DB connection opened OK
+2026-05-27 12:58:04.064 [6] Direct count for Id='18': 5000
+2026-05-27 12:58:04.064 [6] Effective MonitoringId: '18'
+2026-05-27 12:58:04.064 [6] SQL query prepared (len=2174)
+2026-05-27 12:58:04.064 [6] Executing SQL: @MonitorId='18', @StartDate=2026-04-25 00:00:00, @EndDate=2026-05-25 23:59:59
+2026-05-27 12:58:04.237 [6] Row#1: tsVal=2026-04-25 12:20:12, tsFa='1405/02/05 12:20', tsDisplay='1405/02/05 12:20', TempRef=2, MotorState=0
+2026-05-27 12:58:04.238 [6] Row#2: tsVal=2026-04-25 12:28:50, tsFa='1405/02/05 12:28', tsDisplay='1405/02/05 12:28', TempRef=2.2, MotorState=1
+2026-05-27 12:58:04.238 [6] Row#3: tsVal=2026-04-25 12:37:29, tsFa='1405/02/05 12:37', tsDisplay='1405/02/05 12:37', TempRef=2.4, MotorState=1
+2026-05-27 12:58:05.770 [6] SQL returned 5000 rows, successfully parsed 5000
+2026-05-27 12:58:05.770 [6] Total parsed rows=5000
+2026-05-27 12:58:05.786 [6] Selected 800 points out of 5000 total for output
+2026-05-27 12:58:05.786 [6] GetChartDataDecimated SUCCESS: Timestamps count=800, JSON len=53945
+2026-05-27 12:58:26.689 [6] === GetChartDataDecimated START: monitorId=18, startJalali=1405/02/05 00:00:00, endJalali=1405/03/04 23:59:59, maxPoints=952
+2026-05-27 12:58:26.689 [6] Normalized dates: sStart='1405/02/05 00:00:00', sEnd='1405/03/04 23:59:59'
+2026-05-27 12:58:26.689 [6] Parsed Gregorian: dtStart=2026-04-25 00:00:00, dtEnd=2026-05-25 23:59:59
+2026-05-27 12:58:26.689 [6] ConnectionString found: yes
+2026-05-27 12:58:26.689 [6] DB connection opened OK
+2026-05-27 12:58:26.753 [6] Direct count for Id='18': 5000
+2026-05-27 12:58:26.753 [6] Effective MonitoringId: '18'
+2026-05-27 12:58:26.753 [6] SQL query prepared (len=2174)
+2026-05-27 12:58:26.753 [6] Executing SQL: @MonitorId='18', @StartDate=2026-04-25 00:00:00, @EndDate=2026-05-25 23:59:59
+2026-05-27 12:58:26.863 [6] Row#1: tsVal=2026-04-25 12:20:12, tsFa='1405/02/05 12:20', tsDisplay='1405/02/05 12:20', TempRef=2, MotorState=0
+2026-05-27 12:58:26.863 [6] Row#2: tsVal=2026-04-25 12:28:50, tsFa='1405/02/05 12:28', tsDisplay='1405/02/05 12:28', TempRef=2.2, MotorState=1
+2026-05-27 12:58:26.863 [6] Row#3: tsVal=2026-04-25 12:37:29, tsFa='1405/02/05 12:37', tsDisplay='1405/02/05 12:37', TempRef=2.4, MotorState=1
+2026-05-27 12:58:28.491 [6] SQL returned 5000 rows, successfully parsed 5000
+2026-05-27 12:58:28.491 [6] Total parsed rows=5000
+2026-05-27 12:58:28.493 [6] Selected 952 points out of 5000 total for output
+2026-05-27 12:58:28.500 [6] GetChartDataDecimated SUCCESS: Timestamps count=952, JSON len=64182
+2026-05-27 13:08:54.694 [9] === GetConnectionStatus: monitorId='18'
+2026-05-27 13:08:54.901 [9] DB opened OK
+2026-05-27 13:08:54.952 [9] Direct count for '18': 5000
+2026-05-27 13:08:54.952 [9] Final effectiveId='18', RecordCount=5000
+2026-05-27 13:08:55.008 [9] Last: raw Timestamp='5/25/2026 12:20:12 PM' (type=System.DateTime), TimestampFa='1405/03/04 12:20'
+2026-05-27 13:08:55.009 [9] Last: Jalali='1405/03/04 12:20', IsOnline=False, diffMin=2928.7
+2026-05-27 13:08:55.094 [9] First: raw Timestamp='4/25/2026 12:20:12 PM' (type=System.DateTime), TimestampFa='1405/02/05 12:20'
+2026-05-27 13:08:55.094 [9] First: Jalali='1405/02/05 12:20'
+2026-05-27 13:08:55.094 [9] GetConnectionStatus response: {"IsOnline":false,"LastTimestamp":"1405/03/04 12:20","RecordCount":5000,"FirstTimestamp":"1405/02/05 12:20"}
+2026-05-27 13:10:19.986 [15] === GetConnectionStatus: monitorId='18'
+2026-05-27 13:10:20.676 [15] DB opened OK
+2026-05-27 13:10:20.748 [15] Direct count for '18': 5000
+2026-05-27 13:10:20.748 [15] Final effectiveId='18', RecordCount=5000
+2026-05-27 13:10:20.794 [15] Last: raw Timestamp='5/25/2026 12:20:12 PM' (type=System.DateTime), TimestampFa='1405/03/04 12:20'
+2026-05-27 13:10:20.810 [15] Last: Jalali='1405/03/04 12:20', IsOnline=False, diffMin=2930.1
+2026-05-27 13:10:20.865 [15] First: raw Timestamp='4/25/2026 12:20:12 PM' (type=System.DateTime), TimestampFa='1405/02/05 12:20'
+2026-05-27 13:10:20.865 [15] First: Jalali='1405/02/05 12:20'
+2026-05-27 13:10:20.865 [15] GetConnectionStatus response: {"IsOnline":false,"LastTimestamp":"1405/03/04 12:20","RecordCount":5000,"FirstTimestamp":"1405/02/05 12:20"}
+2026-05-27 13:10:32.339 [9] === GetChartDataDecimated START: monitorId=18, startJalali=1405/02/05 00:00:00, endJalali=1405/03/04 23:59:59, maxPoints=800
+2026-05-27 13:10:32.340 [9] Normalized dates: sStart='1405/02/05 00:00:00', sEnd='1405/03/04 23:59:59'
+2026-05-27 13:10:32.340 [9] Parsed Gregorian: dtStart=2026-04-25 00:00:00, dtEnd=2026-05-25 23:59:59
+2026-05-27 13:10:32.341 [9] ConnectionString found: yes
+2026-05-27 13:10:32.341 [9] DB connection opened OK
+2026-05-27 13:10:32.410 [9] Direct count for Id='18': 5000
+2026-05-27 13:10:32.410 [9] Effective MonitoringId: '18'
+2026-05-27 13:10:32.410 [9] SQL query prepared (len=2174)
+2026-05-27 13:10:32.410 [9] Executing SQL: @MonitorId='18', @StartDate=2026-04-25 00:00:00, @EndDate=2026-05-25 23:59:59
+2026-05-27 13:10:32.766 [9] Row#1: tsVal=2026-04-25 12:20:12, tsFa='1405/02/05 12:20', tsDisplay='1405/02/05 12:20', TempRef=2, MotorState=0
+2026-05-27 13:10:32.767 [9] Row#2: tsVal=2026-04-25 12:28:50, tsFa='1405/02/05 12:28', tsDisplay='1405/02/05 12:28', TempRef=2.2, MotorState=1
+2026-05-27 13:10:32.767 [9] Row#3: tsVal=2026-04-25 12:37:29, tsFa='1405/02/05 12:37', tsDisplay='1405/02/05 12:37', TempRef=2.4, MotorState=1
+2026-05-27 13:10:34.326 [9] SQL returned 5000 rows, successfully parsed 5000
+2026-05-27 13:10:34.326 [9] Total parsed rows=5000
+2026-05-27 13:10:34.342 [9] Selected 800 points out of 5000 total for output
+2026-05-27 13:10:34.344 [9] GetChartDataDecimated SUCCESS: Timestamps count=800, JSON len=53945

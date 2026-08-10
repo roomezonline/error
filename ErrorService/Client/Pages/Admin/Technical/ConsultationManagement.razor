@@ -1,0 +1,404 @@
+@page "/admin/technical/consultation"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.consultation.manage")]
+@using ErrorService.Shared.Models
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService Toast
+
+<div class="container-fluid py-4">
+    <div class="mb-4">
+        <h2 class="fw-black text-primary mb-1">پشتیبانی و مشاوره فنی</h2>
+        <p class="text-muted small">پاسخگویی به سوالات تعمیراتی کاربران و مدیریت تیکت‌ها</p>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                <div class="card-header bg-white p-3 border-bottom d-flex justify-content-between align-items-center">
+                    <h6 class="fw-bold mb-0">لیست تیکت‌ها</h6>
+                    <span class="badge bg-danger rounded-pill shadow-sm">@tickets.Count(t => !t.IsAdminRead) پیام جدید</span>
+                </div>
+                <div class="list-group list-group-flush" style="max-height: 70vh; overflow-y: auto;">
+                    @if (isLoading)
+                    {
+                        <div class="text-center py-5"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+                    }
+                    else if (!tickets.Any())
+                    {
+                        <div class="text-center py-5 text-muted small">تیکتی یافت نشد.</div>
+                    }
+                    else
+                    {
+                        @foreach (var ticket in tickets)
+                        {
+                            <button class="list-group-item list-group-item-action border-0 p-3 @(selectedTicket?.Id == ticket.Id ? "bg-primary-subtle border-start border-primary border-4" : "") position-relative" 
+                                    @onclick="() => SelectTicket(ticket)">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <div class="d-flex align-items-center gap-2 overflow-hidden flex-grow-1">
+                                        @if (!ticket.IsAdminRead)
+                                        {
+                                            <span class="badge rounded-pill bg-danger shadow-sm flex-shrink-0" style="font-size: 0.6rem;">جدید</span>
+                                        }
+                                        <span class="fw-bold small text-truncate @(ticket.IsAdminRead ? "" : "text-primary")">@ticket.Title</span>
+                                    </div>
+                                    <span class="badge @GetTicketStatusClass(ticket) smaller flex-shrink-0 ms-2">@GetTicketStatusLabel(ticket)</span>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mt-2">
+                                    <span class="smaller text-muted">@FormatJalaliDateTime(ticket.LastMessageAt)</span>
+                                    <span class="smaller text-muted @(ticket.IsAdminRead ? "" : "fw-bold text-dark")">@ticket.Replies.Count پاسخ</span>
+                                </div>
+                            </button>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-8">
+            @if (selectedTicket == null)
+            {
+                <div class="card border-0 shadow-sm rounded-4 p-5 text-center h-100 d-flex flex-column justify-content-center opacity-50">
+                    <span class="oi oi-chat display-1 mb-4 text-muted"></span>
+                    <h5>یک تیکت را برای پاسخگویی انتخاب کنید</h5>
+                </div>
+            }
+            else
+            {
+                <div class="card border-0 shadow-sm rounded-4 h-100 flex-column d-flex">
+                    <div class="card-header bg-white p-4 border-bottom d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="fw-bold mb-1">@selectedTicket.Title</h5>
+                            <span class="smaller text-muted">کاربر: @GetUserLabel(selectedTicket)</span>
+                        </div>
+                        <select class="form-select form-select-sm" style="max-width: 200px;" value="@selectedTicket.Status" @onchange="OnStatusChanged">
+                            @foreach (TicketStatus status in Enum.GetValues(typeof(TicketStatus)))
+                            {
+                                <option value="@status">@GetStatusLabel(status)</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="card-body p-4 bg-light-subtle overflow-auto" style="flex: 1;">
+                        <!-- Initial Message -->
+                        <div class="d-flex gap-3 mb-4">
+                            <div class="avatar-md bg-secondary text-white rounded-circle flex-shrink-0 text-center pt-2">@GetUserInitial(selectedTicket)</div>
+                            <div class="chat-bubble user w-100">
+                                <p class="mb-0">@selectedTicket.Description</p>
+                                @if (!string.IsNullOrEmpty(selectedTicket.ImageUrl))
+                                {
+                                    <a href="@selectedTicket.ImageUrl" target="_blank">
+                                        <img src="@selectedTicket.ImageUrl" class="img-fluid rounded-3 mt-3 border shadow-sm" style="max-height: 250px;" />
+                                    </a>
+                                }
+
+                                @if (!string.IsNullOrEmpty(selectedTicket.FileUrl))
+                                {
+                                    <div class="mt-3 p-2 bg-light rounded-3 border d-flex align-items-center gap-3">
+                                        <div class="bg-primary bg-opacity-10 p-2 rounded-3">
+                                            <span class="oi oi-file text-primary"></span>
+                                        </div>
+                                        <div class="flex-grow-1 overflow-hidden">
+                                            <div class="small fw-bold text-truncate">@selectedTicket.FileName</div>
+                                            <div class="smaller text-muted">@selectedTicket.FileContentType</div>
+                                        </div>
+                                        <a href="@selectedTicket.FileUrl" target="_blank" class="btn btn-sm btn-outline-primary rounded-pill">
+                                            <span class="oi oi-cloud-download"></span>
+                                        </a>
+                                    </div>
+                                }
+
+                                <div class="chat-meta">@FormatJalaliDateTime(selectedTicket.CreatedAt)</div>
+                            </div>
+                        </div>
+
+                        <!-- Replies -->
+                        @foreach (var reply in selectedTicket.Replies)
+                        {
+                            <div class="d-flex gap-3 mb-4 @(reply.IsAdmin ? "flex-row-reverse" : "")">
+                                <div class="avatar-md @(reply.IsAdmin ? "bg-primary" : "bg-secondary") text-white rounded-circle flex-shrink-0 text-center pt-2">
+                                    @(reply.IsAdmin ? "م" : "ک")
+                                </div>
+                                <div class="chat-bubble @(reply.IsAdmin ? "admin" : "user") w-100">
+                                    <p class="mb-1">@reply.Message</p>
+                                    
+                                    @if (!string.IsNullOrEmpty(reply.AttachmentUrl))
+                                    {
+                                        <div class="mt-2 p-2 @(reply.IsAdmin ? "bg-white bg-opacity-50" : "bg-light") rounded-3 border d-flex align-items-center gap-2">
+                                            <span class="oi @(reply.AttachmentContentType?.StartsWith("image/") == true ? "oi-image" : "oi-file") text-primary"></span>
+                                            <span class="small text-truncate flex-grow-1">@reply.AttachmentName</span>
+                                            <a href="@reply.AttachmentUrl" target="_blank" class="btn btn-sm btn-link p-0">
+                                                <span class="oi oi-cloud-download"></span>
+                                            </a>
+                                        </div>
+                                    }
+
+                                    <div class="d-flex justify-content-between align-items-center mt-2">
+                                        <span class="smaller text-muted">@(reply.IsAdmin ? "تیم پشتیبانی" : "کاربر")</span>
+                                        <span class="chat-meta">@FormatJalaliDateTime(reply.RepliedAt)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="card-footer bg-white p-4 border-top">
+                        @if (!string.IsNullOrEmpty(replyAttachmentUrl))
+                        {
+                            <div class="bg-light border rounded-3 p-2 mb-2 d-flex align-items-center gap-2 shadow-sm">
+                                <span class="oi oi-paperclip text-primary"></span>
+                                <span class="small text-truncate flex-grow-1">@replyAttachmentName</span>
+                                <button type="button" class="btn btn-sm btn-link text-danger p-0" @onclick="() => { replyAttachmentUrl = null; }">
+                                    <span class="oi oi-trash"></span>
+                                </button>
+                            </div>
+                        }
+                        <div class="input-group">
+                            <label class="btn btn-outline-secondary px-3 m-0 d-flex align-items-center justify-content-center" style="border-radius: 0 12px 12px 0; cursor: pointer;">
+                                <span class="oi oi-paperclip"></span>
+                                <InputFile OnChange="OnReplyAttachmentSelected" class="d-none" />
+                            </label>
+                            <textarea class="form-control border-start-0 border-end-0" placeholder="پاسخ خود را اینجا بنویسید..." @bind="replyMessage" rows="2"></textarea>
+                            <button class="btn btn-primary px-4 rounded-4-end" @onclick="SendReply" disabled="@(string.IsNullOrEmpty(replyMessage) || isSubmitting)" style="border-top-left-radius: 12px !important; border-bottom-left-radius: 12px !important;">
+                                @if (isSubmitting) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                                ارسال پاسخ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-primary-subtle { background: rgba(37, 99, 235, 0.08) !important; }
+    .smaller { font-size: 0.75rem; }
+    .avatar-md { width: 40px; height: 40px; font-weight: bold; font-size: 1.1rem; }
+    .rounded-4-start { border-top-right-radius: 1rem; border-bottom-right-radius: 1rem; }
+    .rounded-4-end { border-top-left-radius: 1rem; border-bottom-left-radius: 1rem; }
+
+    .chat-bubble {
+        border-radius: 18px;
+        padding: 12px 14px;
+        box-shadow: 0 10px 24px rgba(2,6,23,0.06);
+    }
+
+    .chat-bubble.user {
+        background: #fff;
+        border: 1px solid rgba(2,6,23,0.08);
+    }
+
+    .chat-bubble.admin {
+        background: rgba(37, 99, 235, 0.10);
+        border: 1px solid rgba(37, 99, 235, 0.25);
+    }
+
+    .chat-meta{
+        font-size: 0.72rem;
+        color: rgba(2,6,23,0.55);
+        margin-top: 6px;
+        text-align: left;
+        direction: ltr;
+        white-space: nowrap;
+    }
+</style>
+
+@code {
+    private List<ConsultationTicket> tickets = new();
+    private ConsultationTicket? selectedTicket;
+    private string replyMessage = "";
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try {
+            tickets = await Http.GetFromJsonAsync<List<ConsultationTicket>>("api/technical/tickets/admin") ?? new();
+            if (selectedTicket != null)
+                selectedTicket = tickets.FirstOrDefault(t => t.Id == selectedTicket.Id);
+        } catch {
+            Toast.ShowError("خطا در دریافت تیکت‌ها");
+        }
+        isLoading = false;
+    }
+
+    private async Task SelectTicket(ConsultationTicket ticket) 
+    {
+        selectedTicket = ticket;
+        if (!ticket.IsAdminRead)
+        {
+            try {
+                var resp = await Http.PostAsync($"api/technical/tickets/{ticket.Id}/read-admin", null);
+                if (resp.IsSuccessStatusCode)
+                {
+                    ticket.IsAdminRead = true;
+                }
+            } catch { /* ignore */ }
+        }
+    }
+
+    private async Task OnStatusChanged(ChangeEventArgs e)
+    {
+        if (selectedTicket == null) return;
+        var raw = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        if (!Enum.TryParse<TicketStatus>(raw, out var status)) return;
+        await UpdateStatus(status);
+    }
+
+    private static string GetTicketStatusLabel(ConsultationTicket t)
+    {
+        if (t.Status == TicketStatus.Pending)
+            return (t.Replies?.Count ?? 0) > 0 ? "در انتظار" : "بررسی نشده";
+
+        return t.Status switch {
+            TicketStatus.InProgress => "در حال بررسی",
+            TicketStatus.Resolved => "حل شده",
+            TicketStatus.Closed => "بسته شده",
+            _ => "نامشخص"
+        };
+    }
+
+    private static string GetTicketStatusClass(ConsultationTicket t)
+    {
+        if (t.Status == TicketStatus.Pending)
+            return (t.Replies?.Count ?? 0) > 0 ? "bg-primary text-white" : "bg-warning text-dark";
+
+        return t.Status switch {
+            TicketStatus.InProgress => "bg-danger text-white",
+            TicketStatus.Resolved => "bg-success text-white",
+            TicketStatus.Closed => "bg-secondary text-white",
+            _ => "bg-light"
+        };
+    }
+
+    private static string GetUserLabel(ConsultationTicket t)
+    {
+        if (!string.IsNullOrWhiteSpace(t.UserFullName))
+            return string.IsNullOrWhiteSpace(t.UserPhoneNumber) ? t.UserFullName : $"{t.UserFullName} - {t.UserPhoneNumber}";
+
+        if (!string.IsNullOrWhiteSpace(t.UserPhoneNumber))
+            return t.UserPhoneNumber;
+
+        if (!string.IsNullOrWhiteSpace(t.UserEmail))
+            return t.UserEmail;
+
+        return "مهمان";
+    }
+
+    private static string GetUserInitial(ConsultationTicket t)
+    {
+        var text = t.UserFullName ?? t.UserPhoneNumber ?? t.UserEmail;
+        if (string.IsNullOrWhiteSpace(text)) return "؟";
+        return text.Trim().Substring(0, 1);
+    }
+
+    private string? replyAttachmentUrl;
+    private string? replyAttachmentName;
+    private string? replyAttachmentType;
+
+    private async Task OnReplyAttachmentSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        isSubmitting = true;
+        try {
+            var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent(file.OpenReadStream(10 * 1024 * 1024));
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(fileContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/technical/tickets/upload-attachment", content);
+            if (resp.IsSuccessStatusCode) {
+                var result = await resp.Content.ReadFromJsonAsync<UploadResult>();
+                if (result != null) {
+                    replyAttachmentUrl = result.Url;
+                    replyAttachmentName = result.Name;
+                    replyAttachmentType = result.ContentType;
+                    Toast.ShowInfo("فایل پیوست شد");
+                }
+            }
+        } catch {
+            Toast.ShowError("خطا در آپلود فایل");
+        }
+        isSubmitting = false;
+    }
+
+    private async Task SendReply()
+    {
+        if (selectedTicket == null || string.IsNullOrEmpty(replyMessage)) return;
+        isSubmitting = true;
+        try {
+            var reply = new TicketReply { 
+                Message = replyMessage, 
+                IsAdmin = true,
+                AttachmentUrl = replyAttachmentUrl,
+                AttachmentName = replyAttachmentName,
+                AttachmentContentType = replyAttachmentType
+            };
+            var response = await Http.PostAsJsonAsync($"api/technical/tickets/{selectedTicket.Id}/reply", reply);
+            if (response.IsSuccessStatusCode) {
+                var newReply = await response.Content.ReadFromJsonAsync<TicketReply>();
+                if (newReply != null)
+                {
+                    selectedTicket.Replies.Add(newReply);
+                }
+                replyMessage = "";
+                replyAttachmentUrl = null;
+                replyAttachmentName = null;
+                replyAttachmentType = null;
+                await LoadData();
+                Toast.ShowSuccess("پاسخ ارسال شد");
+            }
+        } catch {
+            Toast.ShowError("خطا در ارسال پاسخ");
+        }
+        isSubmitting = false;
+    }
+
+    private class UploadResult {
+        public string Url { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string ContentType { get; set; } = "";
+    }
+
+    private async Task UpdateStatus(TicketStatus status)
+    {
+        if (selectedTicket == null) return;
+        try {
+            var response = await Http.PutAsJsonAsync($"api/technical/tickets/{selectedTicket.Id}/status", status);
+            if (response.IsSuccessStatusCode) {
+                await LoadData();
+                Toast.ShowSuccess("وضعیت تغییر کرد");
+            }
+        } catch {
+            Toast.ShowError("خطا در تغییر وضعیت");
+        }
+    }
+
+    private static string GetStatusLabel(TicketStatus status) => status switch {
+        TicketStatus.Pending => "در انتظار",
+        TicketStatus.InProgress => "در حال بررسی",
+        TicketStatus.Resolved => "حل شده",
+        TicketStatus.Closed => "بسته شده",
+        _ => "نامشخص"
+    };
+
+    private static string FormatJalaliDateTime(DateTime dt)
+    {
+        if (dt == default || dt == DateTime.MinValue || dt.Year < 1000) return "---";
+        var pc = new System.Globalization.PersianCalendar();
+        try {
+            var y = pc.GetYear(dt);
+            var m = pc.GetMonth(dt);
+            var d = pc.GetDayOfMonth(dt);
+            return $"{dt:HH:mm}  {y:0000}/{m:00}/{d:00}";
+        } catch {
+            return "---";
+        }
+    }
+}

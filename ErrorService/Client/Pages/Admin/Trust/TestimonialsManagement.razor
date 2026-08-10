@@ -1,0 +1,12 @@
+@page "/admin/trust/testimonials"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.trust.testimonials.manage")]
+@inject NavigationManager Nav
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.NavigateTo("/admin/comments", replace: true);
+    }
+}

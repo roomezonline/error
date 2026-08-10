@@ -1,0 +1,366 @@
+@page "/admin/academy/lesson-content/{LessonId:int}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.academy.lessons.content.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Services
+@implements IDisposable
+@inject IJSRuntime JS
+@inject HttpClient Http
+@inject ToastService ToastService
+@inject NavigationManager Nav
+
+<div class="admin-container" dir="rtl">
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/admin/academy">مدیریت دوره‌ها</a></li>
+                <li class="breadcrumb-item"><a href="/admin/academy/lessons/@lesson?.CourseId">مدیریت قسمت‌ها</a></li>
+                <li class="breadcrumb-item active">محتوای قسمت: @(lesson?.Title ?? "...")</li>
+            </ol>
+        </nav>
+        <h3 class="admin-page-title m-0">مدیریت محتوای آموزشی (بلوک‌ها)</h3>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0 rounded-4 p-4 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h5 class="m-0 fw-bold">ساختار محتوا</h5>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-outline-secondary btn-sm rounded-3" @onclick='() => AddBlock(TrainingBlockTypeDto.Text)'>
+                                <span class="oi oi-text me-1"></span> متن
+                            </button>
+                            <button class="btn btn-outline-primary btn-sm rounded-3" @onclick='() => AddBlock(TrainingBlockTypeDto.Video)'>
+                                <span class="oi oi-video me-1"></span> ویدیو
+                            </button>
+                            <button class="btn btn-outline-warning btn-sm rounded-3" @onclick='() => AddBlock(TrainingBlockTypeDto.Image)'>
+                                <span class="oi oi-image me-1"></span> تصویر
+                            </button>
+                            <button class="btn btn-outline-info btn-sm rounded-3" @onclick='() => AddBlock(TrainingBlockTypeDto.Embed)'>
+                                <span class="oi oi-code me-1"></span> Embed
+                            </button>
+                        </div>
+                </div>
+
+                @if (lesson?.Blocks == null || !lesson.Blocks.Any())
+                {
+                    <div class="text-center py-5 text-muted bg-light rounded-4 border-2 border-dashed">
+                        <p class="mb-0">هنوز محتوایی برای این قسمت ثبت نشده است.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="block-list">
+                        @foreach (var block in lesson.Blocks.OrderBy(x => x.SortOrder))
+                        {
+                            <div class="block-item card border-0 bg-light rounded-4 mb-3 p-3 position-relative shadow-sm border-start border-4 @GetBlockBorderClass(block.BlockType)">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge bg-white text-dark border shadow-sm">@block.SortOrder</span>
+                                        <span class="fw-bold">@GetBlockTypeName(block.BlockType)</span>
+                                        @if (!string.IsNullOrEmpty(block.Title))
+                                        {
+                                            <span class="text-muted small ms-2">- @block.Title</span>
+                                        }
+                                    </div>
+                                    <div class="d-flex gap-1">
+                                        <button class="btn btn-xs btn-outline-secondary" @onclick="() => MoveBlock(block, -1)" disabled="@(block.SortOrder <= 1)"><span class="oi oi-arrow-top"></span></button>
+                                        <button class="btn btn-xs btn-outline-secondary" @onclick="() => MoveBlock(block, 1)" disabled="@(block.SortOrder >= lesson.Blocks.Count)"><span class="oi oi-arrow-bottom"></span></button>
+                                        <button class="btn btn-xs btn-outline-primary" @onclick="() => EditBlock(block)"><span class="oi oi-pencil"></span></button>
+                                        <button class="btn btn-xs btn-outline-danger" @onclick="() => DeleteBlock(block.Id)"><span class="oi oi-trash"></span></button>
+                                    </div>
+                                </div>
+                                <div class="block-preview small text-truncate text-muted">
+                                    @GetBlockPreview(block)
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 rounded-4 p-4 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h5 class="m-0 fw-bold">فایل‌های پیوست</h5>
+                    <button class="btn btn-outline-primary btn-sm rounded-3" @onclick="NewAttachment">
+                        <span class="oi oi-paperclip me-1"></span> افزودن فایل
+                    </button>
+                </div>
+                @if (lesson?.Attachments == null || !lesson.Attachments.Any())
+                {
+                    <p class="text-muted small text-center py-3 bg-light rounded-3">پیوستی ندارد</p>
+                }
+                else
+                {
+                    <div class="list-group list-group-flush border-0">
+                        @foreach (var att in lesson.Attachments.OrderBy(x => x.SortOrder))
+                        {
+                            <div class="list-group-item bg-light border-0 rounded-3 mb-2 d-flex justify-content-between align-items-center p-2">
+                                <div class="d-flex align-items-center gap-2 overflow-hidden">
+                                    <span class="oi oi-file text-primary"></span>
+                                    <div class="small text-truncate" title="@att.Title">@att.Title</div>
+                                </div>
+                                <div class="d-flex gap-1 flex-shrink-0 ms-2">
+                                    <button class="btn btn-xs btn-light" @onclick="() => DeleteAttachment(att.Id)"><span class="oi oi-trash text-danger"></span></button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (showBlockEditor)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 rounded-4 shadow">
+                    <div class="modal-header border-bottom-0 p-4">
+                        <h5 class="modal-title fw-bold">ویرایش بلوک محتوا (@GetBlockTypeName(blockModel.BlockType))</h5>
+                        <button type="button" class="btn-close" @onclick="CloseBlockEditor"></button>
+                    </div>
+                    <div class="modal-body p-4 pt-0">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">عنوان (اختیاری)</label>
+                            <input class="form-control rounded-3" @bind="blockModel.Title" />
+                        </div>
+
+                        @if (blockModel.BlockType == TrainingBlockTypeDto.Text)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label fw-bold small">متن محتوا</label>
+                                <div class="editor-container">
+                                    <textarea id="tiny-editor-lesson" class="form-control">@blockModel.Content</textarea>
+                                </div>
+                            </div>
+                        }
+                        else if (blockModel.BlockType == TrainingBlockTypeDto.Embed)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label fw-bold small">کد Embed (iframe)</label>
+                                <textarea class="form-control rounded-3" rows="5" @bind="blockModel.Content" placeholder="کد دریافتی از آپارات یا ... را اینجا قرار دهید"></textarea>
+                            </div>
+                        }
+                        else if (blockModel.BlockType == TrainingBlockTypeDto.Image || blockModel.BlockType == TrainingBlockTypeDto.Video || blockModel.BlockType == TrainingBlockTypeDto.Audio)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label fw-bold small">آدرس فایل (URL)</label>
+                                <div class="input-group">
+                                    <input class="form-control rounded-start-3" @bind="blockModel.Url" placeholder="لینک خارجی یا با دکمه روبرو آپلود کنید" />
+                                    <label class="btn btn-outline-primary px-3 rounded-end-3" style="cursor:pointer">
+                                        <span class="oi oi-cloud-upload"></span> آپلود
+                                        <InputFile OnChange="HandleBlockUpload" class="d-none" />
+                                    </label>
+                                </div>
+                                @if (isUploading) { <div class="progress mt-1" style="height:4px"><div class="progress-bar progress-bar-animated progress-bar-striped" style="width:100%"></div></div> }
+                            </div>
+                        }
+                    </div>
+                    <div class="modal-footer border-top-0 p-4">
+                        <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseBlockEditor">انصراف</button>
+                        <button type="button" class="btn btn-primary rounded-3 px-4" @onclick="SaveBlock" disabled="@isSaving">ذخیره بلوک</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (showAttachmentEditor)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 rounded-4 shadow">
+                    <div class="modal-header border-bottom-0 p-4">
+                        <h5 class="modal-title fw-bold">افزودن فایل پیوست</h5>
+                        <button type="button" class="btn-close" @onclick="CloseAttachmentEditor"></button>
+                    </div>
+                    <div class="modal-body p-4 pt-0">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">عنوان فایل</label>
+                            <input class="form-control rounded-3" @bind="attachmentModel.Title" placeholder="مثلاً: فایل تمرینی جلسه اول" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">آدرس فایل</label>
+                            <div class="input-group">
+                                <input class="form-control rounded-start-3" @bind="attachmentModel.FileUrl" />
+                                <label class="btn btn-outline-primary px-3 rounded-end-3" style="cursor:pointer">
+                                    <span class="oi oi-cloud-upload"></span>
+                                    <InputFile OnChange="HandleAttachmentUpload" class="d-none" />
+                                </label>
+                            </div>
+                            @if (isUploading) { <div class="progress mt-1" style="height:4px"><div class="progress-bar progress-bar-animated progress-bar-striped" style="width:100%"></div></div> }
+                        </div>
+                    </div>
+                    <div class="modal-footer border-top-0 p-4">
+                        <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseAttachmentEditor">انصراف</button>
+                        <button type="button" class="btn btn-primary rounded-3 px-4" @onclick="SaveAttachment" disabled="@isSaving">ذخیره فایل</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .btn-xs { padding: 2px 6px; font-size: 0.75rem; }
+    .block-item { border-left-width: 4px !important; transition: all 0.2s; }
+    .block-item:hover { transform: scale(1.01); z-index: 2; }
+    .border-text { border-color: #6c757d !important; }
+    .border-image { border-color: #fd7e14 !important; }
+    .border-video { border-color: #0d6efd !important; }
+    .border-audio { border-color: #6610f2 !important; }
+    .border-embed { border-color: #20c997 !important; }
+    .admin-container { padding: 20px; }
+</style>
+
+@code {
+    [Parameter] public int LessonId { get; set; }
+    private TrainingLessonDto? lesson;
+    private TrainingBlockUpsertRequest blockModel = new();
+    private TrainingAttachmentUpsertRequest attachmentModel = new();
+    private bool showBlockEditor;
+    private bool showAttachmentEditor;
+    private int editingBlockId;
+    private bool isSaving = false;
+    private bool isUploading = false;
+    private DotNetObjectReference<AcademyLessonContent>? objRef;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (showBlockEditor && blockModel.BlockType == TrainingBlockTypeDto.Text)
+        {
+            objRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initTinyMCE", "#tiny-editor-lesson", objRef);
+        }
+    }
+
+    [JSInvokable]
+    public void UpdateContent(string content)
+    {
+        blockModel.Content = content;
+        StateHasChanged();
+    }
+
+    public void Dispose() => objRef?.Dispose();
+
+    private async Task LoadData() => lesson = await Http.GetFromJsonAsync<TrainingLessonDto>($"api/trainings/lessons/{LessonId}");
+
+    private void AddBlock(TrainingBlockTypeDto type)
+    {
+        editingBlockId = 0;
+        blockModel = new TrainingBlockUpsertRequest { LessonId = LessonId, BlockType = type, SortOrder = (lesson?.Blocks?.Count ?? 0) + 1 };
+        showBlockEditor = true;
+    }
+
+    private void EditBlock(TrainingBlockDto b)
+    {
+        editingBlockId = b.Id;
+        blockModel = new TrainingBlockUpsertRequest { LessonId = LessonId, BlockType = b.BlockType, Title = b.Title, Content = b.Content, Url = b.Url, SortOrder = b.SortOrder };
+        showBlockEditor = true;
+    }
+
+    private void CloseBlockEditor() => showBlockEditor = false;
+
+    private async Task SaveBlock()
+    {
+        isSaving = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingBlockId == 0) resp = await Http.PostAsJsonAsync("api/trainings/blocks", blockModel);
+            else resp = await Http.PutAsJsonAsync($"api/trainings/blocks/{editingBlockId}", blockModel);
+
+            if (resp.IsSuccessStatusCode) { ToastService.ShowSuccess("بلوک ذخیره شد"); await LoadData(); CloseBlockEditor(); }
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا: " + ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private async Task HandleBlockUpload(InputFileChangeEventArgs e)
+    {
+        isUploading = true;
+        try
+        {
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(e.File, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
+            content.Add(byteContent, "file", e.File.Name);
+            var resp = await Http.PostAsync("api/trainings/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                blockModel.Url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                ToastService.ShowSuccess("فایل آپلود شد");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا در آپلود"); }
+        finally { isUploading = false; }
+    }
+
+    private async Task DeleteBlock(int id)
+    {
+        if (await Http.DeleteAsync($"api/trainings/blocks/{id}") != null) { ToastService.ShowSuccess("حذف شد"); await LoadData(); }
+    }
+
+    private async Task MoveBlock(TrainingBlockDto b, int dir)
+    {
+        var other = lesson?.Blocks.FirstOrDefault(x => x.SortOrder == b.SortOrder + dir);
+        if (other != null)
+        {
+            var req1 = new TrainingBlockUpsertRequest { LessonId = LessonId, BlockType = b.BlockType, Title = b.Title, Content = b.Content, Url = b.Url, SortOrder = b.SortOrder + dir };
+            var req2 = new TrainingBlockUpsertRequest { LessonId = LessonId, BlockType = other.BlockType, Title = other.Title, Content = other.Content, Url = other.Url, SortOrder = other.SortOrder - dir };
+            await Http.PutAsJsonAsync($"api/trainings/blocks/{b.Id}", req1);
+            await Http.PutAsJsonAsync($"api/trainings/blocks/{other.Id}", req2);
+            await LoadData();
+        }
+    }
+
+    private void NewAttachment() { attachmentModel = new TrainingAttachmentUpsertRequest { LessonId = LessonId, SortOrder = (lesson?.Attachments?.Count ?? 0) + 1 }; showAttachmentEditor = true; }
+    private void CloseAttachmentEditor() => showAttachmentEditor = false;
+    private async Task HandleAttachmentUpload(InputFileChangeEventArgs e)
+    {
+        isUploading = true;
+        try
+        {
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(e.File, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
+            content.Add(byteContent, "file", e.File.Name);
+            var resp = await Http.PostAsync("api/trainings/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                attachmentModel.FileUrl = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                attachmentModel.FileName = e.File.Name;
+                if (string.IsNullOrEmpty(attachmentModel.Title)) attachmentModel.Title = e.File.Name;
+                ToastService.ShowSuccess("فایل آپلود شد");
+            }
+        }
+        catch { ToastService.ShowError("خطا در آپلود"); }
+        finally { isUploading = false; }
+    }
+    private async Task SaveAttachment()
+    {
+        isSaving = true;
+        try
+        {
+            if (await Http.PostAsJsonAsync("api/trainings/attachments", attachmentModel) != null) { ToastService.ShowSuccess("پیوست ذخیره شد"); await LoadData(); CloseAttachmentEditor(); }
+        }
+        finally { isSaving = false; }
+    }
+    private async Task DeleteAttachment(int id)
+    {
+        if (await Http.DeleteAsync($"api/trainings/attachments/{id}") != null) { ToastService.ShowSuccess("حذف شد"); await LoadData(); }
+    }
+
+    private string GetBlockTypeName(TrainingBlockTypeDto t) => t switch { TrainingBlockTypeDto.Text => "متن", TrainingBlockTypeDto.Image => "تصویر", TrainingBlockTypeDto.Video => "ویدیو", TrainingBlockTypeDto.Audio => "صوت", TrainingBlockTypeDto.Embed => "Embed", _ => "نامشخص" };
+    private string GetBlockBorderClass(TrainingBlockTypeDto t) => t switch { TrainingBlockTypeDto.Text => "border-text", TrainingBlockTypeDto.Image => "border-image", TrainingBlockTypeDto.Video => "border-video", TrainingBlockTypeDto.Audio => "border-audio", TrainingBlockTypeDto.Embed => "border-embed", _ => "" };
+    private string GetBlockPreview(TrainingBlockDto b) => b.BlockType switch { TrainingBlockTypeDto.Text => b.Content?.Length > 50 ? b.Content[..50] + "..." : b.Content ?? "", TrainingBlockTypeDto.Image or TrainingBlockTypeDto.Video or TrainingBlockTypeDto.Audio => b.Url ?? "", TrainingBlockTypeDto.Embed => "کد Embed شده", _ => "..." };
+}

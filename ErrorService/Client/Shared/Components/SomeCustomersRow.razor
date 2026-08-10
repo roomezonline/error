@@ -1,0 +1,89 @@
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+
+@if (items == null)
+{
+    <div class="container my-4" dir="rtl">
+        <div class="card border-0 shadow-sm rounded-4 p-4">
+            <div class="d-flex align-items-center justify-content-center gap-3">
+                <div class="spinner-border text-primary" role="status"></div>
+                <div class="fw-bold">در حال بارگذاری مشتریان...</div>
+            </div>
+        </div>
+    </div>
+}
+else if (items.Count == 0)
+{
+    <div></div>
+}
+else
+{
+    var durationSeconds = Math.Clamp(items.Count * 6, 30, 120);
+
+    <div class="container my-4" dir="rtl">
+        <div class="customers-card shadow-sm rounded-4">
+            <div class="customers-card__header">
+                <div class="customers-card__title">
+                    همکاران ما
+                    <span class="customers-card__spark">✨</span>
+                </div>
+            </div>
+
+            <div class="customers-marquee" style="--customers-marquee-duration: @(durationSeconds)s" aria-label="همکاران ما">
+                <div class="customers-marquee__track" aria-hidden="true">
+                    @for (var i = 0; i < 10; i++)
+                    {
+                        <div class="customers-marquee__segment">
+                            @foreach (var it in items)
+                            {
+                                <a class="customer-item" href="/workshops/@it.Id" aria-label="@it.WorkshopName">
+                                    <div class="customer-item__card">
+                                        <div class="customer-item__badge">@it.OwnerFullName</div>
+                                        <div class="customer-item__thumb">
+                                            @if (!string.IsNullOrWhiteSpace(it.ImageUrl))
+                                            {
+                                                <img class="customer-item__img" src="@it.ImageUrl" alt="@it.WorkshopName" loading="lazy" decoding="async" />
+                                            }
+                                            else
+                                            {
+                                                <div class="customer-item__fallback">@GetFallback(it.WorkshopName)</div>
+                                            }
+                                        </div>
+                                        <div class="customer-item__meta">
+                                            <div class="customer-item__name">@it.WorkshopName</div>
+                                        </div>
+                                    </div>
+                                </a>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<WorkshopDto>? items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            items = await Http.GetFromJsonAsync<List<WorkshopDto>>("api/workshops/customers-row");
+            items ??= new();
+        }
+        catch
+        {
+            items = new();
+        }
+    }
+
+    private static string GetFallback(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "WS";
+        var t = title.Trim();
+        return t.Length <= 2 ? t : t.Substring(0, 2);
+    }
+}

@@ -1,0 +1,51 @@
+@using Microsoft.Extensions.Logging
+@using ErrorService.Client.Services
+@inject ILogger<ErrorBoundaryLogger> Logger
+@inject ClientErrorLogger ClientLogger
+
+<ErrorBoundary @ref="errorBoundary">
+    <ChildContent>
+        @ChildContent
+    </ChildContent>
+    <ErrorContent Context="exception">
+        @((MarkupString)LogAndCaptureException(exception))
+        <StatusPage Type="error" 
+                    Title="خطای پیش‌بینی نشده" 
+                    Message="متاسفانه مشکلی در اجرای برنامه رخ داده است. لطفاً صفحه را رفرش کنید و اگر مشکل ادامه داشت با پشتیبانی تماس بگیرید." />
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private ErrorBoundary? errorBoundary;
+    private string? lastExceptionFingerprint;
+
+    protected override void OnParametersSet()
+    {
+        errorBoundary?.Recover();
+    }
+
+    private string LogAndCaptureException(Exception? exception)
+    {
+        if (exception == null) return string.Empty;
+
+        try
+        {
+            var fp = $"{exception.GetType().FullName}|{exception.Message}|{exception.StackTrace}";
+            if (!string.Equals(lastExceptionFingerprint, fp, StringComparison.Ordinal))
+            {
+                lastExceptionFingerprint = fp;
+                Logger.LogError(exception, "Unhandled exception caught by ErrorBoundary.");
+                
+                // ثبت خطا در سرور برای مشاهده ادمین
+                _ = ClientLogger.LogErrorAsync(exception, "ErrorBoundary");
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        return string.Empty;
+    }
+}

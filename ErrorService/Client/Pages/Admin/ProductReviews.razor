@@ -1,0 +1,12 @@
+@page "/admin/product-reviews"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.settings.manage")]
+@inject NavigationManager Nav
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.NavigateTo("/admin/comments", replace: true);
+    }
+}

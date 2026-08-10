@@ -1,0 +1,304 @@
+@page "/admin/academy/articles"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.academy.articles.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Client.Services
+@inject IJSRuntime JS
+@inject ToastService ToastService
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<ConfirmDialog IsVisible="showConfirm"
+               Title="حذف آموزش"
+               Message="آیا از حذف این آموزش اطمینان دارید؟"
+               OnResult="HandleDeleteResult" />
+
+<div class="admin-container" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="admin-page-title m-0">آموزش‌های تک‌قسمتی</h3>
+            <p class="text-muted small mb-0">مدیریت مقالات و آموزش‌های مستقل آکادمی</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="/admin/academy" class="btn btn-outline-secondary rounded-3">مدیریت دوره‌ها</a>
+            <button class="btn btn-primary shadow-sm rounded-3" @onclick="NewArticle">
+                <span class="oi oi-plus me-1"></span> آموزش جدید
+            </button>
+        </div>
+    </div>
+
+    @if (showEditor)
+    {
+        <div class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="m-0 fw-bold">@(editingId == 0 ? "ایجاد آموزش جدید" : "ویرایش اطلاعات پایه")</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+
+            <EditForm Model="model" OnValidSubmit="SaveArticle">
+                <DataAnnotationsValidator />
+                <div class="row g-4">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">عنوان آموزش</label>
+                            <InputText @bind-Value="model.Title" class="form-control rounded-3" placeholder="عنوان جذاب انتخاب کنید..." />
+                            <ValidationMessage For="@(() => model.Title)" class="text-danger small" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">خلاصه (نمایش در لیست)</label>
+                            <InputTextArea @bind-Value="model.Summary" class="form-control rounded-3" rows="3" placeholder="توضیح کوتاهی درباره این آموزش..." />
+                            <ValidationMessage For="@(() => model.Summary)" class="text-danger small" />
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">تصویر کاور</label>
+                            <div class="image-upload-zone rounded-4 border-2 border-dashed d-flex flex-column align-items-center justify-content-center p-4 bg-light position-relative">
+                                @if (!string.IsNullOrEmpty(model.CoverImageUrl))
+                                {
+                                    <img src="@model.CoverImageUrl" class="img-fluid rounded-3 mb-2" style="max-height: 150px;" />
+                                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-2 rounded-circle shadow" @onclick="ClearImage">
+                                        <span class="oi oi-x"></span>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="oi oi-image display-4 text-muted mb-2"></span>
+                                    <InputFile OnChange="HandleFileUpload" class="position-absolute w-100 h-100 opacity-0" style="cursor: pointer; top: 0; left: 0;" />
+                                    <span class="text-muted small text-center">برای انتخاب کاور کلیک کنید</span>
+                                }
+                            </div>
+                            @if (isUploading)
+                            {
+                                <div class="progress mt-2" style="height: 6px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="card bg-light border-0 rounded-4 p-3 mb-3">
+                            <div class="form-check form-switch mb-2">
+                                <InputCheckbox @bind-Value="model.IsPublished" class="form-check-input" id="isPublished" />
+                                <label class="form-check-label fw-bold" for="isPublished">انتشار در سایت</label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <InputCheckbox @bind-Value="model.IsPremium" class="form-check-input" id="isPremium" />
+                                <label class="form-check-label fw-bold" for="isPremium">فقط برای کاربران ویژه</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+                    <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseEditor">انصراف</button>
+                    <button type="submit" class="btn btn-primary rounded-3 px-4 shadow-sm" disabled="@(isSaving || isUploading)">
+                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        ذخیره و ادامه مدیریت محتوا
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    }
+
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4" style="width: 100px;">کاور</th>
+                        <th>عنوان آموزش</th>
+                        <th>تاریخ ایجاد</th>
+                        <th>وضعیت</th>
+                        <th class="text-end pe-4">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (articles == null)
+                    {
+                        <tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
+                    }
+                    else if (!articles.Any())
+                    {
+                        <tr><td colspan="5" class="text-center py-5 text-muted">هیچ آموزش تک‌قسمتی یافت نشد.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var article in articles)
+                        {
+                            <tr>
+                                <td class="ps-4">
+                                    <div class="rounded-3 bg-light overflow-hidden" style="width: 60px; height: 40px;">
+                                        @if (!string.IsNullOrEmpty(article.CoverImageUrl))
+                                        {
+                                            <img src="@article.CoverImageUrl" class="w-100 h-100 object-fit-cover" />
+                                        }
+                                        else
+                                        {
+                                            <div class="w-100 h-100 d-flex align-items-center justify-content-center text-muted">
+                                                <span class="oi oi-image small"></span>
+                                            </div>
+                                        }
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="fw-bold text-dark">@article.Title</div>
+                                    @if (article.IsPremium)
+                                    {
+                                        <span class="badge bg-warning text-dark small">ویژه</span>
+                                    }
+                                </td>
+                                <td><span class="text-muted small">@article.CreatedAt.ToString("yyyy/MM/dd")</span></td>
+                                <td>
+                                    <span class="badge @(article.IsPublished ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning") rounded-pill px-3">
+                                        @(article.IsPublished ? "منتشر شده" : "پیش‌نویس")
+                                    </span>
+                                </td>
+                                <td class="text-end pe-4">
+                                    <a class="btn btn-sm btn-outline-info border-0 rounded-circle me-1" href="/admin/academy/articles/@article.Id/content" title="مدیریت محتوا">
+                                        <span class="oi oi-layers"></span>
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-primary border-0 rounded-circle me-1" @onclick="() => EditArticle(article)" title="ویرایش اطلاعات">
+                                        <span class="oi oi-pencil"></span>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger border-0 rounded-circle" @onclick="() => AskDelete(article)" title="حذف">
+                                        <span class="oi oi-trash"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .image-upload-zone { min-height: 150px; transition: all 0.2s ease; }
+    .image-upload-zone:hover { background: #f0f4f8 !important; border-color: #0d6efd !important; }
+    .object-fit-cover { object-fit: cover; }
+    .bg-success-subtle { background-color: #d1e7dd; }
+    .bg-warning-subtle { background-color: #fff3cd; }
+</style>
+
+@code {
+    private List<TrainingArticleDto>? articles;
+    private TrainingArticleUpsertRequest model = new();
+    private bool showEditor = false;
+    private int editingId = 0;
+    private bool isSaving = false;
+    private bool isUploading = false;
+
+    protected override async Task OnInitializedAsync() => await LoadArticles();
+
+    private async Task LoadArticles()
+    {
+        articles = await Http.GetFromJsonAsync<List<TrainingArticleDto>>("api/trainingarticles");
+    }
+
+    private void NewArticle()
+    {
+        editingId = 0;
+        model = new TrainingArticleUpsertRequest { IsPublished = true };
+        showEditor = true;
+    }
+
+    private void EditArticle(TrainingArticleDto article)
+    {
+        editingId = article.Id;
+        model = new TrainingArticleUpsertRequest
+        {
+            Title = article.Title,
+            Summary = article.Summary,
+            CoverImageUrl = article.CoverImageUrl,
+            IsPublished = article.IsPublished,
+            IsPremium = article.IsPremium
+        };
+        showEditor = true;
+    }
+
+    private void CloseEditor() => showEditor = false;
+    private void ClearImage() => model.CoverImageUrl = null;
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        isUploading = true;
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+            
+            var resp = await Http.PostAsync("api/trainings/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                model.CoverImageUrl = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowSuccess("تصویر آپلود شد");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isUploading = false; }
+    }
+
+    private async Task SaveArticle()
+    {
+        isSaving = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingId == 0) resp = await Http.PostAsJsonAsync("api/trainingarticles", model);
+            else resp = await Http.PutWithFallbackAsync($"api/trainingarticles/{editingId}", model);
+            
+            if (resp.IsSuccessStatusCode)
+            {
+                if (editingId == 0)
+                {
+                    var result = await resp.Content.ReadFromJsonAsync<TrainingArticleDto>();
+                    if (result != null) Navigation.NavigateTo($"/admin/academy/articles/{result.Id}/content");
+                }
+                else
+                {
+                    showEditor = false;
+                    await LoadArticles();
+                    ToastService.ShowSuccess("اطلاعات ذخیره شد");
+                }
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError($"خطا در ذخیره: {(string.IsNullOrEmpty(body) ? resp.StatusCode.ToString() : body)}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError(ex.Message);
+        }
+        finally { isSaving = false; }
+    }
+
+    private TrainingArticleDto? _deleteArticle;
+    private bool showConfirm;
+
+    private void AskDelete(TrainingArticleDto article)
+    {
+        _deleteArticle = article;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool ok)
+    {
+        showConfirm = false;
+        if (!ok || _deleteArticle == null) return;
+        await Http.DeleteWithFallbackAsync($"api/trainingarticles/{_deleteArticle.Id}");
+        await LoadArticles();
+        ToastService.ShowSuccess("حذف شد");
+    }
+}

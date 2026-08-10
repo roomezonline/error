@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "WebForms": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "Default.aspx",
+      "environmentVariables": {
+        "ASPNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

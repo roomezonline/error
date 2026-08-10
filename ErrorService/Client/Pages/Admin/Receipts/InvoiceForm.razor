@@ -1,0 +1,3623 @@
+@page "/admin/receipts/invoice/{ReceiptId:int}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.receipts.invoice")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ErrorService.Client.Services.ToastService ToastService
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>صدور فاکتور</PageTitle>
+
+<div class="iv-page" dir="rtl">
+    @if (isLoading)
+    {
+        <div class="iv-loading">
+            <div class="spinner-border text-primary"></div>
+            <span>در حال بارگذاری اطلاعات...</span>
+        </div>
+    }
+    else if (receipt == null)
+    {
+        <div class="iv-error">
+            <span class="oi oi-warning"></span>
+            <p>رسید مورد نظر یافت نشد.</p>
+            <button class="iv-btn iv-btn--primary" @onclick='() => Navigation.NavigateTo("/admin/receipts")'>بازگشت به لیست</button>
+        </div>
+    }
+    else
+    {
+        <div class="iv-header">
+            <button class="iv-back" @onclick='() => Navigation.NavigateTo("/admin/receipts")'>
+                <span class="oi oi-arrow-right"></span>
+            </button>
+            <div class="iv-title">
+                <div class="iv-title__main">صدور فاکتور نهایی</div>
+                <div class="iv-title__sub">برای رسید #@receipt.Id</div>
+            </div>
+            <div class="iv-actions">
+                <div class="iv-total-pill" title="مبلغ کل">
+                    <span class="iv-total-pill__label">کل</span>
+                    <span class="iv-total-pill__value">@TotalAmount.ToString("N0")</span>
+                </div>
+                <button class="iv-save-btn" @onclick="SubmitInvoice">ثبت نهایی</button>
+            </div>
+        </div>
+
+        <div class="iv-content">
+            <!-- Glassmorphism Receipt Card -->
+            <div class="iv-premium-card">
+                <div class="iv-pc-blur"></div>
+                <div class="iv-pc-content">
+                    <div class="iv-pc-top">
+                        <div class="iv-pc-user">
+                            <div class="iv-pc-avatar">
+                                <span class="oi oi-person"></span>
+                            </div>
+                            <div class="iv-pc-name-group">
+                                <span class="iv-pc-name">@receipt.CustomerFirstName @receipt.CustomerLastName</span>
+                                <div class="iv-pc-mobile-wrapper">
+                                    <a class="iv-chip iv-chip--mobile ltr" href="tel:@receipt.CustomerMobile">
+                                        <span class="oi oi-phone"></span>
+                                        <span>@receipt.CustomerMobile</span>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="iv-pc-status @BadgeClass(receipt.Status)">
+                            @StatusFa(receipt.Status)
+                        </div>
+                    </div>
+
+                    <div class="iv-pc-chips">
+                        <div class="iv-chip iv-chip--device">
+                            <span class="oi oi-monitor"></span>
+                            <span>@receipt.DeviceTypeName @(string.IsNullOrWhiteSpace(receipt.DeviceBrandName) ? "" : " - " + receipt.DeviceBrandName)</span>
+                        </div>
+                        <div class="iv-chip iv-chip--date">
+                            <span class="oi oi-calendar"></span>
+                            <span class="ltr">@PersianDateHelper.ToPersianDateTimeString(receipt.RegisteredAt, false)</span>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(receipt.ProblemDescription))
+                    {
+                        <div class="iv-pc-problem">
+                            <div class="iv-pc-problem-label">شرح مشکل دستگاه:</div>
+                            <div class="iv-pc-problem-text">@receipt.ProblemDescription</div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (showCatalogModal)
+            {
+                <div class="iv-modal-overlay" @onclick="CloseCatalog"></div>
+                <div class="iv-modal">
+                    <div class="iv-modal-header">
+                        <span class="iv-modal-title">مدیریت کاتالوگ اقلام</span>
+                        <button class="iv-modal-close" @onclick="CloseCatalog"><span class="oi oi-x"></span></button>
+                    </div>
+                    <div class="iv-modal-body">
+                        @if (canManageCatalog)
+                    {
+                        <div class="iv-cat-add-form">
+                            <div class="iv-cat-add-row">
+                                <input class="iv-add-input" @bind="newCatalogTitle" placeholder="@(editingCatalogItem != null ? "ویرایش عنوان..." : "عنوان جدید (مثلاً: تعویض برد)...")" />
+                            </div>
+                            <div class="iv-cat-add-subrow">
+                                <select class="iv-add-input" @bind="newCatalogDeviceTypeId">
+                                    <option value="">عمومی (همه دستگاه‌ها)</option>
+                                    @if (deviceTypes != null)
+                                    {
+                                        @foreach (var dt in deviceTypes)
+                                        {
+                                            <option value="@dt.Id">@dt.Name</option>
+                                        }
+                                    }
+                                </select>
+                            </div>
+                            <div class="iv-cat-add-options">
+                                <label class="iv-check-label">
+                                    <input type="checkbox" @bind="newCatalogIsActive" />
+                                    فعال باشد
+                                </label>
+                                <label class="iv-check-label">
+                                    <input type="checkbox" @bind="newCatalogSendSms" />
+                                    ارسال پیامک فعال (در آینده)
+                                </label>
+                            </div>
+                            @if (editingCatalogItem != null)
+                            {
+                                <div class="iv-cat-edit-actions">
+                                    <button class="iv-add-btn iv-add-btn--secondary" @onclick="CancelEditCatalogItem">لغو ویرایش</button>
+                                    <button class="iv-add-btn iv-add-btn--full" @onclick="UpdateCatalogItem">ذخیره تغییرات</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <button class="iv-add-btn iv-add-btn--full" @onclick="CreateCatalogItem">افزودن به کاتالوگ</button>
+                            }
+                        </div>
+                    }
+                        <div class="iv-cat-list">
+                            @if (catalog == null || catalog.Count == 0)
+                            {
+                                <div class="iv-items-empty">موردی یافت نشد</div>
+                            }
+                            else
+                            {
+                                @foreach (var grp in groupedCatalog)
+                                {
+                                    <div class="iv-cat-group">
+                                        <div class="iv-cat-group-header">@grp.Title</div>
+                                        @foreach (var cat in grp.Items)
+                                        {
+                                            <div class="iv-cat-item @(cat.IsActive ? "" : "iv-cat-item--disabled")">
+                                                <div class="iv-cat-main">
+                                                    <span class="iv-cat-title">@cat.Title</span>
+                                                    <div class="iv-cat-badges">
+                                                        @if (!cat.IsActive) { <span class="iv-badge iv-badge--danger">غیرفعال</span> }
+                                                        @if (cat.SendSms) { <span class="iv-badge iv-badge--info">SMS</span> }
+                                                    </div>
+                                                </div>
+                                                @if (canManageCatalog)
+                                                {
+                                                    <div class="iv-cat-actions">
+                                                        <button class="iv-cat-edit" @onclick="() => EditCatalogItem(cat)" title="ویرایش"><span class="oi oi-pencil"></span></button>
+                                                        <button class="iv-item-remove" @onclick="() => DeleteCatalogItem(cat.Id)" title="حذف"><span class="oi oi-trash"></span></button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- Invoice Form Section -->
+            <div class="iv-section-header">
+                <div class="iv-section-title">اقلام فاکتور</div>
+                @if (canManageCatalog)
+                {
+                    <button class="iv-manage-catalog" @onclick="OpenCatalog">
+                        <span class="oi oi-cog"></span>
+                        مدیریت کاتالوگ
+                    </button>
+                }
+            </div>
+            
+            <div class="iv-card iv-items-card">
+                <div class="iv-selector-box">
+                    <button class="iv-selector-trigger" @onclick="ToggleSelector">
+                        <span class="oi oi-magnifying-glass"></span>
+                        <span>انتخاب سریع قطعات و اجرت‌ها...</span>
+                        <span class="oi oi-chevron-bottom"></span>
+                    </button>
+                    
+                    @if (showSelector)
+                    {
+                        <div class="iv-selector-overlay" @onclick="ToggleSelector"></div>
+                        <div class="iv-selector-dropdown">
+                            <div class="iv-selector-search">
+                                <label class="iv-toggle-switch">
+                                    <input type="checkbox" checked="@includeAllCatalogs" @onchange="OnIncludeAllCatalogsChanged" />
+                                    <span class="iv-toggle-slider"></span>
+                                    <span class="iv-toggle-label">نمایش همه</span>
+                                </label>
+                                <input placeholder="جستجوی سریع..." @bind="catalogSearch" @bind:event="oninput" />
+                            </div>
+                            <div class="iv-selector-list">
+                                @foreach (var cat in filteredCatalog)
+                                {
+                                    <div class="iv-selector-item" @onclick="() => ToggleCatalogSelection(cat)">
+                                        <div class="iv-check @(tempSelectedCatalogIds.Contains(cat.Id) ? "iv-check--active" : "")">
+                                            <span class="oi oi-check"></span>
+                                        </div>
+                                        <div class="iv-sel-info">
+                                            <span class="iv-sel-title">@cat.Title</span>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                            <div class="iv-selector-footer">
+                                <button class="iv-sel-btn iv-sel-btn--cancel" @onclick="ToggleSelector">انصراف</button>
+                                <button class="iv-sel-btn iv-sel-btn--apply" @onclick="AddSelectedFromCatalog">
+                                    افزودن
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="iv-items-list">
+                    @if (invoiceItems.Count == 0)
+                    {
+                        <div class="iv-items-empty">
+                            <span class="oi oi-list"></span>
+                            <p>هنوز آیتمی اضافه نشده است</p>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var item in invoiceItems)
+                        {
+                            <div class="iv-item-row iv-item-row--complex">
+                                <div class="iv-item-top-row">
+                                    <div class="iv-item-title-box">
+                                        <span class="iv-item-title">@item.Title</span>
+                                    </div>
+                                    <button class="iv-item-remove" @onclick="() => RemoveItem(item)"><span class="oi oi-trash"></span></button>
+                                </div>
+                                
+                                <div class="iv-item-inputs">
+                                    <div class="iv-item-field iv-item-field--full">
+                                        <label>شرح اقدامات</label>
+                                        <textarea class="iv-add-input iv-textarea-auto" @bind="item.ActionDescription" placeholder="مثلاً: تعویض فیلتر و تست..." rows="2"></textarea>
+                                    </div>
+                                    <div class="iv-item-grid-2">
+                                        <div class="iv-item-field">
+                                            <label>فی (تومان)</label>
+                                            <input type="text" inputmode="decimal" class="iv-add-input iv-input--money" value="@MoneyText(item, item.UnitPrice)" @oninput="(e) => OnUnitPriceInput(e, item)" @onblur="() => OnMoneyBlur(item)" />
+                                        </div>
+                                        <div class="iv-item-field">
+                                            <label>تکنسین</label>
+                                            <select class="iv-add-input iv-input--tech" @bind="item.TechnicianId">
+                                                <option value="">-- انتخاب --</option>
+                                                @if (technicians != null)
+                                                {
+                                                    @foreach (var tech in technicians)
+                                                    {
+                                                        <option value="@tech.Id">@tech.FullName</option>
+                                                    }
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+
+            </div>
+
+            <div class="iv-section-title">
+                <span class="oi oi-task"></span>
+                تغییر وضعیت رسید
+                <span class="iv-sms-badge @(smsLogCount == 0 ? "iv-sms-badge--empty" : "")" @onclick="() => { if (smsLogCount > 0) showSmsHistoryModal = true; }" title="@(smsLogCount > 0 ? "مشاهده تاریخچه پیامک‌ها" : "هنوز پیامکی ارسال نشده")">
+                    <span class="iv-sms-badge__icon">
+                        <span class="oi oi-comment-square"></span>
+                    </span>
+                    <span class="iv-sms-badge__count">@smsLogCount</span>
+                </span>
+            </div>
+            <div class="iv-card iv-status-card">
+                <div class="iv-status-options">
+                    <div class="iv-status-opt iv-status--pending @(receiptStatus == "pending" ? "active" : "")" @onclick='() => receiptStatus = "pending"'>
+                        <span class="oi oi-clock"></span>
+                        در انتظار
+                    </div>
+                    <div class="iv-status-opt iv-status--repaired @(receiptStatus == "repaired" ? "active" : "")" @onclick='() => receiptStatus = "repaired"'>
+                        <span class="oi oi-check"></span>
+                        تعمیر شده
+                    </div>
+                    <div class="iv-status-opt iv-status--delivered @(receiptStatus == "delivered" ? "active" : "")" @onclick='() => receiptStatus = "delivered"'>
+                        <span class="oi oi-home"></span>
+                        تحویل شد
+                    </div>
+                    <div class="iv-status-opt iv-status--failed @(receiptStatus == "not_repairable" ? "active" : "")" @onclick='() => receiptStatus = "not_repairable"'>
+                        <span class="oi oi-circle-x"></span>
+                        غیرتعمیر
+                    </div>
+                </div>
+            </div>
+
+            <div class="iv-card iv-sms-history-row @(smsLogCount == 0 ? "iv-sms-history-row--empty" : "")" @onclick="() => { if (smsLogCount > 0) showSmsHistoryModal = true; }">
+                <div class="iv-sms-history-row__icon">
+                    <span class="oi oi-comment-square"></span>
+                </div>
+                <div class="iv-sms-history-row__info">
+                    <div class="iv-sms-history-row__title">تاریخچه پیامک‌ها</div>
+                    <div class="iv-sms-history-row__sub">
+                        @if (smsLogCount > 0)
+                        {
+                            <span>@smsLogCount پیامک</span>
+                        }
+                        else
+                        {
+                            <span>هنوز پیامکی ارسال نشده</span>
+                        }
+                    </div>
+                </div>
+                <div class="iv-sms-history-row__arrow">
+                    <span class="oi oi-chevron-left"></span>
+                </div>
+            </div>
+
+            <div class="iv-section-title">
+                <span class="oi oi-credit-card"></span>
+                صورتحساب نهایی
+            </div>
+            <div class="iv-card iv-bill-card">
+                <div class="iv-bill-grid">
+                    <div class="iv-bill-field">
+                        <label>صورتحساب کل (تومان)</label>
+                        <input type="text" inputmode="decimal" class="iv-add-input iv-input--money" value="@FormatMoney(BillTotalLive)" readonly />
+                    </div>
+                    <div class="iv-bill-field">
+                        <label>تخفیف (تومان)</label>
+                        <input type="text" inputmode="decimal" class="iv-add-input iv-input--money" value="@MoneyText("discount", billDiscount)" @oninput="OnBillDiscountInput" @onblur='() => OnMoneyBlur("discount")' />
+                        <div class="iv-bill-hint iv-text-center">@DiscountPercentText</div>
+                    </div>
+                    <div class="iv-bill-field">
+                        <label>پیش پرداخت (تومان)</label>
+                        <input type="text" inputmode="decimal" class="iv-add-input iv-input--money" value="@MoneyText("prepaid", billPrepaid)" @oninput="OnBillPrepaidInput" @onblur='() => OnMoneyBlur("prepaid")' />
+                    </div>
+                    <div class="iv-bill-field">
+                        <label>پرداخت شده (تومان)</label>
+                        <input type="text" inputmode="decimal" class="iv-add-input iv-input--money" value="@MoneyText("paid", billPaid)" @oninput="OnBillPaidInput" @onblur='() => OnMoneyBlur("paid")' />
+                    </div>
+                </div>
+
+                <div class="iv-bill-summary">
+                    <div class="iv-bill-sum-row">
+                        <span>مبلغ قابل پرداخت:</span>
+                        <strong class="iv-bill-clickable" @onclick="SetPaidToPayable">@FormatMoney(BillPayable)</strong>
+                    </div>
+                    <div class="iv-bill-sum-row">
+                        <span>باقیمانده جهت تسویه:</span>
+                        <strong class="@(BillRemaining > 0 ? "iv-bill-neg" : BillRemaining < 0 ? "iv-bill-pos" : "iv-bill-ok")">@FormatMoney(BillRemaining)</strong>
+                    </div>
+                </div>
+
+                <div class="iv-bill-chip">
+                    <span class="iv-chip-status @CustomerBalanceChipClass">
+                        <span class="oi @(BillRemaining > 0 ? "oi-warning" : BillRemaining < 0 ? "oi-star" : "oi-circle-check")"></span>
+                        @CustomerBalanceChipText
+                    </span>
+                </div>
+
+    <div class="iv-bad-payer-toggle">
+        <label class="iv-toggle-switch @(isBadPayer ? "iv-toggle-switch--bad" : "iv-toggle-switch--good")">
+            <input type="checkbox" checked="@isBadPayer" @onchange="OnBadPayerToggleChanged" />
+            <span class="iv-toggle-slider"></span>
+            <span class="iv-toggle-label">وضعیت مشتری: @(isBadPayer ? "بدحساب" : "خوش حساب")</span>
+        </label>
+    </div>
+
+    @if (bankAccounts != null && bankAccounts.Any())
+    {
+        <div class="iv-bank-select mt-3">
+            <label class="form-label small fw-bold mb-2">انتخاب حساب بانکی برای واریز</label>
+            <select class="form-select rounded-3" @bind="selectedBankAccountId">
+                <option value="">-- انتخاب کنید --</option>
+                @foreach (var acc in bankAccounts)
+                {
+                    <option value="@acc.Id">
+                        @acc.BankName - @acc.Title @(FormatCardDisplay(acc.CardNumber))
+                    </option>
+                }
+            </select>
+        </div>
+    }
+</div>
+
+            <button class="iv-btn-submit-all" @onclick="SubmitInvoiceAll">
+                <span class="oi oi-circle-check"></span>
+                تایید نهایی و ثبت فاکتور
+            </button>
+        </div>
+        
+        <!-- Mobile Bottom Action Bar -->
+        <div class="iv-mobile-bar">
+             <div class="iv-total">
+                 <span class="iv-total-label">مبلغ کل فاکتور:</span>
+                 <span class="iv-total-value">@TotalAmount.ToString("N0") <small>تومان</small></span>
+             </div>
+             <button class="iv-mobile-save" @onclick="SubmitInvoice">تایید و ثبت</button>
+        </div>
+    }
+</div>
+
+<ConfirmDialog 
+    IsVisible="@showConfirmDialog" 
+    Title="@confirmDialogTitle" 
+    Message="@confirmDialogMessage" 
+    IsDanger="@confirmDialogIsDanger" 
+    OnResult="HandleConfirmDialogResult" />
+
+<!-- SMS Confirmation Modal (آماده تحویل) -->
+@if (showSmsModal && receipt != null)
+{
+    var smsCustomerName = $"{receipt.CustomerFirstName} {receipt.CustomerLastName}";
+    var smsRegDate = PersianDateHelper.ToPersianDateTimeString(receipt.RegisteredAt, false);
+
+    <div class="sms-overlay @(smsSent ? "sms-overlay--sent" : "")" @onclick="CloseSmsModal">
+        <div class="sms-sheet" @onclick:stopPropagation>
+            <div class="sms-sheet-handle"></div>
+
+            <div class="sms-sheet-header">
+                <div class="sms-sheet-icon @(_smsType == "not_repairable" ? "sms-sheet-icon--danger" : "")">
+                    <span class="oi oi-envelope-open"></span>
+                </div>
+                <h3 class="sms-sheet-title">
+                    @(_smsType == "not_repairable" ? "ارسال پیامک غیر قابل تعمیر" : "ارسال پیامک اطلاع رسانی")
+                </h3>
+                <p class="sms-sheet-subtitle">
+                    @(_smsType == "not_repairable" ? "دستگاه مشتری قابل تعمیر نیست" : "دستگاه مشتری آماده تحویل است")
+                </p>
+            </div>
+
+            <div class="sms-sheet-body">
+                <div class="sms-chips-row">
+                    <span class="sms-chip sms-chip--customer">
+                        <span class="sms-chip-icon oi oi-person"></span>
+                        @smsCustomerName
+                    </span>
+                    <span class="sms-chip sms-chip--mobile">
+                        <span class="sms-chip-icon oi oi-phone"></span>
+                        @receipt.CustomerMobile
+                    </span>
+                    <span class="sms-chip sms-chip--device">
+                        <span class="sms-chip-icon oi oi-wrench"></span>
+                        @receipt.DeviceTypeName (@(receipt.DeviceBrandName ?? ""))
+                    </span>
+                    <span class="sms-chip sms-chip--workshop">
+                        <span class="sms-chip-icon oi oi-briefcase"></span>
+                        @receipt.WorkshopName
+                    </span>
+                    <span class="sms-chip sms-chip--date">
+                        <span class="sms-chip-icon oi oi-calendar"></span>
+                        @smsRegDate
+                    </span>
+                    <span class="sms-chip sms-chip--id">
+                        <span class="sms-chip-icon oi oi-tag"></span>
+                        #@receipt.Id
+                    </span>
+                </div>
+
+                <div class="sms-preview-section">
+                    <div class="sms-preview-header">
+                        <span class="oi oi-comment-square"></span>
+                        پیش‌نمایش پیامک
+                    </div>
+                    <div class="sms-preview-bubble @(_smsType == "not_repairable" ? "sms-preview-bubble--danger" : "")">
+                        <pre class="sms-preview-text">@smsPreviewText</pre>
+                    </div>
+                </div>
+
+                @if (smsSent)
+                {
+                    <div class="sms-success-banner">
+                        <span class="oi oi-circle-check"></span>
+                        پیامک با موفقیت ارسال شد
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(smsError))
+                {
+                    <div class="sms-error-banner">
+                        <span class="oi oi-circle-x"></span>
+                        @smsError
+                    </div>
+                }
+            </div>
+
+            <div class="sms-sheet-footer">
+                @if (!smsSent)
+                {
+                    <button class="sms-btn sms-btn--primary" @onclick="SendSms" disabled="@isSendingSms">
+                        @if (isSendingSms) { <span class="spinner-border spinner-border-sm"></span> }
+                        <span class="oi oi-envelope-closed"></span>
+                        ارسال پیامک
+                    </button>
+                    <button class="sms-btn sms-btn--ghost" @onclick="CloseSmsModal">بعداً ارسال می‌کنم</button>
+                }
+                else
+                {
+                    <button class="sms-btn sms-btn--primary" @onclick="CloseSmsModalAndExit">
+                        <span class="oi oi-arrow-right"></span>
+                        بازگشت به لیست رسیدها
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<!-- SMS History Modal -->
+@if (showSmsHistoryModal && smsLogs.Any())
+{
+    <div class="sms-overlay" @onclick="() => showSmsHistoryModal = false">
+        <div class="sms-history-sheet" @onclick:stopPropagation>
+            <div class="sms-sheet-handle"></div>
+
+            <div class="sms-sheet-header">
+                <div class="sms-sheet-icon sms-sheet-icon--history">
+                    <span class="oi oi-list-rich"></span>
+                </div>
+                <h3 class="sms-sheet-title">تاریخچه پیامک‌ها</h3>
+                <p class="sms-sheet-subtitle">@smsLogs.Count پیامک برای این رسید ارسال شده</p>
+            </div>
+
+            <div class="sms-sheet-body">
+                @foreach (var log in smsLogs)
+                {
+                    <div class="sms-history-card">
+                        <div class="sms-history-card__header">
+                            <span class="sms-module-chip sms-module-chip--@(log.ModuleType?.ToLower() ?? "default")">@log.ModuleTitle</span>
+                            <span class="sms-badge sms-badge--@(log.SendStatus == "ارسال شده" ? "success" : log.SendStatus == "ناموفق" ? "danger" : "warn")">@log.SendStatus</span>
+                        </div>
+                        <div class="sms-history-card__body">
+                            <pre class="sms-history-card__text">@log.MessageText</pre>
+                        </div>
+                        <div class="sms-history-card__footer">
+                            <span>به @log.RecipientNumber</span>
+                            <span class="sms-history-card__delivery">
+                                وضعیت تحویل:
+                                <span class="sms-badge sms-badge--@(log.DeliveryStatus == 2 ? "success" : log.DeliveryStatus == 1 ? "info" : log.DeliveryStatus == 3 ? "danger" : "warn")">
+                                    @(log.DeliveryStatus == 0 ? "در انتظار" : log.DeliveryStatus == 1 ? "ارسال به مخابرات" : log.DeliveryStatus == 2 ? "رسیده" : log.DeliveryStatus == 3 ? "نرسیده" : "نامشخص")
+                                </span>
+                            </span>
+                            <span class="sms-history-card__date">@log.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</span>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="sms-sheet-footer">
+                <button class="sms-btn sms-btn--ghost" @onclick='() => showSmsHistoryModal = false'>بستن</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .iv-page {
+        min-height: 100vh;
+        padding-bottom: 90px;
+        font-family: inherit;
+        background:
+            radial-gradient(900px 420px at 85% -10%, rgba(37, 99, 235, 0.12), rgba(241, 245, 249, 0) 60%),
+            radial-gradient(900px 420px at 10% 110%, rgba(16, 185, 129, 0.10), rgba(241, 245, 249, 0) 60%),
+            linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+    }
+
+    /* Header */
+    .iv-header {
+        background: rgba(255,255,255,0.82);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 10px;
+        top: 0;
+        z-index: 100;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+        border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+    }
+
+    .iv-back {
+        border: none;
+        background: rgba(15, 23, 42, 0.06);
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #64748b;
+        transition: all 0.2s;
+    }
+
+    .iv-back:hover { background: #e2e8f0; color: #1e293b; }
+
+    .iv-title {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .iv-title__main {
+        font-weight: 950;
+        font-size: 1.05rem;
+        color: #0f172a;
+        line-height: 1.2;
+    }
+
+    .iv-title__sub {
+        font-weight: 700;
+        font-size: 0.78rem;
+        color: #64748b;
+        line-height: 1.2;
+    }
+
+    .iv-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .iv-total-pill {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 14px;
+        background: rgba(37, 99, 235, 0.10);
+        border: 1px solid rgba(37, 99, 235, 0.16);
+        color: #1e40af;
+        font-weight: 900;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .iv-total-pill__label {
+        font-size: 0.75rem;
+        opacity: 0.9;
+    }
+
+    .iv-total-pill__value {
+        font-size: 0.95rem;
+        letter-spacing: 0.2px;
+        font-weight: 700;
+    }
+
+    /* Receipt Status Card */
+    .iv-status-card {
+        padding: 20px;
+        margin-top: 15px;
+        background: #fff;
+    }
+
+    /* SMS History Row — full width under status cards */
+    .iv-sms-history-row {
+        margin-top: 15px;
+        padding: 14px 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: #fff;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 1px solid #e2e8f0;
+    }
+    .iv-sms-history-row:hover {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+    }
+    .iv-sms-history-row:active { transform: scale(0.99); }
+    .iv-sms-history-row--empty { opacity: 0.55; cursor: default; }
+    .iv-sms-history-row--empty:active { transform: none; }
+
+    .iv-sms-history-row__icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+    }
+
+    .iv-sms-history-row__info { flex: 1; min-width: 0; }
+    .iv-sms-history-row__title {
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: #0f172a;
+    }
+    .iv-sms-history-row__sub {
+        font-size: 0.8rem;
+        color: #64748b;
+        margin-top: 2px;
+    }
+    .iv-sms-history-row__arrow {
+        color: #94a3b8;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+
+    .iv-status-options {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .iv-status-opt {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 16px;
+        border-radius: 16px;
+        border: 2px solid #f1f5f9;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+    }
+
+    .iv-status-opt span.oi {
+        font-size: 1.2rem;
+    }
+
+    .iv-status-opt:hover {
+        border-color: #e2e8f0;
+        background: #fff;
+    }
+
+    .iv-status--pending.active {
+        color: #b45309;
+        border-color: #f59e0b;
+        background: #fffbeb;
+        box-shadow: 0 8px 20px rgba(245, 158, 11, 0.15);
+    }
+
+    .iv-status--repaired.active {
+        color: #15803d;
+        border-color: #22c55e;
+        background: #f0fdf4;
+        box-shadow: 0 8px 20px rgba(34, 197, 94, 0.15);
+    }
+
+    .iv-status--delivered.active {
+        color: #1d4ed8;
+        border-color: #3b82f6;
+        background: #eff6ff;
+        box-shadow: 0 8px 20px rgba(59, 130, 246, 0.15);
+    }
+
+    .iv-status--failed.active {
+        color: #be123c;
+        border-color: #ef4444;
+        background: #fff1f2;
+        box-shadow: 0 8px 20px rgba(239, 68, 68, 0.15);
+    }
+
+    .iv-text-center {
+        text-align: center;
+        width: 100%;
+        display: block;
+    }
+
+    /* Billing Card Styles */
+    .iv-bill-card {
+        padding: 24px 20px;
+        margin-top: 15px;
+        background: #fff;
+    }
+
+    .iv-bill-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+
+    .iv-bill-field {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .iv-bill-field label {
+        font-size: 0.85rem;
+        font-weight: 800;
+        color: #475569;
+    }
+
+    .iv-bill-hint {
+        font-size: 0.75rem;
+        font-weight: 900;
+        color: #2563eb;
+        margin-top: -4px;
+        margin-right: 4px;
+    }
+
+    .iv-bill-summary {
+        margin-top: 20px;
+        padding: 20px;
+        background: #f8fafc;
+        border-radius: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        border: 1px solid #f1f5f9;
+    }
+
+    .iv-bill-sum-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 1rem;
+    }
+
+    .iv-bill-sum-row span {
+        color: #64748b;
+        font-weight: 700;
+    }
+
+    .iv-bill-sum-row strong {
+        color: #0f172a;
+        font-weight: 950;
+        font-size: 1.1rem;
+    }
+
+    .iv-bill-neg { color: #be123c !important; }
+    .iv-bill-pos { color: #0369a1 !important; }
+    .iv-bill-ok { color: #15803d !important; }
+
+    .iv-bill-clickable {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-decoration: underline;
+        text-decoration-color: rgba(79, 70, 229, 0.3);
+        text-underline-offset: 3px;
+    }
+
+    .iv-bill-clickable:hover {
+        color: #4f46e5 !important;
+        text-decoration-color: rgba(79, 70, 229, 0.6);
+    }
+
+    .iv-bill-clickable:active {
+        transform: scale(0.98);
+    }
+
+    .iv-bill-chip {
+        margin-top: 16px;
+        display: flex;
+        justify-content: center;
+    }
+
+    .iv-chip-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 24px;
+        border-radius: 999px;
+        font-weight: 950;
+        font-size: 0.95rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+
+    .iv-chip-status--neg { background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; }
+    .iv-chip-status--ok { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .iv-chip-status--pos { background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; }
+
+    /* Final Submit Button */
+    .iv-btn-submit-all {
+        width: 100%;
+        margin-top: 30px;
+        margin-bottom: 20px;
+        height: 56px;
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: #fff;
+        border: none;
+        border-radius: 18px;
+        font-weight: 950;
+        font-size: 1.1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        box-shadow: 0 12px 24px rgba(16, 185, 129, 0.25);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .iv-btn-submit-all:active {
+        transform: scale(0.98);
+        box-shadow: 0 6px 12px rgba(16, 185, 129, 0.2);
+    }
+
+    .iv-btn-submit-all span.oi {
+        font-size: 1.3rem;
+    }
+
+    @@media (max-width: 480px) {
+        .iv-bill-grid { grid-template-columns: 1fr; }
+        .iv-status-options { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .iv-save-btn {
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        color: #fff;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 0.9rem;
+        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.18);
+    }
+
+    .iv-save-btn:active { transform: translateY(1px); }
+
+    /* Content */
+    .iv-content {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 16px;
+    }
+
+    .iv-section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 25px 5px 15px;
+    }
+
+    .iv-manage-catalog {
+        background: rgba(15, 23, 42, 0.06);
+        color: #334155;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 10px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.2s;
+    }
+
+    .iv-manage-catalog:hover { background: #e2e8f0; color: #1e293b; }
+
+    /* Selector Box */
+    .iv-selector-box {
+        position: relative;
+        padding: 15px 20px;
+        border-bottom: 1px solid #f1f5f9;
+        background: #fff;
+    }
+
+    .iv-card {
+        background: rgba(255,255,255,0.92);
+        border: 1px solid rgba(226, 232, 240, 0.85);
+        border-radius: 22px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+        overflow: hidden;
+    }
+
+    .iv-selector-trigger {
+        width: 100%;
+        background: rgba(248, 250, 252, 0.9);
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-radius: 12px;
+        padding: 12px 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #64748b;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .iv-selector-trigger span:nth-child(2) { flex: 1; text-align: right; font-weight: 600; }
+    .iv-selector-trigger:hover { border-color: #cbd5e1; background: #f1f5f9; }
+
+    /* Full-Width Mobile Redesign */
+    @@media (max-width: 480px) {
+        .iv-content { padding: 0 10px; }
+        .iv-section-header { margin: 16px 2px 10px; }
+        .iv-section-title { font-size: 1.05rem; font-weight: 900; }
+        .iv-textarea { min-height: 110px; }
+    }
+
+    /* Bottom Sheet Style Selector for Mobile */
+    .iv-selector-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 23, 42, 0.75);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        z-index: 2000;
+        display: none;
+    }
+
+    @@media (max-width: 767px) {
+        .iv-selector-overlay { display: block; }
+        .iv-selector-dropdown {
+            position: fixed;
+            top: auto;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            height: 85vh;
+            max-height: 85vh;
+            border-radius: 32px 32px 0 0;
+            transform: translateY(100%);
+            animation: ivSheetUp 0.5s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+            max-width: 100%;
+            box-shadow: 0 -20px 60px rgba(0,0,0,0.3);
+            border: none;
+            z-index: 2001;
+            background: #fff;
+        }
+
+        @@keyframes ivSheetUp {
+            to { transform: translateY(0); }
+        }
+
+        .iv-selector-search {
+            padding: 24px 20px;
+            background: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .iv-selector-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 10px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            padding: 16px;
+            margin-bottom: 0;
+            border-radius: 16px;
+            width: 100%;
+            direction: rtl;
+            box-sizing: border-box;
+        }
+
+        .iv-selector-toggle span { 
+            font-size: 1.1rem; 
+            color: #0f172a; 
+            text-align: right; 
+            white-space: nowrap;
+            line-height: 1;
+        }
+        
+        .iv-selector-toggle input { 
+            width: 24px; 
+            height: 24px; 
+            margin: 0;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .iv-selector-list {
+            flex: 1;
+            padding: 10px 20px;
+            overflow-y: auto;
+        }
+
+        .iv-selector-item {
+            padding: 20px 0;
+            border-bottom: 1px solid #f8fafc;
+        }
+
+        .iv-selector-footer {
+            padding: 20px;
+            background: #fff;
+            border-top: 1px solid #f1f5f9;
+            padding-bottom: calc(24px + env(safe-area-inset-bottom));
+            display: flex;
+            gap: 12px;
+        }
+    }
+
+    .iv-selector-list {
+        max-height: unset;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    @@keyframes ivFadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .iv-selector-search {
+        padding: 12px;
+        border-bottom: 1px solid #f1f5f9;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .iv-selector-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #1e293b;
+        cursor: pointer;
+        width: 100%;
+        box-sizing: border-box;
+        direction: rtl;
+    }
+
+    .iv-selector-toggle input {
+        width: 22px;
+        height: 22px;
+        margin: 0;
+        cursor: pointer;
+        accent-color: #2563eb;
+    }
+
+    .iv-selector-toggle span {
+        line-height: 1;
+        white-space: nowrap;
+        text-align: right;
+    }
+
+    .iv-selector-search input {
+        width: 100%;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 0.85rem;
+    }
+
+    .iv-selector-list {
+        max-height: 250px;
+        overflow-y: auto;
+    }
+
+    .iv-selector-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 15px;
+        cursor: pointer;
+        transition: background 0.2s;
+        border-bottom: 1px solid #f8fafc;
+    }
+
+    .iv-selector-item:hover { background: #f8fafc; }
+
+    .iv-check {
+        width: 22px;
+        height: 22px;
+        border: 2px solid #cbd5e1;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+    }
+
+    .iv-check span { font-size: 0.7rem; color: #fff; display: none; }
+    .iv-check--active { background: #2563eb; border-color: #2563eb; }
+    .iv-check--active span { display: block; }
+
+    .iv-sel-info { display: flex; flex-direction: column; gap: 2px; }
+    .iv-sel-title { font-weight: 700; color: #1e293b; font-size: 0.9rem; }
+    .iv-sel-price { font-size: 0.8rem; color: #64748b; font-weight: 600; }
+
+    .iv-selector-footer {
+        padding: 12px;
+        background: #f8fafc;
+        border-top: 1px solid #f1f5f9;
+        display: flex;
+        gap: 10px;
+    }
+
+    .iv-sel-btn {
+        flex: 1;
+        border: none;
+        padding: 10px;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 0.85rem;
+    }
+
+    .iv-sel-btn--apply { background: #2563eb; color: #fff; }
+    .iv-sel-btn--cancel { background: #e2e8f0; color: #475569; }
+
+    /* Premium Glassmorphism Card */
+    .iv-premium-card {
+        position: relative;
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(211, 229, 253, 0.87);
+        border-radius: 28px;
+        padding: 24px;
+        margin-bottom: 25px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+        overflow: hidden;
+    }
+
+    .iv-pc-blur {
+        position: absolute;
+        top: -50px;
+        left: -50px;
+        width: 150px;
+        height: 150px;
+        background: radial-gradient(circle, rgba(37, 99, 235, 0.1) 0%, transparent 70%);
+        z-index: 0;
+    }
+
+    .iv-pc-content {
+        position: relative;
+        z-index: 1;
+    }
+
+    .iv-pc-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+    .iv-pc-user {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .iv-pc-avatar {
+        width: 54px;
+        height: 54px;
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        border-radius: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 1.2rem;
+        box-shadow: 0 8px 15px rgba(37, 99, 235, 0.2);
+    }
+
+    .iv-pc-name-group {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .iv-pc-name {
+        font-weight: 950;
+        font-size: 1.1rem;
+        color: #0f172a;
+        line-height: 1.2;
+        text-align:center;
+    }
+
+    .iv-pc-mobile-wrapper {
+        margin-top: 4px;
+    }
+
+    .iv-chip--mobile {
+        display: inline-flex;
+        background: #eff6ff;
+        color: #2563eb;
+        border: 1px solid #bfdbfe;
+        text-decoration: none;
+        transition: all 0.2s;
+        font-size: 0.85rem;
+    }
+
+    .iv-chip--mobile:hover {
+        background: #dbeafe;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+    }
+
+    .iv-chip--mobile span.oi {
+        font-size: 0.75rem;
+        color: #2563eb;
+    }
+
+    .iv-pc-status {
+        padding: 7px 14px;
+        border-radius: 999px;
+        font-weight: 900;
+        font-size: 0.8rem;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.03);
+    }
+
+    .iv-pc-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .iv-chip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #475569;
+    }
+
+    .iv-chip span.oi {
+        font-size: 0.8rem;
+        color: #2563eb;
+    }
+
+    .iv-chip--date { background: #fff; }
+
+    .iv-pc-problem {
+        background: rgba(245, 158, 11, 0.05);
+        border-right: 4px solid #f59e0b;
+        padding: 12px 16px;
+        border-radius: 12px;
+        margin-top:20px;
+    }
+
+    .iv-pc-problem-label {
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #b45309;
+        margin-bottom: 4px;
+    }
+
+    .iv-pc-problem-text {
+        font-size: 0.9rem;
+        color: #475569;
+        line-height: 1.6;
+        font-weight: 500;
+    }
+
+    /* Status Badge Classes */
+    .iv-badge--pending { background: #fff7ed; color: #c2410c; }
+    .iv-badge--repaired { background: #f0fdf4; color: #15803d; }
+    .iv-badge--delivered { background: #f0f9ff; color: #0369a1; }
+    .iv-badge--not-repairable { background: #fef2f2; color: #b91c1c; }
+
+    /* Modal Styles */
+    .iv-modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 23, 42, 0.6);
+        backdrop-filter: blur(4px);
+        z-index: 2000;
+    }
+
+    .iv-modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 95%;
+        max-width: 500px;
+        background: #fff;
+        border-radius: 28px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        z-index: 2001;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        animation: ivModalShow 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @@keyframes ivModalShow {
+        from { opacity: 0; transform: translate(-50%, -45%) scale(0.95); }
+        to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+
+    .iv-modal-header {
+        padding: 24px;
+        background: #fff;
+        border-bottom: 1px solid #f1f5f9;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .iv-modal-title { font-weight: 900; color: #0f172a; font-size: 1.2rem; }
+    
+    .iv-modal-close { 
+        background: #f1f5f9; 
+        border: none; 
+        color: #64748b; 
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+    }
+    .iv-modal-close:hover { background: #e2e8f0; color: #0f172a; }
+
+    .iv-modal-body { padding: 24px; max-height: 75vh; overflow-y: auto; }
+
+    .iv-cat-add-form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-bottom: 24px;
+        background: #f8fafc;
+        padding: 20px;
+        border-radius: 20px;
+        border: 1px solid #e2e8f0;
+    }
+
+    .iv-cat-add-row {
+        display: flex;
+        gap: 12px;
+    }
+
+    .iv-cat-add-subrow {
+        display: flex;
+    }
+
+    .iv-cat-add-subrow select {
+        width: 100%;
+        height: 48px;
+        border-radius: 14px;
+        border: 2px solid #e2e8f0;
+        padding: 0 16px;
+        font-weight: 700;
+        background: #fff;
+    }
+
+    .iv-cat-add-row input {
+        flex: 1;
+        height: 48px;
+        border-radius: 14px;
+        border: 2px solid #e2e8f0;
+        padding: 0 16px;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    .iv-cat-add-row input:focus { border-color: #2563eb; outline: none; background: #fff; }
+
+    .iv-cat-add-row .iv-add-btn {
+        background: #0f172a;
+        color: #fff;
+        border: none;
+        padding: 0 24px;
+        border-radius: 14px;
+        font-weight: 800;
+        transition: all 0.2s;
+    }
+    .iv-cat-add-row .iv-add-btn:hover { background: #1e293b; transform: translateY(-2px); }
+
+    .iv-add-btn--full {
+        height: 48px;
+        border-radius: 14px;
+        font-weight: 900;
+    }
+
+    .iv-cat-add-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+
+    .iv-check-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #475569;
+        cursor: pointer;
+        padding: 8px 14px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        transition: all 0.2s;
+    }
+    .iv-check-label:hover { border-color: #cbd5e1; }
+    .iv-check-label input { width: 18px; height: 18px; cursor: pointer; }
+
+    .iv-cat-list { display: flex; flex-direction: column; gap: 12px; }
+    
+    .iv-cat-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        background: #fff;
+        border-radius: 16px;
+        border: 1px solid #f1f5f9;
+        transition: all 0.2s;
+    }
+    .iv-cat-item:hover { border-color: #e2e8f0; transform: translateX(-5px); box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+
+    .iv-cat-item--disabled { opacity: 0.5; background: #f8fafc; }
+
+    .iv-cat-group {
+        background: #fff;
+        border: 1px solid #f1f5f9;
+        border-radius: 18px;
+        overflow: hidden;
+    }
+
+    .iv-cat-group-header {
+        padding: 10px 16px;
+        background: linear-gradient(90deg, rgba(37, 99, 235, 0.08) 0%, rgba(37, 99, 235, 0.02) 100%);
+        border-bottom: 1px solid #f1f5f9;
+        font-weight: 900;
+        color: #1e293b;
+        font-size: 0.85rem;
+    }
+
+    .iv-cat-group .iv-cat-item {
+        border: none;
+        border-radius: 0;
+        padding: 12px 16px;
+    }
+
+    .iv-cat-group .iv-cat-item:hover {
+        transform: none;
+        box-shadow: none;
+        background: #f8fafc;
+    }
+
+    .iv-mobile-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #fff;
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+        z-index: 101;
+    }
+
+    .iv-total {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .iv-total-label {
+        font-size: 0.75rem;
+        color: #64748b;
+        font-weight: 600;
+    }
+
+    .iv-total-value {
+        font-size: 1.25rem;
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    .iv-total-value small {
+        font-size: 0.7rem;
+        color: #94a3b8;
+        margin-right: 4px;
+    }
+
+    .iv-mobile-save {
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        padding: 12px 30px;
+        border-radius: 16px;
+        font-weight: 800;
+        font-size: 0.95rem;
+        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
+    }
+
+    /* Helpers */
+    .iv-loading, .iv-error {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 60vh;
+        gap: 15px;
+        color: #64748b;
+    }
+
+    .iv-error span { font-size: 3rem; color: #ef4444; }
+    .iv-placeholder { color: #94a3b8; font-style: italic; text-align: center; padding: 40px 0; }
+
+    /* Toggle Switch Styles */
+    .iv-toggle-switch {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        gap: 12px;
+    }
+    .iv-toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .iv-toggle-slider {
+        position: relative;
+        width: 52px;
+        height: 28px;
+        background-color: #cbd5e1;
+        border-radius: 28px;
+        transition: 0.3s;
+        flex-shrink: 0;
+    }
+    .iv-toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 22px;
+        width: 22px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        border-radius: 50%;
+        transition: 0.3s;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .iv-toggle-switch input:checked + .iv-toggle-slider { background-color: #2563eb; }
+    .iv-toggle-switch input:checked + .iv-toggle-slider:before { transform: translateX(24px); }
+    .iv-toggle-switch--good input:checked + .iv-toggle-slider { background-color: #16a34a; }
+    .iv-toggle-switch--good .iv-toggle-slider { background-color: #16a34a; }
+    .iv-toggle-switch--good .iv-toggle-label { color: #16a34a; }
+    .iv-toggle-switch--bad input:checked + .iv-toggle-slider { background-color: #dc2626; }
+    .iv-toggle-switch--bad .iv-toggle-slider { background-color: #dc2626; }
+    .iv-toggle-switch--bad .iv-toggle-label { color: #dc2626; }
+    .iv-toggle-label { font-size: 1rem; font-weight: 700; color: #0f172a; user-select: none; }
+
+    .iv-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 24px 0 12px;
+        padding: 0 6px;
+    }
+
+    .iv-section-title {
+        font-size: 1.05rem;
+        font-weight: 950;
+        color: #0f172a;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.04);
+        border: 1px solid rgba(226, 232, 240, 0.95);
+    }
+
+    /* Enhanced Invoice Item Alternating Colors */
+    .iv-items-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+    }
+
+    .iv-item-row--complex {
+        background: #ffffff;
+        border: 2px solid #4a85ceff;
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.05);
+        transition: all 0.2s;
+    }
+
+    .iv-items-list > .iv-item-row--complex:nth-child(even) {
+        background: rgba(37, 99, 235, 0.08);
+        border-color: rgba(37, 99, 235, 0.3);
+    }
+
+    .iv-items-list > .iv-item-row--complex:nth-child(odd) {
+        background: rgba(255, 255, 255, 0.98);
+        border-color: #94a3b8;
+    }
+
+    .iv-item-row--complex:hover {
+        border-color: #3b82f6;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.12);
+        transform: translateY(-2px);
+    }
+
+    .iv-item-top-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .iv-item-title-box {
+        flex: 1;
+        background: #f1f5f9;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border-right: 4px solid #2563eb;
+    }
+
+    .iv-item-title {
+        font-weight: 900;
+        font-size: 1rem;
+        color: #f14c00ff;
+    }
+
+    .iv-item-inputs {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .iv-item-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .iv-item-field--full {
+        margin-top: 8px;
+    }
+
+    .iv-item-field label {
+        font-size: 0.8rem;
+        font-weight: 800;
+        color: #64748b;
+        margin-right: 4px;
+    }
+
+    .iv-item-grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        row-gap: 18px;
+    }
+
+    .iv-item-grid-3 {
+        display: grid;
+        grid-template-columns: 1fr 1.5fr 1.5fr;
+        gap: 10px;
+    }
+
+    .iv-item-footer {
+        margin-top: 4px;
+        padding-top: 12px;
+        border-top: 1px dashed #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .iv-item-total-label {
+        font-size: 0.85rem;
+        font-weight: 800;
+        color: #64748b;
+    }
+
+    .iv-item-total-val {
+        color: #2563eb;
+        font-size: 1.25rem;
+        font-weight: 950;
+    }
+
+    /* Full-Width Mobile Redesign */
+    @@media (max-width: 480px) {
+        .iv-content { padding: 0 10px !important; margin: 0 !important; width: 100% !important; max-width: 100% !important; }
+        .iv-card, .iv-premium-card {
+            border-radius: 18px !important;
+            border: 1px solid rgba(211, 229, 253, 0.9) !important;
+            margin: 12px 0 !important;
+            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05) !important;
+            background: rgba(255,255,255,0.92) !important;
+            width: 100% !important;
+            overflow: hidden !important;
+        }
+        .iv-premium-card { padding: 16px 14px !important; }
+        .iv-selector-box { padding: 12px 12px 10px !important; border-bottom: 1px solid rgba(241, 245, 249, 0.9) !important; }
+        .iv-section-header { margin: 16px 2px 10px !important; }
+        .iv-section-title { font-size: 1.05rem !important; font-weight: 900 !important; }
+
+        .iv-items-list { padding: 12px !important; gap: 10px !important; background: transparent !important; }
+        .iv-item-row--complex {
+            border-radius: 16px !important;
+            padding: 14px !important;
+            border: 1px solid rgba(73, 144, 236, 0.95) !important;
+            box-shadow: 0 6px 14px rgba(15, 23, 42, 0.04) !important;
+            margin: 0 !important;
+        }
+
+        .iv-textarea { min-height: 110px !important; width: 100% !important; }
+        
+        .iv-item-grid-2 { grid-template-columns: 1fr !important; gap: 12px !important; }
+        
+        .iv-item-field { flex-direction: row !important; align-items: center !important; justify-content: space-between !important; gap: 12px !important; width: 100% !important; }
+
+        .iv-item-field--full {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+        }
+        
+        .iv-item-field label { margin-right: 0 !important; white-space: nowrap !important; min-width: 74px !important; }
+        
+        .iv-item-field .iv-add-input {
+            flex: 1 !important;
+            text-align: left !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+        .iv-item-field--full .iv-add-input {
+            text-align: right !important;
+        }
+    }
+
+    .iv-mobile-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: rgba(255, 255, 255, 0.86);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border-top: 1px solid rgba(226, 232, 240, 0.9);
+        padding: 12px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        z-index: 120;
+        box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    .iv-total {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    .iv-total-label {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: #64748b;
+    }
+
+    .iv-total-value {
+        font-size: 1.05rem;
+        font-weight: 950;
+        color: #0f172a;
+        line-height: 1.1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .iv-mobile-save {
+        height: 46px;
+        padding: 0 18px;
+        border: none;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: #fff;
+        font-weight: 900;
+        box-shadow: 0 14px 26px rgba(16, 185, 129, 0.22);
+        white-space: nowrap;
+    }
+
+    .iv-mobile-save:active { transform: translateY(1px); }
+
+    @@media (max-width: 480px) {
+        .iv-item-grid-3 {
+            grid-template-columns: 1fr 1fr;
+        }
+        .iv-item-grid-3 .iv-item-field:last-child {
+            grid-column: span 2;
+        }
+
+        .iv-save-btn { display: none; }
+
+        .iv-content { padding: 8px; }
+
+        .iv-premium-card { padding: 12px; border-radius: 20px; margin-bottom: 12px; }
+
+        .iv-pc-top { flex-direction: column; align-items: flex-start; gap: 8px; }
+
+        .iv-pc-avatar { width: 44px; height: 44px; border-radius: 14px; }
+
+        .iv-pc-name { font-size: 1.05rem; }
+
+        .iv-pc-status { align-self: flex-end; padding: 6px 12px; font-size: 0.75rem; }
+
+        .iv-selector-box { padding: 10px 10px; }
+
+        .iv-items-list { padding: 8px; gap: 10px; }
+
+        .iv-item-row--complex { padding: 12px; border-radius: 16px; }
+
+        .iv-add-row { align-items: stretch; padding: 12px; }
+
+        .iv-section-header { margin: 15px 2px 10px; }
+        .iv-section-title { font-size: 0.95rem; }
+    }
+
+    @@media (min-width: 481px) {
+        .iv-total-pill { display: inline-flex; }
+    }
+    
+    .iv-item-remove {
+        background: #fef2f2;
+        color: #ef4444;
+        border: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+    }
+
+    .iv-item-remove:hover { background: #fee2e2; transform: scale(1.05); }
+
+    .iv-cat-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .iv-cat-edit {
+        background: #eff6ff;
+        color: #3b82f6;
+        border: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+    }
+
+    .iv-cat-edit:hover { background: #dbeafe; transform: scale(1.05); }
+
+    .iv-cat-edit-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+    }
+
+    .iv-add-btn--secondary {
+        flex: 1;
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+    }
+
+    .iv-add-btn--secondary:hover { background: #e2e8f0; color: #475569; }
+
+    .iv-items-empty {
+        padding: 40px 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        color: #94a3b8;
+    }
+
+    .iv-items-empty span { font-size: 2rem; }
+
+    /* Add Item Box */
+    .iv-add-box {
+        background: #f8fafc;
+        padding: 20px;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .iv-add-row {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .iv-add-input {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 10px 15px;
+        font-size: 0.9rem;
+        transition: border-color 0.2s;
+    }
+
+    .iv-input--money {
+        font-weight: 700;
+        font-family: 'Vazirmatn', sans-serif;
+    }
+
+    .iv-add-input:focus { outline: none; border-color: #2563eb; }
+    
+    .iv-add-title { width: 100%; font-weight: 600; }
+
+    /* Bad Payer Toggle */
+    .iv-bad-payer-toggle {
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .iv-toggle-switch {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+    }
+
+    .iv-toggle-switch input[type="checkbox"] {
+        width: 50px;
+        height: 26px;
+        appearance: none;
+        background: #22c55e;
+        border-radius: 13px;
+        position: relative;
+        cursor: pointer;
+        transition: background 0.3s;
+    }
+
+    .iv-toggle-switch input[type="checkbox"]::before {
+        content: '';
+        position: absolute;
+        width: 22px;
+        height: 22px;
+        background: white;
+        border-radius: 50%;
+        top: 2px;
+        left: 2px;
+        transition: transform 0.3s;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .iv-toggle-switch input[type="checkbox"]:checked {
+        background: #ef4444;
+    }
+
+    .iv-toggle-switch input[type="checkbox"]:checked::before {
+        transform: translateX(24px);
+    }
+
+    .iv-toggle-label {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: #475569;
+    }
+
+    .iv-bank-select {
+        max-width: 100%;
+        overflow: hidden;
+    }
+    .iv-bank-select select {
+        width: 100%;
+        max-width: 100%;
+        border: 2px solid #e2e8f0;
+        padding: 10px 14px;
+        font-size: 0.9rem;
+        box-sizing: border-box;
+        text-overflow: ellipsis;
+    }
+
+    .iv-bank-select select:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .iv-add-numbers {
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 15px;
+    }
+
+    .iv-add-field { display: flex; flex-direction: column; gap: 6px; }
+    .iv-add-field label { font-size: 0.75rem; font-weight: 700; color: #64748b; margin-right: 5px; }
+
+    .iv-add-btn {
+        background: #0f172a;
+        color: #fff;
+        border: none;
+        padding: 12px;
+        border-radius: 12px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: opacity 0.2s;
+    }
+
+    .iv-add-btn:hover { opacity: 0.9; }
+
+    .iv-textarea {
+        width: 100%;
+        min-height: 100px;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 15px;
+        font-size: 0.9rem;
+        resize: vertical;
+    }
+
+    .iv-textarea:focus { outline: none; border-color: #2563eb; }
+
+    @@media (min-width: 769px) {
+        .iv-add-row { flex-direction: row; align-items: flex-end; }
+        .iv-add-title { flex: 2; }
+        .iv-add-numbers { flex: 3; margin-bottom: 0; }
+        .iv-add-btn { height: 45px; padding: 0 25px; }
+    }
+
+    @@media (max-width: 768px) {
+        .iv-header .iv-save-btn { display: none; }
+        .iv-content { padding: 15px; }
+        .iv-ic-name { font-size: 1.1rem; }
+    }
+
+    /* SMS Badge on status section title */
+    /* SMS History Badge — Section Title */
+    .iv-sms-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 14px 4px 10px;
+        border-radius: 100px;
+        font-size: 0.7rem;
+        font-weight: 800;
+        cursor: pointer;
+        line-height: 1.4;
+        user-select: none;
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: #fff;
+        box-shadow: 0 2px 12px rgba(245,158,11,0.35);
+        transition: transform 0.2s, box-shadow 0.2s;
+        animation: ivSmsBadgePulse 2s ease-in-out infinite;
+    }
+
+    .iv-sms-badge::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+        transform: translateX(-100%);
+        animation: ivSmsBadgeShine 2.5s ease-in-out infinite;
+    }
+
+    .iv-sms-badge:hover {
+        transform: scale(1.1);
+        box-shadow: 0 4px 20px rgba(245,158,11,0.5);
+        animation: none;
+    }
+
+    .iv-sms-badge:hover::before {
+        animation: ivSmsBadgeShine 0.8s ease-in-out infinite;
+    }
+
+    .iv-sms-badge--empty {
+        background: linear-gradient(135deg, #94a3b8, #64748b);
+        box-shadow: 0 2px 8px rgba(148,163,184,0.3);
+        cursor: default;
+        animation: none;
+        opacity: 0.7;
+    }
+
+    .iv-sms-badge--empty::before { display: none; }
+
+    .iv-sms-badge__icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
+    }
+
+    .iv-sms-badge__count {
+        direction: ltr;
+        unicode-bidi: embed;
+        font-variant-numeric: tabular-nums;
+    }
+
+    @@keyframes ivSmsBadgePulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.04); }
+    }
+
+    @@keyframes ivSmsBadgeShine {
+        0% { transform: translateX(-100%); }
+        50% { transform: translateX(100%); }
+        100% { transform: translateX(100%); }
+    }
+
+    /* SMS Confirmation Modal - Bottom Sheet / Center Modal */
+    .sms-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1060;
+        padding: 16px;
+        animation: sms-fade-in 0.2s ease;
+    }
+
+    .sms-sheet {
+        background: #fff;
+        border-radius: 20px;
+        max-width: 480px;
+        width: 100%;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+        animation: sms-scale-in 0.25s ease;
+        direction: rtl;
+    }
+
+    .sms-sheet-handle {
+        display: none;
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: #cbd5e1;
+        margin: 8px auto 0;
+    }
+
+    .sms-sheet-header {
+        text-align: center;
+        padding: 24px 24px 16px;
+        border-bottom: 2px dashed #e2e8f0;
+    }
+
+    .sms-sheet-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 12px;
+        font-size: 1.3rem;
+        color: #fff;
+    }
+
+    .sms-sheet-icon--history {
+        background: linear-gradient(135deg, #0891b2, #06b6d4);
+    }
+
+    .sms-sheet-icon--danger {
+        background: linear-gradient(135deg, #dc2626, #ef4444);
+    }
+
+    .sms-sheet-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0 0 4px;
+    }
+
+    .sms-sheet-subtitle {
+        font-size: 0.8rem;
+        color: #64748b;
+        margin: 0;
+    }
+
+    .sms-sheet-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px 24px;
+    }
+
+    .sms-chips-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 20px;
+    }
+
+    .sms-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        font-weight: 500;
+        border: 1.5px dashed;
+        line-height: 1.5;
+    }
+
+    .sms-chip-icon {
+        font-size: 0.7rem;
+        opacity: 0.8;
+    }
+
+    .sms-chip--customer { background: #eef2ff; color: #4338ca; border-color: #a5b4fc; }
+    .sms-chip--mobile { background: #f0f9ff; color: #0369a1; border-color: #7dd3fc; }
+    .sms-chip--device { background: #fef2f2; color: #b91c1c; border-color: #fca5a5; }
+    .sms-chip--workshop { background: #f0fdf4; color: #15803d; border-color: #86efac; }
+    .sms-chip--date { background: #fffbeb; color: #a16207; border-color: #fde68a; }
+    .sms-chip--id { background: #f5f3ff; color: #6d28d9; border-color: #c4b5fd; }
+
+    .sms-preview-section {
+        margin-bottom: 16px;
+    }
+
+    .sms-preview-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #475569;
+        margin-bottom: 10px;
+    }
+
+    .sms-preview-bubble {
+        background: #f0f9ff;
+        border: 1.5px dashed #7dd3fc;
+        border-radius: 14px;
+        padding: 16px;
+        direction: rtl;
+    }
+
+    .sms-preview-bubble--danger {
+        background: #fef2f2;
+        border-color: #fca5a5;
+    }
+
+    .sms-preview-text {
+        margin: 0;
+        font-family: inherit;
+        font-size: 0.85rem;
+        line-height: 1.9;
+        color: #1e293b;
+        white-space: pre-wrap;
+        word-break: break-word;
+        direction: ltr;
+        text-align: right;
+        unicode-bidi: embed;
+    }
+
+    .sms-success-banner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        background: #f0fdf4;
+        border: 1.5px solid #86efac;
+        border-radius: 12px;
+        padding: 12px;
+        color: #15803d;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    .sms-error-banner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        background: #fef2f2;
+        border: 1.5px solid #fca5a5;
+        border-radius: 12px;
+        padding: 12px;
+        color: #b91c1c;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    .sms-sheet-footer {
+        display: flex;
+        gap: 10px;
+        padding: 16px 24px 24px;
+        border-top: 2px dashed #e2e8f0;
+    }
+
+    .sms-btn {
+        flex: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 12px 20px;
+        border-radius: 12px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .sms-btn--primary {
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: #fff;
+    }
+
+    .sms-btn--primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+    }
+
+    .sms-btn--primary:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .sms-btn--ghost {
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .sms-btn--ghost:hover {
+        background: #e2e8f0;
+    }
+
+    /* SMS History Card */
+    .sms-history-sheet {
+        background: #fff;
+        border-radius: 20px;
+        max-width: 520px;
+        width: 100%;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+        animation: sms-scale-in 0.25s ease;
+        direction: rtl;
+    }
+
+    .sms-history-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+    }
+
+    .sms-history-card__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+
+    /* Module type chips with contextual colors */
+    .sms-module-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 12px;
+        border-radius: 100px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.3;
+    }
+    .sms-module-chip--orderregistered {
+        background: #eff6ff;
+        color: #2563eb;
+        border: 1px solid #bfdbfe;
+    }
+    .sms-module-chip--orderreadyfordelivery {
+        background: #f0fdf4;
+        color: #16a34a;
+        border: 1px solid #bbf7d0;
+    }
+    .sms-module-chip--orderunrepairable {
+        background: #fef2f2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+    .sms-module-chip--newjobfortechnician {
+        background: #faf5ff;
+        color: #9333ea;
+        border: 1px solid #e9d5ff;
+    }
+    .sms-module-chip--default {
+        background: #f1f5f9;
+        color: #475569;
+        border: 1px solid #e2e8f0;
+    }
+
+    .sms-history-card__body {
+        margin-bottom: 8px;
+    }
+
+    .sms-history-card__text {
+        margin: 0;
+        font-family: inherit;
+        font-size: 0.78rem;
+        line-height: 1.6;
+        color: #334155;
+        white-space: pre-wrap;
+        word-break: break-word;
+        direction: ltr;
+        text-align: right;
+        unicode-bidi: embed;
+    }
+
+    .sms-history-card__footer {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.72rem;
+        color: #94a3b8;
+    }
+
+    .sms-history-card__delivery {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .sms-history-card__date {
+        margin-right: auto;
+    }
+
+    .sms-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        line-height: 1.5;
+    }
+
+    .sms-badge--success { background: #dcfce7; color: #15803d; }
+    .sms-badge--danger { background: #fef2f2; color: #b91c1c; }
+    .sms-badge--warn { background: #fffbeb; color: #a16207; }
+    .sms-badge--info { background: #e0f2fe; color: #0369a1; }
+
+    @@keyframes sms-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @@keyframes sms-scale-in {
+        from { opacity: 0; transform: scale(0.92) translateY(12px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    /* Mobile: Bottom Sheet */
+    @@media (max-width: 576px) {
+        .sms-overlay {
+            align-items: flex-end;
+            padding: 0;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .sms-overlay--sent {
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .sms-sheet,
+        .sms-history-sheet {
+            max-width: 100%;
+            max-height: 92vh;
+            border-radius: 24px 24px 0 0;
+            animation: sms-slide-up 0.3s ease;
+        }
+
+        .sms-sheet-handle {
+            display: block;
+        }
+
+        .sms-sheet-header {
+            padding: 8px 20px 12px;
+        }
+
+        .sms-sheet-icon {
+            width: 40px;
+            height: 40px;
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+
+        .sms-sheet-body {
+            padding: 16px 20px;
+        }
+
+        .sms-sheet-footer {
+            padding: 12px 20px 20px;
+        }
+
+        .sms-chips-row {
+            gap: 6px;
+        }
+
+        .sms-chip {
+            font-size: 0.72rem;
+            padding: 4px 10px;
+        }
+
+        @@keyframes sms-slide-up {
+            from { opacity: 0; transform: translateY(60px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    }
+</style>
+
+@code {
+    [Parameter] public int ReceiptId { get; set; }
+    private CustomerReceiptDto? receipt;
+    private bool isLoading = true;
+    private List<WorkshopUserDto>? technicians;
+
+    // Invoice Logic
+    private List<InvoiceItem> invoiceItems = new();
+    private string newItemTitle = "";
+    private int newItemQuantity = 1;
+    private long newItemUnitPrice = 0;
+
+    // Receipt Status
+    private string receiptStatus = CustomerReceiptStatuses.Pending;
+
+    // Billing (Receipt Billing)
+    private long billDiscount = 0;
+    private long billPrepaid = 0;
+    private long billPaid = 0;
+
+    // Bank Accounts
+    private List<BankAccountDto>? bankAccounts;
+    private int? selectedBankAccountId;
+
+    private async Task LoadBankAccounts(int workshopId)
+    {
+        try
+        {
+            bankAccounts = await Http.GetFromJsonAsync<List<BankAccountDto>>($"api/bankaccounts?workshopId={workshopId}&onlyActive=true");
+        }
+        catch
+        {
+            bankAccounts = new();
+        }
+    }
+
+    // Bad Payer Toggle
+    private bool isBadPayer = false;
+
+    // Catalog Logic
+    private bool showSelector;
+    private string catalogSearch = "";
+    private List<CatalogItemDto> catalog = new();
+    private HashSet<int> tempSelectedCatalogIds = new();
+    private bool showCatalogModal;
+    private string newCatalogTitle = "";
+    private bool newCatalogIsActive = true;
+    private bool newCatalogSendSms = true;
+    private int? newCatalogDeviceTypeId;
+
+    // SMS Ready-for-Delivery / Unrepairable Modal
+    private bool showSmsModal;
+    private bool isSendingSms;
+    private bool smsSent;
+    private string smsPreviewText = "";
+    private string smsError = "";
+    private string _smsType = ""; // "repaired" or "not_repairable"
+
+    // SMS History for status card badge
+    private int smsLogCount;
+    private List<SmsLogDto> smsLogs = new();
+    private bool showSmsHistoryModal;
+    private bool includeAllCatalogs;
+    private List<DeviceTypeDto>? deviceTypes;
+    private CatalogItemDto? editingCatalogItem;
+    private bool canManageCatalog;
+
+    private sealed class CatalogGroup
+    {
+        public string Title { get; set; } = "";
+        public List<CatalogItemDto> Items { get; set; } = new();
+    }
+
+    private IEnumerable<CatalogGroup> groupedCatalog =>
+      catalog
+          .Where(x => !newCatalogDeviceTypeId.HasValue || newCatalogDeviceTypeId.Value == 0 || x.DeviceTypeId == newCatalogDeviceTypeId.Value || x.DeviceTypeId == null)
+          .OrderByDescending(x => x.DeviceTypeId.HasValue)
+          .ThenBy(x => x.DeviceTypeId)
+          .ThenBy(x => x.Title)
+          .GroupBy(x => x.DeviceTypeId)
+          .Select(g => new CatalogGroup
+              {
+                  Title = g.Key.HasValue
+                      ? (deviceTypes?.FirstOrDefault(d => d.Id == g.Key.Value)?.Name ?? $"دستگاه {g.Key.Value}")
+                      : "عمومی",
+                  Items = g.ToList()
+              });
+
+    private async Task LoadCatalog(bool forceIncludeAll = false)
+    {
+        try
+        {
+            var isIncludeAll = forceIncludeAll || includeAllCatalogs;
+            var url = receipt != null
+                ? $"api/invoice-catalog?workshopId={receipt.WorkshopId}&deviceTypeId={receipt.DeviceTypeId}&includeAll={isIncludeAll.ToString().ToLowerInvariant()}"
+                : "api/invoice-catalog";
+            catalog = await Http.GetFromJsonAsync<List<CatalogItemDto>>(url) ?? new();
+        }
+        catch { }
+    }
+
+    private async Task LoadDeviceTypesForReceipt()
+    {
+        try
+        {
+            if (receipt == null) return;
+            deviceTypes = await Http.GetFromJsonAsync<List<DeviceTypeDto>>("api/device-types") ?? new();
+        }
+        catch { }
+    }
+
+    private async Task OnIncludeAllCatalogsChanged(ChangeEventArgs e)
+    {
+        includeAllCatalogs = e.Value is bool b && b;
+        await LoadCatalog();
+    }
+
+    private async Task CreateCatalogItem()
+    {
+        if (string.IsNullOrWhiteSpace(newCatalogTitle)) return;
+        try
+        {
+            Console.WriteLine("Creating catalog item: " + newCatalogTitle);
+            var url = receipt != null
+                ? $"api/invoice-catalog?workshopId={receipt.WorkshopId}"
+                : "api/invoice-catalog";
+
+            var res = await Http.PostAsJsonAsync(url, new
+            {
+                Title = newCatalogTitle.Trim(),
+                IsActive = newCatalogIsActive,
+                SendSms = newCatalogSendSms,
+                DeviceTypeId = newCatalogDeviceTypeId
+            });
+            
+            if (res.IsSuccessStatusCode)
+            {
+                Console.WriteLine("Catalog item created successfully");
+                newCatalogTitle = "";
+                newCatalogIsActive = true;
+                newCatalogSendSms = true;
+                // Don't reset newCatalogDeviceTypeId to make it easier to add multiple for same device
+                await LoadCatalog(showCatalogModal); // Force load all if modal is open
+                ToastService.ShowSuccess("به کاتالوگ اضافه شد");
+                StateHasChanged();
+            }
+            else
+            {
+                var error = await res.Content.ReadAsStringAsync();
+                Console.WriteLine("Error creating catalog item: " + error);
+                ToastService.ShowError("خطا در ثبت: " + error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Exception in CreateCatalogItem: " + ex.Message);
+            ToastService.ShowError("خطای سیستمی در ثبت");
+        }
+    }
+
+    private async Task DeleteCatalogItem(int id)
+    {
+        try
+        {
+            // Check if item is used in any invoice
+            var checkUrl = receipt != null
+                ? $"api/invoice-catalog/{id}/check-usage?workshopId={receipt.WorkshopId}"
+                : $"api/invoice-catalog/{id}/check-usage";
+            var checkRes = await Http.GetAsync(checkUrl);
+            
+            if (checkRes.IsSuccessStatusCode)
+            {
+                var isUsed = await checkRes.Content.ReadFromJsonAsync<bool>();
+                if (isUsed)
+                {
+                    ToastService.ShowError("این آیتم در فاکتوری استفاده شده و نمی‌تواند حذف شود");
+                    return;
+                }
+            }
+
+            // Show confirmation dialog
+            var confirmed = await ShowConfirmDialog("حذف آیتم کاتالوگ", "آیا مطمئن هستید که می‌خواهید این آیتم را حذف کنید؟");
+            if (!confirmed) return;
+
+            var url = receipt != null
+                ? $"api/invoice-catalog/{id}?workshopId={receipt.WorkshopId}"
+                : $"api/invoice-catalog/{id}";
+            var res = await Http.DeleteAsync(url);
+            if (res.IsSuccessStatusCode)
+            {
+                await LoadCatalog(showCatalogModal); // Force load all if modal is open
+                ToastService.ShowInfo("از کاتالوگ حذف شد");
+            }
+            else
+            {
+                var error = await res.Content.ReadAsStringAsync();
+                ToastService.ShowError("خطا در حذف: " + error);
+            }
+        }
+        catch { }
+    }
+
+    private void EditCatalogItem(CatalogItemDto item)
+    {
+        editingCatalogItem = item;
+        newCatalogTitle = item.Title;
+        newCatalogIsActive = item.IsActive;
+        newCatalogSendSms = item.SendSms;
+        newCatalogDeviceTypeId = item.DeviceTypeId;
+        StateHasChanged();
+    }
+
+    private async Task UpdateCatalogItem()
+    {
+        if (editingCatalogItem == null || string.IsNullOrWhiteSpace(newCatalogTitle)) return;
+        try
+        {
+            // Check if item is used in any invoice
+            var checkUrl = receipt != null
+                ? $"api/invoice-catalog/{editingCatalogItem.Id}/check-usage?workshopId={receipt.WorkshopId}"
+                : $"api/invoice-catalog/{editingCatalogItem.Id}/check-usage";
+            var checkRes = await Http.GetAsync(checkUrl);
+            
+            bool isUsed = false;
+            if (checkRes.IsSuccessStatusCode)
+            {
+                isUsed = await checkRes.Content.ReadFromJsonAsync<bool>();
+                if (isUsed)
+                {
+                    var confirmed = await ShowConfirmDialog("ویرایش آیتم کاتالوگ", "این آیتم در فاکتورهای ثبت شده استفاده شده است. تغییر عنوان آن ممکن است بر فاکتورهای قبلی تأثیر بگذارد. آیا مطمئن هستید که می‌خواهید ادامه دهید؟", false);
+                    if (!confirmed) return;
+                }
+            }
+
+            // Show confirmation dialog
+            var editConfirmed = await ShowConfirmDialog("ویرایش آیتم کاتالوگ", "عنوان آیتم تغییر خواهد کرد. آیا ادامه می‌دهید؟", false);
+            if (!editConfirmed) return;
+
+            // Update using PUT to keep the same ID
+            var url = receipt != null
+                ? $"api/invoice-catalog/{editingCatalogItem.Id}?workshopId={receipt.WorkshopId}"
+                : $"api/invoice-catalog/{editingCatalogItem.Id}";
+            
+            var res = await Http.PutAsJsonAsync(url, new
+            {
+                Title = newCatalogTitle.Trim(),
+                IsActive = newCatalogIsActive,
+                SendSms = newCatalogSendSms,
+                DeviceTypeId = newCatalogDeviceTypeId
+            });
+
+            if (res.IsSuccessStatusCode)
+            {
+                await LoadCatalog(showCatalogModal);
+                CancelEditCatalogItem();
+                ToastService.ShowSuccess("تغییرات ذخیره شد");
+            }
+            else
+            {
+                var error = await res.Content.ReadAsStringAsync();
+                Console.WriteLine($"UpdateCatalogItem error: {res.StatusCode} - {error}");
+                ToastService.ShowError("خطا در ذخیره: " + (error.Length > 100 ? error.Substring(0, 100) + "..." : error));
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            Console.WriteLine($"UpdateCatalogItem HttpRequestException: {ex.Message}");
+            ToastService.ShowError("خطا در ارتباط با سرور");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UpdateCatalogItem Exception: {ex.Message}");
+            ToastService.ShowError("خطای سیستمی در ذخیره");
+        }
+    }
+
+    private void CancelEditCatalogItem()
+    {
+        editingCatalogItem = null;
+        newCatalogTitle = "";
+        newCatalogIsActive = true;
+        newCatalogSendSms = true;
+        // Don't reset newCatalogDeviceTypeId
+        StateHasChanged();
+    }
+
+    private IEnumerable<CatalogItemDto> filteredCatalog => 
+        string.IsNullOrWhiteSpace(catalogSearch) 
+        ? catalog.Where(x => x.IsActive) 
+        : catalog.Where(x => x.IsActive && x.Title.Contains(catalogSearch, StringComparison.OrdinalIgnoreCase));
+
+    private void ToggleSelector()
+    {
+        showSelector = !showSelector;
+        if (showSelector)
+        {
+            // Sync tempSelectedCatalogIds with current invoiceItems (by Title)
+            tempSelectedCatalogIds.Clear();
+            if (catalog != null)
+            {
+                foreach (var item in invoiceItems)
+                {
+                    var catMatch = catalog.FirstOrDefault(c => c.Title == item.Title);
+                    if (catMatch != null)
+                    {
+                        tempSelectedCatalogIds.Add(catMatch.Id);
+                    }
+                }
+            }
+        }
+    }
+
+    private void ToggleCatalogSelection(CatalogItemDto item)
+    {
+        if (tempSelectedCatalogIds.Contains(item.Id))
+            tempSelectedCatalogIds.Remove(item.Id);
+        else
+            tempSelectedCatalogIds.Add(item.Id);
+    }
+
+    private void AddSelectedFromCatalog()
+    {
+        foreach (var id in tempSelectedCatalogIds)
+        {
+            var cat = catalog.FirstOrDefault(c => c.Id == id);
+            if (cat != null)
+            {
+                // Check if already exists in invoiceItems to prevent duplicates
+                if (!invoiceItems.Any(i => i.Title == cat.Title))
+                {
+                    invoiceItems.Add(new InvoiceItem
+                    {
+                        Title = cat.Title,
+                        UnitPrice = 0, // Default to 0 since BasePrice is missing in DTO
+                        Quantity = 1
+                    });
+                }
+            }
+        }
+        tempSelectedCatalogIds.Clear();
+        showSelector = false;
+        ToastService.ShowSuccess("موارد انتخابی اضافه شدند");
+    }
+
+    private long BillTotalLive => invoiceItems.Sum(x => x.UnitPrice * x.Quantity);
+    private long BillPayable => BillTotalLive - billDiscount - billPrepaid;
+    private long BillRemaining => BillPayable - billPaid;
+
+    private string DiscountPercentText
+    {
+        get
+        {
+            var total = BillTotalLive;
+            if (total <= 0 || billDiscount <= 0) return "تخفیف: 0%";
+            var pct = (decimal)billDiscount * 100m / total;
+            return $"درصد تخفیف: {pct:0.#}%";
+        }
+    }
+
+    private string CustomerBalanceChipText =>
+        BillRemaining > 0 ? "بدهکار" : BillRemaining < 0 ? "بستانکار" : "تسویه";
+
+    private string CustomerBalanceChipClass =>
+        BillRemaining > 0 ? "iv-chip-status--neg" : BillRemaining < 0 ? "iv-chip-status--pos" : "iv-chip-status--ok";
+
+    private void OnBillDiscountInput(ChangeEventArgs e)
+    {
+        billDiscount = ParseDigits(e.Value?.ToString());
+        _moneyRaw["discount"] = FormatDigits(NormalizeDigits(e.Value?.ToString()));
+    }
+
+    private void OnBillPrepaidInput(ChangeEventArgs e)
+    {
+        billPrepaid = ParseDigits(e.Value?.ToString());
+        _moneyRaw["prepaid"] = FormatDigits(NormalizeDigits(e.Value?.ToString()));
+    }
+
+    private void OnBillPaidInput(ChangeEventArgs e)
+    {
+        billPaid = ParseDigits(e.Value?.ToString());
+        _moneyRaw["paid"] = FormatDigits(NormalizeDigits(e.Value?.ToString()));
+    }
+
+    private void SetPaidToPayable()
+    {
+        billPaid = BillPayable;
+        StateHasChanged();
+    }
+
+    private async Task SaveReceiptStatus()
+    {
+        if (receipt == null) return;
+        try
+        {
+            var res = await Http.PutAsJsonAsync($"api/customer-receipts/{ReceiptId}/status", new ReceiptStatusUpdateRequest { Status = receiptStatus });
+            if (res.IsSuccessStatusCode)
+            {
+                receipt.Status = receiptStatus;
+                ToastService.ShowSuccess("وضعیت ثبت شد");
+            }
+            else
+            {
+                var err = await res.Content.ReadAsStringAsync();
+                ToastService.ShowError("خطا در ثبت وضعیت: " + err);
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطای سیستمی در ثبت وضعیت");
+        }
+    }
+
+    private async Task SaveBill()
+    {
+        if (receipt == null) return;
+        try
+        {
+            var req = new CustomerReceiptBillingUpsertRequest
+            {
+                BillTotal = BillTotalLive,
+                Discount = billDiscount,
+                Prepaid = billPrepaid,
+                Paid = billPrepaid,
+                SelectedBankAccountId = selectedBankAccountId
+            };
+            var res = await Http.PutAsJsonAsync($"api/customer-receipts/{ReceiptId}/billing", req);
+            if (res.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("صورتحساب ثبت شد");
+            }
+            else
+            {
+                var err = await res.Content.ReadAsStringAsync();
+                ToastService.ShowError("خطا در ثبت صورتحساب: " + err);
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطای سیستمی در ثبت صورتحساب");
+        }
+    }
+
+    private async Task SubmitInvoiceAll()
+    {
+        if (receipt == null) return;
+        
+        try 
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            // 1. Update Status
+            var statusUrl = $"api/customer-receipts/{ReceiptId}/status";
+            if (receipt.WorkshopId > 0) statusUrl += $"?workshopId={receipt.WorkshopId}";
+            
+            var statusRes = await Http.PutAsJsonAsync(statusUrl, new ReceiptStatusUpdateRequest { Status = receiptStatus });
+            if (!statusRes.IsSuccessStatusCode)
+            {
+                var err = await statusRes.Content.ReadAsStringAsync();
+                ToastService.ShowError("خطا در بروزرسانی وضعیت: " + err);
+                return;
+            }
+
+            // 2. Upsert Billing
+            var billingUrl = $"api/customer-receipts/{ReceiptId}/billing";
+            if (receipt.WorkshopId > 0) billingUrl += $"?workshopId={receipt.WorkshopId}";
+
+            var billingReq = new CustomerReceiptBillingUpsertRequest
+            {
+                BillTotal = BillTotalLive,
+                Discount = billDiscount,
+                Prepaid = billPrepaid,
+                Paid = billPaid,
+                SelectedBankAccountId = selectedBankAccountId,
+                Items = invoiceItems.Select(i => new InvoiceItemDto
+                {
+                    Title = i.Title,
+                    ActionDescription = i.ActionDescription,
+                    UnitPrice = i.UnitPrice,
+                    Quantity = i.Quantity,
+                    TechnicianId = i.TechnicianId
+                }).ToList()
+            };
+            var billingRes = await Http.PutAsJsonAsync(billingUrl, billingReq);
+            if (!billingRes.IsSuccessStatusCode)
+            {
+                var err = await billingRes.Content.ReadAsStringAsync();
+                ToastService.ShowError("خطا در ثبت صورتحساب: " + err);
+                return;
+            }
+
+            ToastService.ShowSuccess("فاکتور و وضعیت با موفقیت ثبت شد");
+
+            isLoading = false;
+            StateHasChanged();
+
+            if (receiptStatus == "repaired" || receiptStatus == "not_repairable")
+            {
+                if (receipt.WorkshopId > 0)
+                {
+                    var moduleType = receiptStatus == "not_repairable" ? 3 : 2;
+                    try
+                    {
+                        var moduleResp = await Http.GetAsync($"api/workshop-sms/module-status?workshopId={receipt.WorkshopId}&moduleType={moduleType}");
+                        if (moduleResp.IsSuccessStatusCode)
+                        {
+                            var smsAllowed = await moduleResp.Content.ReadFromJsonAsync<bool>();
+                            if (smsAllowed)
+                            {
+                                ShowSmsModal(receiptStatus);
+                            }
+                            else
+                            {
+                                Navigation.NavigateTo("/admin/receipts");
+                            }
+                        }
+                        else
+                        {
+                            Navigation.NavigateTo("/admin/receipts");
+                        }
+                    }
+                    catch
+                    {
+                        Navigation.NavigateTo("/admin/receipts");
+                    }
+                }
+                else
+                {
+                    Navigation.NavigateTo("/admin/receipts");
+                }
+            }
+            else
+            {
+                Navigation.NavigateTo("/admin/receipts");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            ToastService.ShowError("خطای سیستمی در ثبت نهایی");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenCatalog() 
+    { 
+        showCatalogModal = true; 
+        await LoadCatalog(true); // Force load all items for management
+    }
+    
+    private async Task CloseCatalog() 
+    { 
+        showCatalogModal = false; 
+        await LoadCatalog(); // Revert to filtered view for selector
+    }
+
+    public class InvoiceItem
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string Title { get; set; } = "";
+        public string ActionDescription { get; set; } = "";
+        public int? TechnicianId { get; set; }
+        public int Quantity { get; set; } = 1;
+        public long UnitPrice { get; set; } = 0;
+    }
+
+    private string FormatMoney(decimal amount) => amount.ToString("N0");
+
+    private string FormatCardDisplay(string? cardNumber)
+    {
+        if (string.IsNullOrEmpty(cardNumber) || cardNumber.Length < 4) return "";
+        var clean = cardNumber.Replace("-", "").Replace(" ", "");
+        var first = clean.Length >= 4 ? clean[..4] : clean;
+        var last = clean.Length >= 4 ? clean[^4..] : clean;
+        return $"({first}-****-{last})";
+    }
+
+    private void OnUnitPriceInput(ChangeEventArgs e, InvoiceItem item)
+    {
+        var digits = NormalizeDigits(e.Value?.ToString());
+        item.UnitPrice = digits.Length == 0 || !long.TryParse(digits, out var result) ? 0 : result;
+        _moneyRaw[item] = FormatDigits(digits);
+    }
+
+    private static string NormalizeDigits(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return "";
+        var sb = new System.Text.StringBuilder(raw.Length);
+        foreach (var ch in raw)
+        {
+            if (ch >= '0' && ch <= '9') sb.Append(ch);
+            else if (ch >= '\u06F0' && ch <= '\u06F9') sb.Append((char)(ch - 0x06F0 + '0'));
+            else if (ch >= '\u0660' && ch <= '\u0669') sb.Append((char)(ch - 0x0660 + '0'));
+        }
+        return sb.ToString();
+    }
+
+    private static string FormatDigits(string digits)
+    {
+        if (digits.Length == 0) return "";
+        var first = digits.Length % 3;
+        var sb = new System.Text.StringBuilder(digits.Length + digits.Length / 3);
+        var i = 0;
+        if (first > 0) { sb.Append(digits, 0, first); i = first; }
+        for (; i < digits.Length; i += 3)
+        {
+            if (sb.Length > 0) sb.Append(',');
+            sb.Append(digits, i, 3);
+        }
+        return sb.ToString();
+    }
+
+    private static long ParseDigits(string? raw)
+    {
+        var digits = NormalizeDigits(raw);
+        return digits.Length == 0 || !long.TryParse(digits, out var v) ? 0 : v;
+    }
+
+    private readonly Dictionary<object, string> _moneyRaw = new();
+
+    private string MoneyText(object key, long value)
+        => _moneyRaw.TryGetValue(key, out var raw) ? raw : FormatMoney(value);
+
+    private void OnMoneyBlur(object key) => _moneyRaw.Remove(key);
+
+    private void OnNewItemPriceInput(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString()?.Replace(",", "");
+        if (decimal.TryParse(val, out var result))
+        {
+            newItemUnitPrice = (long)result;
+        }
+        else if (string.IsNullOrEmpty(val))
+        {
+            newItemUnitPrice = 0;
+        }
+    }
+
+    private long TotalAmount => invoiceItems.Sum(x => x.UnitPrice * x.Quantity);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        canManageCatalog = user.IsInRole("super_admin") || user.HasClaim("perm", "admin.receipts.invoice.catalog");
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            isLoading = true;
+            Console.WriteLine($"Loading receipt data for ID: {ReceiptId}");
+            var url = $"api/customer-receipts/{ReceiptId}";
+            var response = await Http.GetAsync(url);
+            Console.WriteLine($"API Response Status: {response.StatusCode}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                receipt = await response.Content.ReadFromJsonAsync<CustomerReceiptDto>();
+                Console.WriteLine($"Receipt loaded: {receipt?.CustomerFirstName} {receipt?.CustomerLastName}");
+                
+                // Load technicians for the workshop
+                if (receipt != null)
+                {
+                    try
+                    {
+                        var allUsers = await Http.GetFromJsonAsync<List<WorkshopUserDto>>($"api/workshop-auth/users?workshopId={receipt.WorkshopId}");
+                        technicians = allUsers?.Where(x => x.IsTechnician && x.IsActive).ToList() ?? new();
+                    }
+                    catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized || ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                    {
+                        technicians = new List<WorkshopUserDto>();
+                    }
+                    catch
+                    {
+                        technicians = new List<WorkshopUserDto>();
+                    }
+                }
+
+            newCatalogDeviceTypeId = receipt?.DeviceTypeId;
+            await LoadDeviceTypesForReceipt();
+            await LoadCatalog();
+
+            if (receipt != null)
+            {
+                await LoadBankAccounts(receipt.WorkshopId);
+            }
+
+            receiptStatus = receipt?.Status ?? CustomerReceiptStatuses.Pending;
+                isBadPayer = receipt?.CustomerIsBadPayer ?? false;
+
+                try
+                {
+                    var billing = await Http.GetFromJsonAsync<CustomerReceiptBillingDto>($"api/customer-receipts/{ReceiptId}/billing");
+                if (billing != null)
+                {
+                    billDiscount = billing.Discount;
+                    billPrepaid = billing.Prepaid;
+                    billPaid = billing.Paid;
+                    selectedBankAccountId = billing.SelectedBankAccountId;
+
+                    if (billing.Items != null && billing.Items.Any())
+                    {
+                        invoiceItems = billing.Items.Select(i => new InvoiceItem
+                        {
+                            Title = i.Title,
+                            ActionDescription = i.ActionDescription,
+                            UnitPrice = i.UnitPrice,
+                            Quantity = i.Quantity,
+                            TechnicianId = i.TechnicianId
+                        }).ToList();
+                    }
+                }
+                }
+                catch
+                {
+                    // ignore
+                }
+
+                await LoadSmsLogCount();
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"API Error Content: {errorContent}");
+                ToastService.ShowError($"خطا در دریافت اطلاعات: {response.StatusCode}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Exception in LoadData: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+            ToastService.ShowError("خطا در بارگذاری اطلاعات");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void AddItem()
+    {
+        if (string.IsNullOrWhiteSpace(newItemTitle))
+        {
+            ToastService.ShowError("لطفاً شرح آیتم را وارد کنید");
+            return;
+        }
+
+        if (newItemUnitPrice < 0)
+        {
+            ToastService.ShowError("مبلغ نمی‌تواند منفی باشد");
+            return;
+        }
+
+        invoiceItems.Add(new InvoiceItem
+        {
+            Title = newItemTitle,
+            Quantity = newItemQuantity,
+            UnitPrice = newItemUnitPrice
+        });
+
+        // Reset Inputs
+        newItemTitle = "";
+        newItemQuantity = 1;
+        newItemUnitPrice = 0;
+        
+        ToastService.ShowInfo("آیتم اضافه شد");
+    }
+
+    private void RemoveItem(InvoiceItem item)
+    {
+        invoiceItems.Remove(item);
+    }
+
+    private async Task SubmitInvoice()
+    {
+        if (invoiceItems.Count == 0)
+        {
+            ToastService.ShowError("لطفاً حداقل یک آیتم به فاکتور اضافه کنید");
+            return;
+        }
+        
+        await SubmitInvoiceAll();
+    }
+
+    private string BadgeClass(string status) => status switch
+    {
+        "pending" => "iv-badge--pending",
+        "repaired" => "iv-badge--repaired",
+        "delivered" => "iv-badge--delivered",
+        "not_repairable" => "iv-badge--not-repairable",
+        _ => ""
+    };
+
+    private string StatusFa(string status) => status switch
+    {
+        "pending" => "در انتظار",
+        "not_repairable" => "غیر قابل تعمیر",
+        "repaired" => "تعمیر شده",
+        "delivered" => "تحویل داده شده",
+        _ => status
+    };
+
+    // Confirm Dialog State
+    private bool showConfirmDialog;
+    private string confirmDialogTitle = "تایید عملیات";
+    private string confirmDialogMessage = "آیا از انجام این عملیات اطمینان دارید؟";
+    private bool confirmDialogIsDanger = true;
+    private TaskCompletionSource<bool>? confirmDialogTcs;
+
+    private async Task<bool> ShowConfirmDialog(string title, string message, bool isDanger = true)
+    {
+        confirmDialogTitle = title;
+        confirmDialogMessage = message;
+        confirmDialogIsDanger = isDanger;
+        confirmDialogTcs = new TaskCompletionSource<bool>();
+        showConfirmDialog = true;
+        StateHasChanged();
+        return await confirmDialogTcs.Task;
+    }
+
+    private async Task HandleConfirmDialogResult(bool result)
+    {
+        showConfirmDialog = false;
+        confirmDialogTcs?.SetResult(result);
+        StateHasChanged();
+    }
+
+    private async Task LoadCustomerBadPayerStatus(int customerId)
+    {
+        try
+        {
+            var customer = await Http.GetFromJsonAsync<WorkshopCustomerDto>($"api/workshop-customers/{customerId}");
+            if (customer != null)
+            {
+                isBadPayer = customer.IsBadPayer;
+            }
+        }
+        catch
+        {
+            isBadPayer = false;
+        }
+    }
+
+    private async Task OnBadPayerToggleChanged(ChangeEventArgs e)
+    {
+        if (receipt == null) return;
+
+        isBadPayer = (bool)e.Value;
+
+        try
+        {
+            var request = new UpdateBadPayerRequest { IsBadPayer = isBadPayer };
+            var url = $"api/workshop-customers/{receipt.CustomerId}/bad-payer";
+
+            // Add workshopId query parameter
+            if (receipt.WorkshopId > 0)
+            {
+                url += $"?workshopId={receipt.WorkshopId}";
+            }
+
+            var response = await Http.PatchAsJsonAsync(url, request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(isBadPayer ? "مشتری به عنوان بدحساب ثبت شد" : "مشتری به عنوان خوش حساب ثبت شد");
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError($"خطا در ذخیره: {error}");
+                isBadPayer = !isBadPayer;
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+            isBadPayer = !isBadPayer;
+        }
+    }
+
+    private async Task LoadSmsLogCount()
+    {
+        try
+        {
+            var logs = await Http.GetFromJsonAsync<List<SmsLogDto>>($"api/customer-receipts/{ReceiptId}/sms-logs");
+            smsLogs = logs ?? new();
+            smsLogCount = smsLogs.Count;
+        }
+        catch
+        {
+            smsLogCount = 0;
+        }
+    }
+
+    private void ShowSmsModal(string type)
+    {
+        if (receipt == null) return;
+        _smsType = type;
+        var customerName = $"{receipt.CustomerFirstName} {receipt.CustomerLastName}";
+        var date = PersianDateHelper.ToPersianDateTimeString(receipt.RegisteredAt, false);
+        var state = type == "not_repairable" ? "غیر قابل تعمیر" : "آماده تحویل";
+        smsPreviewText = $"\u200Fمشتری گرامی\n{customerName}\nدستگاه {receipt.DeviceTypeName} ({receipt.DeviceBrandName ?? ""}) در تاریخ {date} در {receipt.WorkshopName}\n{state} می باشد.\nلطفا برای تحویل مراجعه بفرمایید.\nمجموعه فنی و مهندسی ارور سرویس";
+        smsSent = false;
+        smsError = "";
+        isSendingSms = false;
+        showSmsModal = true;
+        StateHasChanged();
+    }
+
+    private async Task SendSms()
+    {
+        if (receipt == null) return;
+        try
+        {
+            isSendingSms = true;
+            smsError = "";
+            StateHasChanged();
+
+            var qs = receipt.WorkshopId > 0 ? $"?workshopId={receipt.WorkshopId}" : "";
+            var endpoint = _smsType == "not_repairable"
+                ? $"api/customer-receipts/{ReceiptId}/send-unrepairable-sms{qs}"
+                : $"api/customer-receipts/{ReceiptId}/send-ready-for-delivery-sms{qs}";
+            var resp = await Http.PostAsync(endpoint, null);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                smsSent = true;
+            }
+            else
+            {
+            var err = await resp.Content.ReadAsStringAsync();
+            smsError = (err.Length > 200 ? err[..200] : err).Trim('"');
+            }
+        }
+        catch (Exception ex)
+        {
+            smsError = "خطا در ارسال پیامک";
+        }
+        finally
+        {
+            isSendingSms = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseSmsModal()
+    {
+        showSmsModal = false;
+        Navigation.NavigateTo("/admin/receipts");
+    }
+
+    private void CloseSmsModalAndExit()
+    {
+        showSmsModal = false;
+        Navigation.NavigateTo("/admin/receipts");
+    }
+}

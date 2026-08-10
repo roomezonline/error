@@ -1,0 +1,135 @@
+@using ErrorService.Shared
+
+<div class="cs-comment @(IsReply ? "cs-comment--reply" : "")">
+    <div class="cs-comment__inner">
+        <div class="cs-comment__head">
+            <div class="cs-comment__avatar">@Initial</div>
+            <div class="cs-comment__meta">
+                <div class="cs-comment__name">
+                    @Comment.FullName
+                    @if (IsReply)
+                    {
+                        <span class="cs-reply-badge">پاسخ</span>
+                    }
+                </div>
+                <div class="cs-comment__time">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    @Comment.CreatedAtFa
+                </div>
+            </div>
+            @if (Comment.Rating.HasValue)
+            {
+                <div class="cs-comment__stars">
+                    @for (int i = 1; i <= 5; i++)
+                    {
+                        var fill = i <= Comment.Rating.Value ? "#f59e0b" : "none";
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="@fill" stroke="#f59e0b" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                    }
+                </div>
+            }
+        </div>
+        <div class="cs-comment__body">@Comment.Content</div>
+        <div class="cs-comment__footer">
+            @if (OnReply.HasDelegate && !IsReply)
+            {
+                <button class="cs-comment__reply-btn" @onclick="ToggleReply">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-left:4px;"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                    پاسخ
+                </button>
+            }
+        </div>
+    </div>
+
+    @* ─── Reply Form ─── *@
+    @if (ReplyFormVisible)
+    {
+        <div class="cs-reply-form">
+            <div class="cs-row">
+                <div class="cs-field cs-field--half">
+                    <label class="cs-label">نام</label>
+                    <input class="cs-input @(_replyNameError ? "cs-input--error" : "")" placeholder="نام شما" @bind="_replyForm.FullName" @bind:event="oninput" />
+                    @if (_replyNameError) { <span class="cs-error">نام الزامی است</span> }
+                </div>
+            </div>
+            <div class="cs-field">
+                <label class="cs-label">متن پاسخ</label>
+                <textarea class="cs-input cs-textarea @(_replyContentError ? "cs-input--error" : "")" rows="3" placeholder="متن پاسخ..." @bind="_replyForm.Content" @bind:event="oninput"></textarea>
+                @if (_replyContentError) { <span class="cs-error">متن پاسخ الزامی است</span> }
+            </div>
+            <div class="cs-form__actions">
+                <button class="cs-btn cs-btn--primary cs-btn--sm" @onclick="SubmitReplyAsync" disabled="@_isReplySubmitting">
+                    @if (_isReplySubmitting) { <span class="cs-spinner"></span> }
+                    ارسال پاسخ
+                </button>
+                <button class="cs-btn cs-btn--sm" style="background:#e2e8f0;color:#475569;" @onclick="CancelReply">انصراف</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_replyError))
+            {
+                <div class="cs-alert cs-alert--danger" style="margin-top:.5rem;">@_replyError</div>
+            }
+        </div>
+    }
+
+    @* ─── Replies ─── *@
+    @if (Comment.Replies != null && Comment.Replies.Count > 0)
+    {
+        <div class="cs-replies">
+             @foreach (var reply in Comment.Replies)
+            {
+                <CommentNode Comment="reply"
+                             ReplyFormVisible="false"
+                             OnReply="OnReply"
+                             OnSubmitReply="OnSubmitReply" />
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public CommentDto Comment { get; set; } = default!;
+    [Parameter] public bool ReplyFormVisible { get; set; }
+    [Parameter] public EventCallback ToggleReply { get; set; }
+    [Parameter] public EventCallback<CommentRequest> OnReply { get; set; }
+    [Parameter] public EventCallback<CommentRequest> OnSubmitReply { get; set; }
+
+    private CommentRequest _replyForm = new();
+    private bool _replyNameError, _replyContentError;
+    private bool _isReplySubmitting;
+    private string? _replyError;
+
+    private bool IsReply => Comment.ParentId.HasValue;
+    private string Initial => string.IsNullOrEmpty(Comment.FullName) ? "?" : Comment.FullName[..1];
+
+    private void CancelReply()
+    {
+        ToggleReply.InvokeAsync();
+    }
+
+    private async Task SubmitReplyAsync()
+    {
+        _replyNameError = false;
+        _replyContentError = false;
+        _replyError = null;
+
+        if (string.IsNullOrWhiteSpace(_replyForm.FullName)) _replyNameError = true;
+        if (string.IsNullOrWhiteSpace(_replyForm.Content)) _replyContentError = true;
+        if (_replyNameError || _replyContentError) return;
+
+        _isReplySubmitting = true;
+        try
+        {
+            await OnSubmitReply.InvokeAsync(_replyForm);
+            _replyForm = new();
+        }
+        catch
+        {
+            _replyError = "خطا در ارسال پاسخ.";
+        }
+        finally
+        {
+            _isReplySubmitting = false;
+        }
+    }
+}

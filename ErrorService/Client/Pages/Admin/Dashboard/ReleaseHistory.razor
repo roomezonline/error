@@ -1,0 +1,357 @@
+@page "/admin/release-history"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.releases.view")]
+@using Microsoft.JSInterop
+@using ErrorService.Shared
+@inject HttpClient Http
+@layout AdminLayout
+
+<div class="release-history-page">
+    <div class="history-header">
+        <div class="container-fluid px-3 px-md-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                <div>
+                    <h2 class="history-title mb-1">تاریخچه تغییرات</h2>
+                    <p class="history-subtitle mb-0">سیر تحول و ویژگی‌های جدید ارورسرویس</p>
+                </div>
+                <div class="history-meta shadow-sm w-100-mobile">
+                    <div class="meta-icon bg-primary-subtle text-primary">
+                        <span class="oi oi-history"></span>
+                    </div>
+                    <div class="meta-text">
+                        <span class="d-block fw-black">@(releases?.Count ?? 0) نسخه</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid px-2 px-md-4 py-3">
+        @if (isLoading)
+        {
+            <div class="loading-container p-5 text-center">
+                <div class="loading-pulse mb-3">
+                    <span class="oi oi-loop-circular"></span>
+                </div>
+                <p class="text-muted fw-bold">در حال دریافت تاریخچه هوشمند...</p>
+            </div>
+        }
+        else if (releases == null || !releases.Any())
+        {
+            <div class="card border-0 shadow-sm rounded-5 p-5 text-center bg-white">
+                <div class="display-1 text-muted opacity-25 mb-3"><span class="oi oi-warning"></span></div>
+                <h5 class="fw-black">تاریخچه‌ای یافت نشد</h5>
+                <p class="text-muted small">در حال حاضر هیچ نسخه ثبت شده‌ای در سیستم وجود ندارد.</p>
+            </div>
+        }
+        else
+        {
+            <div class="timeline-v2">
+                @foreach (var release in releases)
+                {
+                    <div class="timeline-v2-item animate-slide-up">
+                        <div class="timeline-v2-marker d-none d-sm-flex">
+                            <div class="marker-dot shadow"></div>
+                            <div class="marker-line"></div>
+                        </div>
+                        <div class="timeline-v2-card shadow-sm border-0 rounded-4 bg-white">
+                            <div class="card-body p-3 p-md-4">
+                                <div class="d-flex flex-column gap-3 mb-3">
+                                    <div class="d-flex align-items-center justify-content-between gap-2">
+                                        <h4 class="release-card-title mb-0 text-truncate">@release.Title</h4>
+                                        <div class="version-tag flex-shrink-0">نسخه @release.Version</div>
+                                    </div>
+                                    <div class="release-date-tag align-self-start">
+                                        <span class="oi oi-calendar me-1"></span> @FormatDate(release.ReleaseDate)
+                                    </div>
+                                </div>
+                                
+                                <p class="release-card-desc mb-3">@release.Description</p>
+                                
+                                <div class="feature-tags">
+                                    @foreach (var feature in release.Features)
+                                    {
+                                        <div class="feature-tag-item">
+                                            <span class="feature-tag-dot"></span>
+                                            <span>@feature</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .fw-black { font-weight: 900; }
+    .x-small { font-size: 0.7rem; }
+
+    .release-history-page {
+        min-height: 100vh;
+        background: #f8fafc;
+    }
+
+    /* Professional Header */
+    .history-header {
+        background: white;
+        padding: 20px 0;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .history-title {
+        font-weight: 950;
+        color: #0f172a;
+        letter-spacing: -0.5px;
+        font-size: 1.5rem;
+    }
+
+    .history-subtitle {
+        color: #64748b;
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+
+    .history-meta {
+        background: white;
+        padding: 8px 14px;
+        border-radius: 16px;
+        border: 1px solid rgba(0,0,0,0.03);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    @@media (max-width: 767px) {
+        .w-100-mobile {
+            width: 100% !important;
+            justify-content: center;
+        }
+    }
+
+    .meta-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        font-size: 1.1rem;
+    }
+
+    .meta-text { line-height: 1.2; }
+
+    /* Loading Pulse */
+    .loading-pulse {
+        font-size: 2.5rem;
+        color: #2563eb;
+        animation: rotate 2s linear infinite;
+        display: inline-block;
+    }
+
+    @@keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    /* Timeline V2 */
+    .timeline-v2 {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+    }
+
+    @@media (min-width: 576px) {
+        .timeline-v2 {
+            padding-right: 20px;
+        }
+    }
+
+    .timeline-v2-item {
+        display: flex;
+        gap: 15px;
+        position: relative;
+    }
+
+    @@media (min-width: 768px) {
+        .timeline-v2-item {
+            gap: 30px;
+        }
+    }
+
+    .timeline-v2-marker {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 20px;
+        flex-shrink: 0;
+    }
+
+    .marker-dot {
+        width: 14px;
+        height: 14px;
+        background: #2563eb;
+        border: 3px solid #fff;
+        border-radius: 50%;
+        z-index: 2;
+        margin-top: 20px;
+    }
+
+    .marker-line {
+        width: 2px;
+        background: #e2e8f0;
+        flex-grow: 1;
+        margin: 5px 0;
+    }
+
+    .timeline-v2-item:last-child .marker-line {
+        display: none;
+    }
+
+    .timeline-v2-card {
+        flex-grow: 1;
+        margin-bottom: 25px;
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        min-width: 0;
+    }
+
+    @@media (min-width: 768px) {
+        .timeline-v2-card {
+            margin-bottom: 40px;
+        }
+        .timeline-v2-card:hover {
+            transform: scale(1.01) translateX(-5px);
+        }
+    }
+
+    .version-tag {
+        background: #2563eb;
+        color: white;
+        padding: 4px 12px;
+        border-radius: 10px;
+        font-size: 0.75rem;
+        font-weight: 900;
+        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
+        white-space: nowrap;
+    }
+
+    .release-card-title {
+        font-weight: 900;
+        color: #0f172a;
+        font-size: 1rem;
+        line-height: 1.4;
+    }
+
+    @@media (min-width: 768px) {
+        .release-card-title {
+            font-size: 1.15rem;
+        }
+    }
+
+    .release-date-tag {
+        background: #f1f5f9;
+        color: #64748b;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.65rem;
+        font-weight: 800;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .release-card-desc {
+        color: #475569;
+        font-size: 0.85rem;
+        line-height: 1.7;
+        font-weight: 500;
+    }
+
+    .feature-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .feature-tag-item {
+        background: #f8fafc;
+        border: 1px solid #f1f5f9;
+        padding: 6px 12px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.75rem;
+        color: #1e293b;
+        font-weight: 700;
+    }
+
+    .feature-tag-dot {
+        width: 4px;
+        height: 4px;
+        background: #10b981;
+        border-radius: 50%;
+    }
+
+    .animate-slide-up {
+        animation: slide-up 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+
+    @@keyframes slide-up {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+
+@code {
+    private List<ReleaseNote>? releases;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try 
+        {
+            isLoading = true;
+            StateHasChanged();
+            
+            // Add a small delay for better UX and ensured load
+            await Task.Delay(500);
+            
+            // Add cache-busting query to bypass Service Worker and browser cache
+            var cacheBuster = $"?v={DateTimeOffset.UtcNow.Ticks}";
+            var response = await Http.GetAsync($"releases.json{cacheBuster}");
+            if (response.IsSuccessStatusCode)
+            {
+                releases = await response.Content.ReadFromJsonAsync<List<ReleaseNote>>();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading releases: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string FormatDate(string dateStr)
+    {
+        if (DateTime.TryParse(dateStr, out var dt))
+        {
+            return PersianDateHelper.ToPersianDateTimeString(new DateTimeOffset(dt), false);
+        }
+        return dateStr;
+    }
+
+    public class ReleaseNote
+    {
+        public string Version { get; set; } = "";
+        public string ReleaseDate { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
+        public List<string> Features { get; set; } = new();
+    }
+}

@@ -1,0 +1,62 @@
+<ErrorBoundaryLogger>
+<CascadingAuthenticationState>
+@using ErrorService.Shared
+@using ErrorService.Client.Helpers
+@inject HttpClient Http
+    @inject NavigationManager NavigationManager
+    @inject IJSRuntime JS
+
+    @if (isMaintenance && !IsAdminPath())
+    {
+        <StatusPage Type="maintenance" Title="سایت در حال بروزرسانی است" Message="ما در حال بهبود خدمات برای شما هستیم. لطفاً دقایقی دیگر دوباره مراجعه کنید." ShowBackButton="false" />
+    }
+    else
+    {
+        <Router AppAssembly="@typeof(App).Assembly">
+            <Found Context="routeData">
+                <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                    <NotAuthorized>
+                        <StatusPage Type="403" Title="دسترسی غیرمجاز" Message="شما اجازه دسترسی به این بخش را ندارید. لطفاً وارد حساب کاربری خود شوید." />
+                    </NotAuthorized>
+                </AuthorizeRouteView>
+                <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+            </Found>
+            <NotFound>
+                <PageTitle>404 - یافت نشد</PageTitle>
+                <StatusPage Type="404" Title="صفحه یافت نشد" Message="متاسفانه صفحه مورد نظر شما وجود ندارد یا جابجا شده است." />
+            </NotFound>
+        </Router>
+    }
+
+    @code {
+        private bool isMaintenance = false;
+
+        protected override async Task OnInitializedAsync()
+        {
+            try
+            {
+                var settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+                isMaintenance = settings?.IsMaintenanceMode ?? false;
+                ImageCompressionHelper.DefaultMaxBytes = (settings?.MaxImageUploadSizeKb ?? 200) * 1024;
+                var gaTag = settings?.GoogleAnalyticsTag;
+                if (!string.IsNullOrWhiteSpace(gaTag))
+                {
+                    await JS.InvokeVoidAsync("loadGoogleAnalytics", gaTag);
+                }
+            }
+            catch
+            {
+                isMaintenance = false;
+            }
+        }
+
+        private bool IsAdminPath()
+        {
+            var uri = NavigationManager.Uri.ToLower();
+            var baseUri = NavigationManager.BaseUri.ToLower();
+            var relativePath = uri.Replace(baseUri, "");
+            return relativePath.StartsWith("admin") || relativePath.StartsWith("login");
+        }
+    }
+</CascadingAuthenticationState>
+</ErrorBoundaryLogger>

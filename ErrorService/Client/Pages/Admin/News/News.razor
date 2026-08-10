@@ -1,0 +1,753 @@
+@page "/admin/news"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.news.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@implements IDisposable
+@inject IJSRuntime JS
+@inject ToastService ToastService
+
+<div class="admin-container" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="admin-page-title m-0">مدیریت اخبار و مقالات</h3>
+        <button class="btn btn-primary shadow-sm rounded-3" @onclick="NewNews">
+            <span class="oi oi-plus me-1"></span> خبر جدید
+        </button>
+    </div>
+
+    <ConfirmDialog IsVisible="showConfirm" 
+                   Title="حذف خبر" 
+                   Message=@($"آیا از حذف خبر \"{itemToDelete?.Title}\" اطمینان دارید؟")
+                   OnResult="HandleDeleteResult" />
+
+    @if (showEditor)
+    {
+        <div class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="m-0 fw-bold">@(editingId == 0 ? "ایجاد خبر جدید" : "ویرایش خبر")</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+
+            <EditForm Model="model" OnValidSubmit="SaveNews">
+                <DataAnnotationsValidator />
+                <div class="row g-4">
+                    <div class="col-12">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">عنوان خبر</label>
+                            <InputText @bind-Value="model.Title" class="form-control rounded-3" placeholder="عنوان جذاب انتخاب کنید..." />
+                            <ValidationMessage For="@(() => model.Title)" class="text-danger small" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">تاریخ و ساعت ایجاد</label>
+                            <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="createdAtInput" />
+                            <div class="text-muted small mt-1">در صورت خالی بودن، زمان فعلی ثبت می‌شود.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">خلاصه خبر (نمایش در لیست)</label>
+                            <InputTextArea @bind-Value="model.Summary" class="form-control rounded-3" rows="2" placeholder="توضیح کوتاه برای جذب مخاطب..." />
+                            <ValidationMessage For="@(() => model.Summary)" class="text-danger small" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">نویسنده خبر</label>
+                            <InputText @bind-Value="model.AuthorName" class="form-control rounded-3" placeholder="نام نویسنده..." />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">تگ‌ها (با کاما جدا کنید)</label>
+                            <InputText @bind-Value="model.Tags" class="form-control rounded-3" placeholder="مثلاً: تکنولوژی، هوش مصنوعی، خبر" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">متن کامل خبر</label>
+                            
+                            <!-- Custom Formatting Buttons -->
+                            <div class="d-flex flex-wrap gap-1 mb-2">
+                                <button type="button" class="btn btn-sm btn-light border" @onclick='() => InsertHtml("<p>", "</p>", false)'>پاراگراف</button>
+                                <select id="news-callout-selector" class="form-select form-select-sm" style="width: 170px;" @onchange="OnCalloutChanged">
+                                    <option value="none">بدون باکس</option>
+                                    <option value="info">باکس آبی</option>
+                                    <option value="danger">باکس قرمز</option>
+                                    <option value="success">باکس سبز</option>
+                                    <option value="quote">نقل‌قول</option>
+                                </select>
+                                <button type="button" class="btn btn-sm btn-dark" @onclick='ExitBoxAndContinue'>خروج از باکس</button>
+                                <label class="btn btn-sm btn-info mb-0 text-white">
+                                    <span class="oi oi-image me-1"></span> عکس
+                                    <InputFile OnChange="HandleInlineImageUpload" class="d-none" accept="image/*" />
+                                </label>
+                                <label class="btn btn-sm btn-secondary mb-0 text-white">
+                                    <span class="oi oi-video me-1"></span> ویدیو
+                                    <InputFile OnChange="HandleInlineVideoUpload" class="d-none" accept="video/*" />
+                                </label>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick='InsertVideoLink'>لینک ویدیو</button>
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick='InsertTable'>جدول</button>
+                                <div class="vr d-none d-sm-block"></div>
+                                <div class="btn-group btn-group-sm" role="group" aria-label="Resize image">
+                                    <button type="button" class="btn btn-outline-dark" @onclick='() => ResizeSelectedImage(25)'>25%</button>
+                                    <button type="button" class="btn btn-outline-dark" @onclick='() => ResizeSelectedImage(50)'>50%</button>
+                                    <button type="button" class="btn btn-outline-dark" @onclick='() => ResizeSelectedImage(75)'>75%</button>
+                                    <button type="button" class="btn btn-outline-dark" @onclick='() => ResizeSelectedImage(100)'>100%</button>
+                                </div>
+                            </div>
+                            
+                            <div id="quill-editor-container" style="min-height: 400px; background: white;"></div>
+                            <ValidationMessage For="@(() => model.Content)" class="text-danger small" />
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">تصویر شاخص</label>
+                            <div class="image-upload-zone rounded-4 border-2 border-dashed d-flex flex-column align-items-center justify-content-center p-4 bg-light position-relative">
+                                @if (!string.IsNullOrEmpty(model.ImageUrl))
+                                {
+                                    <img src="@model.ImageUrl" class="img-fluid rounded-3 mb-2" style="max-height: 200px;" />
+                                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-2 rounded-circle shadow" @onclick="ClearImage">
+                                        <span class="oi oi-x"></span>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="oi oi-cloud-upload display-4 text-muted mb-2"></span>
+                                    <InputFile OnChange="HandleFileUpload" class="position-absolute w-100 h-100 opacity-0" style="cursor: pointer; top: 0; left: 0;" />
+                                    <span class="text-muted small text-center">برای انتخاب تصویر شاخص کلیک کنید</span>
+                                }
+                            </div>
+                            @if (isUploading)
+                            {
+                                <div class="progress mt-2" style="height: 6px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="card bg-light border-0 rounded-4 p-3">
+                            <div class="form-check form-switch">
+                                <InputCheckbox @bind-Value="model.IsPublished" class="form-check-input" id="isPublished" />
+                                <label class="form-check-label fw-bold" for="isPublished">انتشار در سایت</label>
+                            </div>
+                            <div class="text-muted small mt-1">در صورت غیرفعال بودن، خبر فقط در پنل ادمین نمایش داده می‌شود.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+                    <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseEditor">انصراف</button>
+                    <button type="submit" class="btn btn-primary rounded-3 px-4 shadow-sm" disabled="@(isSaving || isUploading)">
+                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        ذخیره نهایی خبر
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    }
+
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4" style="width: 100px;">تصویر</th>
+                        <th>عنوان خبر</th>
+                        <th>تاریخ ایجاد</th>
+                        <th>وضعیت</th>
+                        <th class="text-end pe-4">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (newsList == null)
+                    {
+                        <tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
+                    }
+                    else if (!newsList.Any())
+                    {
+                        <tr><td colspan="5" class="text-center py-5 text-muted">هیچ خبری یافت نشد.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var news in newsList)
+                        {
+                            <tr>
+                                <td class="ps-4">
+                                    <div class="news-thumb rounded-3 bg-light overflow-hidden" style="width: 60px; height: 60px;">
+                                        @if (!string.IsNullOrEmpty(news.ImageUrl))
+                                        {
+                                            <img src="@news.ImageUrl" class="w-100 h-100 object-fit-cover" />
+                                        }
+                                        else
+                                        {
+                                            <div class="w-100 h-100 d-flex align-items-center justify-content-center text-muted bg-light border rounded-3">
+                                                <span class="oi oi-image" style="font-size: 1.2rem; opacity: 0.5;"></span>
+                                            </div>
+                                        }
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="fw-bold text-dark">@news.Title</div>
+                                    <div class="small text-muted text-truncate" style="max-width: 300px;">@news.Summary</div>
+                                </td>
+                                <td><span class="text-muted small">@PersianDate.ToJalaliDateTime(news.CreatedAt)</span></td>
+                                <td>
+                                    <span class="badge @(news.IsPublished ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning") rounded-pill px-3">
+                                        @(news.IsPublished ? "منتشر شده" : "پیش‌نویس")
+                                    </span>
+                                </td>
+                                <td class="text-end pe-4">
+                                    <button class="btn btn-sm btn-outline-primary border-0 rounded-circle me-1" @onclick="() => EditNews(news)" title="ویرایش">
+                                        <span class="oi oi-pencil"></span>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger border-0 rounded-circle" @onclick="() => ConfirmDelete(news)" title="حذف">
+                                        <span class="oi oi-trash"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (newsList != null && newsList.Count < totalCount)
+        {
+            <div class="text-center p-3 border-top bg-light">
+                <button class="btn btn-outline-primary btn-sm rounded-pill px-4" @onclick="() => LoadNews(true)" disabled="@isLoadingMore">
+                    @if (isLoadingMore)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    مشاهده بیشتر (@(totalCount - newsList.Count) مورد باقی‌مانده)
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .image-upload-zone {
+        min-height: 200px;
+        transition: all 0.2s ease;
+    }
+    .image-upload-zone:hover {
+        background: #f0f4f8 !important;
+        border-color: #0d6efd !important;
+    }
+    .object-fit-cover { object-fit: cover; }
+    .bg-success-subtle { background-color: #d1e7dd; }
+    .bg-warning-subtle { background-color: #fff3cd; }
+    .admin-container { padding: 20px; }
+    
+    /* Quill Editor Styles */
+    #quill-editor-container {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        min-height: 400px;
+    }
+    #quill-editor-container .ql-toolbar {
+        border-top: none;
+        border-left: none;
+        border-right: none;
+        border-bottom: 1px solid #dee2e6;
+        background: #f8f9fa;
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        overflow: visible;
+        white-space: normal;
+    }
+    #quill-editor-container .ql-toolbar::-webkit-scrollbar { height: 6px; }
+    #quill-editor-container .ql-toolbar::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.25); border-radius: 999px; }
+
+    #quill-editor-container .ql-formats { display: inline-flex; float: none; flex-wrap: wrap; }
+    #quill-editor-container .ql-picker { position: relative; }
+    #quill-editor-container .ql-picker-options { z-index: 9999; }
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="vazirmatn"]::before,
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="vazirmatn"]::before {
+        content: 'وزیرمتن';
+        font-family: 'Vazirmatn', sans-serif !important;
+    }
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="vazir"]::before,
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="vazir"]::before {
+        content: 'وزیر';
+        font-family: 'Vazir', sans-serif !important;
+    }
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="shabnam"]::before,
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="shabnam"]::before {
+        content: 'شبنم';
+        font-family: 'Shabnam', sans-serif !important;
+    }
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="sahel"]::before,
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="sahel"]::before {
+        content: 'ساحل';
+        font-family: 'Sahel', sans-serif !important;
+    }
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label::before,
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item::before {
+        font-size: 14px;
+    }
+    #quill-editor-container .ql-font-vazirmatn { font-family: 'Vazirmatn', sans-serif; }
+    #quill-editor-container .ql-font-vazir { font-family: 'Vazir', sans-serif; }
+    #quill-editor-container .ql-font-shabnam { font-family: 'Shabnam', sans-serif; }
+    #quill-editor-container .ql-font-sahel { font-family: 'Sahel', sans-serif; }
+
+    @@media (max-width: 576px) {
+        #quill-editor-container .ql-toolbar.ql-snow { padding: 8px; }
+        #quill-editor-container .ql-formats { margin: 0; }
+        #quill-editor-container .ql-toolbar button,
+        #quill-editor-container .ql-toolbar .ql-picker { margin: 0; }
+    }
+    #quill-editor-container .ql-container {
+        border: none;
+        min-height: 350px;
+        font-family: 'Vazirmatn', Tahoma, sans-serif;
+        font-size: 16px;
+    }
+    #quill-editor-container .ql-editor {
+        direction: rtl;
+        text-align: right;
+        min-height: 350px;
+    }
+
+    #quill-editor-container .ql-editor ol,
+    #quill-editor-container .ql-editor ul {
+        padding-right: 1.5em;
+        padding-left: 0 !important;
+        margin-right: 0;
+        margin-left: 0;
+    }
+    #quill-editor-container .ql-editor li {
+        padding-right: 0.5em;
+        padding-left: 0 !important;
+    }
+    #quill-editor-container .ql-editor li::before {
+        right: 0.3em !important;
+        left: auto !important;
+        text-align: right !important;
+    }
+    #quill-editor-container .ql-editor li.ql-indent-1 { padding-right: 3em !important; padding-left: 0 !important; }
+    #quill-editor-container .ql-editor li.ql-indent-2 { padding-right: 5em !important; padding-left: 0 !important; }
+    #quill-editor-container .ql-editor li.ql-indent-3 { padding-right: 7em !important; padding-left: 0 !important; }
+
+    #quill-editor-container .ql-editor pre.ql-syntax {
+        direction: ltr;
+        text-align: left;
+        border-radius: 10px;
+        padding: 14px 16px;
+        overflow: auto;
+    }
+
+    #quill-editor-container .ql-editor [data-callout],
+    #quill-editor-container .ql-editor p[data-callout],
+    #quill-editor-container .ql-editor [class*="article-callout--"],
+    #quill-editor-container .ql-editor p[class*="article-callout--"] {
+        padding: 14px 14px !important;
+        border-radius: 12px !important;
+        margin: 10px 0 !important;
+        border-right: 6px solid #2563eb !important;
+        border-left: none !important;
+        background-color: #f8fafc !important;
+        font-weight: 600 !important;
+        display: block !important;
+        min-height: 1em;
+    }
+    #quill-editor-container .ql-editor [data-callout="info"],
+    #quill-editor-container .ql-editor p[data-callout="info"],
+    #quill-editor-container .ql-editor .article-callout--info,
+    #quill-editor-container .ql-editor p.article-callout--info { border-right-color: #2563eb !important; background-color: #eff6ff !important; }
+    #quill-editor-container .ql-editor [data-callout="danger"],
+    #quill-editor-container .ql-editor p[data-callout="danger"],
+    #quill-editor-container .ql-editor .article-callout--danger,
+    #quill-editor-container .ql-editor p.article-callout--danger { border-right-color: #ef4444 !important; background-color: #fff1f2 !important; }
+    #quill-editor-container .ql-editor [data-callout="success"],
+    #quill-editor-container .ql-editor p[data-callout="success"],
+    #quill-editor-container .ql-editor .article-callout--success,
+    #quill-editor-container .ql-editor p.article-callout--success { border-right-color: #10b981 !important; background-color: #ecfdf5 !important; }
+    #quill-editor-container .ql-editor [data-callout="quote"],
+    #quill-editor-container .ql-editor p[data-callout="quote"],
+    #quill-editor-container .ql-editor .article-callout--quote,
+    #quill-editor-container .ql-editor p.article-callout--quote {
+        padding: 14px 16px !important;
+        border-radius: 12px !important;
+        margin: 12px 0 !important;
+        border-right: 5px solid #f59e0b !important;
+        border-left: none !important;
+        background-color: #fffbeb !important;
+        color: #475569 !important;
+        font-style: italic !important;
+        font-size: 1.1rem !important;
+        display: block !important;
+        min-height: 1em;
+    }
+    /* Hide default blockquote border if it persists */
+    #quill-editor-container .ql-editor blockquote {
+        border-left: none !important;
+        border-right: none !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+
+    #quill-editor-container .ql-editor table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0;
+    }
+    #quill-editor-container .ql-editor td,
+    #quill-editor-container .ql-editor th {
+        border: 1px solid #e2e8f0;
+        padding: 8px;
+        vertical-align: top;
+    }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private List<NewsDto>? newsList;
+    private NewsUpsertRequest model = new();
+    private bool showEditor = false;
+    private int editingId = 0;
+    private bool isSaving = false;
+    private bool isUploading = false;
+    private string createdAtInput = string.Empty;
+
+    private DotNetObjectReference<News>? objRef;
+    private int _lastQuillEditingId;
+    private bool _quillInitialized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNews();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Task.Delay(100);
+            await JS.InvokeVoidAsync("initJalali");
+        }
+
+        if (!showEditor)
+            return;
+
+        // Ensure Quill exists whenever editor is visible
+        if (!_quillInitialized)
+        {
+            objRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initQuillEditor", "quill-editor-container", model.Content ?? "", objRef);
+            await JS.InvokeVoidAsync("bindCalloutSelectorForQuill", "quill-editor-container", "news-callout-selector");
+            _quillInitialized = true;
+            _lastQuillEditingId = editingId;
+            return;
+        }
+
+        // When switching between news items, update the content
+        if (_lastQuillEditingId != editingId)
+        {
+            await JS.InvokeVoidAsync("setQuillContent", "quill-editor-container", model.Content ?? "");
+            await JS.InvokeVoidAsync("bindCalloutSelectorForQuill", "quill-editor-container", "news-callout-selector");
+            _lastQuillEditingId = editingId;
+        }
+    }
+
+    [JSInvokable]
+    public void UpdateContent(string content)
+    {
+        model.Content = content;
+    }
+
+    public void Dispose() => objRef?.Dispose();
+
+    private int skip = 0;
+    private int take = 10;
+    private int totalCount = 0;
+    private bool isLoadingMore = false;
+
+    private async Task LoadNews(bool loadMore = false)
+    {
+        if (loadMore)
+        {
+            isLoadingMore = true;
+            skip += take;
+        }
+        else
+        {
+            skip = 0;
+            newsList = null;
+        }
+
+        try
+        {
+            var response = await Http.GetAsync($"api/news?skip={skip}&take={take}");
+            if (response.IsSuccessStatusCode)
+            {
+                if (response.Headers.TryGetValues("X-Total-Count", out var values))
+                {
+                    int.TryParse(values.FirstOrDefault(), out totalCount);
+                }
+
+                var data = await response.Content.ReadFromJsonAsync<List<NewsDto>>();
+                if (data != null)
+                {
+                    if (loadMore && newsList != null)
+                    {
+                        newsList.AddRange(data);
+                    }
+                    else
+                    {
+                        newsList = data;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در بارگذاری اخبار");
+        }
+        finally
+        {
+            isLoadingMore = false;
+        }
+    }
+
+    private void ClearImage()
+    {
+        model.ImageUrl = null;
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        isUploading = true;
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/news/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                model.ImageUrl = url;
+                ToastService.ShowSuccess("تصویر شاخص آپلود شد");
+            }
+            else
+            {
+                ToastService.ShowError("خطا در آپلود تصویر شاخص");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطا در آپلود: " + ex.Message);
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private async Task HandleInlineImageUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+            
+            var resp = await Http.PostAsync("api/news/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                // Insert as Quill embed (enables resize module)
+                await JS.InvokeVoidAsync("insertImageAtCursor", "quill-editor-container", url);
+                ToastService.ShowSuccess("تصویر درج شد");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا در آپلود: " + ex.Message); }
+    }
+
+    private async Task HandleInlineVideoUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            using var content = new MultipartFormDataContent();
+            var stream = file.OpenReadStream(150_000_000);
+            var streamContent = new StreamContent(stream);
+            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(streamContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/news/upload-video", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                await JS.InvokeVoidAsync("insertVideoAtCursor", "quill-editor-container", url);
+                ToastService.ShowSuccess("ویدیو درج شد");
+            }
+            else
+            {
+                ToastService.ShowError("خطا در آپلود ویدیو");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا در آپلود: " + ex.Message); }
+    }
+
+    private async Task InsertVideoLink()
+    {
+        await JS.InvokeVoidAsync("promptAndInsertVideoLink", "quill-editor-container");
+    }
+
+    private async Task InsertTable()
+    {
+        await JS.InvokeVoidAsync("promptAndInsertTable", "quill-editor-container");
+    }
+
+    private async Task InsertHtml(string before, string after, bool addParagraphAfter)
+    {
+        var content = before + "متن اینجا..." + after;
+        if (addParagraphAfter)
+        {
+            content += "<p><br></p>"; // Add empty paragraph after for easy exit
+        }
+        await JS.InvokeVoidAsync("insertHtmlAtCursor", "quill-editor-container", content);
+    }
+
+    private async Task ExitBoxAndContinue()
+    {
+        await JS.InvokeVoidAsync("exitCalloutAndContinue", "quill-editor-container");
+    }
+
+    private async Task OnCalloutChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "none";
+        await JS.InvokeVoidAsync("applyCalloutToSelection", "quill-editor-container", value);
+    }
+
+    private async Task ResizeSelectedImage(int widthPercent)
+    {
+        await JS.InvokeVoidAsync("resizeImage", "quill-editor-container", widthPercent);
+    }
+
+    private void NewNews()
+    {
+        editingId = 0;
+        model = new NewsUpsertRequest { IsPublished = true };
+        createdAtInput = PersianDate.ToJalaliDateTime(DateTimeOffset.Now);
+        _quillInitialized = false;
+        _lastQuillEditingId = 0;
+        showEditor = true;
+    }
+
+    private void EditNews(NewsDto news)
+    {
+        editingId = news.Id;
+        model = new NewsUpsertRequest
+        {
+            Title = news.Title ?? string.Empty,
+            Summary = news.Summary,
+            Content = news.Content ?? string.Empty,
+            ImageUrl = news.ImageUrl,
+            Tags = news.Tags,
+            AuthorName = news.AuthorName,
+            IsPublished = news.IsPublished,
+            CreatedAt = news.CreatedAt
+        };
+
+        createdAtInput = PersianDate.ToJalaliDateTime(news.CreatedAt);
+        _quillInitialized = false;
+        _lastQuillEditingId = 0;
+        showEditor = true;
+    }
+
+    private async Task SaveNews()
+    {
+        isSaving = true;
+        try
+        {
+            // Get content from Quill editor
+            var quillContent = await JS.InvokeAsync<string>("getQuillContent", "quill-editor-container");
+            if (!string.IsNullOrEmpty(quillContent))
+            {
+                model.Content = quillContent;
+            }
+
+            if (PersianDate.TryParseJalaliDateTime(createdAtInput, out var createdAt))
+                model.CreatedAt = createdAt;
+            else
+                model.CreatedAt = null;
+
+            HttpResponseMessage resp;
+            if (editingId == 0) resp = await Http.PostAsJsonAsync("api/news", model);
+            else resp = await Http.PutAsJsonAsync($"api/news/{editingId}", model);
+            
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(editingId == 0 ? "خبر با موفقیت ثبت شد" : "تغییرات خبر ذخیره شد");
+                await LoadNews();
+                CloseEditor();
+            }
+            else
+            {
+                ToastService.ShowError("خطا در ذخیره‌سازی خبر");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+        }
+        finally { isSaving = false; }
+    }
+
+    private void CloseEditor()
+    {
+        showEditor = false;
+        _quillInitialized = false;
+        _lastQuillEditingId = 0;
+        _ = JS.InvokeVoidAsync("destroyQuillEditor", "quill-editor-container");
+    }
+
+    private NewsDto? itemToDelete;
+    private bool showConfirm;
+
+    private void ConfirmDelete(NewsDto news)
+    {
+        itemToDelete = news;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool result)
+    {
+        showConfirm = false;
+        if (result && itemToDelete != null)
+        {
+            try
+            {
+                var response = await Http.DeleteAsync($"api/news/{itemToDelete.Id}");
+                if (response.IsSuccessStatusCode)
+                {
+                    ToastService.ShowSuccess("خبر با موفقیت حذف شد");
+                    await LoadNews();
+                }
+                else
+                {
+                    ToastService.ShowError("خطا در حذف خبر");
+                }
+            }
+            catch (Exception ex)
+            {
+                ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+            }
+        }
+        itemToDelete = null;
+    }
+}

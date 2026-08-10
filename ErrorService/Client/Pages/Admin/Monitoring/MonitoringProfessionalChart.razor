@@ -1,0 +1,711 @@
+@page "/admin/monitoring/professional-chart/{MonitoringConnectionId:int}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.monitoring.view")]
+@using System.Net.Http.Json
+@using ErrorService.Shared
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@_pageTitle</PageTitle>
+
+<div class="mpc-page" dir="ltr">
+    <div class="mpc-header">
+        <button class="mpc-back" @onclick="GoBack" title="بازگشت">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="mpc-title-group">
+            <div class="mpc-kicker">Professional Chart</div>
+            <div class="mpc-title">@_pageTitle</div>
+        </div>
+        <div class="mpc-header-actions">
+            <span class="mpc-badge">@_dataCount records</span>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="mpc-skeleton">
+            <div class="mpc-skel-legend"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            <div class="mpc-skel-chart"><span></span></div>
+        </div>
+    }
+    else if (_error != null)
+    {
+        <div class="mpc-error">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <h3>خطا در دریافت اطلاعات</h3>
+            <p>@_error</p>
+            <button class="mpc-retry-btn" @onclick="LoadData">تلاش مجدد</button>
+        </div>
+    }
+    else if (_data != null)
+    {
+        @* Client Info Card *@
+        @if (_data.ConnectionInfo != null)
+        {
+            <div class="mpc-client" dir="rtl">
+                <div class="mpc-client__row">
+                    <div class="mpc-client__item">
+                        <span class="mpc-client__icon mpc-client__icon--user">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        </span>
+                        <span class="mpc-client__value">@_data.ConnectionInfo.CustomerName</span>
+                    </div>
+                    <div class="mpc-client__item">
+                        <span class="mpc-client__icon mpc-client__icon--phone">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                        </span>
+                        <span class="mpc-client__value ltr" dir="ltr">@_data.ConnectionInfo.CustomerMobile</span>
+                    </div>
+                    <div class="mpc-client__item">
+                        <span class="mpc-client__icon mpc-client__icon--device">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                        </span>
+                        <span class="mpc-client__value">@_data.ConnectionInfo.DeviceName</span>
+                    </div>
+                </div>
+                @if (!string.IsNullOrEmpty(_data.ConnectionInfo.DeviceTypeName))
+                {
+                    <div class="mpc-client__tags">
+                        <span class="mpc-client__tag">@_data.ConnectionInfo.DeviceTypeName</span>
+                        @if (!string.IsNullOrEmpty(_data.ConnectionInfo.DeviceBrandName))
+                        {
+                            <span class="mpc-client__tag mpc-client__tag--brand">@_data.ConnectionInfo.DeviceBrandName</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="mpc-legend" id="mpc-legend">
+            <button class="mpc-legend-item mpc-legend-item--off" type="button" data-ds-idx="0" style="--mpc-c:#14b8a6">یخچال</button>
+            <button class="mpc-legend-item mpc-legend-item--off" type="button" data-ds-idx="1" style="--mpc-c:#f43f5e">فریزر</button>
+            <button class="mpc-legend-item mpc-legend-item--off" type="button" data-ds-idx="2" style="--mpc-c:#6b7280">برق</button>
+            <button class="mpc-legend-item mpc-legend-item--off" type="button" data-ds-idx="3" style="--mpc-c:#22c55e">موتور</button>
+            <button class="mpc-legend-item mpc-legend-item--off" type="button" data-ds-idx="4" style="--mpc-c:#3b82f6">المنت ۱</button>
+            <button class="mpc-legend-item mpc-legend-item--off" type="button" data-ds-idx="5" style="--mpc-c:#f59e0b">المنت ۲</button>
+            <button class="mpc-legend-item mpc-legend-item--off" type="button" data-ds-idx="6" style="--mpc-c:#8b5cf6">توان</button>
+            <button class="mpc-legend-item mpc-legend-item--off" type="button" data-ds-idx="7" style="--mpc-c:#ec4899">جریان</button>
+        </div>
+
+        <div class="mpc-chart-scroll" id="mpc-scroll">
+            <div class="mpc-chart-wrapper" id="mpc-wrapper">
+                <canvas id="mpc-canvas"></canvas>
+            </div>
+        </div>
+
+        @* Energy Report — lazy, behind a button *@
+        @if (!_energyEnabled)
+        {
+            <div class="er-launch">
+                <button class="er-launch-btn" @onclick="EnableEnergy">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <span>محاسبه مصرف انرژی</span>
+                </button>
+            </div>
+        }
+        else if (_energyLoading)
+        {
+            <div class="er-section">
+                <div class="er-header">
+                    <div class="er-title">گزارش مصرف انرژی</div>
+                    <div class="er-tabs">
+                        <button class="er-tab @(_energyPeriod == "session" ? "active" : "")" @onclick="SetSessionPeriod">این سیکل</button>
+                        <button class="er-tab @(_energyPeriod == "24h" ? "active" : "")" @onclick="Set24hPeriod">۲۴ ساعت</button>
+                        <button class="er-tab @(_energyPeriod == "monthly" ? "active" : "")" @onclick="SetMonthlyPeriod">یک ماهه</button>
+                    </div>
+                </div>
+                <div class="er-loading">
+                    <span class="er-loading-spinner"></span>
+                    <span>در حال محاسبه انرژی…</span>
+                </div>
+            </div>
+        }
+        else if (_energyReport != null)
+        {
+            <div class="er-section">
+                <div class="er-header">
+                    <div class="er-title">گزارش مصرف انرژی</div>
+                    <div class="er-tabs">
+                        <button class="er-tab @(_energyPeriod == "session" ? "active" : "")" @onclick="SetSessionPeriod">این سیکل</button>
+                        <button class="er-tab @(_energyPeriod == "24h" ? "active" : "")" @onclick="Set24hPeriod">۲۴ ساعت</button>
+                        <button class="er-tab @(_energyPeriod == "monthly" ? "active" : "")" @onclick="SetMonthlyPeriod">یک ماهه</button>
+                    </div>
+                </div>
+
+                <div class="er-kpis">
+                    <div class="er-kpi">
+                        <div class="er-kpi-body">
+                            <span class="er-kpi-value">@_energyReport.TotalKwh.ToString("N1")</span>
+                            <span class="er-kpi-unit">kWh</span>
+                            <span class="er-kpi-label">کل مصرف</span>
+                        </div>
+                    </div>
+                    <div class="er-kpi">
+                        <div class="er-kpi-body">
+                            <span class="er-kpi-value">@FormatHours(_energyReport.TotalOnHours)</span>
+                            <span class="er-kpi-unit">h</span>
+                            <span class="er-kpi-label">زمان کارکرد</span>
+                        </div>
+                    </div>
+                    <div class="er-kpi">
+                        <div class="er-kpi-body">
+                            <span class="er-kpi-value">@_energyReport.TotalCycles</span>
+                            <span class="er-kpi-unit">سیکل</span>
+                            <span class="er-kpi-label">تعداد</span>
+                        </div>
+                    </div>
+                    <div class="er-kpi">
+                        <div class="er-kpi-body">
+                            <span class="er-kpi-value">@_energyReport.AveragePower.ToString("N1")</span>
+                            <span class="er-kpi-unit">W</span>
+                            <span class="er-kpi-label">توان متوسط</span>
+                        </div>
+                    </div>
+                    <div class="er-kpi">
+                        <div class="er-kpi-body">
+                            <span class="er-kpi-value">@_energyReport.AverageCurrent.ToString("N2")</span>
+                            <span class="er-kpi-unit">A</span>
+                            <span class="er-kpi-label">جریان متوسط</span>
+                        </div>
+                    </div>
+                </div>
+
+                @if (_energyReport.Breakdown.Any())
+                {
+                    <div class="er-rows">
+                        @foreach (var item in _energyReport.Breakdown)
+                        {
+                            <div class="er-row">
+                                <div class="er-row-head">
+                                    <span class="er-row-dot" style="background:@item.Color"></span>
+                                    <span class="er-row-label">@item.Label</span>
+                                    <span class="er-row-pct">@item.Percent.ToString("N0")%</span>
+                                </div>
+                                <div class="er-row-bar">
+                                    <div class="er-row-fill" style="width:@(Math.Round(item.Percent))%;background:@item.Color"></div>
+                                </div>
+                                <div class="er-row-stats">
+                                    <span class="er-row-val">@item.Kwh.ToString("N1") kWh</span>
+                                    <span class="er-row-val">@FormatHours(item.OnHours)</span>
+                                    <span class="er-row-val">@item.CycleCount سیکل</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_energyReport.HourlyTrend.Any())
+                {
+                    <div class="er-spark-wrap" id="er-spark-wrap">
+                        <canvas id="er-spark-canvas"></canvas>
+                    </div>
+                }
+            </div>
+        }
+        else if (_energyReport != null)
+        {
+            <div class="er-section">
+                <div class="er-header">
+                    <div class="er-title">گزارش مصرف انرژی</div>
+                    <div class="er-tabs">
+                        <button class="er-tab @(_energyPeriod == "session" ? "active" : "")" @onclick="SetSessionPeriod">این سیکل</button>
+                        <button class="er-tab @(_energyPeriod == "24h" ? "active" : "")" @onclick="Set24hPeriod">۲۴ ساعت</button>
+                        <button class="er-tab @(_energyPeriod == "monthly" ? "active" : "")" @onclick="SetMonthlyPeriod">یک ماهه</button>
+                    </div>
+                </div>
+
+                <div class="er-kpis">
+                    <div class="er-kpi">
+                        <div class="er-kpi-body">
+                            <span class="er-kpi-value">@_energyReport.TotalKwh.ToString("N1")</span>
+                            <span class="er-kpi-unit">kWh</span>
+                            <span class="er-kpi-label">کل مصرف</span>
+                        </div>
+                    </div>
+                    <div class="er-kpi">
+                        <div class="er-kpi-body">
+                            <span class="er-kpi-value">@FormatHours(_energyReport.TotalOnHours)</span>
+                            <span class="er-kpi-unit">h</span>
+                            <span class="er-kpi-label">زمان کارکرد</span>
+                        </div>
+                    </div>
+                    <div class="er-kpi">
+                        <div class="er-kpi-body">
+                            <span class="er-kpi-value">@_energyReport.TotalCycles</span>
+                            <span class="er-kpi-unit">سیکل</span>
+                            <span class="er-kpi-label">تعداد</span>
+                        </div>
+                    </div>
+                    <div class="er-kpi">
+                        <div class="er-kpi-body">
+                            <span class="er-kpi-value">@_energyReport.AveragePower.ToString("N1")</span>
+                            <span class="er-kpi-unit">W</span>
+                            <span class="er-kpi-label">میانگین توان</span>
+                        </div>
+                    </div>
+                    <div class="er-kpi">
+                        <div class="er-kpi-body">
+                            <span class="er-kpi-value">@_energyReport.AverageCurrent.ToString("N2")</span>
+                            <span class="er-kpi-unit">A</span>
+                            <span class="er-kpi-label">میانگین جریان</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="er-breakdown">
+                    @foreach (var item in _energyReport.Breakdown)
+                    {
+                        <div class="er-row">
+                            <div class="er-row-head">
+                                <span class="er-dot" style="background:@item.Color"></span>
+                                <span class="er-row-label">@item.Label</span>
+                                <span class="er-row-val">@item.Kwh.ToString("N1")</span>
+                                <span class="er-row-pct">@item.Percent%</span>
+                            </div>
+                            <div class="er-bar-track">
+                                <div class="er-bar-fill" style="width:@item.Percent%;background:@item.Color"></div>
+                            </div>
+                            <div class="er-row-stats">
+                                <span>@item.CycleCount سیکل</span>
+                                <span>میانگین @item.AvgCycleMinutes دقیقه</span>
+                                <span>@FormatHours(item.OnHours) روشن</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @if (_energyReport.HourlyTrend.Any(h => h.Kwh > 0))
+                {
+                    <div class="er-spark-section">
+                        <div class="er-spark-header">مصرف ساعتی</div>
+                        <div class="er-spark-wrap"><canvas id="er-spark-canvas"></canvas></div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+<style>
+:root {
+    --mpc-bg: #f8fafc;
+    --mpc-surface: #ffffff;
+    --mpc-border: #e2e8f0;
+    --mpc-text: #1e293b;
+    --mpc-text-secondary: #64748b;
+    --mpc-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.dark {
+    --mpc-bg: #0f172a;
+    --mpc-surface: #1e293b;
+    --mpc-border: #334155;
+    --mpc-text: #f1f5f9;
+    --mpc-text-secondary: #94a3b8;
+    --mpc-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+
+.mpc-page {
+    width: 100%; padding: 16px 24px;
+    background: var(--mpc-bg); min-height: calc(100vh - 60px);
+    color: var(--mpc-text);
+    font-family: 'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+.mpc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.mpc-back {
+    width: 38px; height: 38px; border: none; background: var(--mpc-surface);
+    border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--mpc-text); box-shadow: var(--mpc-shadow);
+}
+.mpc-back:hover { background: var(--mpc-border); }
+.mpc-title-group { flex: 1; min-width: 0; }
+.mpc-kicker { font-size: 11px; color: var(--mpc-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1px; }
+.mpc-title { font-size: 18px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mpc-header-actions { display: flex; align-items: center; gap: 8px; }
+.mpc-badge { font-size: 11px; padding: 4px 10px; background: var(--mpc-surface); border: 1px solid var(--mpc-border); border-radius: 20px; color: var(--mpc-text-secondary); white-space: nowrap; }
+
+.mpc-client {
+    background: linear-gradient(135deg, #f5f5f5, #e3e3ff);
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 12px;
+    box-shadow: 0 4px 16px rgba(79,70,229,0.1);
+}
+.dark .mpc-client { background: linear-gradient(135deg, #1e1e2e, #2a2a3e); }
+.mpc-client__row { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.mpc-client__item { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mpc-client__icon {
+    width: 26px; height: 26px; border-radius: 8px; display: grid;
+    place-items: center; flex-shrink: 0;
+}
+.mpc-client__icon--user { background: rgba(99,102,241,0.15); color: #4f46e5; }
+.mpc-client__icon--phone { background: rgba(16,185,129,0.15); color: #059669; }
+.mpc-client__icon--device { background: rgba(251,191,36,0.2); color: #d97706; }
+.mpc-client__value {
+    font-size: 13px; font-weight: 700; color: #1e293b;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dark .mpc-client__value { color: #e2e8f0; }
+.mpc-client__tags { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(79,70,229,0.12); }
+.mpc-client__tag {
+    font-size: 10px; font-weight: 600; color: #4f46e5; background: rgba(99,102,241,0.1);
+    padding: 2px 10px; border-radius: 999px; white-space: nowrap;
+}
+.mpc-client__tag--brand { background: rgba(16,185,129,0.1); color: #059669; }
+.dark .mpc-client__tag { color: #c7d2fe; background: rgba(99,102,241,0.15); }
+.dark .mpc-client__tag--brand { color: #6ee7b7; background: rgba(16,185,129,0.12); }
+
+@@media (max-width: 480px) {
+    .mpc-client { padding: 12px 14px; }
+    .mpc-client__row { gap: 6px 12px; }
+    .mpc-client__value { font-size: 12px; }
+    .mpc-client__icon { width: 24px; height: 24px; }
+}
+
+.mpc-legend {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+    padding: 10px 14px; background: var(--mpc-surface); border-radius: 10px;
+    box-shadow: var(--mpc-shadow); direction: rtl;
+}
+.mpc-legend-item {
+    font-size: 12px; font-weight: 700; cursor: pointer; border: 1.5px solid var(--mpc-c);
+    background: color-mix(in srgb, var(--mpc-c) 20%, transparent);
+    color: var(--mpc-c); padding: 5px 14px; border-radius: 20px;
+    transition: all 0.15s; font-family: inherit; line-height: 1.4;
+}
+.mpc-legend-item:hover { filter: brightness(0.92); }
+.mpc-legend-item--off {
+    background: transparent; color: var(--mpc-text-secondary);
+    border-color: var(--mpc-border); opacity: 0.5;
+    font-weight: 500;
+}
+.mpc-legend-item--off:hover { background: var(--mpc-bg); filter: none; }
+
+.mpc-chart-scroll {
+    overflow-x: auto; overflow-y: hidden;
+    background: var(--mpc-surface); border-radius: 12px;
+    box-shadow: var(--mpc-shadow); padding: 12px 0;
+    -webkit-overflow-scrolling: touch;
+    user-select: none; -webkit-user-select: none;
+    touch-action: pan-x;
+}
+.mpc-chart-scroll::-webkit-scrollbar { height: 8px; }
+.mpc-chart-scroll::-webkit-scrollbar-track { background: var(--mpc-border); border-radius: 4px; }
+.mpc-chart-scroll::-webkit-scrollbar-thumb { background: var(--mpc-text-secondary); border-radius: 4px; }
+
+.mpc-chart-wrapper { position: relative; min-width: 100%; height: 450px; }
+.dark .mpc-chart-wrapper { filter: brightness(0.98); }
+
+.mpc-skeleton { display: flex; flex-direction: column; gap: 14px; }
+.mpc-skel-legend { display: flex; gap: 10px; }
+.mpc-skel-legend span { height: 32px; width: 90px; background: var(--mpc-border); border-radius: 10px; animation: mpc-pulse 1.5s infinite; }
+.mpc-skel-chart span { display: block; height: 480px; background: var(--mpc-border); border-radius: 12px; animation: mpc-pulse 1.5s infinite; }
+
+@@keyframes mpc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+.mpc-error { text-align: center; padding: 60px 20px; }
+.mpc-error h3 { margin: 12px 0 4px; font-size: 16px; }
+.mpc-error p { color: var(--mpc-text-secondary); font-size: 13px; margin-bottom: 16px; }
+.mpc-retry-btn { padding: 8px 24px; border: none; background: #1e293b; color: #fff; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.dark .mpc-retry-btn { background: #e2e8f0; color: #0f172a; }
+
+.er-launch { text-align: center; margin: 16px 0; }
+.er-launch-btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px;
+    border: none; border-radius: 12px; background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff; font-size: 14px; font-weight: 700; cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.2s;
+    box-shadow: 0 6px 20px rgba(99,102,241,0.3);
+    font-family: inherit;
+}
+.er-launch-btn:hover { transform: scale(1.03); box-shadow: 0 8px 24px rgba(99,102,241,0.4); }
+.er-launch-btn:active { transform: scale(0.97); }
+
+/* ── Override parent container constraints (1200px max) ── */
+body:has(.mpc-page) .admin-content-container {
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+}
+/* ── Energy Report ── */
+.er-section { margin-top: 16px; background: var(--mpc-surface); border-radius: 12px; box-shadow: var(--mpc-shadow); padding: 14px 16px; }
+.er-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.er-title { font-size: 14px; font-weight: 800; color: var(--mpc-text); letter-spacing: 0.3px; }
+.er-tabs { display: flex; gap: 4px; background: var(--mpc-bg); border-radius: 10px; padding: 3px; }
+.er-tab { border: none; background: none; font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 8px; cursor: pointer; color: var(--mpc-text-secondary); font-family: inherit; transition: all 0.15s; }
+.er-tab.active { background: var(--mpc-surface); color: var(--mpc-text); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.er-tab:hover:not(.active) { color: var(--mpc-text); }
+
+.er-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 14px; }
+.er-kpi { background: var(--mpc-bg); border-radius: 10px; padding: 10px 12px; text-align: center; }
+.er-kpi-body { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.er-kpi-value { font-size: 22px; font-weight: 800; color: var(--mpc-text); line-height: 1.2; direction: ltr; }
+.er-kpi-unit { font-size: 10px; font-weight: 700; color: var(--mpc-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+.er-kpi-label { font-size: 11px; color: var(--mpc-text-secondary); font-weight: 500; }
+
+.er-breakdown { display: flex; flex-direction: column; gap: 10px; }
+.er-row { background: var(--mpc-bg); border-radius: 10px; padding: 10px 12px; }
+.er-row-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.er-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.er-row-label { font-size: 12px; font-weight: 700; color: var(--mpc-text); min-width: 50px; }
+.er-row-val { font-size: 16px; font-weight: 800; margin-left: auto; color: var(--mpc-text); direction: ltr; }
+.er-row-pct { font-size: 11px; font-weight: 600; color: var(--mpc-text-secondary); min-width: 36px; text-align: right; }
+.er-bar-track { height: 6px; background: var(--mpc-border); border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+.er-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+.er-row-stats { display: flex; gap: 12px; font-size: 10px; color: var(--mpc-text-secondary); flex-wrap: wrap; }
+.er-row-stats span { display: inline-flex; align-items: center; gap: 3px; }
+
+.er-spark-section { margin-top: 14px; }
+.er-spark-header { font-size: 12px; font-weight: 700; color: var(--mpc-text); margin-bottom: 8px; }
+.er-spark-wrap { height: 100px; background: var(--mpc-bg); border-radius: 10px; padding: 6px; }
+.er-loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 32px 0; color: var(--mpc-text-secondary); font-size: 13px; font-weight: 500; }
+.er-loading-spinner { width: 20px; height: 20px; border: 2.5px solid var(--mpc-border); border-top-color: var(--mpc-text-secondary); border-radius: 50%; animation: er-spin 0.7s linear infinite; }
+@@keyframes er-spin { to { transform: rotate(360deg); } }
+
+@@media (max-width: 768px) {
+    .mpc-page { padding: 12px 16px; }
+    .mpc-title { font-size: 15px; }
+    .mpc-chart-wrapper { height: 380px; }
+    .mpc-legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px 10px; }
+    .mpc-legend-item { font-size: 11px; padding: 4px 8px; text-align: center; }
+    .mpc-badge { font-size: 10px; }
+    .er-section { padding: 10px 12px; }
+    .er-tabs { gap: 2px; padding: 2px; }
+    .er-tab { font-size: 10px; padding: 4px 8px; }
+    .er-kpis { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .er-kpi { padding: 8px; }
+    .er-kpi-value { font-size: 18px; }
+    .er-row { padding: 8px 10px; }
+    .er-row-val { font-size: 14px; }
+    .er-spark-wrap { height: 80px; }
+}
+@@media (max-width: 480px) {
+    .mpc-chart-wrapper { height: 550px; }
+}
+</style>
+
+<script>
+(function() {
+    var _ready = function() { return typeof Chart !== 'undefined' && typeof window.monitoringProfessionalChart !== 'undefined'; };
+    window.initProfessionalChart = function(id) { var c = function() { if (!_ready()) { setTimeout(c, 80); return; } window.monitoringProfessionalChart.init(id); }; c(); };
+    window.updateProfessionalChart = function(id, d) { var c = function() { if (!_ready()) { setTimeout(c, 80); return; } window.monitoringProfessionalChart.updateData(id, d); }; c(); };
+    window.resizeProfessionalChart = function() { if (!_ready()) return; window.monitoringProfessionalChart.resize(); };
+
+    // Legend toggle: click handler on parent container
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.mpc-legend-item[data-ds-idx]');
+        if (!btn) return;
+        var idx = parseInt(btn.getAttribute('data-ds-idx'), 10);
+        if (isNaN(idx)) return;
+        var isVisible = window.monitoringProfessionalChart.toggleDataset(idx);
+        if (isVisible === undefined) return;
+        btn.classList.toggle('mpc-legend-item--off', !isVisible);
+    });
+
+    // Sparkline: hourly consumption mini chart
+    window._proSparkChart = null;
+    window.initEnergySparkline = function(data) {
+        var canvas = document.getElementById('er-spark-canvas');
+        if (!canvas) return;
+        if (window._proSparkChart) { window._proSparkChart.destroy(); window._proSparkChart = null; }
+        if (!data || !data.length) return;
+        var labels = data.map(function(d) { return d.label; });
+        var values = data.map(function(d) { return d.kwh; });
+        var temps = data.map(function(d) { return d.avgTemp; });
+        var maxVal = Math.max.apply(null, values) || 1;
+
+        var isDark = document.documentElement.classList.contains('dark');
+        var gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+        var textColor = isDark ? '#94a3b8' : '#94a3b8';
+
+        var ctx = canvas.getContext('2d');
+        var gradient = ctx.createLinearGradient(0, 0, 0, 100);
+        gradient.addColorStop(0, 'rgba(99,102,241,0.35)');
+        gradient.addColorStop(1, 'rgba(99,102,241,0.01)');
+
+        window._proSparkChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'kWh',
+                    data: values,
+                    borderColor: '#6366f1',
+                    backgroundColor: gradient,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    pointHoverBackgroundColor: '#6366f1',
+                    pointHoverBorderColor: '#fff',
+                    pointHoverBorderWidth: 2,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 300 },
+                legend: { display: false },
+                scales: {
+                    xAxes: [{
+                        type: 'category',
+                        gridLines: { display: false },
+                        ticks: { fontColor: textColor, fontFamily: 'Vazirmatn, sans-serif', fontSize: 9, maxTicksLimit: 8, autoSkip: true }
+                    }],
+                    yAxes: [{
+                        gridLines: { color: gridColor, drawBorder: false },
+                        ticks: { fontColor: textColor, fontFamily: 'Vazirmatn, sans-serif', fontSize: 9, beginAtZero: true, maxTicksLimit: 5, callback: function(v) { return v.toFixed(1); } }
+                    }]
+                },
+                tooltips: {
+                    enabled: true, mode: 'index', intersect: false,
+                    backgroundColor: isDark ? '#1e293b' : '#fff',
+                    titleFontFamily: 'Vazirmatn, sans-serif', bodyFontFamily: 'Vazirmatn, sans-serif',
+                    titleFontColor: isDark ? '#f1f5f9' : '#1e293b',
+                    bodyFontColor: isDark ? '#94a3b8' : '#64748b',
+                    titleFontSize: 11, bodyFontSize: 10,
+                    xPadding: 8, yPadding: 5,
+                    cornerRadius: 6,
+                    displayColors: false,
+                    callbacks: {
+                        title: function(items) { return 'ساعت ' + items[0].xLabel; },
+                        label: function(item) {
+                            var idx = item.index;
+                            return item.yLabel.toFixed(2) + ' kWh' + (temps[idx] ? ' · ' + temps[idx].toFixed(1) + '°C' : '');
+                        }
+                    }
+                },
+                hover: { mode: 'index', intersect: false },
+                elements: { point: { radius: 0, hitRadius: 10, hoverRadius: 4 } }
+            }
+        });
+    };
+    window.destroyEnergySparkline = function() {
+        if (window._proSparkChart) { window._proSparkChart.destroy(); window._proSparkChart = null; }
+    };
+})();
+</script>
+
+@code {
+    [Parameter] public int MonitoringConnectionId { get; set; }
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private MonitoringChartResponse? _data;
+    private bool _loading = true;
+    private string? _error;
+    private string _pageTitle = "Professional Chart";
+    private int _dataCount;
+    private bool _chartInitialized;
+
+    private EnergyReportResponse? _energyReport;
+    private string _energyPeriod = "24h";
+    private bool _energyLoading;
+    private bool _energyEnabled;
+    private bool _sparkInitialized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        // Energy report is lazy — user clicks button to load
+    }
+
+    private async Task EnableEnergy()
+    {
+        _energyEnabled = true;
+        StateHasChanged();
+        await LoadEnergyReport("24h");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_data != null && !_chartInitialized)
+        {
+            _chartInitialized = true;
+            await JS.InvokeVoidAsync("initProfessionalChart", "mpc-canvas");
+            await JS.InvokeVoidAsync("updateProfessionalChart", "mpc-canvas", _data);
+        }
+
+        if (_energyReport != null && !_sparkInitialized)
+        {
+            _sparkInitialized = true;
+            await JS.InvokeVoidAsync("initEnergySparkline", _energyReport.HourlyTrend);
+        }
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            _data = await Http.GetFromJsonAsync<MonitoringChartResponse>(
+                $"api/monitoring/chart/{MonitoringConnectionId}/records?all=true");
+
+            if (_data == null)
+            {
+                _error = "No data received from server.";
+                return;
+            }
+
+            _dataCount = _data.Labels?.Count ?? 0;
+            _pageTitle = $"Professional Chart · {_dataCount} points";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetSessionPeriod() { _ = LoadEnergyReport("session"); }
+    private void Set24hPeriod() { _ = LoadEnergyReport("24h"); }
+    private void SetMonthlyPeriod() { _ = LoadEnergyReport("monthly"); }
+
+    private async Task LoadEnergyReport(string period)
+    {
+        _energyPeriod = period;
+        _energyLoading = true;
+        _energyReport = null;
+        _sparkInitialized = false;
+        StateHasChanged();
+
+        try
+        {
+            _energyReport = await Http.GetFromJsonAsync<EnergyReportResponse>(
+                $"api/monitoring/chart/{MonitoringConnectionId}/energy-report?period={period}");
+        }
+        catch
+        {
+            _energyReport = null;
+        }
+        finally
+        {
+            _energyLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatHours(double hours)
+    {
+        var ts = TimeSpan.FromHours(hours);
+        return $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+    }
+
+    private void GoBack()
+    {
+        if (!string.IsNullOrEmpty(ReturnUrl))
+            Navigation.NavigateTo(Uri.UnescapeDataString(ReturnUrl));
+        else
+            Navigation.NavigateTo("/admin/monitoring/active-receipts");
+    }
+}

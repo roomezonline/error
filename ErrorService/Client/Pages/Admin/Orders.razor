@@ -1,0 +1,389 @@
+@page "/admin/orders"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.orders.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@inject HttpClient Http
+@inject ToastService ToastService
+
+<div class="admin-container" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="admin-page-title m-0">مدیریت سفارش‌ها</h3>
+        <button class="btn btn-light rounded-pill px-3 shadow-sm" @onclick="LoadOrders">
+            <span class="oi oi-reload"></span> بروزرسانی
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5 bg-white rounded-4 shadow-sm border-0">
+            <div class="spinner-border text-primary"></div>
+            <p class="text-muted mt-2">در حال بارگذاری سفارش‌ها...</p>
+        </div>
+    }
+    else if (orders == null || !orders.Any())
+    {
+        <div class="text-center py-5 bg-white rounded-4 shadow-sm border-0">
+            <div class="display-1 text-light mb-3"><span class="oi oi-cart"></span></div>
+            <h5 class="text-muted fw-bold">هنوز سفارشی ثبت نشده است.</h5>
+        </div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var order in orders)
+            {
+                <div class="col-12">
+                    <div class="order-card rounded-4 shadow-sm bg-white overflow-hidden border p-3">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <div class="fw-black text-primary">#@order.OrderNumber</div>
+                                <div class="small text-muted mt-1">@PersianDate.ToJalaliDateTime(order.CreatedAt)</div>
+                            </div>
+                            <span class="badge @GetStatusClass(order.Status) rounded-pill px-3 py-2">
+                                @GetStatusLabel(order.Status)
+                            </span>
+                        </div>
+                        
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <div class="small text-muted">مشتری:</div>
+                                <div class="fw-bold">@order.FullName</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="small text-muted">مبلغ کل:</div>
+                                <div class="fw-black text-dark">@order.TotalAmount.ToString("N0") <small>تومان</small></div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="small text-muted">تخفیف:</div>
+                                <div class="fw-bold text-danger">@((order.DiscountAmount ?? 0).ToString("N0")) <small>تومان</small></div>
+                                @if (!string.IsNullOrEmpty(order.CouponCode))
+                                {
+                                    <div class="small"><span class="badge bg-warning text-dark">@order.CouponCode</span></div>
+                                }
+                            </div>
+                            <div class="col-md-4">
+                                <div class="small text-muted">موبایل:</div>
+                                <div class="fw-bold">@order.PhoneNumber</div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2 pt-2 border-top">
+                            <button class="btn btn-outline-danger btn-sm rounded-pill px-3" @onclick="() => ConfirmDelete(order)">
+                                <span class="oi oi-trash"></span> حذف
+                            </button>
+                            <button class="btn btn-primary btn-sm rounded-pill px-4" @onclick="() => ViewDetails(order.Id)">
+                                مشاهده و مدیریت
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (selectedOrder != null)
+{
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal fade show d-block" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 rounded-4 shadow-lg">
+                <div class="modal-header border-0 pt-4 px-4">
+                    <h5 class="modal-title fw-black">جزئیات سفارش @selectedOrder.OrderNumber</h5>
+                    <button type="button" class="btn-close" @onclick="() => selectedOrder = null"></button>
+                </div>
+                <div class="modal-body p-4" dir="rtl">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <h6 class="fw-bold border-bottom pb-2 mb-3 text-primary">اطلاعات مشتری</h6>
+                            <div class="mb-2"><strong>نام:</strong> @selectedOrder.FullName</div>
+                            <div class="mb-2"><strong>موبایل:</strong> @selectedOrder.PhoneNumber</div>
+                            <div class="mb-2"><strong>آدرس:</strong> @(selectedOrder.Address ?? "ثبت نشده")</div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="fw-bold border-bottom pb-2 mb-3 text-primary">وضعیت پرداخت</h6>
+                            @if (!string.IsNullOrEmpty(selectedOrder.ReceiptImageUrl))
+                            {
+                                <div class="mb-3">
+                                    <div class="small text-muted mb-1">تصویر رسید:</div>
+                                    <a href="@selectedOrder.ReceiptImageUrl" target="_blank">
+                                        <img src="@selectedOrder.ReceiptImageUrl" class="img-thumbnail rounded-3" style="max-height: 150px;" />
+                                    </a>
+                                </div>
+                                <div class="mb-2"><strong>کد پیگیری:</strong> @(selectedOrder.TrackingNumber ?? "ثبت نشده")</div>
+                            }
+                            else
+                            {
+                                <div class="alert alert-warning py-2 small">رسیدی آپلود نشده است.</div>
+                            }
+                        </div>
+                        <div class="col-12">
+                            <h6 class="fw-bold border-bottom pb-2 mb-3 text-primary">اقلام سفارش</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-borderless align-middle">
+                                    <thead class="bg-light">
+                                        <tr>
+                                            <th>محصول</th>
+                                            <th class="text-center">تعداد</th>
+                                            <th class="text-end">قیمت</th>
+                                            <th class="text-end">جمع</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in selectedOrder.Items)
+                                        {
+                                            <tr>
+                                                <td>@item.ProductName</td>
+                                                <td class="text-center">@item.Quantity</td>
+                                                <td class="text-end">@item.Price.ToString("N0")</td>
+                                                <td class="text-end fw-bold">@((item.Price * item.Quantity).ToString("N0"))</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                    <tfoot>
+                                        @if ((selectedOrder.DiscountAmount ?? 0) > 0)
+                                        {
+                                            <tr>
+                                                <td colspan="3" class="text-end text-danger">تخفیف (@selectedOrder.CouponCode):</td>
+                                                <td class="text-end text-danger">-@selectedOrder.DiscountAmount?.ToString("N0")</td>
+                                            </tr>
+                                        }
+                                        <tr class="border-top">
+                                            <td colspan="3" class="text-end fw-bold">مبلغ قابل پرداخت:</td>
+                                            <td class="text-end fw-black text-primary">@((selectedOrder.TotalAmount - (selectedOrder.DiscountAmount ?? 0)).ToString("N0"))</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-12 border-top pt-3">
+                            <h6 class="fw-bold mb-3">تغییر وضعیت و یادداشت مدیر</h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <select class="form-select rounded-3" @bind="statusToUpdate">
+                                        @foreach (OrderStatus status in Enum.GetValues(typeof(OrderStatus)))
+                                        {
+                                            <option value="@status">@GetStatusLabel(status)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <textarea class="form-control rounded-3" rows="2" @bind="adminNote" placeholder="یادداشت مدیر..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 p-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4" @onclick="() => selectedOrder = null">بستن</button>
+                    <button type="button" class="btn btn-primary rounded-pill px-4" @onclick="UpdateOrderStatus" disabled="@isUpdating">
+                        @if (isUpdating) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        بروزرسانی سفارش
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<ConfirmDialog IsVisible="showDeleteConfirm"
+               Title="حذف سفارش"
+               Message="@($"آیا از حذف سفارش #{itemToDelete?.OrderNumber} اطمینان دارید؟ این عمل غیرقابل بازگشت است.")"
+               ConfirmText="بله، حذف شود"
+               IsDanger="true"
+               OnResult="HandleDeleteResult" />
+
+<style>
+    .fw-black { font-weight: 900; }
+    .order-card { transition: all 0.2s ease; }
+    .order-card:hover { border-color: #2563eb; }
+</style>
+
+@code {
+    private List<OrderDto>? orders;
+    private OrderDto? selectedOrder;
+    private OrderDto? itemToDelete;
+    private bool showDeleteConfirm = false;
+    private bool isDeleting = false;
+    private bool isLoading = true;
+    private bool isUpdating = false;
+    private OrderStatus statusToUpdate;
+    private string? adminNote;
+    private bool isEditingInfo = false;
+    private OrderUpdateInfoRequest editInfoModel = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOrders();
+    }
+
+    private async Task LoadOrders()
+    {
+        try
+        {
+            isLoading = true;
+            orders = await Http.GetFromJsonAsync<List<OrderDto>>("api/orders/admin/all");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطا در بارگذاری سفارش‌ها: " + ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ConfirmDelete(OrderDto order)
+    {
+        itemToDelete = order;
+        showDeleteConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool confirmed)
+    {
+        showDeleteConfirm = false;
+        if (!confirmed || itemToDelete == null || isDeleting) return;
+        isDeleting = true;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/orders/admin/{itemToDelete.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("سفارش با موفقیت حذف شد.");
+                await LoadOrders();
+            }
+            else
+            {
+                ToastService.ShowError("خطا در حذف سفارش.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطای سیستمی: " + ex.Message);
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private async Task ViewDetails(int id)
+    {
+        try
+        {
+            selectedOrder = await Http.GetFromJsonAsync<OrderDto>($"api/orders/{id}");
+            if (selectedOrder != null)
+            {
+                statusToUpdate = selectedOrder.Status;
+                adminNote = selectedOrder.AdminNotes;
+                isEditingInfo = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطا در دریافت جزئیات: " + ex.Message);
+        }
+    }
+
+    private void StartEditingInfo()
+    {
+        if (selectedOrder == null) return;
+        editInfoModel = new OrderUpdateInfoRequest
+        {
+            FullName = selectedOrder.FullName,
+            PhoneNumber = selectedOrder.PhoneNumber,
+            Email = selectedOrder.Email,
+            Address = selectedOrder.Address ?? ""
+        };
+        isEditingInfo = true;
+    }
+
+    private async Task UpdateOrderInfo()
+    {
+        if (selectedOrder == null || isUpdating) return;
+        isUpdating = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{selectedOrder.Id}/info", editInfoModel);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("اطلاعات خریدار بروزرسانی شد.");
+                selectedOrder.FullName = editInfoModel.FullName;
+                selectedOrder.PhoneNumber = editInfoModel.PhoneNumber;
+                selectedOrder.Email = editInfoModel.Email;
+                selectedOrder.Address = editInfoModel.Address;
+                isEditingInfo = false;
+                await LoadOrders();
+            }
+            else
+            {
+                ToastService.ShowError("خطا در بروزرسانی اطلاعات.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطای سیستمی: " + ex.Message);
+        }
+        finally
+        {
+            isUpdating = false;
+        }
+    }
+
+    private async Task UpdateOrderStatus()
+    {
+        if (selectedOrder == null || isUpdating) return;
+        isUpdating = true;
+
+        try
+        {
+            var req = new OrderStatusUpdateDto { Status = statusToUpdate, AdminNotes = adminNote };
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{selectedOrder.Id}/status", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("سفارش با موفقیت بروزرسانی شد.");
+                selectedOrder = null;
+                await LoadOrders();
+            }
+            else
+            {
+                ToastService.ShowError("خطا در بروزرسانی وضعیت.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطای سیستمی: " + ex.Message);
+        }
+        finally
+        {
+            isUpdating = false;
+        }
+    }
+
+    private string GetStatusLabel(OrderStatus status) => status switch
+    {
+        OrderStatus.PendingPayment => "در انتظار پرداخت",
+        OrderStatus.ReceiptUploaded => "رسید آپلود شد",
+        OrderStatus.Approved => "تایید شده",
+        OrderStatus.Rejected => "رد شده",
+        OrderStatus.Cancelled => "لغو شده",
+        OrderStatus.Completed => "تکمیل شده",
+        _ => status.ToString()
+    };
+
+    private string GetStatusClass(OrderStatus status) => status switch
+    {
+        OrderStatus.PendingPayment => "bg-warning-subtle text-warning",
+        OrderStatus.ReceiptUploaded => "bg-info-subtle text-info",
+        OrderStatus.Approved => "bg-success-subtle text-success",
+        OrderStatus.Rejected => "bg-danger-subtle text-danger",
+        OrderStatus.Cancelled => "bg-secondary-subtle text-secondary",
+        OrderStatus.Completed => "bg-success text-white",
+        _ => "bg-light"
+    };
+}

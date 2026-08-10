@@ -1,0 +1,906 @@
+@page "/admin/monitoring/timeline/{MonitoringConnectionId:int}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.monitoring.view")]
+@using System.Globalization
+@using System.Net.Http.Json
+@using ErrorService.Shared
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@_pageTitle</PageTitle>
+
+<div class="mt-page" dir="ltr">
+    <div class="mt-header">
+        <button class="mt-back" @onclick="GoBack" title="بازگشت">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+
+        <div class="mt-title-group">
+            <div class="mt-kicker">Timeline Chart</div>
+            <div class="mt-title">@_pageTitle</div>
+        </div>
+
+        <div class="mt-header-actions">
+            <span class="mt-badge">@_data?.TotalChangeLogs events</span>
+            <button class="mt-fullscreen-btn" @onclick="ToggleFullscreen" title="Fullscreen">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                    <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="mt-skeleton">
+            <div class="mt-skel-chips"><span></span><span></span><span></span><span></span><span></span></div>
+            <div class="mt-skel-cards"><span></span><span></span><span></span><span></span></div>
+            <div class="mt-skel-timeline"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+    }
+    else if (_error != null)
+    {
+        <div class="mt-error">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <h3>خطا در دریافت اطلاعات</h3>
+            <p>@_error</p>
+            <button class="mt-retry-btn" @onclick="LoadData">تلاش مجدد</button>
+        </div>
+    }
+    else if (_data != null)
+    {
+        <div class="mt-chips">
+            @foreach (var chip in _chips)
+            {
+                <button class="mt-chip @(chip.Visible ? "mt-chip--active" : "")"
+                        style="--chip-color: @chip.Color"
+                        @onclick="() => ToggleChip(chip.Id)">
+                    <span class="mt-chip-dot"></span>
+                    @chip.Label
+                    <span class="mt-chip-count">@chip.Count</span>
+                </button>
+            }
+        </div>
+
+        <div class="mt-summary">
+            @foreach (var s in _data.Summary)
+            {
+                <div class="mt-stat-card" style="--stat-color: @s.Color">
+                    <div class="mt-stat-header">
+                        <span class="mt-stat-dot" style="background: @s.Color"></span>
+                        <span class="mt-stat-name">@s.DisplayName</span>
+                    </div>
+                    <div class="mt-stat-body">
+                        <div class="mt-stat-row">
+                            <span class="mt-stat-label">Starts</span>
+                            <span class="mt-stat-value">@s.StartCount</span>
+                        </div>
+                        <div class="mt-stat-row">
+                            <span class="mt-stat-label">Duration</span>
+                            <span class="mt-stat-value">@FormatTicks(s.TotalDurationTicks)</span>
+                        </div>
+                        <div class="mt-stat-row">
+                            <span class="mt-stat-label">Avg</span>
+                            <span class="mt-stat-value">@FormatTicks(s.AvgDurationTicks)</span>
+                        </div>
+                        <div class="mt-stat-bar">
+                            <div class="mt-stat-bar-fill" style="width: @(s.Percentage)%; background: @s.Color"></div>
+                        </div>
+                        <div class="mt-stat-pct">@s.Percentage%</div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="mt-timeline-wrapper">
+            <div class="mt-timeline-labels">
+                @foreach (var eq in _visibleEquipments)
+                {
+                    <div class="mt-label-row" style="height: @_rowHeight">
+                        <span class="mt-label-text" style="color: @eq.Color">@eq.DisplayName</span>
+                    </div>
+                }
+                @if (_showTemp)
+                {
+                    <div class="mt-label-row mt-label-temp" style="height: @_tempRowHeight">
+                        <span class="mt-label-text" style="color: #14b8a6">°C</span>
+                    </div>
+                }
+                <div class="mt-label-row mt-label-axis" style="height: 28px"></div>
+            </div>
+
+            <div class="mt-timeline-scroll" id="mt-scroll-container"
+                 @ref="_scrollContainer"
+                 @ontouchstart="() => { }"
+                 @onmousemove="OnMouseMove"
+                 @onmouseleave="HideTooltip">
+                <div class="mt-timeline-canvas" style="width: @(_totalWidth)px">
+                    @foreach (var eq in _visibleEquipments)
+                    {
+                        <div class="mt-track" style="height: @_rowHeight">
+                            <div class="mt-track-bg" style="background-size: @(_segmentGridStep)% 100%"></div>
+                            @foreach (var seg in eq.Segments)
+                            {
+                                var leftPct = GetPercent(seg.StartTime);
+                                var widthPct = Math.Max(0.08, GetPercent(seg.EndTime ?? _data.ConnectionEndTime ?? DateTime.UtcNow) - leftPct);
+                                var isOpen = seg.EndTime == null;
+                                var durLabel = FormatTicks(seg.DurationTicks);
+                                var showLabel = widthPct > 4;
+                            <div class="mt-bar @(isOpen ? "mt-bar--open" : "")"
+                                 style="left: @(leftPct)%; width: @(widthPct)%; background: @eq.Color;"
+                                 data-type="@eq.ChangeType"
+                                 data-start="@seg.StartTime.ToString("o")"
+                                 data-end="@(seg.EndTime?.ToString("o") ?? "")"
+                                 data-dur="@durLabel"
+                                 @onmouseenter="() => ShowTooltip(seg, eq)">
+                                @if (showLabel)
+                                {
+                                    <span class="mt-bar-label">@durLabel</span>
+                                }
+                                <span class="mt-bar-marker mt-bar-marker--start"></span>
+                                @if (!isOpen)
+                                {
+                                    <span class="mt-bar-marker mt-bar-marker--end"></span>
+                                }
+                            </div>
+                            }
+                        </div>
+                    }
+
+                    @if (_showTemp && (_tempFridgePoints != null || _tempFreezerPoints != null))
+                    {
+                        <div class="mt-temp-track" style="height: @_tempRowHeight">
+                            <div class="mt-temp-grid">
+                                @foreach (var y in _tempYTicks)
+                                {
+                                    <div class="mt-temp-grid-line" style="bottom: @y.Percent%">
+                                        <span class="mt-temp-grid-label">@y.Label°</span>
+                                    </div>
+                                }
+                            </div>
+                            <svg class="mt-temp-svg" width="100%" height="100%" preserveAspectRatio="none">
+                                @if (_tempFridgePoints != null)
+                                {
+                                    <polyline fill="none" stroke="#14b8a6" stroke-width="2.5" stroke-linejoin="round"
+                                              points="@_tempFridgePoints" vector-effect="non-scaling-stroke" />
+                                    @foreach (var pt in _fridgeCircles)
+                                    {
+                                        <circle cx="@pt.X" cy="@pt.Y" r="4" fill="#14b8a6" stroke="#fff" stroke-width="1.5"
+                                                class="mt-temp-dot" />
+                                    }
+                                }
+                                @if (_tempFreezerPoints != null)
+                                {
+                                    <polyline fill="none" stroke="#f43f5e" stroke-width="2.5" stroke-dasharray="6,4" stroke-linejoin="round"
+                                              points="@_tempFreezerPoints" vector-effect="non-scaling-stroke" />
+                                    @foreach (var pt in _freezerCircles)
+                                    {
+                                        <circle cx="@pt.X" cy="@pt.Y" r="4" fill="#f43f5e" stroke="#fff" stroke-width="1.5"
+                                                class="mt-temp-dot" />
+                                    }
+                                }
+                            </svg>
+                        </div>
+                    }
+
+                    <div class="mt-axis">
+                        @foreach (var tick in _axisTicks)
+                        {
+                            <div class="mt-tick" style="left: @(tick.Percent)%;">
+                                <div class="mt-tick-line"></div>
+                                <div class="mt-tick-label">@tick.Label</div>
+                            </div>
+                        }
+                        <div class="mt-axis-title">Time</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-legend-wrapper">
+            <div class="mt-legend-section">
+                <span class="mt-legend-title">Equipment</span>
+                @foreach (var s in _data.Summary)
+                {
+                    <span class="mt-legend-item">
+                        <span class="mt-legend-swatch" style="background:@s.Color"></span>
+                        @s.DisplayName
+                    </span>
+                }
+            </div>
+            @if (_data.TemperatureSnapshots.Count > 0)
+            {
+                <div class="mt-legend-section">
+                    <span class="mt-legend-title">Temperature</span>
+                    <span class="mt-legend-item">
+                        <span class="mt-legend-swatch" style="background:#14b8a6;border-radius:2px"></span>
+                        Fridge
+                    </span>
+                    <span class="mt-legend-item">
+                        <span class="mt-legend-swatch" style="height:0;border-top:2.5px dashed #f43f5e;background:none"></span>
+                        Freezer
+                    </span>
+                </div>
+            }
+        </div>
+
+        <div id="mt-tooltip" class="mt-tooltip" style="display:none">
+            <div class="mt-tooltip-arrow"></div>
+            <div class="mt-tooltip-content">
+                <div class="mt-tooltip-title" id="mt-tt-title"></div>
+                <div class="mt-tooltip-row"><span>Start:</span><span id="mt-tt-start"></span></div>
+                <div class="mt-tooltip-row"><span>End:</span><span id="mt-tt-end"></span></div>
+                <div class="mt-tooltip-row"><span>Duration:</span><span id="mt-tt-dur"></span></div>
+            </div>
+        </div>
+
+        <div class="mt-total-time">
+            <span>Total monitoring: @FormatTicks(_data.TotalDurationTicks)</span>
+        </div>
+    }
+</div>
+
+<style>
+/* ─── Monitoring Timeline — Professional Gantt Chart ─── */
+:root {
+    --mt-bg: #f8fafc;
+    --mt-surface: #ffffff;
+    --mt-border: #e2e8f0;
+    --mt-text: #1e293b;
+    --mt-text-secondary: #64748b;
+    --mt-hover: #f1f5f9;
+    --mt-chip-bg: #e2e8f0;
+    --mt-chip-active-bg: #1e293b;
+    --mt-chip-active-text: #ffffff;
+    --mt-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    --mt-row-height: 56px;
+    --mt-temp-row-height: 140px;
+}
+
+.dark {
+    --mt-bg: #0f172a;
+    --mt-surface: #1e293b;
+    --mt-border: #334155;
+    --mt-text: #f1f5f9;
+    --mt-text-secondary: #94a3b8;
+    --mt-hover: #1e293b;
+    --mt-chip-bg: #334155;
+    --mt-chip-active-bg: #e2e8f0;
+    --mt-chip-active-text: #0f172a;
+    --mt-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+
+.mt-page {
+    padding: 16px; max-width: 100%;
+    background: var(--mt-bg); min-height: calc(100vh - 60px);
+    color: var(--mt-text);
+    font-family: 'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Header ── */
+.mt-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.mt-back {
+    width: 38px; height: 38px; border: none; background: var(--mt-surface);
+    border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--mt-text); box-shadow: var(--mt-shadow); transition: background 0.15s;
+}
+.mt-back:hover { background: var(--mt-border); }
+.mt-title-group { flex: 1; min-width: 0; }
+.mt-kicker { font-size: 11px; color: var(--mt-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1px; }
+.mt-title { font-size: 18px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-header-actions { display: flex; align-items: center; gap: 8px; }
+.mt-badge { font-size: 11px; padding: 4px 10px; background: var(--mt-surface); border: 1px solid var(--mt-border); border-radius: 20px; color: var(--mt-text-secondary); white-space: nowrap; }
+.mt-fullscreen-btn {
+    width: 38px; height: 38px; border: none; background: var(--mt-surface); border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    color: var(--mt-text); box-shadow: var(--mt-shadow); transition: all 0.15s;
+}
+.mt-fullscreen-btn:hover { background: var(--mt-border); }
+
+/* ── Chips ── */
+.mt-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.mt-chip {
+    display: flex; align-items: center; gap: 6px; padding: 6px 14px 6px 12px;
+    border: 1.5px solid var(--mt-border); border-radius: 20px; background: var(--mt-surface);
+    color: var(--mt-text); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.mt-chip:hover { background: var(--mt-hover); }
+.mt-chip--active { background: var(--mt-chip-active-bg); color: var(--mt-chip-active-text); border-color: var(--mt-chip-active-bg); }
+.mt-chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chip-color, #6b7280); flex-shrink: 0; }
+.mt-chip-count { font-size: 10px; padding: 1px 6px; background: rgba(0,0,0,0.1); border-radius: 10px; line-height: 1.4; }
+.mt-chip--active .mt-chip-count { background: rgba(255,255,255,0.2); }
+
+/* ── Summary Cards ── */
+.mt-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.mt-stat-card {
+    background: var(--mt-surface); border-radius: 12px; padding: 12px; box-shadow: var(--mt-shadow);
+    border-left: 3px solid var(--stat-color, #6b7280);
+}
+.mt-stat-header { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.mt-stat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.mt-stat-name { font-size: 13px; font-weight: 600; }
+.mt-stat-body { display: flex; flex-direction: column; gap: 3px; }
+.mt-stat-row { display: flex; justify-content: space-between; font-size: 12px; }
+.mt-stat-label { color: var(--mt-text-secondary); }
+.mt-stat-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.mt-stat-bar { height: 4px; background: var(--mt-border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.mt-stat-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+.mt-stat-pct { font-size: 11px; color: var(--mt-text-secondary); text-align: right; margin-top: 2px; }
+
+/* ── Timeline ── */
+.mt-timeline-wrapper { display: flex; background: var(--mt-surface); border-radius: 12px; box-shadow: var(--mt-shadow); overflow: hidden; position: relative; }
+.mt-timeline-labels { flex-shrink: 0; width: 80px; border-left: 1px solid var(--mt-border); background: var(--mt-surface); position: sticky; left: 0; z-index: 2; }
+.mt-label-row { display: flex; align-items: center; padding: 0 8px; border-bottom: 1px solid var(--mt-border); }
+.mt-label-temp { border-bottom: none; }
+.mt-label-axis { border-bottom: none; }
+.mt-label-text { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-timeline-scroll {
+    flex: 1; overflow-x: auto; overflow-y: hidden; scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch; cursor: grab; position: relative;
+}
+.mt-timeline-scroll.grabbing { cursor: grabbing; }
+.mt-timeline-scroll::-webkit-scrollbar { height: 8px; }
+.mt-timeline-scroll::-webkit-scrollbar-track { background: var(--mt-border); border-radius: 4px; }
+.mt-timeline-scroll::-webkit-scrollbar-thumb { background: var(--mt-text-secondary); border-radius: 4px; }
+.mt-timeline-canvas { position: relative; min-height: 100%; }
+
+/* ── Tracks ── */
+.mt-track { position: relative; border-bottom: 1px solid var(--mt-border); }
+.mt-track-bg {
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(90deg, transparent, transparent 50%, rgba(0,0,0,0.02) 50%, rgba(0,0,0,0.02) 100%);
+    background-size: 20% 100%; pointer-events: none;
+}
+
+/* ── Gantt Bars ── */
+.mt-bar {
+    position: absolute; top: 6px; bottom: 6px; border-radius: 5px;
+    min-width: 10px; cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.14);
+    transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
+    z-index: 1;
+}
+.mt-bar:hover {
+    opacity: 0.92 !important; transform: scaleY(1.1);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25); z-index: 10;
+}
+.mt-bar--open { opacity: 0.55; border: 1.5px dashed rgba(255,255,255,0.4); }
+
+.mt-bar-label {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    font-size: 11px; font-weight: 700; color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    white-space: nowrap; pointer-events: none;
+    font-variant-numeric: tabular-nums;
+}
+
+.mt-bar-marker {
+    position: absolute; top: 50%; width: 8px; height: 8px; border-radius: 50%;
+    background: #fff; border: 2px solid currentColor; transform: translateY(-50%);
+    pointer-events: none; z-index: 2;
+    color: inherit;
+}
+.mt-bar-marker--start { left: -4px; }
+.mt-bar-marker--end { right: -4px; }
+
+/* ── Temperature Track ── */
+.mt-temp-track { position: relative; border-bottom: 1px solid var(--mt-border); overflow: visible; }
+.mt-temp-svg { display: block; pointer-events: none; }
+
+.mt-temp-grid { position: absolute; inset: 0; pointer-events: none; }
+.mt-temp-grid-line {
+    position: absolute; left: 0; right: 0;
+    border-bottom: 1px dashed var(--mt-border);
+    opacity: 0.5;
+}
+.mt-temp-grid-label {
+    position: absolute; left: -44px; top: -7px;
+    font-size: 9px; color: var(--mt-text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    width: 40px; text-align: right;
+}
+
+.mt-temp-dot {
+    cursor: pointer; transition: r 0.15s;
+}
+.mt-temp-dot:hover { r: 6; }
+
+/* ── Time Axis ── */
+.mt-axis { position: relative; height: 32px; border-top: 1px solid var(--mt-border); }
+.mt-tick { position: absolute; top: 0; transform: translateX(-50%); }
+.mt-tick-line { width: 1px; height: 6px; background: var(--mt-border); margin: 0 auto; }
+.mt-tick-label {
+    font-size: 12px; color: var(--mt-text-secondary); white-space: nowrap;
+    font-variant-numeric: tabular-nums; margin-top: 2px; font-weight: 500;
+}
+.mt-axis-title {
+    position: absolute; right: 10px; top: 6px;
+    font-size: 10px; color: var(--mt-text-secondary); text-transform: uppercase; letter-spacing: 1px;
+}
+
+/* ── Legend ── */
+.mt-legend-wrapper { display: flex; gap: 24px; margin-top: 10px; justify-content: center; flex-wrap: wrap; }
+.mt-legend-section { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mt-legend-title { font-size: 11px; color: var(--mt-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+.mt-legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--mt-text); }
+.mt-legend-swatch { width: 16px; height: 4px; border-radius: 2px; flex-shrink: 0; }
+
+/* ── Tooltip ── */
+.mt-tooltip {
+    position: fixed; z-index: 9999; pointer-events: none;
+    background: #1e293b; color: #f1f5f9; border-radius: 8px;
+    padding: 10px 14px; box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+    min-width: 180px; max-width: 260px;
+    font-size: 12px; line-height: 1.5;
+    transform: translate(-50%, -100%);
+    transition: opacity 0.12s;
+}
+.dark .mt-tooltip { background: #f1f5f9; color: #1e293b; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+.mt-tooltip-arrow {
+    position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 6px solid transparent; border-right: 6px solid transparent;
+    border-top: 6px solid #1e293b;
+}
+.dark .mt-tooltip-arrow { border-top-color: #f1f5f9; }
+.mt-tooltip-content { display: flex; flex-direction: column; gap: 3px; }
+.mt-tooltip-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+.mt-tooltip-row { display: flex; justify-content: space-between; gap: 12px; }
+.mt-tooltip-row span:first-child { color: #94a3b8; }
+.dark .mt-tooltip-row span:first-child { color: #64748b; }
+
+.mt-total-time { text-align: center; font-size: 12px; color: var(--mt-text-secondary); margin-top: 8px; }
+
+/* ── Skeleton ── */
+.mt-skeleton { display: flex; flex-direction: column; gap: 14px; }
+.mt-skel-chips { display: flex; gap: 8px; }
+.mt-skel-chips span { height: 32px; width: 80px; background: var(--mt-border); border-radius: 20px; animation: mt-pulse 1.5s infinite; }
+.mt-skel-cards { display: flex; gap: 10px; }
+.mt-skel-cards span { height: 90px; flex: 1; background: var(--mt-border); border-radius: 12px; animation: mt-pulse 1.5s infinite; }
+.mt-skel-timeline { display: flex; flex-direction: column; gap: 8px; }
+.mt-skel-timeline span { height: 36px; background: var(--mt-border); border-radius: 8px; animation: mt-pulse 1.5s infinite; }
+.mt-skel-timeline span:last-child { height: 24px; width: 60%; }
+
+@@keyframes mt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* ── Error ── */
+.mt-error { text-align: center; padding: 60px 20px; }
+.mt-error h3 { margin: 12px 0 4px; font-size: 16px; }
+.mt-error p { color: var(--mt-text-secondary); font-size: 13px; margin-bottom: 16px; }
+.mt-retry-btn { padding: 8px 24px; border: none; background: var(--mt-chip-active-bg); color: var(--mt-chip-active-text); border-radius: 8px; cursor: pointer; font-size: 14px; }
+
+/* ── Fullscreen Overrides ── */
+.mt-page:fullscreen { padding: 24px; background: var(--mt-bg); }
+.mt-page:fullscreen .mt-timeline-scroll { max-height: none; }
+
+/* ── Responsive ── */
+@@media (max-width: 768px) {
+    .mt-page { padding: 12px; }
+    .mt-title { font-size: 15px; }
+    .mt-timeline-labels { width: 64px; }
+    .mt-label-text { font-size: 10px; }
+    .mt-summary { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .mt-stat-card { padding: 10px; }
+    :root { --mt-row-height: 44px; --mt-temp-row-height: 110px; }
+    .mt-chips { gap: 6px; }
+    .mt-chip { font-size: 12px; padding: 4px 10px 4px 8px; }
+    .mt-tooltip { font-size: 11px; min-width: 140px; padding: 8px 10px; }
+}
+@@media (max-width: 480px) {
+    .mt-summary { grid-template-columns: 1fr 1fr; }
+    .mt-timeline-labels { width: 52px; }
+    .mt-label-row { padding: 0 4px; }
+    .mt-temp-grid-label { left: -36px; width: 32px; font-size: 8px; }
+}
+</style>
+
+<script>
+    // ── Timeline Tooltip System ──
+    (function() {
+        var tooltipEl = null;
+        var ttTitle = null, ttStart = null, ttEnd = null, ttDur = null;
+
+        function initTooltip() {
+            tooltipEl = document.getElementById('mt-tooltip');
+            if (!tooltipEl) return;
+            ttTitle = document.getElementById('mt-tt-title');
+            ttStart = document.getElementById('mt-tt-start');
+            ttEnd = document.getElementById('mt-tt-end');
+            ttDur = document.getElementById('mt-tt-dur');
+
+            document.querySelectorAll('.mt-bar').forEach(function(bar) {
+                bar.addEventListener('mouseenter', function(e) {
+                    var type = bar.getAttribute('data-type');
+                    var start = bar.getAttribute('data-start');
+                    var end = bar.getAttribute('data-end');
+                    var dur = bar.getAttribute('data-dur');
+                    var name = '';
+                    switch(type) {
+                        case 'Priz': name = 'برق (Power)'; break;
+                        case 'MotorState': name = 'موتور (Motor)'; break;
+                        case 'Element1': name = 'المنت ۱ (Heater 1)'; break;
+                        case 'Element2': name = 'المنت ۲ (Heater 2)'; break;
+                        default: name = type;
+                    }
+                    ttTitle.textContent = name;
+                    ttStart.textContent = start ? new Date(start).toLocaleTimeString('fa-IR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '-';
+                    ttEnd.textContent = end ? new Date(end).toLocaleTimeString('fa-IR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : 'Active';
+                    ttDur.textContent = dur;
+                    tooltipEl.style.display = 'block';
+                    positionTooltip(e);
+                });
+
+                bar.addEventListener('mousemove', function(e) {
+                    positionTooltip(e);
+                });
+
+                bar.addEventListener('mouseleave', function() {
+                    tooltipEl.style.display = 'none';
+                });
+            });
+        }
+
+        function positionTooltip(e) {
+            if (!tooltipEl) return;
+            var x = e.clientX;
+            var y = e.clientY - 16;
+            tooltipEl.style.left = x + 'px';
+            tooltipEl.style.top = y + 'px';
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initTooltip);
+        } else {
+            initTooltip();
+        }
+
+        // Expose for Blazor re-init
+        window.mtTooltipReinit = initTooltip;
+    })();
+</script>
+
+@code {
+    [Parameter] public int MonitoringConnectionId { get; set; }
+
+    private MonitoringTimelineResponse? _data;
+    private bool _loading = true;
+    private string? _error;
+    private string _pageTitle = "Timeline";
+    private ElementReference _scrollContainer;
+
+    private readonly double _rowHeight = 56;
+    private readonly double _tempRowHeight = 140;
+    private double _totalWidth = 4000;
+    private double _segmentGridStep = 20;
+
+    private List<ChipInfo> _chips = new();
+    private bool _showTemp = true;
+    private List<EquipmentTimeline> _visibleEquipments = new();
+    private string? _tempFridgePoints;
+    private string? _tempFreezerPoints;
+    private List<TempCircle> _fridgeCircles = new();
+    private List<TempCircle> _freezerCircles = new();
+    private double _tempMin;
+    private double _tempMax;
+    private List<TempYTick> _tempYTicks = new();
+    private List<AxisTick> _axisTicks = new();
+
+    private SegmentInfo? _activeSegment;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("monitoringTimeline.init", "mt-scroll-container");
+            await JS.InvokeVoidAsync("mtTooltipReinit");
+        }
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            _data = await Http.GetFromJsonAsync<MonitoringTimelineResponse>(
+                $"api/monitoring/chart/{MonitoringConnectionId}/timeline");
+
+            if (_data == null)
+            {
+                _error = "No data received from server.";
+                return;
+            }
+
+            _pageTitle = $"{_data.DeviceTitle} · {_data.CustomerName}";
+
+            var totalSeconds = _data.TotalDurationTicks / (double)TimeSpan.TicksPerSecond;
+            var totalSegments = _data.EquipmentTimelines.Sum(e => e.Segments.Count);
+            _totalWidth = Math.Max(2800, totalSeconds * 3);
+            _totalWidth = Math.Max(_totalWidth, totalSegments * 70);
+            _totalWidth = Math.Min(_totalWidth, 35000);
+
+            var tickCount = Math.Min(12, Math.Max(6, (int)(_totalWidth / 200)));
+            _segmentGridStep = 100.0 / tickCount;
+
+            _chips = new List<ChipInfo>();
+            foreach (var eq in _data.EquipmentTimelines)
+            {
+                _chips.Add(new ChipInfo
+                {
+                    Id = eq.ChangeType,
+                    Label = eq.DisplayName,
+                    Color = eq.Color,
+                    Count = eq.Segments.Count,
+                    Visible = true
+                });
+            }
+            _chips.Add(new ChipInfo
+            {
+                Id = "_temp",
+                Label = "Temperature",
+                Color = "#14b8a6",
+                Count = _data.TemperatureSnapshots.Count,
+                Visible = _showTemp
+            });
+
+            UpdateVisibleEquipments();
+            ComputeTemperaturePoints();
+            ComputeAxisTicks();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleChip(string id)
+    {
+        var chip = _chips.FirstOrDefault(c => c.Id == id);
+        if (chip == null) return;
+
+        chip.Visible = !chip.Visible;
+
+        if (id == "_temp")
+        {
+            _showTemp = chip.Visible;
+        }
+
+        UpdateVisibleEquipments();
+        StateHasChanged();
+    }
+
+    private void UpdateVisibleEquipments()
+    {
+        _visibleEquipments = new List<EquipmentTimeline>();
+        if (_data == null) return;
+
+        foreach (var eq in _data.EquipmentTimelines)
+        {
+            var chip = _chips.FirstOrDefault(c => c.Id == eq.ChangeType);
+            if (chip?.Visible == true)
+                _visibleEquipments.Add(eq);
+        }
+    }
+
+    private void ComputeTemperaturePoints()
+    {
+        _fridgeCircles = new();
+        _freezerCircles = new();
+
+        if (_data == null || _data.TemperatureSnapshots.Count == 0)
+        {
+            _tempFridgePoints = null;
+            _tempFreezerPoints = null;
+            _tempYTicks = new();
+            return;
+        }
+
+        var temps = _data.TemperatureSnapshots;
+        var allTemps = new List<double>();
+        foreach (var t in temps)
+        {
+            if (t.FridgeTemp.HasValue) allTemps.Add(t.FridgeTemp.Value);
+            if (t.FreezerTemp.HasValue) allTemps.Add(t.FreezerTemp.Value);
+        }
+
+        if (allTemps.Count == 0)
+        {
+            _tempFridgePoints = null;
+            _tempFreezerPoints = null;
+            _tempYTicks = new();
+            return;
+        }
+
+        _tempMin = Math.Floor(allTemps.Min());
+        _tempMax = Math.Ceiling(allTemps.Max());
+        if (_tempMax - _tempMin < 5)
+        {
+            var mid = (_tempMin + _tempMax) / 2;
+            _tempMin = mid - 3;
+            _tempMax = mid + 3;
+        }
+
+        _tempYTicks = new();
+        var step = Math.Max(1, Math.Round((_tempMax - _tempMin) / 4));
+        for (var t = _tempMin; t <= _tempMax; t += step)
+        {
+            var pct = (t - _tempMin) / (_tempMax - _tempMin) * 100;
+            _tempYTicks.Add(new TempYTick { Percent = pct, Label = t.ToString("F0") });
+        }
+
+        var totalTicks = _data.TotalDurationTicks;
+        var startTime = _data.ConnectionStartTime;
+
+        var fridgePts = new List<string>();
+        var freezerPts = new List<string>();
+
+        var svgHeight = _tempRowHeight - 8;
+        var padding = 4;
+
+        foreach (var t in temps)
+        {
+            var xPct = (t.Timestamp - startTime).Ticks / (double)totalTicks * 100;
+
+            if (t.FridgeTemp.HasValue)
+            {
+                var y = svgHeight - ((t.FridgeTemp.Value - _tempMin) / (_tempMax - _tempMin) * (svgHeight - padding * 2)) - padding;
+                fridgePts.Add($"{xPct:F3},{y:F1}");
+                _fridgeCircles.Add(new TempCircle { X = $"{xPct:F3}", Y = $"{y:F1}" });
+            }
+
+            if (t.FreezerTemp.HasValue)
+            {
+                var y = svgHeight - ((t.FreezerTemp.Value - _tempMin) / (_tempMax - _tempMin) * (svgHeight - padding * 2)) - padding;
+                freezerPts.Add($"{xPct:F3},{y:F1}");
+                _freezerCircles.Add(new TempCircle { X = $"{xPct:F3}", Y = $"{y:F1}" });
+            }
+        }
+
+        _tempFridgePoints = fridgePts.Count > 0 ? string.Join(" ", fridgePts) : null;
+        _tempFreezerPoints = freezerPts.Count > 0 ? string.Join(" ", freezerPts) : null;
+    }
+
+    private void ComputeAxisTicks()
+    {
+        _axisTicks = new List<AxisTick>();
+        if (_data == null) return;
+
+        var totalSecs = _data.TotalDurationTicks / (double)TimeSpan.TicksPerSecond;
+        var maxTicks = 12;
+        var stepSecs = totalSecs / maxTicks;
+
+        var roundedStep = RoundStep(stepSecs);
+        var startTime = _data.ConnectionStartTime;
+
+        var firstTick = Math.Ceiling((startTime - DateTime.MinValue).TotalSeconds / roundedStep) * roundedStep;
+        var firstTickTime = DateTime.MinValue.AddSeconds(firstTick);
+
+        for (var t = firstTickTime; t <= (_data.ConnectionEndTime ?? DateTime.UtcNow); t = t.AddSeconds(roundedStep))
+        {
+            if (t < startTime) continue;
+
+            var pct = (t - startTime).Ticks / (double)_data.TotalDurationTicks * 100;
+            if (pct < 0) pct = 0;
+            if (pct > 100) pct = 100;
+
+            string label;
+            if (totalSecs < 7200)
+                label = t.ToString("HH:mm:ss");
+            else if (totalSecs < 86400)
+                label = t.ToString("HH:mm");
+            else
+                label = t.ToString("MM/dd\nHH:mm");
+
+            _axisTicks.Add(new AxisTick { Percent = Math.Round(pct, 2), Label = label });
+        }
+    }
+
+    private static double RoundStep(double step)
+    {
+        var mag = Math.Pow(10, Math.Floor(Math.Log10(step)));
+        var norm = step / mag;
+        if (norm <= 1.5) return mag;
+        if (norm <= 3.5) return 2 * mag;
+        if (norm <= 7.5) return 5 * mag;
+        return 10 * mag;
+    }
+
+    private double GetPercent(DateTime time)
+    {
+        if (_data == null || _data.TotalDurationTicks == 0) return 0;
+        return (time - _data.ConnectionStartTime).Ticks / (double)_data.TotalDurationTicks * 100;
+    }
+
+    private void ShowTooltip(TimeSegment seg, EquipmentTimeline eq)
+    {
+        _activeSegment = new SegmentInfo
+        {
+            Type = eq.DisplayName,
+            Start = seg.StartTime.ToString("HH:mm:ss"),
+            End = seg.EndTime?.ToString("HH:mm:ss") ?? "Active",
+            Duration = FormatTicks(seg.DurationTicks)
+        };
+    }
+
+    private void OnMouseMove()
+    {
+    }
+
+    private void HideTooltip()
+    {
+        _activeSegment = null;
+    }
+
+    private static string FormatTicks(long ticks)
+    {
+        var ts = TimeSpan.FromTicks(ticks);
+        if (ts.TotalDays >= 1)
+            return $"{(int)ts.TotalDays}d {ts.Hours:0}h {ts.Minutes:0}m";
+        if (ts.TotalHours >= 1)
+            return $"{(int)ts.TotalHours}h {ts.Minutes:0}m";
+        if (ts.TotalMinutes >= 1)
+            return $"{(int)ts.TotalMinutes}m {ts.Seconds:0}s";
+        return $"{ts.Seconds}s";
+    }
+
+    private async Task ToggleFullscreen()
+    {
+        await JS.InvokeAsync<bool>("monitoringTimeline.toggleFullscreen", "mt-scroll-container");
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/admin/monitoring/active-receipts");
+    }
+
+    private class ChipInfo
+    {
+        public string Id { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string Color { get; set; } = "";
+        public int Count { get; set; }
+        public bool Visible { get; set; } = true;
+    }
+
+    private class AxisTick
+    {
+        public double Percent { get; set; }
+        public string Label { get; set; } = "";
+    }
+
+    private class TempCircle
+    {
+        public string X { get; set; } = "";
+        public string Y { get; set; } = "";
+    }
+
+    private class TempYTick
+    {
+        public double Percent { get; set; }
+        public string Label { get; set; } = "";
+    }
+
+    private class SegmentInfo
+    {
+        public string Type { get; set; } = "";
+        public string Start { get; set; } = "";
+        public string End { get; set; } = "";
+        public string Duration { get; set; } = "";
+    }
+}

@@ -1,0 +1,445 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+@inject HttpClient Http
+
+@if (isUpdateAvailable || (isInstallAvailable && !isUpdateAvailable) || isWhatsNew)
+{
+    <div class="pwa-dialog-wrapper">
+        <div class="pwa-glass-card shadow-2xl animate-pop">
+            @if (isUpdateAvailable)
+            {
+                <div class="pwa-header-gradient pwa-header-gradient--update">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="pwa-icon-glow">
+                            <span class="oi oi-cloud-download"></span>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h6 class="pwa-title mb-0">نسخه جدید آماده است</h6>
+                            <div class="pwa-badge">ورژن @latestVersion</div>
+                        </div>
+                        <button class="pwa-close-btn" @onclick="() => isUpdateAvailable = false">
+                            <span class="oi oi-x"></span>
+                        </button>
+                    </div>
+                </div>
+                <div class="pwa-body">
+                    @if (latestRelease != null)
+                    {
+                        <div class="pwa-release-box">
+                            <div class="pwa-release-title">@latestRelease.Title</div>
+                            <div class="pwa-feature-list">
+                                @foreach (var feature in (latestRelease.Features ?? new List<string>()).Take(3))
+                                {
+                                    <div class="pwa-feature-item">
+                                        <div class="pwa-feature-dot"></div>
+                                        <span>@feature</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    <div class="pwa-actions">
+                        <button class="pwa-btn pwa-btn--primary" @onclick="UpdateApp">
+                            <span class="oi oi-bolt me-2"></span> به‌روزرسانی آنی
+                        </button>
+                    </div>
+                </div>
+            }
+            else if (isWhatsNew)
+            {
+                <div class="pwa-header-gradient pwa-header-gradient--whatsnew">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="pwa-icon-glow">
+                            <span class="oi oi-star"></span>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h6 class="pwa-title mb-0">به ارورسرویس خوش آمدید</h6>
+                            <div class="pwa-badge">نسخه جدید @latestVersion فعال شد</div>
+                        </div>
+                        <button class="pwa-close-btn" @onclick="CloseWhatsNew">
+                            <span class="oi oi-x"></span>
+                        </button>
+                    </div>
+                </div>
+                <div class="pwa-body">
+                    @if (latestRelease != null)
+                    {
+                        <div class="pwa-release-box">
+                            <div class="pwa-release-title">قابلیت‌های جدید این نسخه:</div>
+                            <div class="pwa-feature-list">
+                                @foreach (var feature in (latestRelease.Features ?? new List<string>()))
+                                {
+                                    <div class="pwa-feature-item">
+                                        <div class="pwa-feature-dot"></div>
+                                        <span>@feature</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    <div class="pwa-actions">
+                        <a href="/admin/release-history" class="pwa-btn pwa-btn--primary text-decoration-none" @onclick="CloseWhatsNew">
+                            <span class="oi oi-history me-2"></span> مشاهده تمام تغییرات
+                        </a>
+                        <button class="pwa-btn-link" @onclick="CloseWhatsNew">متوجه شدم</button>
+                    </div>
+                </div>
+            }
+            else if (isInstallAvailable)
+            {
+                <div class="pwa-header-gradient pwa-header-gradient--install">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="pwa-icon-glow">
+                            <span class="oi oi-plus"></span>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h6 class="pwa-title mb-0">نصب اپلیکیشن هوشمند</h6>
+                            <div class="pwa-subtitle">تجربه سریع و حرفه‌ای</div>
+                        </div>
+                        <button class="pwa-close-btn" @onclick="() => isInstallAvailable = false">
+                            <span class="oi oi-x"></span>
+                        </button>
+                    </div>
+                </div>
+                <div class="pwa-body">
+                    <p class="pwa-description text-center">
+                        برای دسترسی سریع‌تر، کاهش مصرف اینترنت و تجربه محیطی بدون مرورگر، نسخه اپلیکیشن را نصب کنید.
+                    </p>
+                    <div class="pwa-actions">
+                        <button class="pwa-btn pwa-btn--dark btn-pwa-install" @onclick="InstallApp">
+                            <span class="oi oi-monitor me-2"></span> نصب روی دستگاه
+                        </button>
+                        <button class="pwa-btn-link" @onclick="() => isInstallAvailable = false">بعداً یادآوری کن</button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .pwa-dialog-wrapper {
+        position: fixed;
+        bottom: 100px;
+        left: 20px;
+        right: 20px;
+        z-index: 2500;
+        display: flex;
+        justify-content: center;
+        pointer-events: none;
+    }
+
+    .pwa-glass-card {
+        width: 100%;
+        max-width: 360px;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-radius: 32px;
+        overflow: hidden;
+        pointer-events: auto;
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.25);
+    }
+
+    .pwa-header-gradient {
+        padding: 24px 24px 20px;
+        color: white;
+        position: relative;
+    }
+
+    .pwa-header-gradient--update {
+        background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+    }
+
+    .pwa-header-gradient--install {
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    }
+
+    .pwa-header-gradient--whatsnew {
+        background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+    }
+
+    .pwa-icon-glow {
+        width: 48px;
+        height: 48px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        font-size: 1.4rem;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+        flex-shrink: 0;
+    }
+
+    .pwa-title {
+        font-weight: 900;
+        font-size: 1.05rem;
+        letter-spacing: -0.2px;
+    }
+
+    .pwa-badge {
+        display: inline-block;
+        background: rgba(255, 255, 255, 0.15);
+        padding: 2px 10px;
+        border-radius: 10px;
+        font-size: 0.7rem;
+        font-weight: 800;
+        margin-top: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .pwa-subtitle {
+        font-size: 0.8rem;
+        opacity: 0.85;
+        font-weight: 600;
+    }
+
+    .pwa-close-btn {
+        background: rgba(255, 255, 255, 0.1);
+        border: none;
+        color: white;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 0.7rem;
+        transition: all 0.2s;
+    }
+
+    .pwa-close-btn:hover { background: rgba(255, 255, 255, 0.2); }
+
+    .pwa-body {
+        padding: 24px;
+    }
+
+    .pwa-release-box {
+        background: #f1f5f9;
+        border-radius: 20px;
+        padding: 16px;
+        margin-bottom: 20px;
+        border: 1px solid rgba(0, 0, 0, 0.03);
+    }
+
+    .pwa-release-title {
+        font-weight: 800;
+        font-size: 0.85rem;
+        color: #0f172a;
+        margin-bottom: 10px;
+    }
+
+    .pwa-feature-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .pwa-feature-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.78rem;
+        color: #475569;
+        font-weight: 600;
+    }
+
+    .pwa-feature-dot {
+        width: 6px;
+        height: 6px;
+        background: #2563eb;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .pwa-description {
+        font-size: 0.82rem;
+        color: #475569;
+        line-height: 1.7;
+        margin-bottom: 24px;
+        font-weight: 600;
+    }
+
+    .pwa-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .pwa-btn {
+        height: 52px;
+        border-radius: 18px;
+        border: none;
+        font-weight: 900;
+        font-size: 0.95rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        width: 100%;
+    }
+
+    .pwa-btn--primary {
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        color: white;
+        box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.4);
+    }
+
+    .pwa-btn--dark {
+        background: #1e293b;
+        color: white;
+        box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.3);
+    }
+
+    .pwa-btn:active { transform: scale(0.97); }
+
+    .pwa-btn-link {
+        background: transparent;
+        border: none;
+        color: #64748b;
+        font-size: 0.85rem;
+        font-weight: 700;
+        padding: 8px;
+        text-decoration: none;
+    }
+
+    .animate-pop {
+        animation: pwa-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+
+    @@keyframes pwa-pop {
+        from { opacity: 0; transform: translateY(40px) scale(0.9); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @@media (min-width: 768px) {
+        .pwa-dialog-wrapper {
+            left: auto;
+            right: 40px;
+            bottom: 40px;
+            width: 360px;
+        }
+    }
+</style>
+
+@code {
+    private bool isUpdateAvailable = false;
+    private bool isInstallAvailable = false;
+    private bool isWhatsNew = false;
+    private string latestVersion = "";
+    private ReleaseNote latestRelease;
+    private DotNetObjectReference<PwaUpdateDialog> objRef;
+    private bool releaseInfoLoaded = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Add cache-busting to bypass Service Worker and browser cache
+            var cacheBuster = $"?v={DateTimeOffset.UtcNow.Ticks}";
+            var response = await Http.GetAsync($"releases.json{cacheBuster}");
+            if (response.IsSuccessStatusCode)
+            {
+                var releases = await response.Content.ReadFromJsonAsync<List<ReleaseNote>>();
+                if (releases != null && releases.Any())
+                {
+                    latestRelease = releases.First();
+                    latestVersion = latestRelease.Version;
+                }
+            }
+
+            releaseInfoLoaded = true;
+        }
+        catch { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                objRef = DotNetObjectReference.Create(this);
+
+                // JS interop must run after first render (avoids prerender/initial-load crashes)
+                await JSRuntime.InvokeVoidAsync("initPwaHandlers", objRef);
+
+                // Check initial install status
+                isInstallAvailable = await JSRuntime.InvokeAsync<bool>("getPwaInstallStatus");
+
+                // Auto-show What's New if version changed (store the last seen version in localStorage)
+                if (releaseInfoLoaded && !string.IsNullOrWhiteSpace(latestVersion))
+                {
+                    var lastSeenVersion = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "pwa_last_seen_version");
+                    if (!string.IsNullOrEmpty(lastSeenVersion) && lastSeenVersion != latestVersion)
+                    {
+                        isWhatsNew = true;
+                    }
+                    else if (string.IsNullOrEmpty(lastSeenVersion))
+                    {
+                        // First time user, just save the version without showing dialog
+                        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "pwa_last_seen_version", latestVersion);
+                    }
+                }
+            }
+            catch
+            {
+                // ignore JS init failures to prevent breaking the whole admin UI
+            }
+
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void NotifyUpdateAvailable()
+    {
+        isUpdateAvailable = true;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void NotifyInstallAvailable()
+    {
+        isInstallAvailable = true;
+        StateHasChanged();
+    }
+
+    private async Task UpdateApp()
+    {
+        // Save the version before reload so it doesn't show "What's New" immediately
+        // Wait, actually we WANT it to show "What's New" AFTER reload.
+        // So we DON'T update localStorage here.
+        await JSRuntime.InvokeVoidAsync("location.reload");
+    }
+
+    private async Task CloseWhatsNew()
+    {
+        isWhatsNew = false;
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "pwa_last_seen_version", latestVersion);
+        StateHasChanged();
+    }
+
+    private async Task InstallApp()
+    {
+        var result = await JSRuntime.InvokeAsync<bool>("installPWA");
+        if (result)
+        {
+            isInstallAvailable = false;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        objRef?.Dispose();
+    }
+
+    public class ReleaseNote
+    {
+        public string Version { get; set; }
+        public string Title { get; set; }
+        public List<string> Features { get; set; }
+    }
+}
+

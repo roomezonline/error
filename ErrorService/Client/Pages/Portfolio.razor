@@ -1,0 +1,73 @@
+@page "/trust/portfolio"
+@using ErrorService.Shared
+@using ErrorService.Client.Utils
+@inject HttpClient Http
+
+<SeoHeader 
+    Title="نمونه کارهای تعمیراتی | ارورسرویس"
+    Description="گزارش تصویری از تعمیرات تخصصی انجام شده در کارگاه ارورسرویس. نمونه کارهای تعمیر ماشین لباسشویی، یخچال و ظرفشویی"
+    Keywords="نمونه کار تعمیرات, تعمیرات لوازم خانگی, نمونه کار تعمیر یخچال"
+    OgType="website" />
+
+<div class="container py-5" dir="rtl">
+    <div class="text-center mb-5">
+        <h2 class="fw-black text-primary mb-2">نمونه کارهای تعمیراتی</h2>
+        <p class="text-muted">گزارش تصویری از تعمیرات تخصصی انجام شده در کارگاه ارور سرویس</p>
+    </div>
+
+    @if (projects == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+        </div>
+    }
+    else if (!projects.Any())
+    {
+        <div class="text-center py-5 opacity-50">
+            <h5>هنوز موردی ثبت نشده است</h5>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            @foreach (var p in projects)
+            {
+                <div class="col-md-6 col-lg-4">
+                    <div class="card border-0 shadow-sm rounded-4 overflow-hidden h-100">
+                        <div class="position-relative">
+                            <img src="@p.AfterImageUrl" class="card-img-top" style="height: 220px; object-fit: cover;" />
+                            <div class="badge bg-success position-absolute top-0 end-0 m-3 rounded-pill">تعمیر شد</div>
+                        </div>
+                        <div class="card-body p-4">
+                            <div class="mb-2">
+                                <span class="badge bg-primary-subtle text-primary rounded-pill px-2 py-1 smaller">@p.Brand</span>
+                                <span class="badge bg-secondary-subtle text-secondary rounded-pill px-2 py-1 smaller ms-1">@p.DeviceType</span>
+                            </div>
+                            <h5 class="fw-bold mb-3">@p.Title</h5>
+                            <p class="small text-muted mb-0">@p.Description</p>
+                        </div>
+                        <div class="card-footer bg-white border-0 p-4 pt-0">
+                            <div class="text-muted smaller">تاریخ اتمام: @PersianDate.ToJalaliDate(p.CompletionDate)</div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .fw-black { font-weight: 900; }
+    .smaller { font-size: 0.75rem; }
+</style>
+
+@code {
+    private List<PortfolioProjectDto>? projects;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try {
+            projects = await Http.GetFromJsonAsync<List<PortfolioProjectDto>>("api/trust/portfolio");
+        } catch { projects = new(); }
+    }
+}

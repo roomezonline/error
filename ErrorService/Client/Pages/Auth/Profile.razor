@@ -1,0 +1,1066 @@
+@page "/profile"
+@using ErrorService.Shared
+@using ErrorService.Shared.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using ErrorService.Client.Utils
+@attribute [Authorize]
+@inject ErrorService.Client.Services.AuthService Auth
+@inject ErrorService.Client.Services.JwtAuthStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService Toast
+
+<div class="container py-4" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="fw-black m-0">پنل کاربری</h3>
+        <button class="btn btn-outline-danger btn-sm rounded-pill px-3" @onclick="HandleLogout">
+            <span class="oi oi-account-logout"></span> خروج
+        </button>
+    </div>
+
+    @if (user == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary"></div>
+        </div>
+    }
+    else
+    {
+        <!-- Profile Completion Alert -->
+        @if (MissingProfileFields.Any())
+        {
+            <div class="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden animate__animated animate__headShake">
+                <div class="bg-warning p-3 text-dark" dir="rtl">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="bg-white rounded-circle p-2 d-flex shadow-sm">
+                            <span class="oi oi-warning text-warning fs-4"></span>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h6 class="fw-bold mb-1">اطلاعات پروفایل ناقص است!</h6>
+                            <div class="small mb-0 opacity-75">موارد زیر را تکمیل کنید:</div>
+                        </div>
+                        <button class="btn btn-dark btn-sm rounded-pill px-3 shadow-sm" @onclick='() => SwitchTab("edit")'>تکمیل پروفایل</button>
+                    </div>
+
+                    <div class="mt-3 bg-white rounded-4 p-3 shadow-sm">
+                        <div class="row g-2">
+                            @foreach (var item in MissingProfileFields)
+                            {
+                                <div class="col-12 col-md-6">
+                                    <div class="d-flex align-items-center gap-2 small">
+                                        <span class="oi oi-x text-danger"></span>
+                                        <span class="fw-bold">@item</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="row g-4">
+            <!-- Mobile Navigation Tabs -->
+            <div class="col-12 d-lg-none">
+                <div class="d-flex gap-2 overflow-auto pb-2 no-scrollbar">
+                    <button class="btn @(activeTab == "overview" ? "btn-primary" : "btn-light") rounded-pill px-4 text-nowrap shadow-sm" @onclick='() => SwitchTab("overview")'>خلاصه</button>
+                    <button class="btn @(activeTab == "orders" ? "btn-primary" : "btn-light") rounded-pill px-4 text-nowrap shadow-sm" @onclick='() => SwitchTab("orders")'>سفارشات</button>
+                    <button class="btn @(activeTab == "tickets" ? "btn-primary" : "btn-light") rounded-pill px-4 text-nowrap shadow-sm" @onclick='() => SwitchTab("tickets")'>تیکت‌ها</button>
+                    <button class="btn @(activeTab == "edit" ? "btn-primary" : "btn-light") rounded-pill px-4 text-nowrap shadow-sm" @onclick='() => SwitchTab("edit")'>پروفایل</button>
+                </div>
+            </div>
+
+            <!-- Sidebar Navigation (Desktop) -->
+            <div class="col-lg-3 d-none d-lg-block">
+                <div class="card border-0 shadow-sm rounded-4 p-3 bg-white sticky-top" style="top: 130px;">
+                    <div class="text-center mb-4 pt-3">
+                        <div class="avatar-lg bg-primary-subtle text-primary rounded-circle mx-auto mb-3 d-grid place-items-center">
+                            <span class="oi oi-person display-6"></span>
+                        </div>
+                        <h6 class="fw-black mb-1">@user.FullName</h6>
+                        <span class="small text-muted">@user.PhoneNumber</span>
+                    </div>
+                    <div class="list-group list-group-flush gap-2">
+                        <button class="list-group-item list-group-item-action border-0 rounded-3 @(activeTab == "overview" ? "active" : "")" @onclick='() => SwitchTab("overview")'>
+                            <span class="oi oi-dashboard me-2"></span> پیشخوان
+                        </button>
+                        <button class="list-group-item list-group-item-action border-0 rounded-3 @(activeTab == "orders" ? "active" : "")" @onclick='() => SwitchTab("orders")'>
+                            <span class="oi oi-cart me-2"></span> سفارشات من
+                        </button>
+                        <button class="list-group-item list-group-item-action border-0 rounded-3 @(activeTab == "tickets" ? "active" : "")" @onclick='() => SwitchTab("tickets")'>
+                            <span class="oi oi-chat me-2"></span> تیکت‌های پشتیبانی
+                        </button>
+                        <button class="list-group-item list-group-item-action border-0 rounded-3 @(activeTab == "edit" ? "active" : "")" @onclick='() => SwitchTab("edit")'>
+                            <span class="oi oi-person me-2"></span> پروفایل
+                        </button>
+                        <button class="list-group-item list-group-item-action border-0 rounded-3 text-danger" @onclick="HandleLogout">
+                            <span class="oi oi-account-logout me-2"></span> خروج از حساب
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="col-lg-9">
+                <div class="card border-0 shadow-sm rounded-4 p-4 bg-white min-vh-60">
+                    @if (activeTab == "overview")
+                    {
+                        <div class="animate__animated animate__fadeIn">
+                            <h5 class="fw-black mb-4">خوش آمدید، @user.FullName</h5>
+                            <div class="row g-3">
+                                <div class="col-6 col-md-4">
+                                    <div class="p-3 rounded-4 bg-primary-subtle text-primary border border-primary border-opacity-10">
+                                        <div class="small fw-bold opacity-75 mb-1">سفارشات</div>
+                                        <div class="h4 fw-black m-0">@myOrders.Count</div>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-4">
+                                    <div class="p-3 rounded-4 bg-warning-subtle text-warning border border-warning border-opacity-10">
+                                        <div class="small fw-bold opacity-75 mb-1">پرداخت‌ها</div>
+                                        <div class="h4 fw-black m-0">@myOrders.Count(o => o.Status == OrderStatus.PendingPayment)</div>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-4">
+                                    <button type="button" class="w-100 text-start p-0 border-0 bg-transparent" @onclick='() => SwitchTab("tickets")'>
+                                        <div class="p-3 rounded-4 bg-success-subtle text-success border border-success border-opacity-10 hover-border-primary">
+                                            <div class="small fw-bold opacity-75 mb-1">تیکت‌ها</div>
+                                            <div class="h4 fw-black m-0">@myTickets.Count</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-5">
+                                <button type="button" class="btn btn-link p-0 text-decoration-none text-dark" @onclick='() => SwitchTab("orders")'>
+                                    <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
+                                        <span class="oi oi-clock text-primary"></span> آخرین سفارشات
+                                        <span class="smaller text-muted">(مشاهده همه)</span>
+                                    </h6>
+                                </button>
+                                @if (!myOrders.Any())
+                                {
+                                    <div class="alert alert-light border small text-muted">هنوز سفارشی ثبت نکرده‌اید.</div>
+                                }
+                                else
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle">
+                                            <thead><tr><th>شماره</th><th>وضعیت</th><th>مبلغ</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var o in myOrders.Take(3))
+                                                {
+                                                    <tr>
+                                                        <td class="small fw-bold">#@o.OrderNumber</td>
+                                                        <td><span class="badge @GetOrderStatusClass(o.Status) smaller">@GetOrderStatusLabel(o.Status)</span></td>
+                                                        <td class="small">@o.TotalAmount.ToString("N0")</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="mt-4">
+                                <button type="button" class="btn btn-link p-0 text-decoration-none text-dark" @onclick='() => SwitchTab("tickets")'>
+                                    <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
+                                        <span class="oi oi-chat text-primary"></span> آخرین تیکت‌ها
+                                        <span class="smaller text-muted">(مشاهده همه)</span>
+                                    </h6>
+                                </button>
+                                @if (!myTickets.Any())
+                                {
+                                    <div class="alert alert-light border small text-muted">هنوز تیکتی ثبت نکرده‌اید.</div>
+                                }
+                                else
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle">
+                                            <thead><tr><th>عنوان</th><th>وضعیت</th><th>پاسخ</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var t in myTickets.Take(3))
+                                                {
+                                                    <tr class="cursor-pointer" @onclick='() => SwitchTab("tickets")'>
+                                                        <td class="small fw-bold text-truncate" style="max-width: 200px;">@t.Title</td>
+                                                        <td><span class="badge @GetTicketStatusClass(t) smaller">@GetTicketStatusLabel(t)</span></td>
+                                                        <td class="small">@t.Replies.Count</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else if (activeTab == "orders")
+                    {
+                        <div class="animate__animated animate__fadeIn">
+                            <h5 class="fw-black mb-4">تاریخچه سفارشات</h5>
+                            @if (isLoadingOrders)
+                            {
+                                <div class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+                            }
+                            else if (!myOrders.Any())
+                            {
+                                <div class="text-center py-5 opacity-50">
+                                    <span class="oi oi-cart display-1 mb-3"></span>
+                                    <p>هنوز سفارشی ثبت نشده است</p>
+                                </div>
+                            }
+                            else
+                            {
+                                @foreach (var o in myOrders)
+                                {
+                                    <div class="card border rounded-5 mb-3 p-3 shadow-sm hover-border-primary cursor-pointer order-card" @onclick="() => ToggleOrder(o.Id)">
+                                        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start gap-2 mb-2">
+                                            <div class="overflow-hidden">
+                                                <div class="fw-black text-primary text-truncate">#@o.OrderNumber</div>
+                                                <div class="d-flex align-items-center gap-2 mt-1">
+                                                    <span class="badge bg-light text-dark border rounded-pill px-3 py-2">آخرین وضعیت</span>
+                                                    <span class="badge @GetOrderStatusClass(o.Status) rounded-pill px-3 py-2">@GetOrderStatusLabel(o.Status)</span>
+                                                </div>
+                                            </div>
+                                            <div class="text-end flex-shrink-0">
+                                                <div class="small text-muted">@PersianDate.ToJalaliDate(o.CreatedAt)</div>
+                                                <div class="fw-bold text-dark">@o.TotalAmount.ToString("N0") تومان</div>
+                                            </div>
+                                        </div>
+
+                                        @if (expandedOrders.Contains(o.Id))
+                                        {
+                                            <div class="order-details mt-3">
+                                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                                    <div class="fw-bold">جزئیات سفارش</div>
+                                                    <span class="badge bg-secondary-subtle text-secondary border rounded-pill px-3 py-2">@o.Items.Count آیتم</span>
+                                                </div>
+
+                                                <div class="order-meta-grid mb-3">
+                                                    <div class="order-meta-box">
+                                                        <div class="small text-muted mb-1">روش پرداخت</div>
+                                                        <div class="fw-bold small">پرداخت کارت به کارت</div>
+                                                    </div>
+                                                    <div class="order-meta-box">
+                                                        <div class="small text-muted mb-1">شماره پیگیری</div>
+                                                        <div class="fw-bold small">@(string.IsNullOrWhiteSpace(o.TrackingNumber) ? "---" : o.TrackingNumber)</div>
+                                                    </div>
+                                                    <div class="order-meta-box">
+                                                        <div class="small text-muted mb-1">تاریخ پرداخت</div>
+                                                        <div class="fw-bold small">@(o.PaymentDate.HasValue ? PersianDate.ToJalaliDateTime(o.PaymentDate.Value) : "---")</div>
+                                                    </div>
+                                                    <div class="order-meta-box">
+                                                        <div class="small text-muted mb-1">نام خریدار</div>
+                                                        <div class="fw-bold small">@o.FullName</div>
+                                                    </div>
+                                                    <div class="order-meta-box">
+                                                        <div class="small text-muted mb-1">موبایل</div>
+                                                        <div class="fw-bold small">@o.PhoneNumber</div>
+                                                    </div>
+                                                    <div class="order-meta-box">
+                                                        <div class="small text-muted mb-1">ایمیل</div>
+                                                        <div class="fw-bold small">@(string.IsNullOrWhiteSpace(o.Email) ? "---" : o.Email)</div>
+                                                    </div>
+                                                </div>
+
+                                                @if (!string.IsNullOrWhiteSpace(o.Address))
+                                                {
+                                                    <div class="order-note-box mb-3">
+                                                        <div class="small text-muted mb-1">آدرس ارسال</div>
+                                                        <div class="small fw-bold">@o.Address</div>
+                                                    </div>
+                                                }
+
+                                                @if (!string.IsNullOrWhiteSpace(o.AdminNotes))
+                                                {
+                                                    <div class="order-note-box mb-3">
+                                                        <div class="small text-muted mb-1">یادداشت ادمین</div>
+                                                        <div class="small fw-bold">@o.AdminNotes</div>
+                                                    </div>
+                                                }
+
+                                                @if (!string.IsNullOrWhiteSpace(o.ReceiptImageUrl))
+                                                {
+                                                    <div class="order-receipt-box mb-3">
+                                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                                            <div class="fw-bold small">رسید پرداخت</div>
+                                                            <a class="btn btn-sm btn-outline-primary rounded-pill" href="@o.ReceiptImageUrl" target="_blank">مشاهده</a>
+                                                        </div>
+                                                        <a href="@o.ReceiptImageUrl" target="_blank">
+                                                            <img src="@o.ReceiptImageUrl" class="img-fluid rounded-4 border" style="max-height: 220px;" />
+                                                        </a>
+                                                    </div>
+                                                }
+
+                                                <div class="d-flex flex-column gap-2">
+                                                    @foreach (var it in o.Items)
+                                                    {
+                                                        <div class="order-item-row">
+                                                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                                                <div class="fw-bold small text-truncate">@it.ProductName</div>
+                                                                <div class="small text-muted flex-shrink-0">@((it.Price * it.Quantity).ToString("N0")) تومان</div>
+                                                            </div>
+                                                            <div class="d-flex flex-wrap gap-2 mt-2">
+                                                                <span class="chip">تعداد: @it.Quantity</span>
+                                                                <span class="chip">قیمت واحد: @it.Price.ToString("N0")</span>
+                                                                <span class="chip">جمع: @((it.Price * it.Quantity).ToString("N0"))</span>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </div>
+
+                                                <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
+                                                    <div class="text-muted small">جمع کل پرداختی</div>
+                                                    <div class="fw-black text-dark">@o.TotalAmount.ToString("N0") تومان</div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                    else if (activeTab == "tickets")
+                    {
+                        <div class="animate__animated animate__fadeIn">
+                            @if (selectedTicketForProfile == null && !isCreatingNewTicket)
+                            {
+                                <div class="d-flex justify-content-between align-items-center mb-4">
+                                    <h5 class="fw-black m-0">تیکت‌های پشتیبانی</h5>
+                                    <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm" @onclick="() => isCreatingNewTicket = true">ثبت تیکت جدید</button>
+                                </div>
+                                
+                                @if (isLoadingTickets)
+                                {
+                                    <div class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+                                }
+                                else if (!myTickets.Any())
+                                {
+                                    <div class="text-center py-5 opacity-50">
+                                        <span class="oi oi-chat display-1 mb-3"></span>
+                                        <p>هنوز تیکتی ثبت نکرده‌اید</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="d-flex flex-column gap-3">
+                                        @foreach (var t in myTickets)
+                                        {
+                                            var isUnread = !t.IsUserRead;
+                                            <div class="card border rounded-4 p-3 shadow-sm hover-border-primary cursor-pointer @(isUnread ? "bg-primary-subtle border-primary border-opacity-50" : "")" @onclick="() => SelectTicketForProfile(t)">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <div class="d-flex align-items-center gap-2 overflow-hidden flex-grow-1">
+                                                        @if (isUnread)
+                                                        {
+                                                            <span class="badge rounded-pill bg-danger shadow-sm flex-shrink-0" style="font-size: 0.6rem;">پاسخ جدید</span>
+                                                        }
+                                                        <div class="overflow-hidden">
+                                                            <h6 class="mb-1 text-truncate @(isUnread ? "fw-black text-dark" : "fw-bold text-secondary")">@t.Title</h6>
+                                                            <span class="smaller @(isUnread ? "text-dark fw-semibold" : "text-muted")">@FormatJalaliDateTime(t.CreatedAt)</span>
+                                                        </div>
+                                                    </div>
+                                                    <span class="badge @GetTicketStatusClass(t) rounded-pill px-2 py-1 smaller flex-shrink-0 ms-2">@GetTicketStatusLabel(t)</span>
+                                                </div>
+                                                <p class="small text-truncate-2 mb-2 @(isUnread ? "text-dark fw-semibold" : "text-muted")">@t.Description</p>
+                                                <div class="d-flex justify-content-between align-items-center smaller text-muted border-top pt-2">
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <div class="avatar-sm rounded-circle bg-light border">شما</div>
+                                                        @if (t.Replies.Any(r => r.IsAdmin))
+                                                        {
+                                                            <div class="avatar-sm rounded-circle bg-primary text-white border">تیم</div>
+                                                        }
+                                                    </div>
+                                                    <span>@t.Replies.Count پاسخ</span>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                            else if (isCreatingNewTicket)
+                            {
+                                <div class="d-flex align-items-center gap-3 mb-4">
+                                    <button class="btn btn-sm btn-outline-secondary rounded-pill" @onclick="() => isCreatingNewTicket = false">بازگشت</button>
+                                    <h5 class="fw-black m-0">ثبت تیکت جدید</h5>
+                                </div>
+                                <div class="card border-0 bg-light-subtle rounded-4 p-4">
+                                    <EditForm Model="newTicket" OnValidSubmit="HandleSubmitTicket">
+                                        <DataAnnotationsValidator />
+                                        <div class="mb-3">
+                                            <label class="form-label small fw-bold">موضوع</label>
+                                            <InputText class="form-control rounded-3 border-0 py-2 shadow-sm" @bind-Value="newTicket.Title" placeholder="عنوان کوتاه موضوع" />
+                                            <ValidationMessage For="@(() => newTicket.Title)" class="text-danger smaller" />
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label small fw-bold">شرح دقیق مشکل</label>
+                                            <InputTextArea class="form-control rounded-3 border-0 py-2 shadow-sm" @bind-Value="newTicket.Description" rows="4" placeholder="علائم خرابی را بنویسید..." />
+                                            <ValidationMessage For="@(() => newTicket.Description)" class="text-danger smaller" />
+                                        </div>
+                                        
+                                        <div class="mb-4">
+                                            <label class="form-label small fw-bold">آپلود مستندات (اختیاری)</label>
+                                            <div class="bg-white rounded-4 p-3 border-2 border-dashed border-primary border-opacity-25 position-relative">
+                                                <InputFile OnChange="OnAttachmentSelected" class="position-absolute top-0 start-0 w-100 h-100 opacity-0 cursor-pointer" />
+                                                <div class="text-center">
+                                                    @if (!string.IsNullOrEmpty(newTicket.ImageUrl) || !string.IsNullOrEmpty(newTicket.FileUrl))
+                                                    {
+                                                        <span class="oi oi-check text-success display-6"></span>
+                                                        <div class="small fw-bold mt-2">فایل انتخاب شد</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="oi oi-paperclip text-primary display-6"></span>
+                                                        <div class="small text-muted mt-2">برای انتخاب تصویر یا فایل کلیک کنید</div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <button type="submit" class="btn btn-primary w-100 py-2 fw-bold rounded-3 shadow-sm" disabled="@isBusy">
+                                            @if (isBusy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                                            ارسال تیکت پشتیبانی
+                                        </button>
+                                    </EditForm>
+                                </div>
+                            }
+                            else if (selectedTicketForProfile != null)
+                            {
+                                <div class="d-flex align-items-center gap-3 mb-4">
+                                    <button class="btn btn-sm btn-outline-secondary rounded-pill" @onclick="() => selectedTicketForProfile = null">بازگشت</button>
+                                    <div class="overflow-hidden">
+                                        <h6 class="fw-bold mb-0 text-truncate">@selectedTicketForProfile.Title</h6>
+                                        <span class="badge @GetTicketStatusClass(selectedTicketForProfile) smaller">@GetTicketStatusLabel(selectedTicketForProfile)</span>
+                                    </div>
+                                </div>
+
+                                <div class="bg-light-subtle rounded-4 p-3 mb-4" style="max-height: 50vh; overflow-y: auto;">
+                                    <!-- User Message -->
+                                    <div class="d-flex gap-2 mb-4">
+                                        <div class="avatar-sm bg-secondary text-white rounded-circle flex-shrink-0 text-center pt-1">شما</div>
+                                        <div class="chat-bubble user flex-grow-1">
+                                            <p class="mb-0 small">@selectedTicketForProfile.Description</p>
+                                            @if (!string.IsNullOrEmpty(selectedTicketForProfile.ImageUrl))
+                                            {
+                                                <img src="@selectedTicketForProfile.ImageUrl" class="img-fluid rounded-3 mt-2 border shadow-sm" style="max-height: 200px;" />
+                                            }
+                                            @if (!string.IsNullOrEmpty(selectedTicketForProfile.FileUrl))
+                                            {
+                                                <div class="mt-2 p-2 bg-light rounded-3 border d-flex align-items-center gap-2">
+                                                    <span class="oi oi-file text-primary"></span>
+                                                    <span class="smaller text-truncate flex-grow-1">@selectedTicketForProfile.FileName</span>
+                                                    <a href="@selectedTicketForProfile.FileUrl" target="_blank" class="btn btn-sm btn-link p-0"><span class="oi oi-cloud-download"></span></a>
+                                                </div>
+                                            }
+                                            <div class="chat-meta">@FormatJalaliDateTime(selectedTicketForProfile.CreatedAt)</div>
+                                        </div>
+                                    </div>
+
+                                    @foreach (var reply in selectedTicketForProfile.Replies)
+                                    {
+                                        <div class="d-flex gap-2 mb-4 @(reply.IsAdmin ? "flex-row-reverse" : "")">
+                                            <div class="avatar-sm @(reply.IsAdmin ? "bg-primary" : "bg-secondary") text-white rounded-circle flex-shrink-0 text-center pt-1">
+                                                @(reply.IsAdmin ? "تیم" : "شما")
+                                            </div>
+                                            <div class="chat-bubble @(reply.IsAdmin ? "admin" : "user") flex-grow-1">
+                                                <p class="mb-0 small">@reply.Message</p>
+                                                @if (!string.IsNullOrEmpty(reply.AttachmentUrl))
+                                                {
+                                                    <div class="mt-2 p-2 @(reply.IsAdmin ? "bg-white bg-opacity-50" : "bg-light") rounded-3 border d-flex align-items-center gap-2">
+                                                        <span class="oi @(reply.AttachmentContentType?.StartsWith("image/") == true ? "oi-image" : "oi-file") text-primary"></span>
+                                                        <span class="smaller text-truncate flex-grow-1">@reply.AttachmentName</span>
+                                                        <a href="@reply.AttachmentUrl" target="_blank" class="btn btn-sm btn-link p-0"><span class="oi oi-cloud-download"></span></a>
+                                                    </div>
+                                                }
+                                                <div class="chat-meta">@FormatJalaliDateTime(reply.RepliedAt)</div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+
+                                <div class="bg-white border-top pt-3">
+                                    <div class="input-group">
+                                        <input type="text" class="form-control rounded-3-start border-primary border-opacity-25" placeholder="پاسخ..." @bind="replyMessage" />
+                                        <button class="btn btn-primary px-4 fw-bold rounded-3-end" @onclick="HandleReplySubmit" disabled="@(string.IsNullOrEmpty(replyMessage) || isBusy)">ارسال</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (activeTab == "edit")
+                    {
+                        <div class="animate__animated animate__fadeIn">
+                            <h5 class="fw-black mb-4">اطلاعات پروفایل</h5>
+                            
+                            <!-- Profile Info Card -->
+                            <div class="card border-0 bg-light-subtle rounded-4 p-4 mb-4">
+                                <h6 class="fw-bold mb-3 text-secondary"><span class="oi oi-person me-2"></span>ویرایش اطلاعات شخصی</h6>
+                                <EditForm Model="updateModel" OnValidSubmit="HandleUpdateProfile">
+                                    <DataAnnotationsValidator />
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label small fw-bold">نام و نام خانوادگی</label>
+                                            <InputText class="form-control rounded-3 bg-white border-0 py-2 shadow-sm" @bind-Value="updateModel.FullName" />
+                                            <ValidationMessage For="@(() => updateModel.FullName)" class="text-danger smaller" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small fw-bold">شماره موبایل (غیرقابل تغییر)</label>
+                                            <input type="text" class="form-control rounded-3 bg-white border-0 py-2 opacity-75" value="@user.PhoneNumber" readonly />
+                                        </div>
+                                        <div class="col-md-12">
+                                            <label class="form-label small fw-bold">آدرس ایمیل</label>
+                                            <InputText class="form-control rounded-3 bg-white border-0 py-2 shadow-sm" @bind-Value="updateModel.Email" placeholder="example@mail.com" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small fw-bold">کد پستی</label>
+                                            <InputText class="form-control rounded-3 bg-white border-0 py-2 shadow-sm" @bind-Value="updateModel.PostalCode" placeholder="10 رقم" />
+                                        </div>
+                                        <div class="col-md-8">
+                                            <label class="form-label small fw-bold">آدرس کامل پستی</label>
+                                            <InputTextArea class="form-control rounded-3 bg-white border-0 py-2 shadow-sm" @bind-Value="updateModel.Address" rows="2" placeholder="استان، شهر، خیابان..." />
+                                        </div>
+                                        <div class="col-12 mt-4">
+                                            <button type="submit" class="btn btn-primary rounded-pill px-5 fw-bold shadow-sm" disabled="@isBusy">
+                                                @if (isBusy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                                                ذخیره تغییرات
+                                            </button>
+                                        </div>
+                                    </div>
+                                </EditForm>
+                            </div>
+
+                            <!-- Password Change Card -->
+                            <div class="card border-0 bg-light-subtle rounded-4 p-4">
+                                <h6 class="fw-bold mb-3 text-secondary"><span class="oi oi-key me-2"></span>تغییر رمز عبور</h6>
+                                <EditForm Model="passwordModel" OnValidSubmit="HandleChangePassword">
+                                    <DataAnnotationsValidator />
+                                    <div class="row g-3" style="max-width: 500px;">
+                                        <div class="col-md-6">
+                                            <label class="form-label small fw-bold">رمز عبور فعلی</label>
+                                            <InputText type="password" class="form-control rounded-3 bg-white border-0 py-2 shadow-sm" @bind-Value="passwordModel.CurrentPassword" />
+                                            <ValidationMessage For="@(() => passwordModel.CurrentPassword)" class="text-danger smaller" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small fw-bold">رمز عبور جدید</label>
+                                            <InputText type="password" class="form-control rounded-3 bg-white border-0 py-2 shadow-sm" @bind-Value="passwordModel.NewPassword" />
+                                            <ValidationMessage For="@(() => passwordModel.NewPassword)" class="text-danger smaller" />
+                                        </div>
+                                        <div class="col-12 mt-3">
+                                            <button type="submit" class="btn btn-outline-primary rounded-pill px-4 fw-bold shadow-sm" disabled="@isBusy">
+                                                @if (isBusy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                                                تغییر رمز عبور
+                                            </button>
+                                        </div>
+                                    </div>
+                                </EditForm>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .fw-black { font-weight: 900; }
+    .avatar-lg { width: 80px; height: 80px; font-size: 2rem; }
+    .bg-primary-subtle { background: rgba(37, 99, 235, 0.1) !important; }
+    .bg-success-subtle { background: rgba(16, 185, 129, 0.1) !important; }
+    .bg-warning-subtle { background: rgba(245, 158, 11, 0.1) !important; }
+    .min-vh-60 { min-height: 60vh; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .smaller { font-size: 0.7rem; }
+    .hover-border-primary:hover { border-color: var(--app-primary) !important; }
+    .list-group-item.active { background-color: var(--app-primary); border-color: var(--app-primary); }
+
+    @@media (max-width: 576px) {
+        .container.py-4 { padding-left: 10px !important; padding-right: 10px !important; }
+        .card.p-4 { padding: 14px !important; }
+    }
+
+    .order-details {
+        border: 2px dashed rgba(2, 6, 23, 0.14);
+        border-radius: 16px;
+        padding: 14px;
+        background: rgba(255,255,255,0.7);
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+
+    .order-item-row {
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: #fff;
+    }
+
+    .order-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        width: 100%;
+    }
+
+    .order-meta-box {
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: #fff;
+        min-width: 0;
+    }
+
+    .order-note-box {
+        border: 1px dashed rgba(2, 6, 23, 0.14);
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: rgba(37, 99, 235, 0.04);
+    }
+
+    .order-receipt-box {
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        border-radius: 16px;
+        padding: 12px;
+        background: #fff;
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    @@media (min-width: 992px) {
+        .order-meta-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    .chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(2, 6, 23, 0.10);
+        background: rgba(37, 99, 235, 0.06);
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: rgba(2, 6, 23, 0.8);
+        white-space: nowrap;
+    }
+
+    /* Avatar styles - properly circular */
+    .avatar-sm {
+        width: 36px;
+        height: 36px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    /* Chat bubble styles */
+    .chat-bubble {
+        padding: 12px 16px;
+        border-radius: 16px;
+        max-width: 85%;
+        position: relative;
+    }
+
+    .chat-bubble.user {
+        background: #f1f5f9;
+        color: #1e293b;
+        border: 1px solid rgba(2, 6, 23, 0.08);
+        border-bottom-right-radius: 4px;
+    }
+
+    .chat-bubble.admin {
+        background: #2563eb;
+        color: white;
+        border: none;
+        border-bottom-left-radius: 4px;
+    }
+
+    .chat-bubble.admin p {
+        color: white;
+    }
+
+    .chat-meta {
+        font-size: 0.65rem;
+        opacity: 0.7;
+        margin-top: 6px;
+        text-align: left;
+    }
+
+    .chat-bubble.admin .chat-meta {
+        color: rgba(255, 255, 255, 0.8);
+    }
+</style>
+
+@code {
+    private UserProfileDto? user;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    private UpdateProfileRequest updateModel = new();
+    private ChangePasswordRequest passwordModel = new();
+    private string activeTab = "overview";
+    private bool isBusy = false;
+    
+    private List<OrderDto> myOrders = new();
+    private List<ConsultationTicket> myTickets = new();
+    private bool isLoadingOrders = false;
+    private bool isLoadingTickets = false;
+
+    private HashSet<int> expandedOrders = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUser();
+        if (user != null)
+        {
+            await LoadSummary();
+        }
+    }
+
+    private async Task LoadUser()
+    {
+        user = await Auth.GetMeAsync();
+        if (user != null)
+        {
+            updateModel = new UpdateProfileRequest {
+                FullName = user.FullName,
+                Email = user.Email,
+                Address = user.Address,
+                PostalCode = user.PostalCode
+            };
+        }
+    }
+
+    private async Task LoadSummary()
+    {
+        var ordersTask = LoadOrdersAsync();
+        var ticketsTask = LoadTicketsAsync();
+        await Task.WhenAll(ordersTask, ticketsTask);
+    }
+
+    private async Task LoadOrdersAsync()
+    {
+        try
+        {
+            myOrders = await Http.GetFromJsonAsync<List<OrderDto>>("api/orders/my") ?? new();
+        }
+        catch { }
+    }
+
+    private async Task LoadTicketsAsync()
+    {
+        try
+        {
+            myTickets = await Http.GetFromJsonAsync<List<ConsultationTicket>>("api/technical/tickets/my") ?? new();
+        }
+        catch { }
+    }
+
+    private string replyMessage = "";
+    private ConsultationTicket newTicket = new();
+    private ConsultationTicket? selectedTicketForProfile;
+    private bool isCreatingNewTicket = false;
+
+    private async Task SelectTicketForProfile(ConsultationTicket ticket)
+    {
+        selectedTicketForProfile = ticket;
+        if (!ticket.IsUserRead)
+        {
+            try
+            {
+                var resp = await Http.PostAsync($"api/technical/tickets/{ticket.Id}/read-user", null);
+                if (resp.IsSuccessStatusCode)
+                {
+                    ticket.IsUserRead = true;
+                }
+            }
+            catch { /* ignore */ }
+        }
+    }
+
+    private async Task HandleSubmitTicket()
+    {
+        isBusy = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/technical/tickets", newTicket);
+            if (response.IsSuccessStatusCode)
+            {
+                newTicket = new();
+                isCreatingNewTicket = false;
+                await LoadSummary();
+                Toast.ShowSuccess("تیکت شما با موفقیت ثبت شد.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+        isBusy = false;
+    }
+
+    private async Task HandleReplySubmit()
+    {
+        if (selectedTicketForProfile == null || string.IsNullOrEmpty(replyMessage)) return;
+
+        isBusy = true;
+        try
+        {
+            var reply = new TicketReply
+            {
+                Message = replyMessage,
+                IsAdmin = false,
+                AttachmentUrl = replyAttachmentUrl,
+                AttachmentName = replyAttachmentName,
+                AttachmentContentType = replyAttachmentType
+            };
+            var response = await Http.PostAsJsonAsync($"api/technical/tickets/{selectedTicketForProfile.Id}/reply", reply);
+            if (response.IsSuccessStatusCode)
+            {
+                var newReply = await response.Content.ReadFromJsonAsync<TicketReply>();
+                if (newReply != null)
+                {
+                    selectedTicketForProfile.Replies.Add(newReply);
+                }
+                replyMessage = "";
+                replyAttachmentUrl = null;
+                replyAttachmentName = null;
+                replyAttachmentType = null;
+                Toast.ShowInfo("پاسخ شما ثبت شد.");
+            }
+        }
+        catch
+        {
+            Toast.ShowError("خطا در ارسال پاسخ");
+        }
+        isBusy = false;
+    }
+
+    private string? replyAttachmentUrl;
+    private string? replyAttachmentName;
+    private string? replyAttachmentType;
+
+    private async Task OnAttachmentSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        isBusy = true;
+        try
+        {
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/technical/tickets/upload-attachment", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<UploadResult>();
+                if (result != null)
+                {
+                    if (file.ContentType.StartsWith("image/"))
+                    {
+                        newTicket.ImageUrl = result.Url;
+                    }
+                    else
+                    {
+                        newTicket.FileUrl = result.Url;
+                        newTicket.FileName = result.Name;
+                        newTicket.FileContentType = result.ContentType;
+                    }
+                    Toast.ShowInfo("فایل پیوست شد");
+                }
+            }
+        }
+        catch
+        {
+            Toast.ShowError("خطا در آپلود فایل");
+        }
+        isBusy = false;
+    }
+
+    private class UploadResult
+    {
+        public string Url { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string ContentType { get; set; } = "";
+    }
+
+    private List<string> MissingProfileFields
+    {
+        get
+        {
+            var missing = new List<string>();
+            if (string.IsNullOrWhiteSpace(user?.Email)) missing.Add("ایمیل");
+            if (string.IsNullOrWhiteSpace(user?.PostalCode)) missing.Add("کد پستی");
+            if (string.IsNullOrWhiteSpace(user?.Address)) missing.Add("آدرس پستی");
+            return missing;
+        }
+    }
+
+    private bool IsProfileIncomplete() => 
+        string.IsNullOrWhiteSpace(user?.Email) || 
+        string.IsNullOrWhiteSpace(user?.Address) || 
+        string.IsNullOrWhiteSpace(user?.PostalCode);
+
+    private async Task HandleUpdateProfile()
+    {
+        isBusy = true;
+        var ok = await Auth.UpdateProfileAsync(updateModel);
+        if (ok) {
+            if (user != null)
+            {
+                user.FullName = updateModel.FullName;
+                user.Email = updateModel.Email;
+                user.Address = updateModel.Address;
+                user.PostalCode = updateModel.PostalCode;
+            }
+
+            await InvokeAsync(StateHasChanged);
+            await LoadUser();
+            Toast.ShowSuccess("پروفایل با موفقیت بروزرسانی شد");
+        } else {
+            Toast.ShowError("خطا در بروزرسانی پروفایل");
+        }
+        isBusy = false;
+    }
+
+    private async Task HandleChangePassword()
+    {
+        isBusy = true;
+        var (ok, error) = await Auth.ChangePasswordAsync(passwordModel);
+        if (ok) {
+            passwordModel = new();
+            Toast.ShowSuccess("رمز عبور با موفقیت تغییر کرد");
+        } else {
+            Toast.ShowError(error ?? "خطا در تغییر رمز");
+        }
+        isBusy = false;
+    }
+
+    private async Task HandleLogout()
+    {
+        await Auth.LogoutAsync();
+        AuthStateProvider.NotifyAuthStateChanged();
+        Nav.NavigateTo("/");
+    }
+
+    private string GetOrderStatusClass(OrderStatus status) => status switch {
+        OrderStatus.PendingPayment => "bg-warning-subtle text-warning",
+        OrderStatus.ReceiptUploaded => "bg-info-subtle text-info",
+        OrderStatus.Approved => "bg-success-subtle text-success",
+        OrderStatus.Rejected => "bg-danger-subtle text-danger",
+        OrderStatus.Cancelled => "bg-secondary-subtle text-secondary",
+        OrderStatus.Completed => "bg-success text-white",
+        _ => "bg-light"
+    };
+
+    private string GetOrderStatusLabel(OrderStatus status) => status switch {
+        OrderStatus.PendingPayment => "در انتظار پرداخت",
+        OrderStatus.ReceiptUploaded => "رسید آپلود شد",
+        OrderStatus.Approved => "تایید شده",
+        OrderStatus.Rejected => "رد شده",
+        OrderStatus.Cancelled => "لغو شده",
+        OrderStatus.Completed => "تکمیل شده",
+        _ => status.ToString()
+    };
+
+    private async Task SwitchTab(string tab)
+    {
+        activeTab = tab;
+        selectedTicketForProfile = null;
+        isCreatingNewTicket = false;
+        if (tab == "orders" && !myOrders.Any()) {
+            isLoadingOrders = true;
+            try { myOrders = await Http.GetFromJsonAsync<List<OrderDto>>("api/orders/my") ?? new(); } catch {}
+            isLoadingOrders = false;
+        }
+        else if (tab == "tickets" && !myTickets.Any()) {
+            isLoadingTickets = true;
+            try { myTickets = await Http.GetFromJsonAsync<List<ConsultationTicket>>("api/technical/tickets/my") ?? new(); } catch {}
+            isLoadingTickets = false;
+        }
+    }
+
+    private void ToggleOrder(int orderId)
+    {
+        if (!expandedOrders.Add(orderId))
+            expandedOrders.Remove(orderId);
+    }
+
+    private static string FormatJalaliDateTime(DateTime dt)
+    {
+        if (dt == default || dt == DateTime.MinValue || dt.Year < 1000) return "---";
+        var pc = new System.Globalization.PersianCalendar();
+        try {
+            var y = pc.GetYear(dt);
+            var m = pc.GetMonth(dt);
+            var d = pc.GetDayOfMonth(dt);
+            return $"{dt:HH:mm}  {y:0000}/{m:00}/{d:00}";
+        } catch {
+            return "---";
+        }
+    }
+
+    private string GetTicketStatusClass(ConsultationTicket ticket)
+    {
+        // Priority 1: If admin explicitly changed status (not Pending), use status color
+        if (ticket.Status != TicketStatus.Pending)
+        {
+            return ticket.Status switch {
+                TicketStatus.InProgress => "bg-warning text-dark",      // Orange - actively working
+                TicketStatus.Resolved => "bg-success text-white",       // Green - done
+                TicketStatus.Closed => "bg-dark text-white",            // Dark gray - closed
+                _ => "bg-light text-dark"
+            };
+        }
+        
+        // Priority 2: If user hasn't read and last reply is from admin, highlight it urgent
+        if (!ticket.IsUserRead && ticket.Replies.Any() && ticket.Replies.OrderByDescending(r => r.RepliedAt).First().IsAdmin)
+            return "bg-danger text-white"; // Red - unread admin reply, needs attention
+        
+        // Priority 3: Pending status colors
+        if (!ticket.Replies.Any())
+            return "bg-secondary text-white"; // Gray - not reviewed yet
+        
+        var lastReply = ticket.Replies.OrderByDescending(r => r.RepliedAt).First();
+        if (lastReply.IsAdmin)
+            return "bg-info text-dark";      // Light blue - admin replied, user read
+        else
+            return "bg-primary text-white"; // Blue - user replied, waiting for admin
+    }
+
+    private string GetTicketStatusLabel(ConsultationTicket ticket)
+    {
+        // Priority 1: If admin explicitly changed status (not Pending), show that status
+        if (ticket.Status != TicketStatus.Pending)
+        {
+            return ticket.Status switch {
+                TicketStatus.InProgress => "در حال بررسی",
+                TicketStatus.Resolved => "حل شده",
+                TicketStatus.Closed => "بسته شده",
+                _ => "نامشخص"
+            };
+        }
+        
+        // Priority 2: Pending status - check replies
+        // If no replies yet
+        if (!ticket.Replies.Any())
+            return "بررسی نشده";
+        
+        // Get last reply
+        var lastReply = ticket.Replies.OrderByDescending(r => r.RepliedAt).FirstOrDefault();
+        if (lastReply != null)
+        {
+            if (lastReply.IsAdmin)
+                return "پاسخ داده شده"; // Admin replied - waiting for user
+            else
+                return "پاسخ کاربر"; // User replied - waiting for admin
+        }
+        
+        return "جدید";
+    }
+}

@@ -1,0 +1,543 @@
+@page "/commitment"
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject NavigationManager Navigation
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject ErrorService.Client.Services.ToastService ToastService
+
+<PageTitle>تعهد نامه دیجیتال</PageTitle>
+
+<div class="c-page">
+    <div class="c-card">
+        <div class="c-card__head">
+            <div class="c-card__icon"><span class="oi oi-document-text"></span></div>
+            <div class="c-card__title">تعهد نامه دیجیتال</div>
+            <div class="c-card__desc">برای مشاهده و امضای تعهدنامه، شماره موبایل خود را وارد کنید</div>
+        </div>
+
+        @if (step == 1)
+        {
+            <div class="c-card__body">
+                <div class="c-field">
+                    <label class="c-field__label">شماره موبایل</label>
+                    <input type="tel" inputmode="numeric" class="c-input" @bind="_mobile" maxlength="11" placeholder="09123456789" dir="ltr" />
+                </div>
+                @if (!string.IsNullOrEmpty(_notFoundMessage))
+                {
+                    <div class="c-field-error">@_notFoundMessage</div>
+                }
+                <button type="button" class="c-btn c-btn--primary c-btn--full" @onclick="SearchCommitment" disabled="@_isSearching">
+                    @if (_isSearching)
+                    {
+                        <span class="spinner-border spinner-border-sm" style="margin-left:6px;"></span>
+                    }
+                    جستجو
+                </button>
+            </div>
+        }
+        else if (step == 2 && _commitment != null)
+        {
+            <div class="c-card__body">
+                <div class="c-commitment-preview">
+                    <div class="c-commitment-header">
+                        <div class="c-commitment-title-group">
+                            <div class="c-commitment-workshop">@_commitment.WorkshopName</div>
+                            <div class="c-commitment-title">تعهدنامه</div>
+                        </div>
+                        <div class="c-commitment-meta">
+                            <div>شماره پذیرش: @_commitment.ReceiptNumber</div>
+                            <div>تاریخ: @_commitment.RegisteredAtFa</div>
+                        </div>
+                    </div>
+                    <div class="c-commitment-body">
+                        <div class="c-commitment-text">@_commitment.FullBodyText</div>
+                    </div>
+                    <div class="c-commitment-signature">
+                        <div class="c-commitment-signature-line"></div>
+                        <div class="c-commitment-signature-name">@_commitment.CustomerFullName</div>
+                    </div>
+                </div>
+
+                <div class="c-agreement">
+                    <label class="c-agreement__label">
+                        <input type="checkbox" @bind="_agreed" class="c-agreement__check" />
+                        <span>موافقت خود را با متن تعهدنامه اعلام می‌کنم</span>
+                    </label>
+                </div>
+
+                <button type="button" class="c-btn c-btn--primary c-btn--full" @onclick="StartSigning" disabled="@(!_agreed || _isSendingOtp)">
+                    @if (_isSendingOtp)
+                    {
+                        <span class="spinner-border spinner-border-sm" style="margin-left:6px;"></span>
+                    }
+                    امضا و تایید
+                </button>
+            </div>
+        }
+        else if (step == 3)
+        {
+            <div class="c-card__body">
+                <div class="c-otp-info">کد تایید ۶ رقمی به شماره @_mobile ارسال شد</div>
+                <div class="c-otp-container @_otpStatusClass" dir="ltr">
+                    @for (int i = 0; i < 6; i++)
+                    {
+                        var idx = i;
+                        <input type="text" class="c-otp-input" maxlength="1"
+                               value="@_otpDigits[idx]"
+                               @oninput="(e) => HandleOtpInput(e, idx)"
+                               @onkeydown="(e) => HandleOtpKeyDown(e, idx)"
+                               id="c-otp-@idx" disabled="@_isOtpVerified" />
+                    }
+                </div>
+                @if (!string.IsNullOrEmpty(_otpStatusMessage))
+                {
+                    <div class="c-otp-status @_otpStatusClass">@_otpStatusMessage</div>
+                }
+                <div class="c-otp-timer">
+                    @if (_otpTimerSeconds > 0)
+                    {
+                        <span>@FormatTime(_otpTimerSeconds)</span>
+                    }
+                    else
+                    {
+                        <button type="button" class="c-btn c-btn--ghost c-btn--sm" @onclick="ResendOtp">ارسال مجدد کد</button>
+                    }
+                </div>
+            </div>
+        }
+        else if (step == 4)
+        {
+            <div class="c-card__body c-success">
+                <div class="c-success__icon"><span class="oi oi-circle-check"></span></div>
+                <div class="c-success__title">تعهدنامه با موفقیت امضا شد</div>
+                <div class="c-success__desc">تعهدنامه شما به شماره @_commitment?.ReceiptNumber با موفقیت امضای دیجیتال شد.</div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .c-page {
+        min-height: 50vh; display: flex; align-items: center; justify-content: center;
+        padding: 16px; background: linear-gradient(135deg, #f0f4ff, #fdf2f8);
+    }
+    .c-card {
+        background: #fff; border-radius: 28px; width: 100%; max-width: 520px;
+        box-shadow: 0 20px 60px rgba(15,23,42,0.08); overflow: hidden;
+    }
+    .c-card__head {
+        text-align: center; padding: 24px 20px 16px;
+        background: linear-gradient(135deg, #f8fafc, #fff);
+        border-bottom: 1px solid rgba(0,0,0,0.04);
+    }
+    .c-card__icon { font-size: 1.8rem; color: #2563eb; margin-bottom: 4px; }
+    .c-card__title { font-weight: 950; font-size: 1.1rem; color: #0f172a; }
+    .c-card__desc { font-size: 0.72rem; color: #64748b; font-weight: 700; margin-top: 4px; }
+    .c-card__body { padding: 20px; }
+    .c-field { margin-bottom: 16px; }
+    .c-field-error {
+        margin: -8px 0 12px; padding: 10px 14px;
+        background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px;
+        color: #dc2626; font-weight: 800; font-size: 0.78rem; text-align: center;
+    }
+    .c-field__label { display: block; font-weight: 900; font-size: 0.78rem; color: #475569; margin-bottom: 6px; }
+    .c-input {
+        width: 100%; padding: 14px 16px; border: 1.5px solid #e2e8f0; border-radius: 14px;
+        font-size: 0.95rem; font-family: inherit; outline: none; transition: all 0.15s;
+        background: #f8fafc;
+    }
+    .c-input:focus { border-color: #2563eb; background: #fff; box-shadow: 0 0 0 4px rgba(37,99,235,0.08); }
+    .c-btn {
+        padding: 14px 24px; border-radius: 14px; border: none; font-weight: 900;
+        font-size: 0.85rem; cursor: pointer; transition: all 0.15s; display: inline-flex;
+        align-items: center; justify-content: center;
+    }
+    .c-btn--primary { background: #2563eb; color: #fff; }
+    .c-btn--primary:hover { background: #1d4ed8; }
+    .c-btn--primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .c-btn--ghost { background: transparent; color: #64748b; }
+    .c-btn--ghost:hover { background: rgba(0,0,0,0.05); }
+    .c-btn--full { width: 100%; }
+    .c-btn--sm { padding: 8px 16px; font-size: 0.75rem; }
+
+    .c-commitment-preview {
+        border: 1px solid rgba(0,0,0,0.06); border-radius: 18px; padding: 24px 20px;
+        background: linear-gradient(135deg, #fafafa, #fff); margin-bottom: 20px;
+    }
+    .c-commitment-header {
+        display: flex; flex-direction: column; align-items: center; gap: 8px;
+        padding-bottom: 14px; border-bottom: 2px solid #0f172a;
+    }
+    .c-commitment-title-group { text-align: center; }
+    .c-commitment-workshop { font-weight: 900; font-size: 0.9rem; color: #0f172a; }
+    .c-commitment-title { font-weight: 950; font-size: 1.3rem; color: #0f172a; }
+    .c-commitment-meta {
+        display: flex; justify-content: space-between; width: 100%;
+        font-size: 0.68rem; color: #64748b; font-weight: 800; line-height: 1.7;
+    }
+    .c-commitment-body { padding: 16px 0; }
+    .c-commitment-text {
+        font-size: 0.85rem; line-height: 2; color: #1e293b; font-weight: 600;
+        text-align: justify; white-space: pre-line;
+    }
+    .c-commitment-signature { display: flex; flex-direction: column; align-items: flex-end; padding-top: 12px; }
+    .c-commitment-signature-line { width: 180px; height: 1px; background: #0f172a; margin-bottom: 6px; }
+    .c-commitment-signature-name { font-weight: 900; font-size: 0.82rem; color: #0f172a; }
+
+    .c-agreement {
+        background: #f0fdf4; border: 1.5px solid rgba(5,150,105,0.2); border-radius: 14px;
+        padding: 14px 16px; margin-bottom: 16px;
+    }
+    .c-agreement__label {
+        display: flex; align-items: center; gap: 10px; font-weight: 800;
+        font-size: 0.82rem; color: #065f46; cursor: pointer;
+    }
+    .c-agreement__check { width: 20px; height: 20px; accent-color: #059669; cursor: pointer; }
+
+    .c-otp-info { text-align: center; font-weight: 800; font-size: 0.82rem; color: #475569; margin-bottom: 20px; }
+    .c-otp-container { display: flex; justify-content: center; gap: 8px; margin-bottom: 12px; }
+    .c-otp-input {
+        width: 48px; height: 56px; text-align: center; font-size: 1.4rem; font-weight: 900;
+        border: 2px solid #e2e8f0; border-radius: 14px; outline: none; transition: all 0.15s;
+        background: #f8fafc; font-family: inherit;
+    }
+    .c-otp-input:focus { border-color: #2563eb; box-shadow: 0 0 0 4px rgba(37,99,235,0.08); background: #fff; }
+    .c-otp-input:disabled { opacity: 0.6; }
+    .c-otp-container.success .c-otp-input { border-color: #059669; background: #f0fdf4; }
+    .c-otp-container.error .c-otp-input { border-color: #dc2626; background: #fef2f2; }
+    .c-otp-status { text-align: center; font-weight: 900; font-size: 0.78rem; margin-bottom: 8px; }
+    .c-otp-status.success { color: #059669; }
+    .c-otp-status.error { color: #dc2626; }
+    .c-otp-timer { text-align: center; margin-top: 8px; font-weight: 800; font-size: 0.85rem; color: #94a3b8; }
+
+    .c-success { text-align: center; padding: 24px 16px; }
+    .c-success__icon { font-size: 3rem; color: #059669; margin-bottom: 12px; }
+    .c-success__title { font-weight: 950; font-size: 1.1rem; color: #065f46; }
+    .c-success__desc { font-size: 0.8rem; color: #64748b; font-weight: 700; margin-top: 8px; }
+
+    .c-empty { text-align: center; padding: 20px 0; }
+    .c-empty__icon { font-size: 2.5rem; color: #f59e0b; margin-bottom: 8px; }
+    .c-empty__title { font-weight: 950; font-size: 1rem; color: #92400e; }
+    .c-empty__desc { font-size: 0.78rem; color: #78716c; font-weight: 700; margin-top: 6px; margin-bottom: 16px; }
+
+    @@media (max-width: 480px) {
+        .c-page { padding: 8px; }
+        .c-card { border-radius: 20px; }
+        .c-card__head { padding: 20px 16px 12px; }
+        .c-card__body { padding: 16px; }
+        .c-commitment-preview { padding: 14px 12px; }
+        .c-commitment-header { flex-direction: column; align-items: center; gap: 6px; }
+        .c-commitment-meta { width: 100%; }
+        .c-success { padding: 20px 12px; }
+        .c-success__icon { font-size: 2.2rem; }
+    }
+</style>
+
+@code {
+    private int step = 1;
+    private string _mobile = string.Empty;
+    private DigitalCommitmentDto? _commitment;
+    private bool _isSearching;
+    private bool _isSendingOtp;
+    private bool _agreed;
+
+    private string[] _otpDigits = new string[6];
+    private int _otpTimerSeconds = 120;
+    private System.Timers.Timer? _otpTimer;
+    private string _otpStatusClass = "";
+    private string _otpStatusMessage = "";
+    private bool _isOtpVerified;
+    private int _otpErrorVersion;
+    private string _notFoundMessage = string.Empty;
+
+    private async Task SearchCommitment()
+    {
+        if (string.IsNullOrWhiteSpace(_mobile) || _mobile.Length < 11)
+        {
+            _notFoundMessage = "شماره موبایل را به صورت کامل وارد کنید";
+            return;
+        }
+
+        _isSearching = true;
+        _notFoundMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var resp = await Http.PostAsJsonAsync(
+                "api/digital-commitments/search",
+                new CommitmentSearchRequest { Mobile = _mobile });
+
+            if (resp.IsSuccessStatusCode)
+            {
+                var list = await resp.Content.ReadFromJsonAsync<List<DigitalCommitmentDto>>();
+                if (list?.Count > 0)
+                {
+                    _commitment = list[0];
+                    step = 2;
+                }
+                else
+                {
+                    _notFoundMessage = "تعهدنامه‌ای برای این شماره یافت نشد";
+                }
+            }
+            else
+            {
+                _notFoundMessage = "خطا در جستجوی تعهدنامه";
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در ارتباط با سرور");
+        }
+        finally
+        {
+            _isSearching = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartSigning()
+    {
+        _isSendingOtp = true;
+        StateHasChanged();
+
+        try
+        {
+            var resp = await Http.PostAsJsonAsync(
+                "api/digital-commitments/send-otp",
+                new SendOtpRequest { Mobile = _mobile });
+
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<OtpResultDto>();
+                if (result?.Success == true)
+                {
+                    step = 3;
+                    StartOtpTimer();
+                    StateHasChanged();
+                    await Task.Delay(100);
+                    await JS.InvokeVoidAsync("eval", "var el=document.getElementById('c-otp-0'); if(el) { el.focus(); el.scrollIntoView({ behavior:'smooth', block:'center' }); }");
+                }
+                else
+                {
+                    ToastService.ShowError(result?.Message ?? "خطا در ارسال کد تایید");
+                }
+            }
+            else
+            {
+                ToastService.ShowError("خطا در ارسال کد تایید");
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("سرویس پیامک بصورت موقت غیرفعال شده است");
+        }
+        finally
+        {
+            _isSendingOtp = false;
+            StateHasChanged();
+        }
+    }
+
+    private void StartOtpTimer()
+    {
+        _otpTimer?.Stop();
+        _otpTimer?.Dispose();
+        _otpTimerSeconds = 120;
+        _otpStatusClass = "";
+        _otpStatusMessage = "";
+        _isOtpVerified = false;
+        _otpDigits = new string[6];
+        _otpTimer = new System.Timers.Timer(1000);
+        _otpTimer.Elapsed += (s, e) =>
+        {
+            if (_otpTimerSeconds > 0)
+            {
+                _otpTimerSeconds--;
+                InvokeAsync(StateHasChanged);
+            }
+            else
+            {
+                _otpTimer?.Stop();
+            }
+        };
+        _otpTimer.AutoReset = true;
+        _otpTimer.Start();
+    }
+
+    private string FormatTime(int seconds)
+    {
+        var mins = seconds / 60;
+        var secs = seconds % 60;
+        return $"{mins:D2}:{secs:D2}";
+    }
+
+    private async Task ResendOtp()
+    {
+        try
+        {
+            var resp = await Http.PostAsJsonAsync(
+                "api/digital-commitments/send-otp",
+                new SendOtpRequest { Mobile = _mobile });
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<OtpResultDto>();
+                if (result?.Success == true)
+                {
+                    StartOtpTimer();
+                    ToastService.ShowSuccess("کد تایید جدید ارسال شد");
+                }
+                else
+                {
+                    ToastService.ShowError(result?.Message ?? "خطا در ارسال کد");
+                }
+            }
+            else
+            {
+                ToastService.ShowError("خطا در ارسال کد");
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در ارسال مجدد کد");
+        }
+    }
+
+    private async Task HandleOtpInput(ChangeEventArgs e, int index)
+    {
+        var value = e.Value?.ToString();
+        if (string.IsNullOrEmpty(value))
+        {
+            _otpDigits[index] = "";
+            return;
+        }
+
+        if (!_isOtpVerified && (_otpStatusClass == "error" || _otpStatusClass == "success"))
+        {
+            _otpStatusClass = "";
+            _otpStatusMessage = "";
+        }
+
+        _otpDigits[index] = value.Last().ToString();
+
+        if (index < 5)
+        {
+            await JS.InvokeVoidAsync("eval", $"document.getElementById('c-otp-{index + 1}').focus()");
+        }
+        else
+        {
+            await VerifyAndSign();
+        }
+    }
+
+    private async Task HandleOtpKeyDown(KeyboardEventArgs e, int index)
+    {
+        if (e.Key != "Backspace" || _isOtpVerified) return;
+
+        if (_otpStatusClass == "error" || _otpStatusClass == "success")
+        {
+            _otpErrorVersion++;
+            _otpStatusClass = "";
+            _otpStatusMessage = "";
+        }
+
+        if (!string.IsNullOrEmpty(_otpDigits[index]))
+        {
+            _otpDigits[index] = "";
+            await JS.InvokeVoidAsync("eval", $"var el=document.getElementById('c-otp-{index}'); if(el) el.value='';");
+            StateHasChanged();
+            return;
+        }
+
+        if (index > 0)
+        {
+            _otpDigits[index - 1] = "";
+            await JS.InvokeVoidAsync("eval", $"var el=document.getElementById('c-otp-{index - 1}'); if(el) el.value='';");
+            await JS.InvokeVoidAsync("eval", $"document.getElementById('c-otp-{index - 1}').focus()");
+            StateHasChanged();
+        }
+    }
+
+    private async Task VerifyAndSign()
+    {
+        if (_otpDigits.All(d => !string.IsNullOrEmpty(d)))
+        {
+            var code = string.Join("", _otpDigits);
+            try
+            {
+                var resp = await Http.PostAsJsonAsync(
+                    "api/digital-commitments/verify-and-sign",
+                    new CommitmentSignRequest
+                    {
+                        Mobile = _mobile,
+                        CommitmentId = _commitment!.Id,
+                        Code = code
+                    });
+
+                var result = resp.IsSuccessStatusCode
+                    ? await resp.Content.ReadFromJsonAsync<OtpResultDto>()
+                    : null;
+
+                if (result?.Success == true)
+                {
+                    _otpStatusClass = "success";
+                    _otpStatusMessage = "کد صحیح است";
+                    _isOtpVerified = true;
+                    StateHasChanged();
+                    await Task.Delay(600);
+                    step = 4;
+                    StateHasChanged();
+                }
+                else
+                {
+                    var myVersion = ++_otpErrorVersion;
+                    _otpStatusClass = "error";
+                    _otpStatusMessage = result?.Message ?? "کد اشتباه است";
+                    _otpDigits = new string[6];
+                    await JS.InvokeVoidAsync("eval", "for(let i=0;i<6;i++){ const el=document.getElementById('c-otp-'+i); if(el) el.value=''; }");
+                    await JS.InvokeVoidAsync("eval", "document.getElementById('c-otp-0').focus()");
+                    StateHasChanged();
+                    await Task.Delay(4000);
+                    if (_otpErrorVersion == myVersion && !_isOtpVerified && _otpStatusClass == "error")
+                    {
+                        _otpStatusClass = "";
+                        _otpStatusMessage = "";
+                        StateHasChanged();
+                    }
+                }
+            }
+            catch
+            {
+                var myVersion = ++_otpErrorVersion;
+                _otpStatusClass = "error";
+                _otpStatusMessage = "خطا در ارتباط با سرور";
+                StateHasChanged();
+                await Task.Delay(4000);
+                if (_otpErrorVersion == myVersion && !_isOtpVerified && _otpStatusClass == "error")
+                {
+                    _otpStatusClass = "";
+                    _otpStatusMessage = "";
+                    StateHasChanged();
+                }
+            }
+        }
+    }
+
+    private void ResetPage()
+    {
+        step = 1;
+        _mobile = string.Empty;
+        _commitment = null;
+        _notFoundMessage = string.Empty;
+        _agreed = false;
+        _otpDigits = new string[6];
+        _otpStatusClass = "";
+        _otpStatusMessage = "";
+        _isOtpVerified = false;
+        _otpTimer?.Stop();
+        _otpTimer?.Dispose();
+        _otpTimer = null;
+    }
+}

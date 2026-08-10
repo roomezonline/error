@@ -1,0 +1,253 @@
+@page "/admin/categories"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.categories.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+
+@using ErrorService.Client.Services
+@inject ToastService ToastService
+@inject IJSRuntime JS
+
+<div class="admin-container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="admin-page-title m-0">مدیریت دسته‌بندی‌ها</h3>
+        <button class="btn btn-primary shadow-sm" @onclick="NewCategory">
+            <span class="oi oi-plus me-1"></span> افزودن دسته‌بندی
+        </button>
+    </div>
+
+    <ConfirmDialog IsVisible="showConfirm" 
+                   Title="حذف دسته‌بندی" 
+                   Message=@($"آیا از حذف دسته‌بندی \"{itemToDelete?.Name}\" اطمینان دارید؟")
+                   OnResult="HandleDeleteResult" />
+
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0 rounded-4 p-3">
+                <h5 class="card-title mb-3">@(editingId == 0 ? "ایجاد" : "ویرایش") دسته‌بندی</h5>
+                <EditForm Model="model" OnValidSubmit="SaveCategory">
+                    <DataAnnotationsValidator />
+                    <div class="mb-3">
+                        <label class="form-label">نام دسته‌بندی</label>
+                        <InputText @bind-Value="model.Name" class="form-control rounded-3" placeholder="مثلاً: ابزار برقی" />
+                        <ValidationMessage For="@(() => model.Name)" class="text-danger small" />
+                    </div>
+                <div class="mb-3">
+                    <label class="form-label">نام آیکون یا تصویر آیکون</label>
+                    <div class="d-flex gap-2 mb-2 flex-wrap">
+                        @foreach (var icon in PresetIcons)
+                        {
+                            <button type="button" class="btn btn-sm @(model.Icon == icon ? "btn-primary" : "btn-outline-secondary") rounded-circle p-2" 
+                                    @onclick="() => model.Icon = icon" style="width: 40px; height: 40px;">
+                                <span class="oi @icon"></span>
+                            </button>
+                        }
+                    </div>
+                    <div class="input-group">
+                        <InputText @bind-Value="model.Icon" class="form-control rounded-start-3" placeholder="آدرس تصویر یا کلاس آیکون" />
+                        <InputFile OnChange="HandleIconUpload" class="position-absolute opacity-0 w-100 h-100" style="cursor: pointer; pointer-events: none;" id="iconFile" />
+                        <label class="btn btn-outline-primary rounded-end-3" for="iconFile">
+                            <span class="oi oi-image"></span>
+                        </label>
+                    </div>
+                    @if (isUploadingIcon)
+                    {
+                        <div class="spinner-border spinner-border-sm text-primary mt-1" role="status"></div>
+                    }
+                </div>
+                    <div class="mb-3">
+                        <label class="form-label">ترتیب نمایش</label>
+                        <InputNumber @bind-Value="model.SortOrder" class="form-control rounded-3" />
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-success rounded-3" disabled="@isSaving">
+                            @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            ذخیره تغییرات
+                        </button>
+                        @if (editingId != 0)
+                        {
+                            <button type="button" class="btn btn-light rounded-3" @onclick="ResetForm">انصراف</button>
+                        }
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+
+        <div class="col-md-8">
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-4">نام</th>
+                                <th>آیکون</th>
+                                <th>ترتیب</th>
+                                <th class="text-end pe-4">عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (categories == null)
+                            {
+                                <tr><td colspan="4" class="text-center py-4">در حال بارگذاری...</td></tr>
+                            }
+                            else if (!categories.Any())
+                            {
+                                <tr><td colspan="4" class="text-center py-4 text-muted">هیچ دسته‌بندی ثبت نشده است.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var cat in categories)
+                                {
+                                    <tr>
+                                        <td class="ps-4 fw-bold">@cat.Name</td>
+                                        <td>
+                                            @if (cat.Icon != null && cat.Icon.StartsWith("/"))
+                                            {
+                                                <img src="@cat.Icon" style="width: 24px; height: 24px; object-fit: contain;" />
+                                            }
+                                            else
+                                            {
+                                                <span class="oi @cat.Icon text-primary"></span>
+                                            }
+                                        </td>
+                                        <td>@cat.SortOrder</td>
+                                        <td class="text-end pe-4">
+                                            <button class="btn btn-sm btn-outline-primary border-0" @onclick="() => EditCategory(cat)">
+                                                <span class="oi oi-pencil"></span>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger border-0" @onclick="() => DeleteCategory(cat)">
+                                                <span class="oi oi-trash"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private List<CategoryDto>? categories;
+    private CategoryDto model = new();
+    private int editingId = 0;
+    private bool isSaving = false;
+    private bool isUploadingIcon = false;
+    private readonly string[] PresetIcons = { "oi-box", "oi-cog", "oi-wrench", "oi-dashboard", "oi-briefcase", "oi-bolt", "oi-cart" };
+
+    protected override async Task OnInitializedAsync() => await LoadCategories();
+
+    private async Task LoadCategories() => categories = await Http.GetFromJsonAsync<List<CategoryDto>>("api/categories");
+
+    private async Task HandleIconUpload(InputFileChangeEventArgs e)
+    {
+        isUploadingIcon = true;
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/categories/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                model.Icon = body.Trim('"');
+            }
+        }
+        finally { isUploadingIcon = false; }
+    }
+
+    private void NewCategory() => ResetForm();
+
+    private void EditCategory(CategoryDto cat)
+    {
+        editingId = cat.Id;
+        model = new CategoryDto { Id = cat.Id, Name = cat.Name, Icon = cat.Icon, SortOrder = cat.SortOrder };
+    }
+
+    private void ResetForm()
+    {
+        editingId = 0;
+        model = new CategoryDto { SortOrder = categories?.Max(x => x.SortOrder) + 1 ?? 1 };
+    }
+
+    private async Task SaveCategory()
+    {
+        isSaving = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingId == 0) 
+            {
+                resp = await Http.PostAsJsonAsync("api/categories", model);
+            }
+            else 
+            {
+                resp = await Http.PutAsJsonAsync($"api/categories/{editingId}", model);
+            }
+            
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(editingId == 0 ? "دسته‌بندی با موفقیت ایجاد شد" : "تغییرات دسته‌بندی ذخیره شد");
+                await LoadCategories();
+                ResetForm();
+            }
+            else
+            {
+                var errorMsg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(errorMsg) ? "خطا در عملیات دسته‌بندی" : errorMsg);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+        }
+        finally { isSaving = false; }
+    }
+
+    private CategoryDto? itemToDelete;
+    private bool showConfirm;
+
+    private void DeleteCategory(CategoryDto cat)
+    {
+        itemToDelete = cat;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool result)
+    {
+        showConfirm = false;
+        if (result && itemToDelete != null)
+        {
+            try
+            {
+                var response = await Http.DeleteAsync($"api/categories/{itemToDelete.Id}");
+                if (response.IsSuccessStatusCode)
+                {
+                    ToastService.ShowSuccess("دسته‌بندی با موفقیت حذف شد");
+                    await LoadCategories();
+                }
+                else
+                {
+                    ToastService.ShowError("خطا در حذف دسته‌بندی (احتمالاً محصولاتی در این دسته وجود دارند)");
+                }
+            }
+            catch (Exception ex)
+            {
+                ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+            }
+        }
+        itemToDelete = null;
+    }
+}

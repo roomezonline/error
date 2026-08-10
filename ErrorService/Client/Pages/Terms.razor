@@ -1,0 +1,61 @@
+@page "/terms"
+
+<SeoHeader 
+    Title="قوانین و مقررات | ارورسرویس"
+    Description="قوانین و مقررات استفاده از خدمات ارورسرویس"
+    Keywords="قوانین, مقررات, شرایط استفاده, ارورسرویس"
+    OgType="website"
+    JsonLd="@termsJsonLd" />
+
+<div class="legal-page py-5">
+    <div class="container">
+        <div class="legal-header text-center mb-5">
+            <div class="display-6 text-primary mb-3"><span class="oi oi-document"></span></div>
+            <h1 class="fw-black">قوانین و مقررات</h1>
+            <p class="text-muted">آخرین بروزرسانی: فروردین ۱۴۰۵</p>
+        </div>
+
+        <div class="legal-content p-4 p-md-5 rounded-4 shadow-sm bg-white">
+            <h5 class="fw-bold">۱. پذیرش قوانین</h5>
+            <p class="text-muted">هرگونه استفاده از سایت و خدمات ارورسرویس به معنای پذیرش کامل قوانین و مقررات زیر است. در صورت عدم موافقت، لطفاً از خدمات استفاده نکنید.</p>
+
+            <h5 class="fw-bold mt-4">۲. خدمات</h5>
+            <p class="text-muted">ارورسرویس خدمات زیر را ارائه می‌دهد:</p>
+            <ul class="text-muted">
+                <li>بانک اطلاعاتی کدهای خطای لوازم خانگی</li>
+                <li>خدمات تعمیر و سرویس در منزل</li>
+                <li>فروش قطعات یدکی</li>
+                <li>آموزش تعمیرات از طریق آکادمی</li>
+                <li>مشاوره فنی تخصصی</li>
+            </ul>
+
+            <h5 class="fw-bold mt-4">۳. ثبت‌نام و حساب کاربری</h5>
+            <p class="text-muted">کاربران مسئول صحت اطلاعات ثبت‌نامی خود هستند. حساب کاربری غیرقابل انتقال است و هر کاربر تنها مجاز به داشتن یک حساب می‌باشد.</p>
+
+            <h5 class="fw-bold mt-4">۴. سفارشات و پرداخت</h5>
+            <p class="text-muted">پس از ثبت سفارش، تأیید نهایی توسط کارشناسان ارورسرویس انجام می‌شود. در صورت عدم موجودی کالا یا تغییر قیمت، به کاربر اطلاع داده خواهد شد.</p>
+
+            <h5 class="fw-bold mt-4">۵. تعمیرات و سرویس</h5>
+            <p class="text-muted">خدمات تعمیرات در منزل با ضمانت کتبی ارائه می‌شود. هزینه تعمیرات پس از تشخیص اولیه و تأیید مشتری اعمال می‌گردد.</p>
+
+            <h5 class="fw-bold mt-4">۶. محتوای آموزشی</h5>
+            <p class="text-muted">محتوای آکادمی ارورسرویس صرفاً برای اهداف آموزشی تهیه شده است. هرگونه استفاده تجاری از محتوا بدون مجوز کتبی ممنوع می‌باشد.</p>
+
+            <h5 class="fw-bold mt-4">۷. مسئولیت</h5>
+            <p class="text-muted">ارورسرویس نهایت تلاش خود را برای صحت اطلاعات فنی و آموزشی به کار می‌گیرد، اما مسئولیتی در قبال خسارات ناشی از استفاده نادرست از اطلاعات ندارد.</p>
+
+            <h5 class="fw-bold mt-4">۸. حل اختلاف</h5>
+            <p class="text-muted">در صورت بروز هرگونه اختلاف، ابتدا از طریق مذاکره و سپس از طریق مراجع قانونی ذیصلاح پیگیری خواهد شد.</p>
+        </div>
+    </div>
+</div>
+
+<style>
+    .legal-content { border: 1px solid rgba(0,0,0,0.05); max-width: 800px; margin: 0 auto; }
+    .legal-content ul { padding-right: 1.5rem; }
+    .legal-content ul li { margin-bottom: 0.5rem; }
+</style>
+
+@code {
+    private string termsJsonLd = @"{""@context"":""https://schema.org"",""@type"":""WebPage"",""name"":""قوانین و مقررات ارورسرویس""}";
+}

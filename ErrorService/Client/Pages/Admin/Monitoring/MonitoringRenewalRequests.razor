@@ -1,0 +1,737 @@
+@page "/admin/monitoring/renewal-requests"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.monitoring.devices.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ErrorService.Client.Services.ToastService ToastService
+@inject ErrorService.Client.Services.AdminWorkshopSelectionService AdminWorkshopSelection
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+@implements IDisposable
+
+<PageTitle>درخواست‌های تمدید</PageTitle>
+
+<div class="mrr-page" dir="rtl">
+    <div class="mrr-header">
+        <a class="mrr-back" href="/admin"><span class="oi oi-arrow-right"></span></a>
+        <div>
+            <div class="mrr-kicker">مدیریت تمدید</div>
+            <div class="mrr-title">درخواست‌های تمدید مانیتورینگ</div>
+        </div>
+        <button type="button" class="mrr-refresh" @onclick="LoadData" title="بروزرسانی">
+            <span class="oi oi-loop-circular"></span>
+        </button>
+    </div>
+
+    <div class="mrr-tabs">
+        <button type="button" class="mrr-tab @(_activeFilter == null ? "active" : "")" @onclick="FilterAll">
+            همه
+        </button>
+        <button type="button" class="mrr-tab @(_activeFilter == "Pending" ? "active" : "")" @onclick="FilterPending">
+            در انتظار
+        </button>
+        <button type="button" class="mrr-tab @(_activeFilter == "Approved" ? "active" : "")" @onclick="FilterApproved">
+            تایید شده
+        </button>
+        <button type="button" class="mrr-tab @(_activeFilter == "Rejected" ? "active" : "")" @onclick="FilterRejected">
+            رد شده
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="mrr-card mrr-loading">
+            <div class="spinner-border text-primary"></div>
+            <div>در حال دریافت درخواست‌ها...</div>
+        </div>
+    }
+    else if (_requests == null || _requests.Count == 0)
+    {
+        <div class="mrr-card mrr-empty">
+            <div class="mrr-empty__icon"><span class="oi oi-document"></span></div>
+            <div class="mrr-empty__title">درخواستی یافت نشد</div>
+            <div class="mrr-empty__desc">در حال حاضر هیچ درخواست تمدیدی ثبت نشده است</div>
+        </div>
+    }
+    else
+    {
+        <div class="mrr-list">
+            @foreach (var req in _requests)
+            {
+                <div class="mrr-req @(req.Status == "Pending" ? "mrr-req--pending" : "")">
+                    <div class="mrr-req__head">
+                        <div>
+                            <div class="mrr-req__device">@req.DeviceTitle <span class="mrr-req__num">(@req.DeviceNumber)</span></div>
+                            <div class="mrr-req__ws">@req.WorkshopName</div>
+                        </div>
+                        <div class="mrr-req__status">
+                            @if (req.Status == "Approved")
+                            {
+                                <span class="mrr-badge mrr-badge--success">تایید شده</span>
+                            }
+                            else if (req.Status == "Rejected")
+                            {
+                                <span class="mrr-badge mrr-badge--danger">رد شده</span>
+                            }
+                            else
+                            {
+                                <span class="mrr-badge mrr-badge--pending">در انتظار</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="mrr-req__details">
+                        <div class="mrr-detail">
+                            <span class="mrr-detail__label">پلن</span>
+                            <span class="mrr-detail__value">@req.PlanMonths ماه@(!string.IsNullOrEmpty(req.PlanTitle) ? $" ({req.PlanTitle})" : "")</span>
+                        </div>
+                        <div class="mrr-detail">
+                            <span class="mrr-detail__label">قیمت</span>
+                            <span class="mrr-detail__value mrr-detail__value--price">@req.PriceAtRequest.ToString("N0") تومان</span>
+                        </div>
+                        <div class="mrr-detail">
+                            <span class="mrr-detail__label">تاریخ درخواست</span>
+                            <span class="mrr-detail__value">@req.CreatedAtFa</span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(req.HandledAtFa))
+                        {
+                            <div class="mrr-detail">
+                                <span class="mrr-detail__label">تاریخ بررسی</span>
+                                <span class="mrr-detail__value">@req.HandledAtFa</span>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(req.PaymentReceiptUrl))
+                        {
+                            <div class="mrr-detail">
+                                <span class="mrr-detail__label">رسید</span>
+                                <a href="@req.PaymentReceiptUrl" target="_blank" class="mrr-link">مشاهده رسید</a>
+                            </div>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(req.Note))
+                    {
+                        <div class="mrr-req__note">
+                            <span class="mrr-detail__label">توضیحات:</span>
+                            <span>@req.Note</span>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(req.AdminNote))
+                    {
+                        <div class="mrr-req__admin-note">
+                            <span class="mrr-detail__label">پاسخ ادمین:</span>
+                            <span>@req.AdminNote</span>
+                        </div>
+                    }
+
+                    <div class="mrr-req__actions">
+                        @if (req.Status == "Pending")
+                        {
+                            <button type="button" class="mrr-btn mrr-btn--success" @onclick="() => ShowActionModal(req, true)">
+                                <span class="oi oi-circle-check"></span> تایید
+                            </button>
+                            <button type="button" class="mrr-btn mrr-btn--danger" @onclick="() => ShowActionModal(req, false)">
+                                <span class="oi oi-circle-x"></span> رد
+                            </button>
+                        }
+                        @if (req.Status == "Approved" || req.Status == "Rejected")
+                        {
+                            <button type="button" class="mrr-btn mrr-btn--warning" @onclick="() => RevertToPending(req)">
+                                <span class="oi oi-action-undo"></span> بازگشت به در انتظار
+                            </button>
+                        }
+                        <button type="button" class="mrr-btn mrr-btn--ghost" @onclick="() => ShowHistoryModal(req.AssignmentId)">
+                            <span class="oi oi-clock"></span> تاریخچه
+                        </button>
+                        <button type="button" class="mrr-btn mrr-btn--ghost-danger" @onclick="() => ConfirmDelete(req)">
+                            <span class="oi oi-trash"></span> حذف
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (_showActionModal)
+{
+    <div class="mrr-modal-overlay" @onclick="CloseActionModal">
+        <div class="mrr-modal" @onclick:stopPropagation>
+            <div class="mrr-modal__head">
+                <div class="mrr-modal__title">
+                    @(_actionStatus == "Approved" ? "تایید درخواست" : "رد درخواست")
+                </div>
+                <button type="button" class="mrr-btn mrr-btn--ghost" @onclick="CloseActionModal"><span class="oi oi-x"></span></button>
+            </div>
+            <div class="mrr-modal__body">
+                <div class="mrr-field">
+                    <label class="mrr-label">دستگاه</label>
+                    <div class="mrr-static">@_actionReq?.DeviceTitle (@_actionReq?.DeviceNumber)</div>
+                </div>
+                <div class="mrr-field">
+                    <label class="mrr-label">کارگاه</label>
+                    <div class="mrr-static">@_actionReq?.WorkshopName</div>
+                </div>
+                <div class="mrr-field">
+                    <label class="mrr-label">پلن</label>
+                    <div class="mrr-static">@_actionReq?.PlanMonths ماه@(!string.IsNullOrEmpty(_actionReq?.PlanTitle) ? $" ({_actionReq.PlanTitle})" : "")</div>
+                </div>
+                <div class="mrr-field">
+                    <label class="mrr-label">قیمت</label>
+                    <div class="mrr-static mrr-static--price">@(_actionReq?.PriceAtRequest.ToString("N0")) تومان</div>
+                </div>
+                <div class="mrr-field">
+                    <label class="mrr-label">توضیحات ادمین (اختیاری)</label>
+                    <textarea class="mrr-textarea" @bind="_actionAdminNote" placeholder="توضیحات خود را وارد کنید..." rows="3"></textarea>
+                </div>
+            </div>
+            <div class="mrr-modal__foot">
+                <button type="button" class="mrr-btn mrr-btn--ghost" @onclick="CloseActionModal">انصراف</button>
+                <button type="button" class="mrr-btn @(_actionStatus == "Approved" ? "mrr-btn--success" : "mrr-btn--danger")" @onclick="SubmitAction" disabled="@_isSubmitting">
+                    @if (_isSubmitting) { <span class="spinner-border spinner-border-sm"></span> }
+                    @(_actionStatus == "Approved" ? "تایید" : "رد")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showDeleteConfirm)
+{
+    <div class="mrr-modal-overlay" @onclick="CancelDelete">
+        <div class="mrr-modal" @onclick:stopPropagation>
+            <div class="mrr-modal__head">
+                <div class="mrr-modal__title">حذف درخواست</div>
+                <button type="button" class="mrr-btn mrr-btn--ghost" @onclick="CancelDelete"><span class="oi oi-x"></span></button>
+            </div>
+            <div class="mrr-modal__body">
+                <p class="mrr-delete-warn">آیا از حذف این درخواست اطمینان دارید؟ این عملیات قابل بازگشت نیست.</p>
+                <div class="mrr-field">
+                    <label class="mrr-label">دستگاه</label>
+                    <div class="mrr-static">@_deleteReq?.DeviceTitle (@_deleteReq?.DeviceNumber)</div>
+                </div>
+                <div class="mrr-field">
+                    <label class="mrr-label">کارگاه</label>
+                    <div class="mrr-static">@_deleteReq?.WorkshopName</div>
+                </div>
+            </div>
+            <div class="mrr-modal__foot">
+                <button type="button" class="mrr-btn mrr-btn--ghost" @onclick="CancelDelete">انصراف</button>
+                <button type="button" class="mrr-btn mrr-btn--danger" @onclick="DeleteRequest" disabled="@_isDeleting">
+                    @if (_isDeleting) { <span class="spinner-border spinner-border-sm"></span> }
+                    حذف
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showHistoryModal)
+{
+    <div class="mrr-modal-overlay" @onclick="CloseHistoryModal">
+        <div class="mrr-modal mrr-modal--wide" @onclick:stopPropagation>
+            <div class="mrr-modal__head">
+                <div class="mrr-modal__title">تاریخچه تمدید دستگاه</div>
+                <button type="button" class="mrr-btn mrr-btn--ghost" @onclick="CloseHistoryModal"><span class="oi oi-x"></span></button>
+            </div>
+            <div class="mrr-modal__body">
+                @if (_historyLoading)
+                {
+                    <div class="mrr-loading"><div class="spinner-border spinner-border-sm text-primary"></div> در حال بارگذاری...</div>
+                }
+                else if (_historyItems == null || _historyItems.Count == 0)
+                {
+                    <div class="mrr-empty-sm">تاریخچه‌ای یافت نشد</div>
+                }
+                else
+                {
+                    <div class="mrr-history-table">
+                        <div class="mrr-history-row mrr-history-row--head">
+                            <span>تاریخ</span>
+                            <span>پلن</span>
+                            <span>قیمت</span>
+                            <span>وضعیت</span>
+                            <span>رسید</span>
+                            <span>توضیحات</span>
+                            <span>پاسخ ادمین</span>
+                        </div>
+                        @foreach (var item in _historyItems)
+                        {
+                            <div class="mrr-history-row">
+                                <span class="x-small">@item.CreatedAtFa</span>
+                                <span>@item.PlanMonths ماه@(!string.IsNullOrEmpty(item.PlanTitle) ? $" - {item.PlanTitle}" : "")</span>
+                                <span class="mrr-price">@item.PriceAtRequest.ToString("N0") تومان</span>
+                                <span>
+                                    @if (item.Status == "Approved")
+                                    {
+                                        <span class="mrr-badge mrr-badge--success">تایید شده</span>
+                                    }
+                                    else if (item.Status == "Rejected")
+                                    {
+                                        <span class="mrr-badge mrr-badge--danger">رد شده</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="mrr-badge mrr-badge--pending">در انتظار</span>
+                                    }
+                                </span>
+                                <span>
+                                    @if (!string.IsNullOrEmpty(item.PaymentReceiptUrl))
+                                    {
+                                        <a href="@item.PaymentReceiptUrl" target="_blank" class="mrr-link">مشاهده</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">—</span>
+                                    }
+                                </span>
+                                <span class="x-small text-muted">@(item.Note ?? "—")</span>
+                                <span class="x-small text-muted">@(item.AdminNote ?? "—")</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="mrr-modal__foot">
+                <button type="button" class="mrr-btn mrr-btn--primary" @onclick="CloseHistoryModal">بستن</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<RenewalRequestDto>? _requests;
+    private bool isLoading = true;
+    private string? _activeFilter;
+
+    private bool _isSuperAdmin;
+    private int? _workshopId;
+
+    private bool _showActionModal;
+    private RenewalRequestDto? _actionReq;
+    private string? _actionStatus;
+    private string? _actionAdminNote;
+    private bool _isSubmitting;
+
+    private bool _showDeleteConfirm;
+    private RenewalRequestDto? _deleteReq;
+    private bool _isDeleting;
+
+    private bool _showHistoryModal;
+    private bool _historyLoading;
+    private List<RenewalRequestDto>? _historyItems;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+        _isSuperAdmin = user.IsInRole("super_admin");
+
+        if (_isSuperAdmin)
+        {
+            await AdminWorkshopSelection.InitializeAsync();
+            AdminWorkshopSelection.OnChanged += OnWorkshopChanged;
+        }
+
+        await LoadData();
+    }
+
+    private void OnWorkshopChanged(int? wsId)
+    {
+        _workshopId = wsId;
+        _ = LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(_activeFilter))
+                parts.Add($"status={_activeFilter}");
+            if (_workshopId.HasValue)
+                parts.Add($"workshopId={_workshopId}");
+
+            var qs = parts.Count > 0 ? "?" + string.Join("&", parts) : "";
+            _requests = await Http.GetFromJsonAsync<List<RenewalRequestDto>>($"api/monitoring/renewal-requests{qs}");
+        }
+        catch
+        {
+            _requests = new();
+            ToastService.ShowError("خطا در دریافت درخواست‌ها");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void FilterAll() { _activeFilter = null; _ = LoadData(); }
+    private void FilterPending() { _activeFilter = "Pending"; _ = LoadData(); }
+    private void FilterApproved() { _activeFilter = "Approved"; _ = LoadData(); }
+    private void FilterRejected() { _activeFilter = "Rejected"; _ = LoadData(); }
+
+    private void ShowActionModal(RenewalRequestDto req, bool isApprove)
+    {
+        _actionReq = req;
+        _actionStatus = isApprove ? "Approved" : "Rejected";
+        _actionAdminNote = null;
+        _showActionModal = true;
+    }
+
+    private void CloseActionModal()
+    {
+        _showActionModal = false;
+        _actionReq = null;
+    }
+
+    private async Task SubmitAction()
+    {
+        if (_actionReq == null) return;
+        _isSubmitting = true;
+        StateHasChanged();
+
+        try
+        {
+            var body = new RenewalRequestActionDto
+            {
+                Status = _actionStatus!,
+                AdminNote = _actionAdminNote
+            };
+            var response = await Http.PutAsJsonAsync($"api/monitoring/renewal-requests/{_actionReq.Id}", body);
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("درخواست با موفقیت به‌روزرسانی شد");
+                CloseActionModal();
+                await LoadData();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(err);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally
+        {
+            _isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RevertToPending(RenewalRequestDto req)
+    {
+        _isSubmitting = true;
+        StateHasChanged();
+
+        try
+        {
+            var body = new RenewalRequestActionDto
+            {
+                Status = "Pending",
+                AdminNote = null
+            };
+            var response = await Http.PutAsJsonAsync($"api/monitoring/renewal-requests/{req.Id}", body);
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("درخواست به حالت در انتظار بازگشت");
+                await LoadData();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(err);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally
+        {
+            _isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ConfirmDelete(RenewalRequestDto req)
+    {
+        _deleteReq = req;
+        _showDeleteConfirm = true;
+    }
+
+    private void CancelDelete()
+    {
+        _showDeleteConfirm = false;
+        _deleteReq = null;
+    }
+
+    private async Task DeleteRequest()
+    {
+        if (_deleteReq == null) return;
+        _isDeleting = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await Http.DeleteAsync($"api/monitoring/renewal-requests/{_deleteReq.Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("درخواست با موفقیت حذف شد");
+                _showDeleteConfirm = false;
+                _deleteReq = null;
+                await LoadData();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(err);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally
+        {
+            _isDeleting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowHistoryModal(int assignmentId)
+    {
+        _showHistoryModal = true;
+        _historyLoading = true;
+        _historyItems = null;
+        StateHasChanged();
+
+        try
+        {
+            _historyItems = await Http.GetFromJsonAsync<List<RenewalRequestDto>>($"api/monitoring-devices/assignments/{assignmentId}/renewal-history");
+        }
+        catch
+        {
+            _historyItems = new();
+            ToastService.ShowError("خطا در دریافت تاریخچه");
+        }
+        finally
+        {
+            _historyLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseHistoryModal()
+    {
+        _showHistoryModal = false;
+        _historyItems = null;
+    }
+
+    public void Dispose()
+    {
+        if (_isSuperAdmin)
+            AdminWorkshopSelection.OnChanged -= OnWorkshopChanged;
+    }
+}
+
+<style>
+    .mrr-page { padding-bottom: 24px; }
+    .mrr-page *,
+    .mrr-modal * { box-sizing: border-box; }
+    .mrr-page .oi,
+    .mrr-modal .oi { font-family: Icons; }
+    .mrr-page :not(.oi),
+    .mrr-modal :not(.oi) { font-family: 'Vazirmatn', sans-serif; }
+
+    .mrr-header {
+        display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+    }
+    .mrr-back {
+        width: 40px; height: 40px; border-radius: 12px; background: #fff;
+        display: grid; place-items: center; text-decoration: none; color: #475569;
+        border: 1px solid rgba(0,0,0,0.06); flex-shrink: 0;
+    }
+    .mrr-kicker { font-size: 0.7rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+    .mrr-title { font-size: 1.2rem; font-weight: 900; color: #0f172a; }
+    .mrr-refresh {
+        margin-right: auto; width: 40px; height: 40px; border-radius: 12px;
+        border: 1px solid rgba(0,0,0,0.06); background: #fff; color: #475569;
+        display: grid; place-items: center; cursor: pointer; flex-shrink: 0;
+    }
+
+    .mrr-card {
+        background: #fff; border-radius: 18px; padding: 24px;
+        border: 1px solid rgba(0,0,0,0.04);
+    }
+    .mrr-loading { display: flex; align-items: center; gap: 12px; justify-content: center; padding: 40px 0; color: #64748b; font-weight: 700; }
+    .mrr-empty { text-align: center; padding: 40px 20px; }
+    .mrr-empty__icon { font-size: 2.5rem; color: #cbd5e1; margin-bottom: 12px; }
+    .mrr-empty__title { font-size: 1rem; font-weight: 900; color: #0f172a; margin-bottom: 6px; }
+    .mrr-empty__desc { font-size: 0.8rem; color: #94a3b8; margin-bottom: 16px; }
+
+    .mrr-tabs {
+        display: flex; gap: 4px; background: #fff; border-radius: 14px; padding: 4px;
+        margin-bottom: 16px; border: 1px solid rgba(0,0,0,0.04);
+    }
+    .mrr-tab {
+        flex: 1; padding: 8px 12px; border: none; background: transparent; border-radius: 10px;
+        font-size: 0.75rem; font-weight: 800; color: #94a3b8; cursor: pointer; font-family: inherit;
+        transition: all 0.15s;
+    }
+    .mrr-tab.active { background: #2563eb; color: #fff; }
+
+    .mrr-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .mrr-req {
+        background: #fff; border-radius: 20px; padding: 0;
+        border: 1px solid rgba(0,0,0,0.04); transition: all 0.25s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+        overflow: hidden;
+    }
+    .mrr-req:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.07); }
+    .mrr-req--pending {
+        border: 1.5px solid rgba(245,158,11,0.2);
+        box-shadow: 0 2px 12px rgba(245,158,11,0.06);
+    }
+    .mrr-req--pending:hover { box-shadow: 0 6px 24px rgba(245,158,11,0.1); }
+
+    .mrr-req__head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 16px; gap: 10px;
+        background: linear-gradient(135deg, #f8fafc, #fff);
+        border-bottom: 1px solid rgba(0,0,0,0.04);
+    }
+    .mrr-req--pending .mrr-req__head {
+        background: linear-gradient(135deg, rgba(245,158,11,0.04), #fff);
+    }
+    .mrr-req__device { font-weight: 900; font-size: 0.92rem; color: #0f172a; }
+    .mrr-req__num { font-weight: 700; color: #94a3b8; font-size: 0.78rem; }
+    .mrr-req__ws {
+        font-size: 0.68rem; color: #64748b; font-weight: 700; margin-top: 3px;
+        display: flex; align-items: center; gap: 4px;
+    }
+    .mrr-req__ws::before {
+        content: ''; width: 6px; height: 6px; border-radius: 50%;
+        background: #94a3b8; flex-shrink: 0;
+    }
+
+    .mrr-badge {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 4px 12px; border-radius: 999px; font-size: 0.68rem; font-weight: 800;
+        white-space: nowrap;
+    }
+    .mrr-badge--success { background: rgba(16,185,129,0.12); color: #059669; }
+    .mrr-badge--success::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #059669; flex-shrink: 0; }
+    .mrr-badge--danger { background: rgba(239,68,68,0.12); color: #dc2626; }
+    .mrr-badge--danger::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #dc2626; flex-shrink: 0; }
+    .mrr-badge--pending { background: rgba(245,158,11,0.12); color: #d97706; }
+    .mrr-badge--pending::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #d97706; flex-shrink: 0; animation: mrrDotPulse 1.5s ease-in-out infinite; }
+    @@keyframes mrrDotPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .mrr-req__body { padding: 14px 16px; }
+
+    .mrr-req__details {
+        display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;
+    }
+    .mrr-detail {
+        background: #f8fafc; border-radius: 10px; padding: 7px 12px;
+        display: inline-flex; align-items: center; gap: 6px;
+    }
+    .mrr-detail__label { font-size: 0.6rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+    .mrr-detail__value { font-size: 0.75rem; font-weight: 800; color: #334155; }
+    .mrr-detail__value--price { color: #059669; font-weight: 900; direction: ltr; }
+
+    .mrr-link { color: #2563eb; text-decoration: none; font-weight: 800; font-size: 0.72rem; display: inline-flex; align-items: center; gap: 4px; }
+    .mrr-price { font-weight: 900; color: #059669; direction: ltr; }
+
+    .mrr-req__note, .mrr-req__admin-note {
+        font-size: 0.78rem; color: #475569; padding: 10px 14px;
+        background: #f8fafc; border-radius: 12px; margin-bottom: 10px; line-height: 1.6;
+    }
+    .mrr-req__admin-note {
+        background: rgba(245,158,11,0.06);
+        border-right: 3px solid #f59e0b;
+    }
+    .mrr-req__note .mrr-detail__label, .mrr-req__admin-note .mrr-detail__label { font-size: 0.65rem; display: block; margin-bottom: 4px; }
+
+    .mrr-req__actions {
+        display: flex; gap: 6px; flex-wrap: wrap;
+        padding: 12px 16px; border-top: 1px solid rgba(0,0,0,0.04);
+        background: #fafbfc;
+    }
+
+    .mrr-btn {
+        display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+        border-radius: 12px; font-size: 0.78rem; font-weight: 800; cursor: pointer;
+        border: none; font-family: inherit; transition: all 0.15s;
+    }
+    .mrr-btn--success { background: #059669; color: #fff; }
+    .mrr-btn--danger { background: #dc2626; color: #fff; }
+    .mrr-btn--warning { background: #d97706; color: #fff; }
+    .mrr-btn--ghost { background: transparent; color: #64748b; padding: 8px 12px; }
+    .mrr-btn--ghost:hover { background: rgba(0,0,0,0.04); }
+    .mrr-btn--ghost-danger { background: transparent; color: #dc2626; padding: 8px 12px; }
+    .mrr-btn--ghost-danger:hover { background: rgba(239,68,68,0.08); }
+    .mrr-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .mrr-modal-overlay {
+        position: fixed; inset: 0; background: rgba(15,23,42,0.6);
+        backdrop-filter: blur(4px); z-index: 2000; display: flex; align-items: center; justify-content: center;
+        padding: 16px;
+    }
+    .mrr-modal {
+        background: #fff; border-radius: 24px; width: 100%; max-width: 440px;
+        max-height: 90vh; overflow-y: auto; animation: mrrFadeIn 0.2s ease;
+    }
+    @@keyframes mrrFadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+    .mrr-modal__head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 16px 20px; border-bottom: 1px solid rgba(0,0,0,0.06);
+    }
+    .mrr-modal__title { font-weight: 900; font-size: 1rem; color: #0f172a; }
+    .mrr-modal__body { padding: 20px; }
+    .mrr-modal__foot {
+        display: flex; justify-content: flex-end; gap: 8px;
+        padding: 12px 20px; border-top: 1px solid rgba(0,0,0,0.06);
+    }
+
+    .mrr-field { margin-bottom: 16px; }
+    .mrr-label { display: block; font-size: 0.78rem; font-weight: 800; color: #334155; margin-bottom: 6px; }
+    .mrr-static { font-size: 0.85rem; font-weight: 700; color: #0f172a; padding: 10px 12px; background: #f8fafc; border-radius: 10px; }
+    .mrr-static--price { font-weight: 900; color: #059669; direction: ltr; }
+    .mrr-textarea {
+        width: 100%; padding: 10px 12px; border: 1.5px solid #e2e8f0; border-radius: 12px;
+        font-size: 0.85rem; font-family: inherit; resize: vertical; outline: none;
+    }
+    .mrr-textarea:focus { border-color: #2563eb; }
+
+    .mrr-modal--wide { max-width: 640px; }
+    .mrr-delete-warn { font-size: 0.85rem; color: #dc2626; font-weight: 700; margin-bottom: 16px; padding: 10px 14px; background: rgba(239,68,68,0.06); border-radius: 10px; border-right: 3px solid #dc2626; }
+    .mrr-empty-sm { text-align: center; padding: 20px; color: #94a3b8; font-weight: 700; font-size: 0.85rem; }
+
+    .mrr-history-table {
+        border: 1px solid rgba(0,0,0,0.06); border-radius: 12px; overflow: hidden;
+    }
+    .mrr-history-row {
+        display: grid; grid-template-columns: 1fr 0.7fr 0.6fr 0.7fr 0.5fr 0.7fr 0.7fr;
+        gap: 8px; padding: 10px 12px; align-items: center; font-size: 0.75rem; font-weight: 700;
+    }
+    .mrr-history-row--head { background: #f8fafc; font-size: 0.6rem; color: #94a3b8; font-weight: 800; text-transform: uppercase; }
+    .mrr-history-row:not(:last-child) { border-bottom: 1px solid rgba(0,0,0,0.04); }
+
+    @@media (max-width: 480px) {
+        .mrr-history-row { grid-template-columns: 1fr 0.5fr 0.5fr 0.5fr 0.4fr 0.5fr 0.5fr; font-size: 0.6rem; }
+    }
+</style>

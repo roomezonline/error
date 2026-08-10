@@ -1,0 +1,287 @@
+@page "/contact"
+@using ErrorService.Shared
+@using ErrorService.Shared.Models
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService Toast
+@inject IJSRuntime JS
+
+<SeoHeader 
+    Title="تماس با ارورسرویس | مشاوره و سرویس لوازم خانگی"
+    Description="تماس با ارورسرویس برای مشاوره رایگان، درخواست سرویس و تعمیر لوازم خانگی. پاسخگویی ۲۴ ساعته با شماره ۰۹۱۶۶۹۱۲۵۳۷"
+    Keywords="تماس ارورسرویس, شماره تماس, مشاوره تعمیرات لوازم خانگی, تعمیر یخچال, تعمیر لباسشویی"
+    OgType="website" />
+
+<div class="contact-page py-5">
+    <div class="container">
+        <div class="contact-hero text-center mb-5">
+            <div class="contact-hero-icon mb-3">
+                <span class="oi oi-phone display-3 text-primary"></span>
+            </div>
+            <h1 class="fw-black mb-2">با ما در تماس باشید</h1>
+            <p class="text-muted fs-6 max-w-600 mx-auto">کارشناسان ارورسرویس آماده پاسخگویی به سوالات شما هستند. می‌توانید از طریق فرم زیر، تلفن یا شبکه‌های اجتماعی با ما ارتباط برقرار کنید.</p>
+        </div>
+
+        @if (_submitted)
+        {
+            <div class="row justify-content-center" @ref="_successRef">
+                <div class="col-md-8 col-lg-6">
+                    <div class="contact-success text-center p-5 rounded-4 bg-success-subtle border border-success border-opacity-25">
+                        <div class="display-1 text-success mb-3"><span class="oi oi-circle-check"></span></div>
+                        <h3 class="fw-black text-success mb-2">@_submitMessage</h3>
+                        <p class="text-muted mb-4">کارشناسان ما در اسرع وقت با شما تماس خواهند گرفت.</p>
+                        <button class="btn btn-outline-success rounded-pill px-4" @onclick="ResetForm">ارسال پیام جدید</button>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="row g-4 justify-content-center">
+                <div class="col-lg-5">
+                    <div class="contact-info-cards">
+                        @if (footer != null)
+                        {
+                            @if (!string.IsNullOrEmpty(footer.PhoneNumber1) || !string.IsNullOrEmpty(footer.PhoneNumber2))
+                            {
+                                <div class="contact-card p-4 rounded-4 shadow-sm bg-white mb-3">
+                                    <div class="d-flex align-items-start gap-3">
+                                        <div class="contact-card-icon bg-primary-subtle text-primary rounded-3 p-3 fs-4">
+                                            <span class="oi oi-phone"></span>
+                                        </div>
+                                        <div>
+                                            <h6 class="fw-bold mb-1">تلفن تماس</h6>
+                                            <div class="text-muted small mb-1">پاسخگویی ۲۴ ساعته، ۷ روز هفته</div>
+                                            @if (!string.IsNullOrEmpty(footer.PhoneNumber1))
+                                            {
+                                                <a href="tel:@footer.PhoneNumber1" class="contact-link d-block">@footer.PhoneNumber1</a>
+                                            }
+                                            @if (!string.IsNullOrEmpty(footer.PhoneNumber2))
+                                            {
+                                                <a href="tel:@footer.PhoneNumber2" class="contact-link d-block">@footer.PhoneNumber2</a>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(footer.WhatsAppNumber))
+                            {
+                                <div class="contact-card p-4 rounded-4 shadow-sm bg-white mb-3">
+                                    <div class="d-flex align-items-start gap-3">
+                                        <div class="contact-card-icon bg-success-subtle text-success rounded-3 p-3 fs-4">
+                                            <span class="oi oi-comment-square"></span>
+                                        </div>
+                                        <div>
+                                            <h6 class="fw-bold mb-1">واتساپ</h6>
+                                            <div class="text-muted small mb-1">پاسخگویی پیام‌های متنی</div>
+                                            <a href="https://wa.me/@(footer.WhatsAppNumber.TrimStart('+', '0'))" target="_blank" class="contact-link d-block" rel="noopener">@footer.WhatsAppNumber</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(footer.Email))
+                            {
+                                <div class="contact-card p-4 rounded-4 shadow-sm bg-white mb-3">
+                                    <div class="d-flex align-items-start gap-3">
+                                        <div class="contact-card-icon bg-info-subtle text-info rounded-3 p-3 fs-4">
+                                            <span class="oi oi-envelope-closed"></span>
+                                        </div>
+                                        <div>
+                                            <h6 class="fw-bold mb-1">ایمیل</h6>
+                                            <div class="text-muted small mb-1">ارسال درخواست‌های سازمانی</div>
+                                            <a href="mailto:@footer.Email" class="contact-link d-block">@footer.Email</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(footer.Address))
+                            {
+                                <div class="contact-card p-4 rounded-4 shadow-sm bg-white mb-3">
+                                    <div class="d-flex align-items-start gap-3">
+                                        <div class="contact-card-icon bg-warning-subtle text-warning rounded-3 p-3 fs-4">
+                                            <span class="oi oi-map-marker"></span>
+                                        </div>
+                                        <div>
+                                            <h6 class="fw-bold mb-1">آدرس</h6>
+                                            <div class="text-muted small">@footer.Address</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="contact-social p-4 rounded-4 shadow-sm bg-white">
+                                <h6 class="fw-bold mb-3">ما را دنبال کنید</h6>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    @if (!string.IsNullOrEmpty(footer.InstagramUrl))
+                                    {
+                                        <a href="@footer.InstagramUrl" target="_blank" class="social-btn instagram" rel="noopener" title="اینستاگرام">
+                                            <span class="oi oi-camera-slr"></span>
+                                        </a>
+                                    }
+                                    @if (!string.IsNullOrEmpty(footer.TelegramUrl))
+                                    {
+                                        <a href="@footer.TelegramUrl" target="_blank" class="social-btn telegram" rel="noopener" title="تلگرام">
+                                            <span class="oi oi-location"></span>
+                                        </a>
+                                    }
+                                    @if (!string.IsNullOrEmpty(footer.YouTubeUrl))
+                                    {
+                                        <a href="@footer.YouTubeUrl" target="_blank" class="social-btn youtube" rel="noopener" title="یوتیوب">
+                                            <span class="oi oi-video"></span>
+                                        </a>
+                                    }
+                                    @if (!string.IsNullOrEmpty(footer.LinkedInUrl))
+                                    {
+                                        <a href="@footer.LinkedInUrl" target="_blank" class="social-btn linkedin" rel="noopener" title="لینکدین">
+                                            <span class="oi oi-browser"></span>
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-center py-5">
+                                <div class="spinner-border text-primary" role="status"></div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <div class="contact-form-wrapper p-4 p-md-5 rounded-4 shadow-sm bg-white">
+                        <h4 class="fw-black mb-1">فرم تماس</h4>
+                        <p class="text-muted small mb-4">پیام خود را از طریق فرم زیر برای ما ارسال کنید.</p>
+
+                        <EditForm Model="model" OnValidSubmit="HandleSubmit">
+                            <DataAnnotationsValidator />
+
+                            <div class="row g-3">
+                                <div class="col-sm-6">
+                                    <label class="form-label small fw-bold">نام و نام خانوادگی <span class="text-danger">*</span></label>
+                                    <InputText @bind-Value="model.FullName" class="form-control rounded-3 py-2" placeholder="نام خود را وارد کنید" />
+                                    <ValidationMessage For="@(() => model.FullName)" class="text-danger small" />
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label small fw-bold">شماره موبایل <span class="text-danger">*</span></label>
+                                    <InputText @bind-Value="model.PhoneNumber" class="form-control rounded-3 py-2" placeholder="09xxxxxxxxx" />
+                                    <ValidationMessage For="@(() => model.PhoneNumber)" class="text-danger small" />
+                                </div>
+                                <div class="col-sm-12">
+                                    <label class="form-label small fw-bold">ایمیل</label>
+                                    <InputText @bind-Value="model.Email" type="email" class="form-control rounded-3 py-2" placeholder="example@email.com (اختیاری)" />
+                                    <ValidationMessage For="@(() => model.Email)" class="text-danger small" />
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small fw-bold">موضوع <span class="text-danger">*</span></label>
+                                    <InputText @bind-Value="model.Subject" class="form-control rounded-3 py-2" placeholder="موضوع پیام" />
+                                    <ValidationMessage For="@(() => model.Subject)" class="text-danger small" />
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small fw-bold">متن پیام <span class="text-danger">*</span></label>
+                                    <InputTextArea @bind-Value="model.Message" class="form-control rounded-3 py-2" rows="5" placeholder="پیام خود را بنویسید..." />
+                                    <ValidationMessage For="@(() => model.Message)" class="text-danger small" />
+                                </div>
+                                <div class="col-12 mt-4">
+                                    <button type="submit" class="btn btn-primary w-100 rounded-pill py-3 fw-bold shadow-sm" disabled="@_isBusy">
+                                        @if (_isBusy)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2"></span>
+                                        }
+                                        <span class="oi oi-envelope-closed me-2"></span>
+                                        ارسال پیام
+                                    </button>
+                                </div>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .contact-hero-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: rgba(37, 99, 235, 0.1);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .max-w-600 { max-width: 600px; }
+    .contact-card { transition: transform 0.2s, box-shadow 0.2s; }
+    .contact-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.08) !important; }
+    .contact-card-icon { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .contact-link { color: var(--bs-primary); text-decoration: none; font-weight: 600; font-size: 1.05rem; }
+    .contact-link:hover { text-decoration: underline; }
+    .social-btn {
+        width: 44px; height: 44px; border-radius: 50%; display: inline-flex;
+        align-items: center; justify-content: center; text-decoration: none;
+        font-size: 1.2rem; transition: all 0.2s; color: #fff;
+    }
+    .social-btn.instagram { background: linear-gradient(135deg, #405DE6, #E1306C); }
+    .social-btn.telegram { background: #0088cc; }
+    .social-btn.youtube { background: #FF0000; }
+    .social-btn.linkedin { background: #0077B5; }
+    .social-btn:hover { transform: scale(1.1); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+    .contact-form-wrapper { border: 1px solid rgba(0,0,0,0.05); }
+    .contact-success { animation: fadeInUp 0.5s ease-out; }
+    @@keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+    @@media (max-width: 991px) {
+        .contact-page .container { padding-inline: 1rem; }
+    }
+</style>
+
+@code {
+    private ContactMessageRequest model = new();
+    private bool _isBusy;
+    private bool _submitted;
+    private string _submitMessage = "";
+    private FooterSettingsDto? footer;
+    private ElementReference _successRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            footer = await Http.GetFromJsonAsync<FooterSettingsDto>("api/footer");
+        }
+        catch { }
+    }
+
+    private async Task HandleSubmit()
+    {
+        _isBusy = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/contact", model);
+            var body = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            _submitMessage = body.GetProperty("message").GetString() ?? "پیام شما با موفقیت ثبت شد.";
+            _submitted = true;
+            await Task.Delay(100);
+            await JS.InvokeVoidAsync("scrollToElement", _successRef);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError(ex.Message);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        model = new();
+        _submitted = false;
+        _submitMessage = "";
+    }
+}

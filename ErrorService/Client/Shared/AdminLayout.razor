@@ -1,0 +1,1177 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@using ErrorService.Client.Services
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject NavigationManager Nav
+@inject IJSRuntime JSRuntime
+@inject AuthService Auth
+@inject HttpClient Http
+@inject AdminWorkshopSelectionService AdminWorkshopSelection
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+
+@code {
+    private bool showUserMenu = false;
+    private DotNetObjectReference<AdminLayout>? _dotNetRef;
+
+    private async Task ToggleUserMenu()
+    {
+        showUserMenu = !showUserMenu;
+        if (showUserMenu)
+        {
+            await JSRuntime.InvokeVoidAsync("__um_addHandler", _dotNetRef);
+        }
+        else
+        {
+            await JSRuntime.InvokeVoidAsync("__um_removeHandler");
+        }
+    }
+
+    [JSInvokable]
+    public void CloseUserMenuFromOutside()
+    {
+        showUserMenu = false;
+        StateHasChanged();
+    }
+    private bool showNavDrawer = false;
+    private void ToggleNavDrawer() => showNavDrawer = !showNavDrawer;
+
+    private void GoDashboard() => Nav.NavigateTo("/admin");
+    private void GoNewReceipt() => Nav.NavigateTo("/admin/receipts/new");
+    private void GoReceipts() => Nav.NavigateTo("/admin/receipts");
+    private void GoSettings() => Nav.NavigateTo("/admin/settings");
+    private int? currentWorkshopId;
+    private string? currentWorkshopName;
+    private string? currentWorkshopOwner;
+    private bool isSuperAdmin;
+    private bool _hasAnySmsPerm;
+
+    private List<WorkshopDto>? workshops;
+    private string? selectedWorkshopId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var workshopToken = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "workshop_token");
+        var authToken = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "auth_token");
+
+        if (string.IsNullOrEmpty(workshopToken) && string.IsNullOrEmpty(authToken))
+        {
+            Nav.NavigateTo("/auth/login");
+            return;
+        }
+
+        await AdminWorkshopSelection.InitializeAsync();
+        await LoadWorkshopContext();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                window.__um_addHandler = function(dotNetRef) {
+                    if (window.__um_handler) {
+                        document.removeEventListener('click', window.__um_handler, true);
+                    }
+                    window.__um_handler = function(e) {
+                        var m = document.querySelector('.user-dropdown-menu');
+                        var b = document.querySelector('.dropdown-modern > button');
+                        if (m && !m.contains(e.target) && b && !b.contains(e.target)) {
+                            document.removeEventListener('click', window.__um_handler, true);
+                            window.__um_handler = null;
+                            dotNetRef.invokeMethodAsync('CloseUserMenuFromOutside');
+                        }
+                    };
+                    document.addEventListener('click', window.__um_handler, true);
+                };
+                window.__um_removeHandler = function() {
+                    if (window.__um_handler) {
+                        document.removeEventListener('click', window.__um_handler, true);
+                        window.__um_handler = null;
+                    }
+                };
+            ");
+            await SetupHeaderScrollBehavior();
+        }
+    }
+
+    private async Task SetupHeaderScrollBehavior()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                (function() {
+                    'use strict';
+
+                    var lastScrollTop = 0;
+                    var scrollStartPoint = 0;
+                    var lastDirection = 'none';
+                    var touchStartY = 0;
+                    var isTouching = false;
+                    var currentTransform = 0;
+                    var targetTransform = 0;
+                    var isScrollingByNav = false;
+
+                    var headerWrapper = document.querySelector('.admin-header-wrapper');
+                    var header = document.querySelector('.admin-header');
+                    var scrollThreshold = 30;
+                    var maxTransform = -100;
+
+                    if (!headerWrapper || !header) return;
+
+                    function handleScroll() {
+                        if (isScrollingByNav) return;
+                        var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                        var scrollDirection = scrollTop > lastScrollTop ? 'down' : 'up';
+                        if (scrollDirection !== lastDirection) {
+                            scrollStartPoint = scrollTop;
+                            lastDirection = scrollDirection;
+                        }
+                        var scrollDistance = Math.abs(scrollTop - scrollStartPoint);
+                        if (scrollTop < 10 || isScrollingByNav) {
+                            targetTransform = 0;
+                        } else if (scrollDirection === 'down' && scrollDistance > scrollThreshold) {
+                            var hideProgress = Math.min((scrollDistance - scrollThreshold) / 50, 1);
+                            targetTransform = -hideProgress * 100;
+                        } else if (scrollDirection === 'up' && scrollDistance > scrollThreshold) {
+                            var showProgress = Math.min((scrollDistance - scrollThreshold) / 50, 1);
+                            targetTransform = maxTransform + showProgress * 100;
+                            if (targetTransform > 0) targetTransform = 0;
+                        }
+                        lastScrollTop = scrollTop;
+                    }
+
+                    function animateHeader() {
+                        if (isScrollingByNav) {
+                            currentTransform = 0;
+                            targetTransform = 0;
+                            headerWrapper.style.transform = 'translateY(0%)';
+                            header.style.opacity = '1';
+                            return;
+                        }
+                        var diff = targetTransform - currentTransform;
+                        if (Math.abs(diff) > 0.1) {
+                            currentTransform += diff * 0.15;
+                            headerWrapper.style.transform = 'translateY(' + currentTransform + '%)';
+                            header.style.opacity = 1 - Math.abs(currentTransform) / 100;
+                            requestAnimationFrame(animateHeader);
+                        } else {
+                            currentTransform = targetTransform;
+                            headerWrapper.style.transform = 'translateY(' + currentTransform + '%)';
+                            header.style.opacity = 1 - Math.abs(currentTransform) / 100;
+                        }
+                    }
+
+                    var ticking = false;
+                    function throttledScroll() {
+                        if (!ticking && !isScrollingByNav) {
+                            window.requestAnimationFrame(function() {
+                                handleScroll();
+                                animateHeader();
+                                ticking = false;
+                            });
+                            ticking = true;
+                        }
+                    }
+
+                    function handleTouchStart(e) {
+                        touchStartY = e.touches[0].clientY;
+                        isTouching = true;
+                    }
+
+                    function handleTouchMove(e) {
+                        if (!isTouching || isScrollingByNav) return;
+                        var currentY = e.touches[0].clientY;
+                        var deltaY = touchStartY - currentY;
+                        if (Math.abs(deltaY) > 5) throttledScroll();
+                    }
+
+                    function handleTouchEnd() {
+                        isTouching = false;
+                        setTimeout(function() {
+                            isScrollingByNav = false;
+                            throttledScroll();
+                        }, 100);
+                    }
+
+                    window.addEventListener('scroll', throttledScroll, { passive: true });
+                    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+                    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+                    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+                    scrollStartPoint = window.pageYOffset || document.documentElement.scrollTop;
+                    handleScroll();
+                })();
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error setting up header scroll behavior: {ex.Message}");
+        }
+    }
+
+    private async Task LoadWorkshopContext()
+    {
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = state.User;
+
+            isSuperAdmin = user.IsInRole("super_admin");
+
+            _hasAnySmsPerm = isSuperAdmin ||
+                user.HasClaim("perm", "admin.sms.view") ||
+                user.HasClaim("perm", "admin.sms.manage") ||
+                user.HasClaim("perm", "admin.sms.charges.manage") ||
+                user.HasClaim("perm", "admin.sms.credits.view") ||
+                user.HasClaim("perm", "admin.sms.credits.manage") ||
+                user.HasClaim("perm", "admin.sms.charges.view") ||
+                user.HasClaim("perm", "admin.sms.charges.approve") ||
+                user.HasClaim("perm", "admin.sms.logs.view") ||
+                user.HasClaim("perm", "workshop.sms.manage") ||
+                user.HasClaim("perm", "workshop.sms.settings.manage") ||
+                user.HasClaim("perm", "workshop.sms.credit.view") ||
+                user.HasClaim("perm", "workshop.sms.charge.request") ||
+                user.HasClaim("perm", "workshop.sms.charge.history") ||
+                user.HasClaim("perm", "workshop.sms.logs.view");
+
+            if (isSuperAdmin)
+            {
+                workshops = await Http.GetFromJsonAsync<List<WorkshopDto>>("api/workshops");
+                if (workshops == null || workshops.Count == 0)
+                {
+                    workshops = new List<WorkshopDto>();
+                }
+                selectedWorkshopId = AdminWorkshopSelection.SelectedWorkshopId?.ToString();
+            }
+
+            var wsIdStr = user.Claims.FirstOrDefault(x => x.Type == "workshop_id")?.Value;
+            if (!string.IsNullOrWhiteSpace(wsIdStr) && int.TryParse(wsIdStr, out var wsId))
+            {
+                currentWorkshopId = wsId;
+                var dto = await Http.GetFromJsonAsync<WorkshopDto>($"api/workshops/{wsId}");
+                currentWorkshopName = dto?.WorkshopName;
+                currentWorkshopOwner = dto?.OwnerFullName;
+            }
+            else
+            {
+                currentWorkshopId = null;
+                currentWorkshopName = null;
+                currentWorkshopOwner = null;
+            }
+        }
+        catch
+        {
+            currentWorkshopId = null;
+            currentWorkshopName = null;
+            currentWorkshopOwner = null;
+
+            if (isSuperAdmin)
+            {
+                workshops = new List<WorkshopDto>();
+            }
+        }
+    }
+
+    private async Task OnAdminWorkshopChanged()
+    {
+        if (string.IsNullOrWhiteSpace(selectedWorkshopId))
+        {
+            await AdminWorkshopSelection.SetSelectedWorkshopIdAsync(null);
+        }
+        else if (int.TryParse(selectedWorkshopId, out var id))
+        {
+            await AdminWorkshopSelection.SetSelectedWorkshopIdAsync(id);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleLogout()
+    {
+        await Auth.LogoutAsync();
+        if (AuthStateProvider is JwtAuthStateProvider jwtProvider)
+        {
+            jwtProvider.NotifyAuthStateChanged();
+        }
+        Nav.NavigateTo("/");
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+        try { JSRuntime.InvokeVoidAsync("__um_removeHandler"); } catch { }
+    }
+}
+
+<div class="admin-shell" dir="rtl">
+    <header class="admin-header">
+        <div class="admin-header-wrapper shadow-sm">
+            <div class="container-fluid admin-header__inner px-3">
+                <div class="admin-header__top">
+                    <div class="d-flex align-items-center gap-2">
+                        <button class="btn btn-icon rounded-circle d-lg-none" @onclick="ToggleNavDrawer" title="منوی مدیریت">
+                            <span class="oi oi-menu"></span>
+                        </button>
+                        <div class="admin-logo-circle shadow-sm">
+                            <svg viewBox="0 0 128 128" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <defs>
+                                    <linearGradient id="adG" x1="0" y1="0" x2="1" y2="1">
+                                        <stop offset="0%" stop-color="#2563eb"/>
+                                        <stop offset="100%" stop-color="#1d4ed8"/>
+                                    </linearGradient>
+                                    <linearGradient id="adA" x1="0" y1="0" x2="1" y2="1">
+                                        <stop offset="0%" stop-color="#f59e0b"/>
+                                        <stop offset="100%" stop-color="#d97706"/>
+                                    </linearGradient>
+                                </defs>
+                                <path d="M64 6L110 27v49c0 23-18 43-46 51-28-8-46-28-46-51V27L64 6z" fill="url(#adG)"/>
+                                <path d="M42 45h44v9H55v11h28v9H55v12h31v9H42V45z" fill="white"/>
+                                <circle cx="94" cy="45" r="5" fill="url(#adA)"/>
+                                <rect x="92" y="52" width="4" height="14" rx="2" fill="url(#adA)"/>
+                            </svg>
+                        </div>
+                        <span class="admin-brand fw-black text-dark">پنل مدیریت</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <AuthorizeView>
+                            <Authorized>
+                                <div class="dropdown-modern">
+                                    <button class="btn btn-icon rounded-circle bg-white shadow-sm border p-0 overflow-hidden" type="button" @onclick="ToggleUserMenu" @onclick:stopPropagation>
+                                        <div class="user-avatar-header bg-primary text-white fw-black">
+                                            @context.User.Identity?.Name?[0]
+                                        </div>
+                                    </button>
+                                    @if (showUserMenu)
+                                    {
+                                        <ul class="user-dropdown-menu shadow-lg border-0 rounded-4 mt-2 p-3 animate__animated animate__fadeInUp" @onclick:stopPropagation>
+                                            <li class="user-info-section mb-3">
+                                                <div class="d-flex align-items-center gap-3 p-2 bg-light rounded-4">
+                                                    <div class="user-avatar-large bg-primary text-white fw-black">
+                                                        @context.User.Identity?.Name?[0]
+                                                    </div>
+                                                    <div class="overflow-hidden">
+                                                        <div class="fw-black text-dark text-truncate">@context.User.Identity?.Name</div>
+                                                        <div class="text-muted small">@context.User.Claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.MobilePhone)?.Value</div>
+                                                    </div>
+                                                </div>
+                                            </li>
+
+                                            <li class="mb-2">
+                                                <div class="px-2 mb-1 x-small fw-bold text-muted text-uppercase">دسترسی ها</div>
+                                                <div class="d-flex flex-wrap gap-1 px-2">
+                                                    @foreach (var role in context.User.Claims.Where(c => c.Type == System.Security.Claims.ClaimTypes.Role))
+                                                    {
+                                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill fw-bold" style="font-size: 0.65rem;">@role.Value</span>
+                                                    }
+                                                </div>
+                                            </li>
+
+                                            <li><hr class="dropdown-divider opacity-10"></li>
+
+                                            <li>
+                                                <a class="dropdown-item rounded-3 py-2 d-flex align-items-center gap-2" href="/" @onclick="ToggleUserMenu">
+                                                    <div class="menu-icon bg-light text-muted"><span class="oi oi-globe"></span></div>
+                                                    <span class="fw-bold small">نمایش سایت</span>
+                                                </a>
+                                            </li>
+
+                                            <li>
+                                                <a class="dropdown-item rounded-3 py-2 d-flex align-items-center gap-2" href="/profile" @onclick="ToggleUserMenu">
+                                                    <div class="menu-icon bg-light text-muted"><span class="oi oi-person"></span></div>
+                                                    <span class="fw-bold small">پروفایل کاربری</span>
+                                                </a>
+                                            </li>
+
+                                            <li>
+                                                <a class="dropdown-item rounded-3 py-2 d-flex align-items-center gap-2" href="/admin/release-history" @onclick="ToggleUserMenu">
+                                                    <div class="menu-icon bg-info-subtle text-info"><span class="oi oi-history"></span></div>
+                                                    <span class="fw-bold small">تاریخچه تغییرات</span>
+                                                </a>
+                                            </li>
+
+                                            <li><hr class="dropdown-divider opacity-10"></li>
+
+                                            <li>
+                                                <button class="dropdown-item rounded-3 py-2 d-flex align-items-center gap-2 text-danger w-100 border-0 bg-transparent" @onclick="HandleLogout">
+                                                    <div class="menu-icon bg-danger-subtle text-danger"><span class="oi oi-account-logout"></span></div>
+                                                    <span class="fw-bold small">خروج از حساب</span>
+                                                </button>
+                                            </li>
+                                        </ul>
+                                    }
+                                </div>
+                            </Authorized>
+                        </AuthorizeView>
+                    </div>
+                </div>
+
+                @if (isSuperAdmin || (currentWorkshopId.HasValue && !string.IsNullOrWhiteSpace(currentWorkshopName)))
+                {
+                    <div class="admin-header__bottom">
+                        @if (isSuperAdmin)
+                        {
+                            <div class="admin-workshop-help">
+                                <span class="oi oi-info admin-workshop-help__icon" aria-hidden="true"></span>
+                                <span>کارگاه فعال برای پنل مدیریت را انتخاب کنید</span>
+                            </div>
+                            <div class="admin-workshop-picker admin-workshop-picker--full" title="انتخاب کارگاه">
+                                <span class="oi oi-wrench admin-workshop-picker__icon" aria-hidden="true"></span>
+                                <select class="admin-workshop-picker__select" @bind="selectedWorkshopId" @bind:after="OnAdminWorkshopChanged">
+                                    <option value="">همه کارگاه‌ها</option>
+                                    @if (workshops != null)
+                                    {
+                                        @foreach (var ws in workshops)
+                                        {
+                                            <option value="@ws.Id">@ws.WorkshopName (@ws.OwnerFullName)</option>
+                                        }
+                                    }
+                                </select>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="admin-workshop-help">
+                                <span class="oi oi-briefcase admin-workshop-help__icon" aria-hidden="true"></span>
+                                <span>کارگاه فعال شما</span>
+                            </div>
+                            <div class="admin-workshop-picker admin-workshop-picker--full" title="کارگاه فعال">
+                                <span class="oi oi-wrench admin-workshop-picker__icon" aria-hidden="true"></span>
+                                <span class="admin-workshop-picker__static-text">
+                                    @currentWorkshopName
+                                    @if (!string.IsNullOrWhiteSpace(currentWorkshopOwner))
+                                    {
+                                        <span class="admin-workshop-picker__sub">(@currentWorkshopOwner)</span>
+                                    }
+                                </span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </header>
+
+    <main class="admin-main-wrapper">
+        <div class="admin-content-container p-3 p-md-4">
+            @Body
+        </div>
+        <ToastContainer />
+        <PwaUpdateDialog />
+    </main>
+
+    <nav class="admin-bottom-nav" role="navigation" aria-label="Main navigation">
+        <button type="button" class="bnav-itm" @onclick="GoDashboard">
+            <span class="bnav-ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em">
+                    <rect x="3" y="3" width="8" height="8" rx="1.5"/>
+                    <rect x="13" y="3" width="8" height="8" rx="1.5"/>
+                    <rect x="3" y="13" width="8" height="8" rx="1.5"/>
+                    <rect x="13" y="13" width="8" height="8" rx="1.5"/>
+                </svg>
+            </span>
+            <span class="bnav-lbl">داشبورد</span>
+        </button>
+        <AuthorizeView Policy="perm:admin.receipts.manage">
+            <button type="button" class="bnav-itm" @onclick="GoNewReceipt">
+                <span class="bnav-ico">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em">
+                        <circle cx="12" cy="12" r="9.5"/>
+                        <path d="M12 7v10M7 12h10"/>
+                    </svg>
+                </span>
+                <span class="bnav-lbl">ثبت رسید</span>
+            </button>
+        </AuthorizeView>
+        <AuthorizeView Policy="perm:admin.receipts.view">
+            <button type="button" class="bnav-itm" @onclick="GoReceipts">
+                <span class="bnav-ico">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em">
+                        <line x1="8" y1="6" x2="20" y2="6"/>
+                        <line x1="8" y1="12" x2="20" y2="12"/>
+                        <line x1="8" y1="18" x2="20" y2="18"/>
+                        <circle cx="4" cy="6" r="1.5"/>
+                        <circle cx="4" cy="12" r="1.5"/>
+                        <circle cx="4" cy="18" r="1.5"/>
+                    </svg>
+                </span>
+                <span class="bnav-lbl">لیست رسیدها</span>
+            </button>
+        </AuthorizeView>
+        <AuthorizeView Policy="perm:admin.settings.manage">
+            <button type="button" class="bnav-itm" @onclick="GoSettings">
+                <span class="bnav-ico">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em">
+                        <line x1="4" y1="6" x2="20" y2="6"/>
+                        <line x1="4" y1="12" x2="20" y2="12"/>
+                        <line x1="4" y1="18" x2="20" y2="18"/>
+                        <circle cx="9" cy="6" r="2"/>
+                        <circle cx="15" cy="12" r="2"/>
+                        <circle cx="7" cy="18" r="2"/>
+                    </svg>
+                </span>
+                <span class="bnav-lbl">تنظیمات</span>
+            </button>
+        </AuthorizeView>
+    </nav>
+
+    @if (showNavDrawer)
+    {
+        <div class="admin-drawer-overlay" @onclick="ToggleNavDrawer"></div>
+        <div class="admin-drawer animate__animated animate__slideInRight">
+            <div class="admin-drawer__head">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="admin-logo-circle shadow-sm">
+                        <svg viewBox="0 0 128 128" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <linearGradient id="adDg" x1="0" y1="0" x2="1" y2="1">
+                                    <stop offset="0%" stop-color="#2563eb"/>
+                                    <stop offset="100%" stop-color="#1d4ed8"/>
+                                </linearGradient>
+                                <linearGradient id="adDa" x1="0" y1="0" x2="1" y2="1">
+                                    <stop offset="0%" stop-color="#f59e0b"/>
+                                    <stop offset="100%" stop-color="#d97706"/>
+                                </linearGradient>
+                            </defs>
+                            <path d="M64 6L110 27v49c0 23-18 43-46 51-28-8-46-28-46-51V27L64 6z" fill="url(#adDg)"/>
+                            <path d="M42 45h44v9H55v11h28v9H55v12h31v9H42V45z" fill="white"/>
+                            <circle cx="94" cy="45" r="5" fill="url(#adDa)"/>
+                            <rect x="92" y="52" width="4" height="14" rx="2" fill="url(#adDa)"/>
+                        </svg>
+                    </div>
+                    <span class="fw-black">پنل مدیریت</span>
+                </div>
+                <button class="btn btn-icon rounded-circle" @onclick="ToggleNavDrawer">
+                    <span class="oi oi-x"></span>
+                </button>
+            </div>
+            <div class="admin-drawer__body">
+                <CascadingAuthenticationState>
+                    <div class="admin-drawer__section">
+                        <div class="admin-drawer__title">دسترسی سریع</div>
+                        <a href="/admin" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                            <span class="oi oi-grid-three-up"></span>
+                            <span>داشبورد</span>
+                        </a>
+                    </div>
+
+                    <AuthorizeView Policy="perm:admin.onlineadmission.manage">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">پذیرش آنلاین</div>
+                            <a href="/admin/online-admission" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-wrench"></span>
+                                <span>لیست درخواست‌ها</span>
+                            </a>
+                            <a href="/admin/online-admission/settings" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-cog"></span>
+                                <span>تنظیمات کارشناسی</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.chat.manage">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">پشتیبانی آنلاین</div>
+                            <a href="/admin/chat" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-chat"></span>
+                                <span>مدیریت چت</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.receipts.view">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">رسیدها و مشتریان</div>
+                            <a href="/admin/receipts" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-list"></span>
+                                <span>لیست رسیدها</span>
+                            </a>
+                            <a href="/admin/receipts/new" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-plus"></span>
+                                <span>ثبت رسید جدید</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.monitoring.view" Context="monCtx">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">پایش و مانیتورینگ</div>
+                            <a href="/admin/monitoring/active-receipts" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-pulse"></span>
+                                <span>مانیتورینگ‌های فعال</span>
+                            </a>
+                            <a href="/admin/monitoring/my-devices" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-hard-drive"></span>
+                                <span>دستگاه‌های من</span>
+                            </a>
+                            <AuthorizeView Policy="perm:admin.monitoring.devices.manage" Context="devCtx">
+                                <a href="/admin/monitoring-devices" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                    <span class="oi oi-wrench"></span>
+                                    <span>مدیریت دستگاه‌ها</span>
+                                </a>
+                                <a href="/admin/monitoring/renewal-requests" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                    <span class="oi oi-loop"></span>
+                                    <span>درخواست‌های تمدید</span>
+                                </a>
+                                <a href="/admin/monitoring/plans" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                    <span class="oi oi-dollar"></span>
+                                    <span>تعرفه پلن‌ها</span>
+                                </a>
+                            </AuthorizeView>
+                            <AuthorizeView Policy="perm:admin.monitoring.details.view" Context="detCtx">
+                                <a href="/admin/monitoring/details" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                    <span class="oi oi-graph"></span>
+                                    <span>جزییات مانیتورینگ</span>
+                                </a>
+                            </AuthorizeView>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Context="wsCtx">
+                        <Authorized>
+                            @if (wsCtx.User.IsInRole("super_admin") || wsCtx.User.HasClaim("perm", "admin.workshops.editown") || wsCtx.User.HasClaim("perm", "workshop.users.manage"))
+                            {
+                                <div class="admin-drawer__section">
+                                    <div class="admin-drawer__title">کارگاه‌ها</div>
+                                    <a href="/admin/workshops" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                        <span class="oi oi-home"></span>
+                                        <span>مدیریت کارگاه‌ها</span>
+                                    </a>
+                                </div>
+                            }
+                        </Authorized>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.products.view">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">فروشگاه</div>
+                            <a href="/admin/products" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-box"></span>
+                                <span>محصولات</span>
+                            </a>
+                            <a href="/admin/categories" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-tags"></span>
+                                <span>دسته‌بندی‌ها</span>
+                            </a>
+                            <a href="/admin/orders" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-cart"></span>
+                                <span>سفارشات</span>
+                            </a>
+                            <a href="/admin/bank-accounts" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-credit-card"></span>
+                                <span>حساب‌های بانکی</span>
+                            </a>
+                            <a href="/admin/coupons" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-star"></span>
+                                <span>کدهای تخفیف</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.news.view">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">محتوا</div>
+                            <a href="/admin/academy" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-book"></span>
+                                <span>دوره‌های آموزشی</span>
+                            </a>
+                            <a href="/admin/academy/articles" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-document"></span>
+                                <span>مقالات و آموزش‌ها</span>
+                            </a>
+                            <a href="/admin/news" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-list"></span>
+                                <span>اخبار</span>
+                            </a>
+                            <a href="/admin/sliders" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-image"></span>
+                                <span>اسلایدرها</span>
+                            </a>
+                            <a href="/admin/stories" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-video"></span>
+                                <span>استوری‌ها</span>
+                            </a>
+                            <a href="/admin/popular-brands" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-star"></span>
+                                <span>برندهای محبوب</span>
+                            </a>
+                            <a href="/admin/team" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-people"></span>
+                                <span>همکاران</span>
+                            </a>
+                            <a href="/admin/comments" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-chat"></span>
+                                <span>مدیریت نظرات</span>
+                            </a>
+                            <a href="/admin/contact-messages" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-envelope-open"></span>
+                                <span>پیام‌های تماس</span>
+                            </a>
+                            <a href="/admin/newsletter-subscribers" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-inbox"></span>
+                                <span>مشترکین خبرنامه</span>
+                            </a>
+                            <a href="/admin/trust/portfolio" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-image"></span>
+                                <span>نمونه‌کارها</span>
+                            </a>
+                            <a href="/admin/footer" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-menu"></span>
+                                <span>فوتر سایت</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.technical.errorcodes.view">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">فنی و کاتالوگ</div>
+                            <a href="/admin/technical/error-codes" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-magnifying-glass"></span>
+                                <span>کدهای خطا</span>
+                            </a>
+                            <a href="/admin/technical/sensor-finder" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-rss"></span>
+                                <span>سنسور یاب</span>
+                            </a>
+                            <a href="/admin/devices/types" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-clipboard"></span>
+                                <span>نوع دستگاه</span>
+                            </a>
+                            <a href="/admin/devices/brands" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-badge"></span>
+                                <span>برندها</span>
+                            </a>
+                            <a href="/admin/technical/consultation" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-chat"></span>
+                                <span>مشاوره فنی</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.users.manage">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">کاربران</div>
+                            <a href="/admin/site-users" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-person"></span>
+                                <span>کاربران سایت</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:security.roles.manage">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">امنیت</div>
+                            <a href="/admin/roles" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-shield"></span>
+                                <span>نقش‌ها و مجوزها</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    @if (_hasAnySmsPerm)
+                    {
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">پیامک</div>
+                            <a href="/admin/sms" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-envelope-closed"></span>
+                                <span>پنل پیامک</span>
+                            </a>
+                        </div>
+                    }
+
+                    <AuthorizeView Policy="perm:admin.settings.manage">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">تنظیمات</div>
+                            <a href="/admin/settings" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-cog"></span>
+                                <span>تنظیمات سایت</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+                </CascadingAuthenticationState>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    :root {
+        --admin-bg: #f8fafc;
+        --admin-surface: #ffffff;
+        --admin-primary: #2563eb;
+        --admin-text: #0f172a;
+        --admin-text-muted: #64748b;
+    }
+
+    .admin-shell {
+        min-height: 100vh;
+        background-color: var(--admin-bg);
+        font-family: 'Vazirmatn', sans-serif;
+    }
+
+    .user-avatar-header {
+        width: 100%;
+        height: 100%;
+        display: grid;
+        place-items: center;
+        font-size: 1.1rem;
+        font-weight: 900;
+        text-transform: uppercase;
+    }
+
+    .admin-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        min-height: 64px;
+        background: transparent;
+        z-index: 1000;
+        will-change: opacity;
+    }
+
+    .admin-header-wrapper {
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+        will-change: transform;
+        isolation: isolate;
+    }
+
+    .admin-header__inner {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+
+    .admin-header__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .dropdown-modern { position: relative; }
+    .user-dropdown-menu {
+        position: absolute !important;
+        left: 0 !important;
+        right: auto !important;
+        top: 100% !important;
+        z-index: 9999 !important;
+        min-width: 260px;
+    }
+
+    .admin-header__bottom {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(15, 23, 42, 0.06);
+        border-radius: 18px;
+        padding: 10px 10px;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+        margin-top: 10px;
+    }
+
+    .admin-logo-circle {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        font-size: 1.1rem;
+    }
+
+    .workshop-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(37, 99, 235, 0.14);
+        background: rgba(37, 99, 235, 0.08);
+        color: #1d4ed8;
+        font-weight: 900;
+        font-size: 0.75rem;
+        max-width: 520px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .workshop-badge__icon {
+        font-size: 0.85rem;
+        opacity: 0.9;
+    }
+
+    .workshop-badge__text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .workshop-badge__sub {
+        opacity: 0.75;
+        font-weight: 800;
+        font-size: 0.72rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .workshop-badge--super {
+        border-color: rgba(2, 132, 199, 0.18);
+        background: rgba(2, 132, 199, 0.08);
+        color: #0369a1;
+    }
+
+    .admin-workshop-picker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(37, 99, 235, 0.14);
+        background: rgba(37, 99, 235, 0.08);
+        max-width: 560px;
+    }
+
+    .admin-workshop-picker--full {
+        width: 100%;
+        max-width: none;
+        padding: 10px 12px;
+        border-radius: 16px;
+        box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
+    }
+
+    .admin-workshop-picker__icon {
+        color: #1d4ed8;
+        font-size: 0.9rem;
+    }
+
+    .admin-workshop-picker__select {
+        border: 0;
+        background: transparent;
+        color: #1d4ed8;
+        font-weight: 900;
+        font-size: 0.78rem;
+        outline: none;
+        padding: 0;
+        max-width: 520px;
+    }
+
+    .admin-workshop-picker__static-text {
+        color: #1d4ed8;
+        font-weight: 900;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .admin-workshop-picker__sub {
+        opacity: 0.7;
+        font-weight: 700;
+        font-size: 0.75rem;
+    }
+
+    .admin-workshop-picker--full .admin-workshop-picker__select {
+        width: 100%;
+        max-width: none;
+        font-size: 0.9rem;
+    }
+
+    .admin-workshop-help {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.8rem;
+        font-weight: 900;
+        color: rgba(37, 99, 235, 0.95);
+        padding-right: 6px;
+    }
+
+    .admin-workshop-help__icon {
+        font-size: 0.95rem;
+        opacity: 0.95;
+    }
+
+    .admin-brand {
+        font-size: 1.1rem;
+        font-weight: 900;
+    }
+
+    .btn-icon {
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        display: grid;
+        place-items: center;
+        color: var(--admin-text-muted);
+        transition: all 0.2s ease;
+        border: none;
+        background: transparent;
+    }
+
+    .notification-dot {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 8px;
+        height: 8px;
+        background: #ef4444;
+        border-radius: 50%;
+        border: 2px solid white;
+    }
+
+    .admin-main-wrapper {
+        padding-top: 124px;
+        padding-bottom: 72px;
+        min-height: 100vh;
+    }
+
+    .admin-bottom-nav {
+        position: fixed; bottom: 0; left: 0; right: 0;
+        height: 64px;
+        background: rgba(248,250,252,0.98);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        display: flex;
+        align-items: stretch;
+        justify-content: space-evenly;
+        border-top: 1px solid rgba(0,0,0,0.04);
+        z-index: 1000;
+        padding-bottom: env(safe-area-inset-bottom, 0);
+        box-shadow: 0 -2px 20px rgba(0,0,0,0.03);
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    .bnav-itm {
+        flex: 1; min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        border: none; background: none; margin: 0;
+        padding: 4px 2px;
+        font-family: inherit;
+        cursor: pointer;
+        color: rgba(148,163,184,1);
+        -webkit-tap-highlight-color: transparent;
+        box-sizing: border-box;
+    }
+    .bnav-ico {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 30px; width: 30px;
+        font-size: 1.5rem;
+        line-height: 1;
+        pointer-events: none;
+        color: inherit;
+    }
+    .bnav-ico svg {
+        display: block;
+        width: 26px;
+        height: 26px;
+    }
+    .bnav-lbl {
+        display: flex;
+        font-size: 0.6rem;
+        font-weight: 850;
+        line-height: 1.15;
+        color: inherit;
+        pointer-events: none;
+    }
+    .bnav-itm:active {
+        color: var(--admin-primary, #2563eb);
+    }
+
+    /* ===== Admin Nav Drawer ===== */
+    .admin-drawer-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,0.5);
+        backdrop-filter: blur(4px);
+        z-index: 1049;
+    }
+    .admin-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 300px;
+        background: var(--admin-surface);
+        z-index: 1050;
+        box-shadow: -10px 0 40px rgba(0,0,0,0.15);
+        display: flex;
+        flex-direction: column;
+        animation-duration: 0.25s;
+    }
+    .admin-drawer__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 18px;
+        border-bottom: 1px solid rgba(15,23,42,0.06);
+        background: rgba(37,99,235,0.04);
+    }
+    .admin-drawer__body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 0 20px;
+    }
+    .admin-drawer__section {
+        padding: 8px 0;
+    }
+    .admin-drawer__title {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: var(--admin-text-muted);
+        padding: 8px 18px 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .admin-drawer__item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 18px;
+        color: var(--admin-text);
+        text-decoration: none;
+        font-size: 0.85rem;
+        font-weight: 700;
+        transition: background 0.15s;
+        border-radius: 0;
+    }
+    .admin-drawer__item:hover {
+        background: rgba(37,99,235,0.06);
+    }
+    .admin-drawer__item .oi {
+        width: 24px;
+        text-align: center;
+        font-size: 0.95rem;
+        color: var(--admin-text-muted);
+    }
+
+    @@media (min-width: 992px) {
+        .admin-content-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .admin-bottom-nav {
+            width: auto;
+            min-width: 300px;
+            max-width: 450px;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: 20px;
+            border-radius: 24px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 0 20px;
+        }
+    }
+</style>

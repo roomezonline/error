@@ -1,0 +1,344 @@
+@page "/admin/monitoring/plans"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.monitoring.plans.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService ToastService
+
+<PageTitle>مدیریت پلن‌های تمدید</PageTitle>
+
+<div class="mp-page" dir="rtl">
+    <div class="mp-header">
+        <div>
+            <div class="mp-kicker">سوپر ادمین</div>
+            <div class="mp-title">مدیریت پلن‌های تمدید</div>
+        </div>
+        <button class="mp-btn mp-btn--ghost" @onclick="LoadPlans">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
+            بروزرسانی
+        </button>
+    </div>
+
+    <div class="mp-grid">
+        <div class="mp-card">
+            <div class="mp-card__head">
+                <div class="mp-card__title">@(_editId == 0 ? "پلن جدید" : "ویرایش پلن")</div>
+                @if (_editId != 0)
+                {
+                    <button class="mp-btn mp-btn--ghost-sm" @onclick="ResetForm">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        انصراف
+                    </button>
+                }
+            </div>
+
+            <div class="mp-field">
+                <label class="mp-label">عنوان پلن</label>
+                <input class="mp-input" @bind="_editTitle" placeholder="مثلاً: پلن یکساله" />
+            </div>
+
+            <div class="mp-field">
+                <label class="mp-label">تعداد ماه</label>
+                <input class="mp-input ltr" type="number" @bind="_editMonths" min="1" max="120" />
+            </div>
+
+            <div class="mp-field">
+                <label class="mp-label">قیمت (تومان)</label>
+                <input class="mp-input ltr" type="number" @bind="_editPrice" min="0" step="1000" />
+            </div>
+
+            <div class="mp-actions">
+                <button class="mp-btn mp-btn--primary" @onclick="SavePlan" disabled="@_isSaving">
+                    @if (_isSaving)
+                    {
+                        <span class="spinner-border spinner-border-sm"></span>
+                    }
+                    @(_editId == 0 ? "ذخیره پلن" : "ذخیره تغییرات")
+                </button>
+            </div>
+        </div>
+
+        <div class="mp-card">
+            <div class="mp-card__head">
+                <div class="mp-card__title">پلن‌ها</div>
+                <div class="mp-pill">@(_plans?.Count ?? 0)</div>
+            </div>
+
+            @if (_plans == null)
+            {
+                <div class="mp-loading">در حال بارگذاری...</div>
+            }
+            else if (_plans.Count == 0)
+            {
+                <div class="mp-empty">هیچ پلنی تعریف نشده است</div>
+            }
+            else
+            {
+                <div class="mp-list">
+                    @foreach (var plan in _plans)
+                    {
+                        <div class="mp-item">
+                            <div class="mp-item__main">
+                                <div class="mp-item__top">
+                                    <div class="mp-item__title">
+                                        <span class="mp-item__name">@plan.Title</span>
+                                        <span class="mp-item__months">@plan.Months ماه</span>
+                                    </div>
+                                    <div class="mp-item__actions">
+                                        <span class="mp-badge @(plan.IsActive ? "mp-badge--ok" : "mp-badge--off")">@(plan.IsActive ? "فعال" : "غیرفعال")</span>
+                                    </div>
+                                </div>
+                                <div class="mp-item__sub">
+                                    <span class="mp-item__price">@plan.Price.ToString("N0") تومان</span>
+                                    <span class="mp-item__sep">•</span>
+                                    <span class="mp-item__date">@plan.CreatedAtFa</span>
+                                </div>
+                            </div>
+                            <div class="mp-item__actions">
+                                <button type="button" class="mp-act mp-act--toggle @(plan.IsActive ? "on" : "off")" @onclick="() => TogglePlan(plan.Id)" title="@(plan.IsActive ? "غیرفعال کردن" : "فعال کردن")">
+                                    @(plan.IsActive ? "فعال" : "غیرفعال")
+                                </button>
+                                <button type="button" class="mp-act mp-act--edit" title="ویرایش" @onclick="() => StartEdit(plan)">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                </button>
+                                <button type="button" class="mp-act mp-act--del" title="حذف" @onclick="() => AskDelete(plan)">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@if (_showDeleteConfirm)
+{
+    <div class="mp-modal-overlay" @onclick="() => _showDeleteConfirm = false">
+        <div class="mp-modal" @onclick:stopPropagation>
+            <div class="mp-modal__head">
+                <span>تأیید حذف</span>
+                <button class="mp-modal__close" @onclick="() => _showDeleteConfirm = false">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="mp-modal__body">
+                <p>آیا از حذف پلن "<strong>@_deleteTarget?.Title</strong>" اطمینان دارید؟</p>
+            </div>
+            <div class="mp-modal__foot">
+                <button class="mp-btn mp-btn--ghost" @onclick="() => _showDeleteConfirm = false">انصراف</button>
+                <button class="mp-btn mp-btn--danger" @onclick="ConfirmDelete">حذف</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .mp-page { max-width: 900px; margin: 0 auto; padding: 10px 10px 40px; font-family: 'Vazirmatn', sans-serif; }
+
+    .mp-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 12px 14px; border-radius: 18px; border: 1px solid rgba(2,6,23,0.06); background: rgba(255,255,255,0.75); backdrop-filter: blur(10px); }
+    .mp-kicker { font-size: 0.72rem; font-weight: 900; color: rgba(100,116,139,0.95); }
+    .mp-title { font-weight: 950; font-size: 1.05rem; color: #0f172a; }
+
+    .mp-grid { display: grid; grid-template-columns: 360px 1fr; gap: 12px; align-items: start; }
+
+    .mp-card { background: #fff; border: 1px solid rgba(2,6,23,0.08); border-radius: 18px; padding: 16px; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.04); }
+    .mp-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .mp-card__title { font-weight: 950; font-size: 0.95rem; color: #0f172a; }
+
+    .mp-field { display: grid; gap: 6px; margin-top: 10px; }
+    .mp-label { font-size: 0.8rem; font-weight: 900; color: rgba(100,116,139,0.95); }
+    .mp-input { width: 100%; border-radius: 14px; border: 1px solid rgba(2,6,23,0.10); background: rgba(248,250,252,0.95); padding: 10px 12px; font-weight: 800; color: #0f172a; outline: none; }
+    .mp-input:focus { border-color: rgba(79,70,229,0.35); box-shadow: 0 0 0 4px rgba(79,70,229,0.10); }
+
+    .mp-actions { margin-top: 12px; display: flex; gap: 10px; }
+    .mp-btn { border: none; border-radius: 14px; padding: 10px 12px; font-weight: 950; font-size: 0.82rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; }
+    .mp-btn--ghost { background: rgba(15, 23, 42, 0.05); color: rgba(15, 23, 42, 0.85); }
+    .mp-btn--ghost-sm { background: rgba(15, 23, 42, 0.05); color: rgba(15, 23, 42, 0.85); border: none; border-radius: 10px; padding: 6px 10px; font-size: 0.75rem; font-weight: 900; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-family: inherit; }
+    .mp-btn--primary { background: linear-gradient(135deg, #4f46e5, #2563eb); color: #fff; box-shadow: 0 10px 20px rgba(79,70,229,0.18); flex: 1; }
+    .mp-btn--danger { background: linear-gradient(135deg, #dc2626, #ef4444); color: #fff; }
+    .mp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .mp-pill { min-width: 30px; height: 26px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: rgba(79, 70, 229, 0.10); border: 1px solid rgba(79, 70, 229, 0.18); color: rgba(67, 56, 202, 0.98); font-weight: 950; font-size: 0.78rem; }
+    .mp-loading { padding: 20px 0; text-align: center; font-weight: 800; color: #94a3b8; }
+    .mp-empty { padding: 12px 4px; font-weight: 900; color: rgba(100,116,139,0.95); }
+
+    .mp-list { display: grid; gap: 8px; }
+    .mp-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(2,6,23,0.08); background: #fff; transition: all 0.15s; }
+    .mp-item:hover { border-color: rgba(2,6,23,0.14); }
+    .mp-item__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+    .mp-item__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .mp-item__title { display: flex; align-items: center; gap: 8px; }
+    .mp-item__name { font-weight: 950; font-size: 0.88rem; color: #0f172a; }
+    .mp-item__months { font-weight: 800; font-size: 0.72rem; color: rgba(100,116,139,0.85); }
+    .mp-item__sub { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 700; color: rgba(100,116,139,0.9); }
+    .mp-item__price { font-weight: 900; color: #059669; direction: ltr; }
+    .mp-item__sep { color: rgba(148,163,184,0.5); font-size: 0.6rem; }
+    .mp-item__date { color: rgba(100,116,139,0.75); font-size: 0.7rem; }
+    .mp-item__actions { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+    .mp-act { display: inline-flex; align-items: center; gap: 4px; border: none; cursor: pointer; font-weight: 900; font-size: 0.7rem; padding: 5px 8px; border-radius: 10px; transition: all 0.12s; white-space: nowrap; text-decoration: none; font-family: inherit; }
+    .mp-act--toggle { background: rgba(16,185,129,0.10); color: rgba(6,95,70,0.95); border: 1px solid rgba(16,185,129,0.18); }
+    .mp-act--toggle:hover { background: rgba(16,185,129,0.18); }
+    .mp-act--toggle.off { background: rgba(148,163,184,0.12); color: rgba(71,85,105,0.95); border-color: rgba(148,163,184,0.2); }
+    .mp-act--toggle.off:hover { background: rgba(148,163,184,0.2); }
+    .mp-act--edit { background: rgba(59,130,246,0.08); color: rgba(37,99,235,0.95); border: 1px solid rgba(59,130,246,0.15); padding: 5px 7px; }
+    .mp-act--edit:hover { background: rgba(59,130,246,0.16); }
+    .mp-act--del { background: rgba(239,68,68,0.08); color: rgba(185,28,28,0.95); border: 1px solid rgba(239,68,68,0.15); padding: 5px 7px; }
+    .mp-act--del:hover { background: rgba(239,68,68,0.18); }
+
+    .mp-badge { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; padding: 3px 8px; font-weight: 950; font-size: 0.65rem; border: 1px solid rgba(2,6,23,0.08); white-space: nowrap; }
+    .mp-badge--ok { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.20); color: rgba(6,95,70,0.98); }
+    .mp-badge--off { background: rgba(148,163,184,0.18); border-color: rgba(148,163,184,0.28); color: rgba(51,65,85,0.98); }
+
+    .mp-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.55); backdrop-filter: blur(8px); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .mp-modal { background: #fff; border-radius: 24px; width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.12); }
+    .mp-modal__head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid rgba(0,0,0,0.04); font-weight: 950; font-size: 1rem; }
+    .mp-modal__close { background: none; border: none; cursor: pointer; color: #64748b; padding: 4px; border-radius: 8px; }
+    .mp-modal__body { padding: 18px 22px; font-size: 0.88rem; color: #334155; font-weight: 600; }
+    .mp-modal__foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid rgba(0,0,0,0.04); }
+
+    .ltr { direction: ltr; text-align: left; }
+
+    @@media (max-width: 700px) { .mp-grid { grid-template-columns: 1fr; } }
+</style>
+
+@code {
+    private List<MonitoringPlanDto>? _plans;
+    private bool _isSaving;
+
+    private int _editId;
+    private string _editTitle = "";
+    private int _editMonths = 12;
+    private decimal _editPrice;
+
+    private bool _showDeleteConfirm;
+    private MonitoringPlanDto? _deleteTarget;
+
+    protected override async Task OnInitializedAsync() => await LoadPlans();
+
+    private async Task LoadPlans()
+    {
+        try
+        {
+            _plans = await Http.GetFromJsonAsync<List<MonitoringPlanDto>>("api/monitoring-plans");
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در دریافت پلن‌ها");
+        }
+    }
+
+    private void ResetForm()
+    {
+        _editId = 0;
+        _editTitle = "";
+        _editMonths = 12;
+        _editPrice = 0;
+    }
+
+    private void StartEdit(MonitoringPlanDto plan)
+    {
+        _editId = plan.Id;
+        _editTitle = plan.Title;
+        _editMonths = plan.Months;
+        _editPrice = plan.Price;
+    }
+
+    private async Task SavePlan()
+    {
+        if (string.IsNullOrWhiteSpace(_editTitle)) { ToastService.ShowError("عنوان پلن را وارد کنید"); return; }
+        if (_editMonths < 1) { ToastService.ShowError("تعداد ماه معتبر نیست"); return; }
+        if (_editPrice < 0) { ToastService.ShowError("قیمت معتبر نیست"); return; }
+
+        _isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            var body = new MonitoringPlanUpsertRequest
+            {
+                Title = _editTitle.Trim(),
+                Months = _editMonths,
+                Price = _editPrice
+            };
+
+            HttpResponseMessage resp;
+            if (_editId == 0)
+                resp = await Http.PostAsJsonAsync("api/monitoring-plans", body);
+            else
+                resp = await Http.PutAsJsonAsync($"api/monitoring-plans/{_editId}", body);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(_editId == 0 ? "پلن ایجاد شد" : "پلن بروزرسانی شد");
+                ResetForm();
+                await LoadPlans();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ذخیره" : msg);
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در ذخیره پلن");
+        }
+        finally
+        {
+            _isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TogglePlan(int id)
+    {
+        try
+        {
+            var resp = await Http.PatchAsync($"api/monitoring-plans/{id}/toggle", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                await LoadPlans();
+                ToastService.ShowSuccess("وضعیت پلن تغییر کرد");
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در تغییر وضعیت");
+        }
+    }
+
+    private void AskDelete(MonitoringPlanDto plan)
+    {
+        _deleteTarget = plan;
+        _showDeleteConfirm = true;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (_deleteTarget == null) return;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/monitoring-plans/{_deleteTarget.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("پلن حذف شد");
+                _showDeleteConfirm = false;
+                await LoadPlans();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در حذف" : msg);
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در حذف پلن");
+        }
+    }
+}

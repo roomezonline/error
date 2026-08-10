@@ -1,0 +1,223 @@
+@page "/about"
+@using ErrorService.Shared
+@using ErrorService.Shared.Models
+@using System.Net.Http.Json
+@inject HttpClient Http
+
+<SeoHeader 
+    Title="درباره ارورسرویس | مرجع تخصصی تعمیرات لوازم خانگی"
+    Description="ارورسرویس با بیش از ۱۰ سال تجربه در تعمیرات و سرویس لوازم خانگی، مرجع تخصصی کدهای خطا، آموزش و فروش قطعات یدکی"
+    Keywords="درباره ارورسرویس, تیم تعمیرکاران, تعمیرات لوازم خانگی, سابقه تعمیرات"
+    OgType="website"
+    JsonLd="@_aboutJsonLd" />
+
+<div class="about-page">
+    <div class="about-hero py-5 text-center text-white" style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);">
+        <div class="container">
+            <h1 class="fw-black display-5 mb-3">درباره ارورسرویس</h1>
+            <p class="fs-5 opacity-90 max-w-700 mx-auto">مرجع تخصصی کدهای خطا، تعمیرات و آموزش لوازم خانگی با تیمی از متخصصین مجرب</p>
+        </div>
+    </div>
+
+    <div class="container py-5">
+        <div class="row g-4 mb-5">
+            <div class="col-md-3 col-6">
+                <div class="stat-card p-4 rounded-4 shadow-sm bg-white text-center">
+                    <div class="stat-number fw-black text-primary display-5">۱۰+</div>
+                    <div class="stat-label text-muted small">سال تجربه</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-card p-4 rounded-4 shadow-sm bg-white text-center">
+                    <div class="stat-number fw-black text-success display-5">۵۰۰۰+</div>
+                    <div class="stat-label text-muted small">تعمیرات موفق</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-card p-4 rounded-4 shadow-sm bg-white text-center">
+                    <div class="stat-number fw-black text-warning display-5">۲۰+</div>
+                    <div class="stat-label text-muted small">کارشناس فنی</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-card p-4 rounded-4 shadow-sm bg-white text-center">
+                    <div class="stat-number fw-black text-info display-5">۱۰۰%</div>
+                    <div class="stat-label text-muted small">رضایت مشتریان</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-5 mb-5 align-items-center">
+            <div class="col-lg-6">
+                <div class="about-story p-4 p-md-5 rounded-4 shadow-sm bg-white">
+                    <h2 class="fw-black mb-3">داستان ما</h2>
+                    <p class="text-muted lh-lg">ارورسرویس در سال ۱۳۹۴ با هدف ایجاد یک مرجع کامل و تخصصی برای کدهای خطای لوازم خانگی شروع به کار کرد. آنچه با یک وبلاگ ساده آغاز شد، امروز به بزرگترین بانک اطلاعاتی کدهای خطا و مرکز تخصصی تعمیرات لوازم خانگی در کشور تبدیل شده است.</p>
+                    <p class="text-muted lh-lg">ما با گرد هم آوردن تیمی از متخصصین مجرب تعمیرات لوازم خانگی، علاوه بر ارائه خدمات تعمیر و سرویس در منزل، بستری برای آموزش و انتقال تجربیات فراهم کرده‌ایم. امروز افتخار داریم که به هزاران مشتری در سراسر کشور خدمات رسانی می‌کنیم.</p>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="about-mission-grid">
+                    <div class="mission-card p-4 rounded-4 shadow-sm bg-white mb-3">
+                        <div class="d-flex align-items-start gap-3">
+                            <div class="mission-icon bg-primary-subtle text-primary rounded-3 p-3 fs-4"><span class="oi oi-target"></span></div>
+                            <div>
+                                <h5 class="fw-bold mb-1">رسالت ما</h5>
+                                <p class="text-muted small mb-0">ارائه خدمات تخصصی تعمیرات با بالاترین کیفیت و کمترین هزینه</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mission-card p-4 rounded-4 shadow-sm bg-white mb-3">
+                        <div class="d-flex align-items-start gap-3">
+                            <div class="mission-icon bg-success-subtle text-success rounded-3 p-3 fs-4"><span class="oi oi-eye"></span></div>
+                            <div>
+                                <h5 class="fw-bold mb-1">چشم‌انداز</h5>
+                                <p class="text-muted small mb-0">اولین و بزرگترین مرجع تخصصی تعمیرات لوازم خانگی در کشور</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mission-card p-4 rounded-4 shadow-sm bg-white">
+                        <div class="d-flex align-items-start gap-3">
+                            <div class="mission-icon bg-warning-subtle text-warning rounded-3 p-3 fs-4"><span class="oi oi-star"></span></div>
+                            <div>
+                                <h5 class="fw-bold mb-1">ارزش‌ها</h5>
+                                <p class="text-muted small mb-0">صداقت، تخصص، سرعت و احترام به مشتری</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (teamMembers != null && teamMembers.Count > 0)
+        {
+            <div class="about-team mb-5">
+                <div class="text-center mb-4">
+                    <h2 class="fw-black">تیم ما</h2>
+                    <p class="text-muted">متخصصین مجرب ارورسرویس</p>
+                </div>
+                <div class="row g-4 justify-content-center">
+                    @foreach (var member in teamMembers)
+                    {
+                        <div class="col-md-4 col-lg-3 col-6">
+                            <div class="team-card p-4 rounded-4 shadow-sm bg-white text-center">
+                                <div class="team-photo mx-auto mb-3 rounded-circle overflow-hidden" style="width: 100px; height: 100px; background: #f1f5f9;">
+                                    @if (!string.IsNullOrEmpty(member.PhotoUrl))
+                                    {
+                                        <img src="@member.PhotoUrl" alt="@member.FullName" class="w-100 h-100 object-fit-cover" loading="lazy" />
+                                    }
+                                    else
+                                    {
+                                        <div class="w-100 h-100 d-flex align-items-center justify-content-center text-muted fs-1">
+                                            <span class="oi oi-person"></span>
+                                        </div>
+                                    }
+                                </div>
+                                <h6 class="fw-bold mb-1">@member.FullName</h6>
+                                @if (!string.IsNullOrEmpty(member.Role))
+                                {
+                                    <span class="badge bg-primary-subtle text-primary rounded-pill">@member.Role</span>
+                                }
+                                @if (!string.IsNullOrEmpty(member.Bio))
+                                {
+                                    <p class="text-muted small mt-2 mb-0">@member.Bio</p>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else if (_loadingTeam)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+            </div>
+        }
+
+        @if (testimonials != null && testimonials.Count > 0)
+        {
+            <div class="about-testimonials mb-5">
+                <div class="text-center mb-4">
+                    <h2 class="fw-black">نظرات مشتریان</h2>
+                    <p class="text-muted">آنچه مشتریان درباره ما می‌گویند</p>
+                </div>
+                <div class="row g-4 justify-content-center">
+                    @foreach (var t in testimonials)
+                    {
+                        <div class="col-md-6 col-lg-4">
+                            <div class="testimonial-card p-4 rounded-4 shadow-sm bg-white h-100">
+                                <div class="d-flex gap-1 mb-2 text-warning">
+                                    @for (int i = 0; i < t.Rating; i++)
+                                    {
+                                        <span>★</span>
+                                    }
+                                    @for (int i = t.Rating; i < 5; i++)
+                                    {
+                                        <span class="text-muted opacity-25">★</span>
+                                    }
+                                </div>
+                                <p class="text-muted small lh-lg mb-3">"@t.Content"</p>
+                                <div class="d-flex align-items-center gap-2 pt-2 border-top">
+                                    <div class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width:40px;height:40px;">
+                                        <span class="fw-bold small">@t.CustomerName[..1]</span>
+                                    </div>
+                                    <div>
+                                        <div class="fw-bold small">@t.CustomerName</div>
+                                        @if (!string.IsNullOrEmpty(t.CustomerRole))
+                                        {
+                                            <div class="text-muted x-small">@t.CustomerRole</div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .max-w-700 { max-width: 700px; }
+    .stat-card { transition: transform 0.2s; }
+    .stat-card:hover { transform: translateY(-4px); }
+    .stat-number { font-size: 2.5rem; line-height: 1; }
+    .mission-icon { width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .team-card { transition: transform 0.2s, box-shadow 0.2s; }
+    .team-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.08) !important; }
+    .object-fit-cover { object-fit: cover; }
+    .about-story { border: 1px solid rgba(0,0,0,0.05); }
+
+    @@media (max-width: 576px) {
+        .stat-number { font-size: 1.8rem; }
+        .about-hero h1 { font-size: 1.8rem; }
+    }
+</style>
+
+@code {
+    private List<TeamMemberDto>? teamMembers;
+    private List<TestimonialDto>? testimonials;
+    private bool _loadingTeam = true;
+    private string _aboutJsonLd = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _aboutJsonLd = $@"{{
+          ""@context"": ""https://schema.org"",
+          ""@type"": ""AboutPage"",
+          ""name"": ""درباره ارورسرویس"",
+          ""description"": ""ارورسرویس مرجع تخصصی کدهای خطا، تعمیرات و آموزش لوازم خانگی""
+        }}";
+        try
+        {
+            var teamTask = Http.GetFromJsonAsync<List<TeamMemberDto>>("api/teammembers?onlyPublished=true");
+            var testimonialTask = Http.GetFromJsonAsync<List<TestimonialDto>>("api/trust/testimonials");
+            await Task.WhenAll(teamTask, testimonialTask);
+            teamMembers = teamTask.Result;
+            testimonials = testimonialTask.Result;
+        }
+        catch { }
+        _loadingTeam = false;
+    }
+}

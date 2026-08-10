@@ -1,0 +1,369 @@
+@page "/technical/calculators"
+@using ErrorService.Shared.Models
+@inject ErrorService.Client.Services.ThemeService Theme
+
+<SeoHeader 
+    Title="ابزارهای محاسباتی الکترونیک | ارورسرویس"
+    Description="محاسبهگر کد رنگ مقاومت، قانون اهم و ابزارهای محاسباتی الکترونیک برای تعمیرکاران و مهندسین"
+    Keywords="محاسبهگر مقاومت, کد رنگ مقاومت, قانون اهم, ابزار الکترونیک"
+    OgType="website" />
+
+<div class="container py-4">
+    <div class="text-center mb-5">
+        <h2 class="fw-black text-primary mb-2">ابزارهای محاسباتی الکترونیک</h2>
+        <p class="text-muted">محاسبات دقیق قطعات برای تعمیرکاران و مهندسین</p>
+    </div>
+
+    <div class="row g-4">
+        <!-- Resistor Color Code Calculator -->
+        <div class="col-lg-6">
+            <div class="calc-card p-4 rounded-4 shadow-sm border-0 h-100">
+                <div class="d-flex align-items-center mb-4">
+                    <div class="calc-icon bg-primary-subtle text-primary me-3">
+                        <span class="oi oi-list"></span>
+                    </div>
+                    <h4 class="fw-bold mb-0">محاسبه کد رنگ مقاومت</h4>
+                </div>
+
+                <div class="resistor-preview mb-4 p-3 rounded-3 d-flex align-items-center justify-content-center" style="background: #e2e8f0; min-height: 80px;">
+                    <div class="resistor-body position-relative d-flex justify-content-between align-items-center px-4">
+                        <div class="band" style="background-color: @GetColorHex(band1)"></div>
+                        <div class="band" style="background-color: @GetColorHex(band2)"></div>
+                        <div class="band" style="background-color: @GetColorHex(multiplier)"></div>
+                        <div class="band" style="background-color: @GetColorHex(tolerance)"></div>
+                    </div>
+                </div>
+
+                <div class="row g-2 mb-4">
+                    <div class="col-6">
+                        <label class="small fw-bold mb-1">نوار اول</label>
+                        <select class="form-select form-select-sm" @bind="band1">
+                            @foreach (var color in resistorColors.Where(c => c.Value != null))
+                            {
+                                <option value="@color.Key">@color.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="small fw-bold mb-1">نوار دوم</label>
+                        <select class="form-select form-select-sm" @bind="band2">
+                            @foreach (var color in resistorColors.Where(c => c.Value != null))
+                            {
+                                <option value="@color.Key">@color.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="small fw-bold mb-1">ضریب (نوار سوم)</label>
+                        <select class="form-select form-select-sm" @bind="multiplier">
+                            @foreach (var color in resistorColors)
+                            {
+                                <option value="@color.Key">@color.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="small fw-bold mb-1">تلرانس</label>
+                        <select class="form-select form-select-sm" @bind="tolerance">
+                            @foreach (var color in toleranceColors)
+                            {
+                                <option value="@color.Key">@color.Name (@color.Percent%)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="result-box p-3 rounded-3 text-center">
+                    @{ var r = CalculateResistorValueParts(); }
+                    <h5 class="fw-black text-primary mb-1">
+                        <span class="unit-group">
+                            <span class="unit-value">@r.Number</span>
+                            <span class="unit-label">@r.Unit</span>
+                        </span>
+                    </h5>
+                    <span class="small text-muted">تلرانس: @GetTolerancePercent()%</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ohm's Law Calculator -->
+        <div class="col-lg-6">
+            <div class="calc-card p-4 rounded-4 shadow-sm border-0 h-100">
+                <div class="d-flex align-items-center mb-4">
+                    <div class="calc-icon bg-success-subtle text-success me-3">
+                        <span class="oi oi-bolt"></span>
+                    </div>
+                    <h4 class="fw-bold mb-0">قانون اهم (V = I × R)</h4>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="small fw-bold mb-1">ولتاژ (V - Volts)</label>
+                        <input type="number" class="form-control" @bind="voltage" @bind:event="oninput" placeholder="0" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="small fw-bold mb-1">جریان (I - Amperes)</label>
+                        <input type="number" class="form-control" @bind="current" @bind:event="oninput" placeholder="0" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="small fw-bold mb-1">مقاومت (R - Ohms)</label>
+                        <input type="number" class="form-control" @bind="resistance" @bind:event="oninput" placeholder="0" />
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <button class="btn btn-outline-secondary w-100" @onclick="ClearOhm">پاک کردن</button>
+                    </div>
+                </div>
+
+                <div class="mt-4 p-3 rounded-3 bg-light-subtle border">
+                    <p class="mb-1 fw-bold text-center">نتایج محاسبه:</p>
+                    @{ var o = CalculateOhm(); }
+                    <div class="row g-2 text-center">
+                        <div class="col-6">
+                            <small class="d-block text-muted">ولتاژ</small>
+                            <span class="fw-bold">
+                                <span class="unit-group">
+                                    <span class="unit-value">@o.Voltage</span>
+                                    <span class="unit-label">V</span>
+                                </span>
+                            </span>
+                        </div>
+                        <div class="col-6">
+                            <small class="d-block text-muted">جریان</small>
+                            <span class="fw-bold">
+                                <span class="unit-group">
+                                    <span class="unit-value">@o.Current</span>
+                                    <span class="unit-label">A</span>
+                                </span>
+                            </span>
+                        </div>
+                        <div class="col-6">
+                            <small class="d-block text-muted">مقاومت</small>
+                            <span class="fw-bold">
+                                <span class="unit-group">
+                                    <span class="unit-value">@o.ResistanceNumber</span>
+                                    <span class="unit-label">@o.ResistanceUnit</span>
+                                </span>
+                            </span>
+                        </div>
+                        <div class="col-6">
+                            <small class="d-block text-muted">توان</small>
+                            <span class="fw-bold">
+                                <span class="unit-group">
+                                    <span class="unit-value">@o.PowerNumber</span>
+                                    <span class="unit-label">@o.PowerUnit</span>
+                                </span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3 small text-muted text-center">
+                    * برای محاسبه هر مقدار، دو مقدار دیگر را وارد کنید.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .calc-card {
+        background: var(--app-surface);
+        border: 1px solid var(--app-border) !important;
+    }
+    .calc-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        font-size: 1.4rem;
+    }
+    .resistor-body {
+        width: 200px;
+        height: 34px;
+        background: #f1bf85;
+        border-radius: 17px;
+        box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+    }
+    .band {
+        width: 12px;
+        height: 100%;
+        box-shadow: 1px 0 2px rgba(0,0,0,0.1);
+    }
+    .result-box {
+        background: var(--app-bg);
+        border: 2px dashed var(--app-primary);
+    }
+    .bg-primary-subtle { background: rgba(37, 99, 235, 0.1); }
+    .bg-success-subtle { background: rgba(16, 185, 129, 0.1); }
+
+    .unit-group {
+        direction: ltr;
+        display: inline-flex;
+        gap: 0.35rem;
+        align-items: baseline;
+        justify-content: center;
+        white-space: nowrap;
+    }
+    .unit-label {
+        font-size: 0.95em;
+        opacity: 0.9;
+    }
+</style>
+
+@code {
+    // Resistor logic
+    private string band1 = "brown";
+    private string band2 = "black";
+    private string multiplier = "red";
+    private string tolerance = "gold";
+
+    private class ColorBand { public string Key { get; set; } = ""; public string Name { get; set; } = ""; public int? Value { get; set; } public double Multiplier { get; set; } public string Hex { get; set; } = ""; }
+    private class ToleranceBand { public string Key { get; set; } = ""; public string Name { get; set; } = ""; public double Percent { get; set; } public string Hex { get; set; } = ""; }
+
+    private List<ColorBand> resistorColors = new() {
+        new ColorBand { Key = "black", Name = "مشکی", Value = 0, Multiplier = 1, Hex = "#000000" },
+        new ColorBand { Key = "brown", Name = "قهوه‌ای", Value = 1, Multiplier = 10, Hex = "#8B4513" },
+        new ColorBand { Key = "red", Name = "قرمز", Value = 2, Multiplier = 100, Hex = "#FF0000" },
+        new ColorBand { Key = "orange", Name = "نارنجی", Value = 3, Multiplier = 1000, Hex = "#FFA500" },
+        new ColorBand { Key = "yellow", Name = "زرد", Value = 4, Multiplier = 10000, Hex = "#FFFF00" },
+        new ColorBand { Key = "green", Name = "سبز", Value = 5, Multiplier = 100000, Hex = "#008000" },
+        new ColorBand { Key = "blue", Name = "آبی", Value = 6, Multiplier = 1000000, Hex = "#0000FF" },
+        new ColorBand { Key = "violet", Name = "بنفش", Value = 7, Multiplier = 10000000, Hex = "#EE82EE" },
+        new ColorBand { Key = "grey", Name = "خاکستری", Value = 8, Multiplier = 100000000, Hex = "#808080" },
+        new ColorBand { Key = "white", Name = "سفید", Value = 9, Multiplier = 1000000000, Hex = "#FFFFFF" },
+        new ColorBand { Key = "gold", Name = "طلایی", Value = null, Multiplier = 0.1, Hex = "#FFD700" },
+        new ColorBand { Key = "silver", Name = "نقره‌ای", Value = null, Multiplier = 0.01, Hex = "#C0C0C0" }
+    };
+
+    private List<ToleranceBand> toleranceColors = new() {
+        new ToleranceBand { Key = "brown", Name = "قهوه‌ای", Percent = 1, Hex = "#8B4513" },
+        new ToleranceBand { Key = "red", Name = "قرمز", Percent = 2, Hex = "#FF0000" },
+        new ToleranceBand { Key = "gold", Name = "طلایی", Percent = 5, Hex = "#FFD700" },
+        new ToleranceBand { Key = "silver", Name = "نقره‌ای", Percent = 10, Hex = "#C0C0C0" }
+    };
+
+    private string GetColorHex(string key) => resistorColors.FirstOrDefault(c => c.Key == key)?.Hex ?? toleranceColors.FirstOrDefault(c => c.Key == key)?.Hex ?? "#ccc";
+
+    private DisplayParts CalculateResistorValueParts() {
+        var v1 = resistorColors.First(c => c.Key == band1).Value ?? 0;
+        var v2 = resistorColors.First(c => c.Key == band2).Value ?? 0;
+        var m = resistorColors.First(c => c.Key == multiplier).Multiplier;
+        double val = (v1 * 10 + v2) * m;
+
+        return FormatResistance(val);
+    }
+
+    private double GetTolerancePercent() => toleranceColors.First(c => c.Key == tolerance).Percent;
+
+    // Ohm's Law logic
+    private double? voltage;
+    private double? current;
+    private double? resistance;
+
+    private void ClearOhm() { voltage = null; current = null; resistance = null; }
+
+    private sealed class DisplayParts
+    {
+        public string Number { get; set; } = "0";
+        public string Unit { get; set; } = string.Empty;
+    }
+
+    private sealed class OhmResult
+    {
+        public string Voltage { get; set; } = "0";
+        public string Current { get; set; } = "0";
+        public string ResistanceNumber { get; set; } = "0";
+        public string ResistanceUnit { get; set; } = "Ω";
+        public string PowerNumber { get; set; } = "0";
+        public string PowerUnit { get; set; } = "W";
+    }
+
+    private OhmResult CalculateOhm()
+    {
+        var v = voltage;
+        var i = current;
+        var r = resistance;
+
+        var unknowns = 0;
+        if (!v.HasValue) unknowns++;
+        if (!i.HasValue) unknowns++;
+        if (!r.HasValue) unknowns++;
+
+        // if more than one input is empty, we can't solve uniquely
+        if (unknowns > 1)
+        {
+            return new OhmResult
+            {
+                Voltage = v?.ToString("G") ?? "0",
+                Current = i?.ToString("G") ?? "0",
+                ResistanceNumber = r.HasValue ? FormatResistance(r.Value).Number : "0",
+                ResistanceUnit = r.HasValue ? FormatResistance(r.Value).Unit : "Ω",
+                PowerNumber = FormatPower(CalculatePowerWatts(v, i, r)).Number,
+                PowerUnit = FormatPower(CalculatePowerWatts(v, i, r)).Unit
+            };
+        }
+
+        // Solve the unknown
+        if (!v.HasValue && i.HasValue && r.HasValue)
+        {
+            v = i.Value * r.Value;
+        }
+        else if (!i.HasValue && v.HasValue && r.HasValue && r.Value != 0)
+        {
+            i = v.Value / r.Value;
+        }
+        else if (!r.HasValue && v.HasValue && i.HasValue && i.Value != 0)
+        {
+            r = v.Value / i.Value;
+        }
+
+        var formattedR = r.HasValue ? FormatResistance(r.Value) : new DisplayParts { Number = "0", Unit = "Ω" };
+        var formattedP = FormatPower(CalculatePowerWatts(v, i, r));
+
+        return new OhmResult
+        {
+            Voltage = v?.ToString("G") ?? "0",
+            Current = i?.ToString("G") ?? "0",
+            ResistanceNumber = formattedR.Number,
+            ResistanceUnit = formattedR.Unit,
+            PowerNumber = formattedP.Number,
+            PowerUnit = formattedP.Unit
+        };
+    }
+
+    private static double CalculatePowerWatts(double? v, double? i, double? r)
+    {
+        if (v.HasValue && i.HasValue) return v.Value * i.Value;
+        if (i.HasValue && r.HasValue) return i.Value * i.Value * r.Value;
+        if (v.HasValue && r.HasValue && r.Value != 0) return v.Value * v.Value / r.Value;
+        return 0;
+    }
+
+    private static DisplayParts FormatResistance(double ohms)
+    {
+        var val = Math.Abs(ohms);
+        if (val >= 1000000)
+        {
+            return new DisplayParts { Number = (ohms / 1000000).ToString("G"), Unit = "MΩ" };
+        }
+        if (val >= 1000)
+        {
+            return new DisplayParts { Number = (ohms / 1000).ToString("G"), Unit = "kΩ" };
+        }
+        return new DisplayParts { Number = ohms.ToString("G"), Unit = "Ω" };
+    }
+
+    private static DisplayParts FormatPower(double watts)
+    {
+        var val = Math.Abs(watts);
+        if (val >= 1000000)
+        {
+            return new DisplayParts { Number = (watts / 1000000).ToString("G"), Unit = "MW" };
+        }
+        if (val >= 1000)
+        {
+            return new DisplayParts { Number = (watts / 1000).ToString("G"), Unit = "kW" };
+        }
+        return new DisplayParts { Number = watts.ToString("G"), Unit = "W" };
+    }
+}

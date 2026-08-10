@@ -1,0 +1,215 @@
+[
+  {
+    "Brand": "LG",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "IE",
+    "Description": "خطای ورودی آب (Inlet Error)",
+    "Solution": "شیر آب ورودی را چک کنید که باز باشد. شلنگ ورودی را از نظر تاخوردگی بررسی کنید. فیلتر ورودی آب در پشت دستگاه را تمیز کنید.",
+    "TechnicalNotes": "این خطا زمانی رخ می‌دهد که در مدت زمان مشخص، سنسور هیدروستات تغییری در سطح آب حس نکند.",
+    "Documents": [
+      { "Title": "LG Official Support - IE Error", "Url": "https://www.lg.com/us/support/help-library/lg-washer-troubleshooting-an-ie-error-code--1400510401752", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "LG",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "OE",
+    "Description": "خطای تخلیه آب (Drain Error)",
+    "Solution": "فیلتر پمپ تخلیه را تمیز کنید. شلنگ تخلیه را از نظر گرفتگی یا تاخوردگی بررسی کنید. پمپ تخلیه را چک کنید.",
+    "TechnicalNotes": "آب در مدت زمان مقرر (معمولاً 5 تا 8 دقیقه) تخلیه نشده است.",
+    "Documents": [
+      { "Title": "LG Official Support - OE Error", "Url": "https://www.lg.com/us/support/help-library/lg-washer-what-is-a-front-load-washing-machine-oe-error-code--1337714738535", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "LG",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "UE",
+    "Description": "عدم تعادل بار (Unbalance Error)",
+    "Solution": "لباس‌ها را به صورت یکنواخت در دیگ توزیع کنید. اگر حجم لباس خیلی کم است، چند قطعه دیگر اضافه کنید. تراز بودن پایه های دستگاه را چک کنید.",
+    "TechnicalNotes": "سنسور لرزش یا دور موتور نوسان غیرعادی تشخیص داده است.",
+    "Documents": [
+      { "Title": "LG Official UE Support", "Url": "https://www.lg.com/us/support/help-library/lg-front-load-washer-how-to-resolve-a-ue-error--20154453962404", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "LG",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "dE",
+    "Description": "خطای باز بودن درب (Door Error)",
+    "Solution": "درب دستگاه را محکم ببندید. میکروسوئیچ یا قفل درب را چک کنید. سیم‌کشی قفل به برد بررسی شود.",
+    "TechnicalNotes": "Door switch circuit is open.",
+    "Documents": [
+      { "Title": "LG Official dE Support", "Url": "https://www.lg.com/us/support/help-library/lg-washer-error-code-list--20150140270078", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "LG",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "FE",
+    "Description": "خطای سرریز آب (Overflow Error)",
+    "Solution": "شیر برقی ورودی را چک کنید (احتمال یکسره شدن). هیدروستات و شلنگ آن بررسی شود.",
+    "TechnicalNotes": "سطح آب بیش از حد مجاز شناسایی شده است.",
+    "Documents": []
+  },
+  {
+    "Brand": "LG",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "PE",
+    "Description": "خطای سنسور فشار (Pressure Sensor)",
+    "Solution": "سنسور هیدروستات و سیم‌کشی‌های آن چک شود. شلنگ هیدروستات از نظر سوراخ بودن یا گرفتگی بررسی شود.",
+    "TechnicalNotes": "فرکانس خروجی هیدروستات خارج از محدوده نرمال است.",
+    "Documents": []
+  },
+  {
+    "Brand": "LG",
+    "DeviceType": "یخچال فریزر",
+    "Code": "Er FF",
+    "Description": "خطای فن فریزر",
+    "Solution": "فن فریزر را از نظر یخ‌زدگی یا خرابی موتور بررسی کنید. مسیرهای هوایی را چک کنید.",
+    "TechnicalNotes": "Freezer Fan Motor Error.",
+    "Documents": [
+      { "Title": "LG Official Refrigerator Support", "Url": "https://www.lg.com/us/support/help-library/lg-refrigerator-error-code-list--1441392048805", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Bosch",
+    "DeviceType": "ماشین ظرفشویی",
+    "Code": "E15",
+    "Description": "سیستم ضدنشتی (Aquastop) فعال شده است",
+    "Solution": "دستگاه را از برق بکشید و کمی به جلو مایل کنید تا آب جمع شده در سینی کف خارج شود. اتصالات و شلنگ‌ها را از نظر نشتی بررسی کنید.",
+    "TechnicalNotes": "سنسور میکروسوئیچ شناور در کف دستگاه فعال شده است.",
+    "Documents": [
+      { "Title": "Bosch Official Support - E15", "Url": "https://www.bosch-home.com/us/owner-support/get-support/support-selfhelp-dishwasher-error-e15", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Bosch",
+    "DeviceType": "ماشین ظرفشویی",
+    "Code": "E22",
+    "Description": "گرفتگی فیلتر یا انسداد پمپ",
+    "Solution": "فیلترهای کف دستگاه را تمیز کنید. مسیر تخلیه را بررسی کنید.",
+    "TechnicalNotes": "Filter is blocked or pump is obstructed.",
+    "Documents": [
+      { "Title": "Bosch Official E22 Support", "Url": "https://www.bosch-home.com/us/owner-support/dishwashers/error-codes", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Bosch",
+    "DeviceType": "ماشین ظرفشویی",
+    "Code": "E24",
+    "Description": "خطای تخلیه آب یا گرفتگی فیلتر",
+    "Solution": "فیلترهای چاهک را تمیز کنید. چک کنید که پروانه پمپ تخلیه توسط جسم خارجی قفل نشده باشد. شلنگ خروجی را بررسی کنید.",
+    "TechnicalNotes": "برد اصلی جریان مصرفی پمپ تخلیه را غیرطبیعی تشخیص داده است.",
+    "Documents": [
+      { "Title": "Bosch Official E24 Support", "Url": "https://www.bosch-home.com/us/owner-support/dishwashers/error-codes/e24", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Bosch",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "E18",
+    "Description": "خطای تخلیه آب",
+    "Solution": "فیلتر پمپ را تمیز کنید. شلنگ تخلیه را از نظر انسداد چک کنید.",
+    "TechnicalNotes": "Drain pump timeout error.",
+    "Documents": []
+  },
+  {
+    "Brand": "Samsung",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "4C",
+    "Description": "خطای تامین آب (Water Supply Error)",
+    "Solution": "شیر آب ورودی را چک کنید. فیلتر توری شلنگ ورودی را تمیز کنید. فشار آب ساختمان را بررسی کنید.",
+    "TechnicalNotes": "معادل کد قدیم 4E است. سطح آب به حد نصاب نرسیده است.",
+    "Documents": [
+      { "Title": "Samsung Official Support - 4C", "Url": "https://www.samsung.com/uk/support/home-appliances/the-4e-error-is-displayed-on-the-panel-of-my-washing-machine-what-can-i-do/", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Samsung",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "5C",
+    "Description": "خطای تخلیه آب (Drain Error)",
+    "Solution": "فیلتر پمپ تخلیه (پایین سمت راست) را تمیز کنید. شلنگ تخلیه را از نظر گرفتگی بررسی کنید.",
+    "TechnicalNotes": "معادل کد قدیم 5E است. تخلیه آب در زمان مشخص انجام نشده است.",
+    "Documents": [
+      { "Title": "Samsung Official Support - 5C", "Url": "https://www.samsung.com/uk/support/home-appliances/how-to-resolve-a-5e-or-5c-error-code-on-a-washing-machine/", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Samsung",
+    "DeviceType": "یخچال فریزر",
+    "Code": "22E",
+    "Description": "خطای فن اواپراتور یخچال",
+    "Solution": "فن داخل یخچال را از نظر یخ‌زدگی یا انسداد بررسی کنید. سیم‌کشی فن چک شود.",
+    "TechnicalNotes": "برد اصلی سیگنال فیدبک از فن یخچال دریافت نمی‌کند.",
+    "Documents": []
+  },
+  {
+    "Brand": "Whirlpool",
+    "DeviceType": "ماشین لباسشویی",
+    "Code": "F5 E2",
+    "Description": "خطای قفل نشدن درب",
+    "Solution": "درب را محکم فشار دهید. میکروسوئیچ درب بررسی شود.",
+    "TechnicalNotes": "Door lock failure.",
+    "Documents": [
+      { "Title": "Whirlpool Official Support", "Url": "https://producthelp.whirlpool.com/Laundry/Washers/Front_Load_Washers/Error_Codes", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Daikin",
+    "DeviceType": "کولر گازی",
+    "Code": "U4",
+    "Description": "خطای ارتباطی بین یونیت داخلی و خارجی",
+    "Solution": "سیم‌کشی‌های بین دو یونیت را چک کنید. فیوز مینیاتوری را قطع و وصل کنید.",
+    "TechnicalNotes": "Data transmission error between indoor and outdoor PCB.",
+    "Documents": [
+      { "Title": "Daikin Official Support - Error Search", "Url": "https://www.daikin.com/products/ac/services/error_codes", "DocType": 4 }
+    ]
+  },
+  {
+    "Brand": "Daikin",
+    "DeviceType": "کولر گازی",
+    "Code": "A6",
+    "Description": "خطای موتور فن پنل داخلی",
+    "Solution": "موتور فن پنل داخلی و اتصالات آن چک شود. احتمال سوختن موتور یا خرابی برد وجود دارد.",
+    "TechnicalNotes": "Indoor fan motor lock or overcurrent detected.",
+    "Documents": []
+  },
+  {
+    "Brand": "GPlus",
+    "DeviceType": "کولر گازی",
+    "Code": "EA",
+    "Description": "خطای سنسور جریان",
+    "Solution": "سنسور جریان و بردهای الکترونیکی توسط سرویس‌کار مجاز چک شوند.",
+    "TechnicalNotes": "Current sensor anomaly detected by the control system.",
+    "Documents": []
+  },
+  {
+    "Brand": "Himalia",
+    "DeviceType": "یخچال فریزر",
+    "Code": "F1",
+    "Description": "خطای سنسور اواپراتور فریزر",
+    "Solution": "سنسور دیفراست و اتصالات آن در قسمت فریزر بررسی شود.",
+    "TechnicalNotes": "اشکال در سنسور دمای فریزر (مدل‌های کمبی 530).",
+    "Documents": []
+  },
+  {
+    "Brand": "Iran Radiator",
+    "DeviceType": "پکیج دیواری",
+    "Code": "70 80",
+    "Description": "عدم تشکیل شعله (مشابه E01 بوتان)",
+    "Solution": "گاز ورودی، جرقه زن و حسگر شعله چک شوند. دکمه ریست فشار داده شود.",
+    "TechnicalNotes": "این کد در پکیج‌های سری آنالوگ با روشن شدن همزمان چراغ 70 و 80 نمایش داده می‌شود.",
+    "Documents": []
+  },
+  {
+    "Brand": "Emersun",
+    "DeviceType": "یخچال فریزر",
+    "Code": "CO",
+    "Description": "خطای کمپرسور یا فن کمپرسور",
+    "Solution": "عملکرد موتور و فن کنار آن در پشت دستگاه بررسی شود.",
+    "TechnicalNotes": "Compressor or fan failure reported by controller.",
+    "Documents": []
+  }
+]

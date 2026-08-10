@@ -1,0 +1,452 @@
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService ToastService
+
+@if (Visible)
+{
+    <div class="csm-backdrop" @onclick="Dismiss"></div>
+    <div class="csm-container" @onclick="Dismiss">
+        <div class="csm-sheet" @onclick:stopPropagation>
+            <div class="csm-header">
+                <span class="csm-title">انتخاب مشتری</span>
+                <button type="button" class="csm-close" @onclick="Dismiss" aria-label="بستن">
+                    <span class="oi oi-x"></span>
+                </button>
+            </div>
+
+            <div class="csm-search-wrap">
+                <span class="csm-search-icon oi oi-magnifying-glass"></span>
+                <input class="csm-input @(!string.IsNullOrEmpty(SearchTerm) ? "csm-input--has-clear" : "")"
+                       placeholder="نام / نام خانوادگی / موبایل"
+                       disabled="@_isLoading"
+                       @bind="SearchTerm"
+                       @bind:event="oninput"
+                       @bind:after="OnSearchChanged"
+                       @ref="searchInput" />
+                @if (!string.IsNullOrEmpty(SearchTerm))
+                {
+                    <button type="button" class="csm-clear" @onclick="ClearSearch" aria-label="پاک کردن">
+                        <span class="oi oi-x"></span>
+                    </button>
+                }
+            </div>
+
+            @if (_isLoading)
+            {
+                <div class="csm-loading">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    <span>در حال بارگذاری...</span>
+                </div>
+            }
+            else
+            {
+                var filtered = FilteredResults;
+                @if (filtered.Count == 0)
+                {
+                    <div class="csm-empty">
+                        <span class="oi oi-warning"></span>
+                        مشتری‌ای پیدا نشد
+                    </div>
+                }
+                else
+                {
+                    <div class="csm-results">
+                        @foreach (var c in filtered)
+                        {
+                            <button type="button" class="csm-item" @onclick="() => SelectCustomer(c)">
+                                <div class="csm-avatar" style="@GetAvatarStyle(c)">@GetInitial(c)</div>
+                                <div class="csm-item-info">
+                                    <div class="csm-item-name">@c.FirstName @c.LastName</div>
+                                    <div class="csm-item-mobile ltr">@c.Mobile</div>
+                                </div>
+                                <div class="csm-item-action">انتخاب</div>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public int? WorkshopId { get; set; }
+    [Parameter] public EventCallback<WorkshopCustomerDto> OnCustomerSelected { get; set; }
+    [Parameter] public EventCallback OnDismiss { get; set; }
+
+    private string SearchTerm { get; set; } = string.Empty;
+    private List<WorkshopCustomerDto> _allLoaded = new();
+    private bool _isLoading;
+    private ElementReference searchInput;
+
+    private List<WorkshopCustomerDto> FilteredResults
+    {
+        get
+        {
+            var term = (SearchTerm ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(term))
+                return _allLoaded;
+
+            term = NormalizeDigits(term);
+            return _allLoaded.Where(c =>
+                (c.FirstName ?? string.Empty).Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                (c.LastName ?? string.Empty).Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                (c.Mobile ?? string.Empty).Contains(term, StringComparison.OrdinalIgnoreCase)
+            ).ToList();
+        }
+    }
+
+    private static readonly string[] AvatarGradients =
+    {
+        "linear-gradient(135deg, #f97316, #fb923c)",
+        "linear-gradient(135deg, #3b82f6, #60a5fa)",
+        "linear-gradient(135deg, #22c55e, #4ade80)",
+        "linear-gradient(135deg, #8b5cf6, #a78bfa)",
+        "linear-gradient(135deg, #ec4899, #f472b6)",
+        "linear-gradient(135deg, #14b8a6, #2dd4bf)",
+        "linear-gradient(135deg, #eab308, #facc15)",
+        "linear-gradient(135deg, #ef4444, #f87171)"
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Visible && _allLoaded.Count == 0 && !_isLoading)
+        {
+            _isLoading = true;
+            await LoadAllAsync();
+            _isLoading = false;
+            StateHasChanged();
+        }
+        else if (!Visible)
+        {
+            _allLoaded = new List<WorkshopCustomerDto>();
+            _isLoading = false;
+            SearchTerm = string.Empty;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Visible && !_isLoading && _allLoaded.Count > 0)
+        {
+            await Task.Delay(50);
+            try { await searchInput.FocusAsync(); } catch { }
+        }
+    }
+
+    private async Task LoadAllAsync()
+    {
+        try
+        {
+            var url = WorkshopId.HasValue
+                ? $"api/workshop-customers/search?q=&workshopId={WorkshopId.Value}&limit=0"
+                : "api/workshop-customers/search?q=&limit=0";
+            _allLoaded = await Http.GetFromJsonAsync<List<WorkshopCustomerDto>>(url)
+                ?? new List<WorkshopCustomerDto>();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _allLoaded = new List<WorkshopCustomerDto>();
+            ToastService.ShowError("شما دسترسی لازم برای جستجوی مشتریان را ندارید.");
+        }
+        catch (Exception ex)
+        {
+            _allLoaded = new List<WorkshopCustomerDto>();
+            ToastService.ShowError($"خطا در بارگذاری مشتریان: {ex.Message}");
+        }
+    }
+
+    private void OnSearchChanged()
+    {
+        StateHasChanged();
+    }
+
+    private async Task SelectCustomer(WorkshopCustomerDto customer)
+    {
+        await OnCustomerSelected.InvokeAsync(customer);
+    }
+
+    private async Task Dismiss()
+    {
+        await OnDismiss.InvokeAsync();
+    }
+
+    private void ClearSearch()
+    {
+        SearchTerm = string.Empty;
+        StateHasChanged();
+    }
+
+    private static string GetInitial(WorkshopCustomerDto c)
+    {
+        var name = (c.FirstName ?? string.Empty).Trim();
+        return string.IsNullOrEmpty(name) ? "?" : name[0].ToString();
+    }
+
+    private static string GetAvatarStyle(WorkshopCustomerDto c)
+    {
+        var key = (c.FirstName ?? "").Trim();
+        if (string.IsNullOrEmpty(key)) key = "?";
+        var idx = Math.Abs(key[0].GetHashCode()) % AvatarGradients.Length;
+        return $"background: {AvatarGradients[idx]};";
+    }
+
+    private static string NormalizeDigits(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return input;
+
+        var persianDigits = new[] { '۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹' };
+        var englishDigits = new[] { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
+
+        var result = input.ToCharArray();
+        for (int i = 0; i < result.Length; i++)
+        {
+            for (int j = 0; j < persianDigits.Length; j++)
+            {
+                if (result[i] == persianDigits[j])
+                {
+                    result[i] = englishDigits[j];
+                    break;
+                }
+            }
+        }
+
+        return new string(result);
+    }
+}
+
+<style>
+    .csm-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 5000;
+        background: rgba(0, 0, 0, 0.5);
+        -webkit-backdrop-filter: blur(4px);
+        backdrop-filter: blur(4px);
+        animation: csm-fade-in 0.2s ease;
+    }
+
+    .csm-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 5001;
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+    }
+
+    .csm-sheet {
+        background: #fff;
+        border-radius: 24px 24px 0 0;
+        width: 100%;
+        max-width: 100%;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        animation: csm-slide-up 0.3s ease;
+        box-shadow: 0 -8px 30px rgba(0,0,0,0.12);
+    }
+
+    .csm-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 20px 12px;
+        border-bottom: 1px solid #e2e8f0;
+        flex-shrink: 0;
+    }
+
+    .csm-title {
+        font-weight: 900;
+        font-size: 1.1rem;
+        color: #0f172a;
+    }
+
+    .csm-close {
+        background: none;
+        border: none;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #64748b;
+        font-size: 1.1rem;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .csm-close:hover { background: #f1f5f9; }
+
+    .csm-search-wrap {
+        position: relative;
+        margin: 12px 20px;
+        flex-shrink: 0;
+    }
+
+    .csm-search-icon {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #94a3b8;
+        font-size: 0.9rem;
+        pointer-events: none;
+    }
+
+    .csm-input {
+        width: 100%;
+        padding: 12px 42px 12px 42px;
+        border: 2px solid #e2e8f0;
+        border-radius: 14px;
+        font-size: 0.95rem;
+        outline: none;
+        transition: border-color 0.15s;
+        box-sizing: border-box;
+        font-family: inherit;
+    }
+
+    .csm-input:focus { border-color: #6366f1; }
+    .csm-input:disabled { background: #f1f5f9; cursor: not-allowed; opacity: 0.6; }
+
+    .csm-input--has-clear { padding-left: 42px; }
+
+    .csm-clear {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #64748b;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .csm-clear:hover { background: #f1f5f9; }
+
+    .csm-loading {
+        padding: 48px 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        color: #64748b;
+        font-weight: 800;
+        font-size: 0.85rem;
+    }
+
+    .csm-results {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 20px 20px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .csm-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 12px;
+        border: none;
+        background: none;
+        border-radius: 14px;
+        cursor: pointer;
+        text-align: right;
+        transition: background 0.15s;
+        margin-bottom: 4px;
+    }
+
+    .csm-item:hover { background: #f1f5f9; }
+    .csm-item:active { background: #e2e8f0; }
+
+    .csm-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+    }
+
+    .csm-item-info {
+        flex: 1;
+        min-width: 0;
+        text-align: right;
+    }
+
+    .csm-item-name {
+        font-weight: 900;
+        color: #0f172a;
+        font-size: 0.95rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .csm-item-mobile {
+        font-weight: 800;
+        color: #64748b;
+        font-size: 0.8rem;
+        margin-top: 2px;
+    }
+
+    .csm-item-action {
+        font-weight: 900;
+        color: #6366f1;
+        font-size: 0.8rem;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .csm-empty {
+        padding: 48px 20px;
+        text-align: center;
+        color: #94a3b8;
+        font-weight: 800;
+        font-size: 0.85rem;
+    }
+
+    .csm-empty .oi { display: block; margin-bottom: 8px; font-size: 1.5rem; }
+
+    @@keyframes csm-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @@keyframes csm-slide-up {
+        from { transform: translateY(100%); }
+        to { transform: translateY(0); }
+    }
+
+    @@media (min-width: 768px) {
+        .csm-container {
+            align-items: center;
+            top: 0;
+        }
+
+        .csm-sheet {
+            max-width: 480px;
+            border-radius: 24px;
+            max-height: 70vh;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        }
+    }
+</style>

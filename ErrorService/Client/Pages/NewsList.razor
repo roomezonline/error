@@ -1,0 +1,161 @@
+@page "/news"
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Shared
+@using ErrorService.Client.Utils
+
+<PageTitle>ارورسرویس - اخبار و مقالات</PageTitle>
+
+<SeoHeader 
+    Title="اخبار و مقالات تعمیرات لوازم خانگی | ارورسرویس"
+    Description="آخرین اخبار، مقالات و آموزش‌های تعمیرات لوازم خانگی، راهنمای عیب‌یابی و نکات فنی تعمیرکاران"
+    Keywords="اخبار لوازم خانگی, مقالات تعمیرات, آموزش تعمیر لوازم خانگی, عیب‌یابی لوازم خانگی"
+    OgType="website" />
+
+<section class="news-page py-5 bg-light" dir="rtl">
+    <div class="container">
+        <div class="d-flex justify-content-between align-items-center mb-5">
+            <h1 class="fw-bold h2 m-0">اخبار و مقالات</h1>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb m-0">
+                    <li class="breadcrumb-item"><a href="/">خانه</a></li>
+                    <li class="breadcrumb-item active">اخبار</li>
+                </ol>
+            </nav>
+        </div>
+
+        @if (newsList == null)
+        {
+            <div class="row g-4">
+                @for (int i = 0; i < 6; i++)
+                {
+                    <div class="col-md-4">
+                        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                            <div style="height:200px;background:#f0f0f0"></div>
+                            <div class="card-body p-3">
+                                <div style="height:15px;background:#f0f0f0;border-radius:4px" class="mb-2"></div>
+                                <div style="height:15px;background:#f0f0f0;border-radius:4px;width:75%"></div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else if (!newsList.Any())
+        {
+            <div class="empty-state-box">
+                <span class="empty-icon oi oi-document"></span>
+                <h4>خبری یافت نشد</h4>
+                <p>در حال حاضر هیچ خبر یا مقاله‌ای برای نمایش وجود ندارد.</p>
+                <a href="/" class="btn btn-outline-primary rounded-pill px-4">بازگشت به صفحه اصلی</a>
+            </div>
+        }
+        else
+        {
+            <div class="row g-4">
+                @foreach (var news in newsList)
+                {
+                    <div class="col-md-4 reveal">
+                        <a href="@SeoUrl.News(news.Id, news.Slug)" class="text-decoration-none">
+                            <div class="card news-card border-0 shadow-sm rounded-4 overflow-hidden h-100">
+                                <div class="news-card__img-wrap position-relative">
+                                    @if (!string.IsNullOrWhiteSpace(news.ImageUrl))
+                                    {
+                                        <img src="@news.ImageUrl" loading="lazy" class="card-img-top" alt="@news.Title" />
+                                    }
+                                    else
+                                    {
+                                        <div class="news-placeholder-wrap card-img-top">
+                                            <div class="news-placeholder-icon">
+                                                <span class="oi oi-image"></span>
+                                            </div>
+                                            <div class="news-placeholder-text">تصویری برای این خبر ثبت نشده است</div>
+                                        </div>
+                                    }
+                                    <div class="news-card__date position-absolute bottom-0 start-0 m-3 badge bg-primary rounded-pill px-3 shadow">
+                                        <span class="small opacity-75 me-1">@PersianDate.ToTime(news.CreatedAt)</span>
+                                        <span>@PersianDate.ToJalaliDate(news.CreatedAt)</span>
+                                    </div>
+                                </div>
+                                <div class="card-body p-3">
+                                    <h3 class="h6 fw-bold text-dark mb-2 news-card__title">@news.Title</h3>
+                                    <p class="text-muted small mb-0 news-card__summary">@news.Summary</p>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                }
+            </div>
+
+            @if (newsList.Count < totalCount)
+            {
+                <div class="text-center mt-4">
+                    <button class="btn btn-outline-primary rounded-pill px-5" @onclick="LoadMore" disabled="@isLoadingMore">
+                        @if (isLoadingMore)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        مشاهده بیشتر (@(totalCount - newsList.Count) مورد باقی‌مانده)
+                    </button>
+                </div>
+            }
+        }
+    </div>
+</section>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private List<NewsDto>? newsList;
+    private int skip = 0;
+    private int take = 12;
+    private int totalCount = 0;
+    private bool isLoadingMore = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNews(loadMore: false);
+    }
+
+    private async Task LoadMore() => await LoadNews(loadMore: true);
+
+    private async Task LoadNews(bool loadMore)
+    {
+        if (loadMore)
+        {
+            isLoadingMore = true;
+            skip += take;
+        }
+        else
+        {
+            skip = 0;
+            newsList = null;
+        }
+
+        try
+        {
+            var response = await Http.GetAsync($"api/news?onlyPublished=true&skip={skip}&take={take}");
+            if (!response.IsSuccessStatusCode)
+            {
+                newsList ??= new();
+                return;
+            }
+
+            totalCount = PaginationHeaderReader.ReadTotalCount(response);
+            var data = await response.Content.ReadFromJsonAsync<List<NewsDto>>();
+            data ??= new();
+
+            if (loadMore && newsList != null)
+                newsList.AddRange(data);
+            else
+                newsList = data;
+        }
+        catch
+        {
+            newsList ??= new();
+        }
+        finally
+        {
+            isLoadingMore = false;
+        }
+    }
+}

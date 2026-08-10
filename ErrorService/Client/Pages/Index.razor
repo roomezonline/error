@@ -1,0 +1,226 @@
+@page "/"
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using System.Text.Json
+@inject NavigationManager NavigationManager
+
+<SeoHeader 
+    Title="@(settings?.SeoTitle ?? "ارورسرویس | تعمیر و سرویس لوازم خانگی، کد خطا و قطعات یدکی")" 
+    Description="@(settings?.SeoDescription ?? "ارورسرویس، مرجع تخصصی کدهای خطای لوازم خانگی، آموزش تعمیرات، قطعات یدکی و سرویس در منزل. بانک جامع ارور ماشین لباسشویی، یخچال، ظرفشویی و ماکروفر.")"
+    Keywords="@settings?.SeoKeywords"
+    OgImage="@(settings?.DefaultOgImage ?? "/images/og-default.jpg")"
+    JsonLd="@orgJsonLd" />
+
+<PublicHero />
+
+@if (isInitialLoading)
+{
+    <div class="container my-4" dir="rtl">
+        <div class="row g-3">
+            @for (int i = 0; i < 6; i++)
+            {
+                <div class="col-12 col-md-4">
+                    <div class="skeleton-card">
+                        <div class="skeleton skeleton-img"></div>
+                        <div class="skeleton skeleton-title"></div>
+                        <div class="skeleton skeleton-text"></div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+else
+{
+
+@if (orderedModules != null && orderedModules.Count > 0)
+{
+    @foreach (var module in orderedModules)
+    {
+        if (!module.IsEnabled)
+        {
+            continue;
+        }
+
+        @switch (module.Key)
+        {
+            case SiteHomeModuleKey.Stories:
+                <div class="container" dir="rtl">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h2 class="fw-bold h5 m-0">استوریهای روز مره ارور سرویس</h2>
+                    </div>
+                </div>
+                <ErrorService.Client.Shared.Components.StoriesBar />
+                break;
+            case SiteHomeModuleKey.FeatureCards:
+                <FeatureCardsRow />
+                break;
+            case SiteHomeModuleKey.SpecialOffers:
+                <SpecialOffers />
+                break;
+            case SiteHomeModuleKey.LatestNews:
+                if (hasPublishedNews)
+                {
+    <div class="container my-4" dir="rtl">
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="fw-bold h4 m-0">آخرین اخبار</h2>
+                    <a href="/news" class="btn btn-link text-decoration-none p-0">مشاهده همه <span class="oi oi-arrow-right small"></span></a>
+                </div>
+                <NewsCardView Count="3" />
+            </div>
+            <div class="col-lg-4">
+                <div class="h-100">
+                    <h2 class="fw-bold h5 mb-3 border-bottom pb-2">عناوین خبرها</h2>
+                    <NewsListView Count="4" />
+                </div>
+            </div>
+        </div>
+    </div>
+                }
+                break;
+            case SiteHomeModuleKey.LatestProducts:
+                <LatestProducts />
+                break;
+            case SiteHomeModuleKey.HomeCategories:
+                <HomeCategories Categories="categories" />
+                break;
+            case SiteHomeModuleKey.PopularBrands:
+                <ErrorService.Client.Shared.Components.PopularBrandsRow />
+                break;
+            case SiteHomeModuleKey.SomeCustomers:
+                <ErrorService.Client.Shared.Components.SomeCustomersRow />
+                break;
+            case SiteHomeModuleKey.LatestCourses:
+                <LatestCourses />
+                break;
+            case SiteHomeModuleKey.LatestArticles:
+                <LatestArticles />
+                break;
+            case SiteHomeModuleKey.TeamMembers:
+                <TeamMembers />
+                break;
+            case SiteHomeModuleKey.TechnicalGuide:
+                <TechnicalGuide />
+                break;
+        }
+    }
+}
+
+}
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private bool hasPublishedNews;
+    private List<CategoryDto>? categories;
+    private SiteSettingsDto? settings;
+    private List<SiteHomeModuleDto> orderedModules = new();
+    private string? orgJsonLd;
+    private bool isInitialLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            isInitialLoading = true;
+            settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+
+            orgJsonLd = $"[{BuildOrgJsonLd(settings)},{BuildWebSiteJsonLd()}]";
+
+            orderedModules = (settings?.HomeModules ?? new List<SiteHomeModuleDto>())
+                .OrderBy(x => x.SortOrder)
+                .ToList();
+
+            if (orderedModules.Count == 0)
+            {
+                orderedModules = new List<SiteHomeModuleDto>
+                {
+                    new() { Key = SiteHomeModuleKey.Stories, IsEnabled = true, SortOrder = 5 },
+                    new() { Key = SiteHomeModuleKey.SpecialOffers, IsEnabled = settings?.ShowSpecialOffers ?? true, SortOrder = 10 },
+                    new() { Key = SiteHomeModuleKey.FeatureCards, IsEnabled = settings?.ShowFeatureCards ?? true, SortOrder = 18 },
+                    new() { Key = SiteHomeModuleKey.HomeCategories, IsEnabled = settings?.ShowHomeCategories ?? true, SortOrder = 15 },
+                    new() { Key = SiteHomeModuleKey.PopularBrands, IsEnabled = true, SortOrder = 19 },
+                    new() { Key = SiteHomeModuleKey.SomeCustomers, IsEnabled = true, SortOrder = 21 },
+                    new() { Key = SiteHomeModuleKey.LatestNews, IsEnabled = settings?.ShowLatestNews ?? true, SortOrder = 20 },
+                    new() { Key = SiteHomeModuleKey.LatestProducts, IsEnabled = settings?.ShowLatestProducts ?? true, SortOrder = 30 },
+                    new() { Key = SiteHomeModuleKey.LatestCourses, IsEnabled = settings?.ShowLatestCourses ?? true, SortOrder = 40 },
+                    new() { Key = SiteHomeModuleKey.LatestArticles, IsEnabled = settings?.ShowLatestArticles ?? true, SortOrder = 45 },
+                    new() { Key = SiteHomeModuleKey.TeamMembers, IsEnabled = settings?.ShowTeamMembers ?? true, SortOrder = 50 },
+                    new() { Key = SiteHomeModuleKey.TechnicalGuide, IsEnabled = true, SortOrder = 22 }
+                };
+            }
+
+            var showCategories = orderedModules.Any(m => m.Key == SiteHomeModuleKey.HomeCategories && m.IsEnabled);
+            if (showCategories)
+            {
+                categories = await Http.GetFromJsonAsync<List<CategoryDto>>("api/categories");
+            }
+
+            var showNews = orderedModules.Any(m => m.Key == SiteHomeModuleKey.LatestNews && m.IsEnabled);
+            if (showNews)
+            {
+                var list = await Http.GetFromJsonAsync<List<NewsDto>>("api/news?onlyPublished=true&skip=0&take=1");
+                hasPublishedNews = list != null && list.Count > 0;
+            }
+            else
+            {
+                hasPublishedNews = false;
+            }
+        }
+        catch
+        {
+            hasPublishedNews = false;
+        }
+        finally
+        {
+            isInitialLoading = false;
+        }
+    }
+
+    private string BuildOrgJsonLd(SiteSettingsDto? settings)
+    {
+        var baseUrl = NavigationManager.BaseUri.TrimEnd('/');
+        var obj = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "Organization",
+            ["name"] = "ارورسرویس",
+            ["url"] = baseUrl,
+            ["logo"] = $"{baseUrl}/favicon.png",
+            ["description"] = settings?.SeoDescription ?? "مرجع تخصصی عیب‌یابی و تعمیرات لوازم خانگی",
+            ["contactPoint"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "ContactPoint",
+                ["contactType"] = "customer service",
+                ["availableLanguage"] = "Persian"
+            }
+        };
+
+        return JsonSerializer.Serialize(obj);
+    }
+
+    private string BuildWebSiteJsonLd()
+    {
+        var baseUrl = NavigationManager.BaseUri.TrimEnd('/');
+        var obj = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "WebSite",
+            ["name"] = "ارورسرویس",
+            ["url"] = baseUrl,
+            ["potentialAction"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "SearchAction",
+                ["target"] = new Dictionary<string, object?>
+                {
+                    ["@type"] = "EntryPoint",
+                    ["urlTemplate"] = $"{baseUrl}/search?q={{search_term_string}}"
+                },
+                ["query-input"] = "required name=search_term_string"
+            }
+        };
+
+        return JsonSerializer.Serialize(obj);
+    }
+}

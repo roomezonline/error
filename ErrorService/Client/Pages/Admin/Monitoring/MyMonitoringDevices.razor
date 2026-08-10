@@ -1,0 +1,1022 @@
+@page "/admin/monitoring/my-devices"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.monitoring.view")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ErrorService.Client.Services.ToastService ToastService
+@inject ErrorService.Client.Services.AdminWorkshopSelectionService AdminWorkshopSelection
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+@implements IDisposable
+
+<PageTitle>دستگاه‌های مانیتورینگ من</PageTitle>
+
+<div class="md-page" dir="rtl">
+    <div class="md-topbar">
+        <a class="md-topbar__back" href="/admin"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></a>
+        <div class="md-topbar__titles">
+            <div class="md-topbar__kicker">پایش و مانیتورینگ</div>
+            <h1 class="md-topbar__title">دستگاه‌های من</h1>
+        </div>
+        <button class="md-topbar__refresh" @onclick="LoadData" title="بروزرسانی">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="md-shimmer">
+            <div class="md-shimmer__card"><div class="md-shimmer__line md-shimmer__line--lg"></div><div class="md-shimmer__line md-shimmer__line--sm"></div><div class="md-shimmer__line md-shimmer__line--md"></div></div>
+            <div class="md-shimmer__card"><div class="md-shimmer__line md-shimmer__line--lg"></div><div class="md-shimmer__line md-shimmer__line--sm"></div><div class="md-shimmer__line md-shimmer__line--md"></div></div>
+            <div class="md-shimmer__card"><div class="md-shimmer__line md-shimmer__line--lg"></div><div class="md-shimmer__line md-shimmer__line--sm"></div><div class="md-shimmer__line md-shimmer__line--md"></div></div>
+        </div>
+    }
+    else if (_devices == null || _devices.Count == 0)
+    {
+        <div class="md-empty">
+            <div class="md-empty__graphic">
+                <svg viewBox="0 0 120 120" width="100" height="100" fill="none" stroke="#cbd5e1" stroke-width="1.5">
+                    <rect x="20" y="30" width="80" height="60" rx="10" stroke-width="2"/>
+                    <rect x="35" y="42" width="50" height="8" rx="4"/>
+                    <rect x="35" y="56" width="35" height="8" rx="4"/>
+                    <circle cx="85" cy="75" r="12" stroke-width="2"/>
+                    <path d="M81 75h8M85 71v8" stroke-width="2.5" stroke="#94a3b8"/>
+                </svg>
+            </div>
+            <div class="md-empty__title">دستگاهی یافت نشد</div>
+            <div class="md-empty__desc">هیچ دستگاه مانیتورینگی به کارگاه شما تخصیص داده نشده است</div>
+            <a href="/admin" class="md-btn md-btn--primary">بازگشت به داشبورد</a>
+        </div>
+    }
+    else
+    {
+        <div class="md-summary">
+            <div class="md-summary__item md-summary__item--active">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <span class="md-summary__num">@_devices.Count(d => d.IsActiveNow)</span>
+                <span class="md-summary__lbl">فعال</span>
+            </div>
+            <div class="md-summary__item md-summary__item--warning">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span class="md-summary__num">@_devices.Count(d => d.IsExpiringSoon)</span>
+                <span class="md-summary__lbl">در حال انقضا</span>
+            </div>
+            <div class="md-summary__item md-summary__item--danger">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                <span class="md-summary__num">@_devices.Count(d => d.EndAt.HasValue && d.RemainingDays == 0)</span>
+                <span class="md-summary__lbl">منقضی شده</span>
+            </div>
+        </div>
+
+        <div class="md-list">
+            @foreach (var device in _devices)
+            {
+                var progress = device.RemainingDays.HasValue && device.EndAt.HasValue && device.StartAt < DateTimeOffset.UtcNow
+                    ? (int)Math.Clamp(100.0 * device.RemainingDays.Value / (device.EndAt.Value - device.StartAt).TotalDays * 100 / 100, 0, 100)
+                    : 100;
+                var pct = device.RemainingDays.HasValue ? Math.Clamp(device.RemainingDays.Value, 0, 999) : 999;
+                <div class="md-card @(device.IsExpiringSoon ? "md-card--exp" : "") @(!device.IsActiveNow ? "md-card--dead" : "")">
+                    <div class="md-card__accent"></div>
+
+                    <div class="md-card__top">
+                        <div class="md-card__identity">
+                            <div class="md-card__icon">
+                                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                            </div>
+                            <div>
+                                <div class="md-card__name">@device.DeviceTitle</div>
+                                <div class="md-card__code">@device.DeviceNumber</div>
+                            </div>
+                        </div>
+                        <div class="md-card__status">
+                            @if (!device.IsActiveNow)
+                            {
+                                <span class="md-chip md-chip--dead">منقضی شده</span>
+                            }
+                            else if (device.IsExpiringSoon)
+                            {
+                                <span class="md-chip md-chip--exp">در حال انقضا</span>
+                            }
+                            else
+                            {
+                                <span class="md-chip md-chip--live">فعال</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="md-card__body">
+                        <div class="md-card__ring">
+                            @if (device.RemainingDays.HasValue)
+                            {
+                                <svg viewBox="0 0 48 48" width="48" height="48">
+                                    <circle cx="24" cy="24" r="20" fill="none" stroke="#f1f5f9" stroke-width="4"/>
+                                    <circle cx="24" cy="24" r="20" fill="none"
+                                        stroke="currentColor" stroke-width="4" stroke-linecap="round"
+                                        stroke-dasharray="125.6"
+                                        stroke-dashoffset="@(125.6 - 125.6 * Math.Clamp(progress, 0, 100) / 100.0)"
+                                        transform="rotate(-90 24 24)"
+                                        class="md-card__ring-fill" />
+                                    <text x="24" y="26" text-anchor="middle" fill="currentColor"
+                                        font-size="10" font-weight="900">@pct</text>
+                                </svg>
+                                <span class="md-card__ring-lbl">روز</span>
+                            }
+                            else
+                            {
+                                <div class="md-card__inf">
+                                    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    <span>نامحدود</span>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="md-card__dates">
+                            <div class="md-card__date">
+                                <span class="md-card__date-dot"></span>
+                                <div>
+                                    <div class="md-card__date-lbl">شروع</div>
+                                    <div class="md-card__date-val">@device.StartDateFa</div>
+                                </div>
+                            </div>
+                            <div class="md-card__date">
+                                <span class="md-card__date-dot md-card__date-dot--end"></span>
+                                <div>
+                                    <div class="md-card__date-lbl">پایان</div>
+                                    <div class="md-card__date-val">@(device.EndDateFa ?? "نامحدود")</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="md-card__actions">
+                        @if (device.HasPendingRenewal)
+                        {
+                            <div class="md-act md-act--pending">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+                                <span>در انتظار تایید</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <button type="button" class="md-act md-act--renew" @onclick="() => ShowRenewalModal(device)">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
+                                <span>تمدید</span>
+                            </button>
+                        }
+                        <button type="button" class="md-act md-act--history" @onclick="() => ShowHistoryModal(device.AssignmentId)">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <span>تاریخچه</span>
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (_showRenewalModal)
+{
+    <div class="mmd-modal-overlay" @onclick="CloseRenewalModal">
+        <div class="mmd-modal" @onclick:stopPropagation>
+            <div class="mmd-modal__head">
+                <div class="mmd-modal__title">درخواست تمدید</div>
+                <button type="button" class="mmd-btn mmd-btn--ghost" @onclick="CloseRenewalModal"><span class="oi oi-x"></span></button>
+            </div>
+            <div class="mmd-modal__body">
+                <div class="mmd-field">
+                    <label class="mmd-label">دستگاه</label>
+                    <div class="mmd-static">@_renewalDevice?.DeviceTitle (@_renewalDevice?.DeviceNumber)</div>
+                </div>
+
+                <div class="mmd-field">
+                    <label class="mmd-label">پلن تمدید</label>
+                    @if (_plans == null)
+                    {
+                        <div class="mmd-loading">در حال بارگذاری پلن‌ها...</div>
+                    }
+                    else if (_plans.Count == 0)
+                    {
+                        <div class="mmd-empty-sm">هیچ پلن فعالی یافت نشد</div>
+                    }
+                    else
+                    {
+                        <div class="mmd-plan-grid">
+                            @foreach (var plan in _plans)
+                            {
+                                <button type="button" class="mmd-plan @(_selectedPlanId == plan.Id ? "mmd-plan--active" : "")" @onclick="() => _selectedPlanId = plan.Id">
+                                    <div class="mmd-plan__months">@plan.Months ماه</div>
+                                    <div class="mmd-plan__price">@plan.Price.ToString("N0") تومان</div>
+                                    <div class="mmd-plan__desc">@plan.Title</div>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="mmd-field">
+                    <label class="mmd-label">رسید پرداخت (اختیاری)</label>
+                    <div class="mmd-file-upload">
+                        @if (!string.IsNullOrEmpty(_selectedFileName))
+                        {
+                            <div class="mmd-file-upload__preview">
+                                @if (!string.IsNullOrEmpty(_receiptPreviewUrl))
+                                {
+                                    <img class="mmd-file-upload__thumb" src="@_receiptPreviewUrl" alt="رسید" />
+                                }
+                                else
+                                {
+                                    <div class="mmd-file-upload__file-icon">
+                                        <span class="oi oi-document"></span>
+                                    </div>
+                                }
+                                <div class="mmd-file-upload__info">
+                                    <span class="mmd-file-upload__name">@_selectedFileName</span>
+                                </div>
+                                <button type="button" class="mmd-file-upload__remove" @onclick="ClearSelectedFile">
+                                    <span class="oi oi-x"></span>
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <label class="mmd-file-upload__zone" for="renewalFileInput">
+                                <div class="mmd-file-upload__icon">
+                                    <span class="oi oi-cloud-upload"></span>
+                                </div>
+                                <span class="mmd-file-upload__title">انتخاب فایل</span>
+                                <span class="mmd-file-upload__hint">jpg, jpeg, png, webp, pdf</span>
+                            </label>
+                        }
+                    </div>
+                    <InputFile id="renewalFileInput" OnChange="OnFileSelected" accept=".jpg,.jpeg,.png,.webp,.pdf" class="d-none" />
+                </div>
+
+                <div class="mmd-field">
+                    <label class="mmd-label">توضیحات (اختیاری)</label>
+                    <textarea class="mmd-textarea" @bind="_renewalNote" placeholder="توضیحات خود را وارد کنید..." rows="3"></textarea>
+                </div>
+            </div>
+            <div class="mmd-modal__foot">
+                <button type="button" class="mmd-btn mmd-btn--ghost" @onclick="CloseRenewalModal">انصراف</button>
+                <button type="button" class="mmd-btn mmd-btn--primary" @onclick="SubmitRenewalRequest" disabled="@_isSubmitting">
+                    @if (_isSubmitting)
+                    {
+                        <span class="spinner-border spinner-border-sm"></span>
+                    }
+                    ثبت درخواست
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showHistoryModal)
+{
+    <div class="mmd-modal-overlay" @onclick="CloseHistoryModal">
+        <div class="mmd-modal mmd-modal--wide" @onclick:stopPropagation>
+            <div class="mmd-modal__head">
+                <div class="mmd-modal__title">تاریخچه تمدید</div>
+                <button type="button" class="mmd-btn mmd-btn--ghost" @onclick="CloseHistoryModal"><span class="oi oi-x"></span></button>
+            </div>
+            <div class="mmd-modal__body">
+                @if (_historyLoading)
+                {
+                    <div class="mmd-loading"><div class="spinner-border spinner-border-sm text-primary"></div> در حال بارگذاری...</div>
+                }
+                else if (_historyItems == null || _historyItems.Count == 0)
+                {
+                    <div class="mmd-empty-sm">تاریخچه‌ای یافت نشد</div>
+                }
+                else
+                {
+                    <div class="mmd-history-table">
+                        <div class="mmd-history-row mmd-history-row--head">
+                            <span>تاریخ</span>
+                            <span>پلن</span>
+                            <span>قیمت</span>
+                            <span>وضعیت</span>
+                            <span>رسید</span>
+                            <span>توضیحات ادمین</span>
+                        </div>
+                        @foreach (var item in _historyItems)
+                        {
+                            <div class="mmd-history-row">
+                                <span class="x-small">@item.CreatedAtFa</span>
+                                <span>@item.PlanMonths ماه@(!string.IsNullOrEmpty(item.PlanTitle) ? $" - {item.PlanTitle}" : "")</span>
+                                <span class="mmd-price">@item.PriceAtRequest.ToString("N0") تومان</span>
+                                <span>
+                                    @if (item.Status == "Approved")
+                                    {
+                                        <span class="mmd-badge mmd-badge--success">تایید شده</span>
+                                    }
+                                    else if (item.Status == "Rejected")
+                                    {
+                                        <span class="mmd-badge mmd-badge--danger">رد شده</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="mmd-badge mmd-badge--warning">در انتظار</span>
+                                    }
+                                </span>
+                                <span>
+                                    @if (!string.IsNullOrEmpty(item.PaymentReceiptUrl))
+                                    {
+                                        <a href="@item.PaymentReceiptUrl" target="_blank" class="mmd-link">مشاهده</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">—</span>
+                                    }
+                                </span>
+                                <span class="x-small text-muted">@(item.AdminNote ?? "—")</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="mmd-modal__foot">
+                <button type="button" class="mmd-btn mmd-btn--primary" @onclick="CloseHistoryModal">بستن</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<MyDeviceDto>? _devices;
+    private bool isLoading = true;
+
+    private bool _showRenewalModal;
+    private MyDeviceDto? _renewalDevice;
+    private List<MonitoringPlanDto>? _plans;
+    private int _selectedPlanId;
+    private string? _renewalNote;
+    private IBrowserFile? _selectedFile;
+    private string? _selectedFileName;
+    private string? _receiptPreviewUrl;
+    private bool _isSubmitting;
+
+    private bool _showHistoryModal;
+    private bool _historyLoading;
+    private List<RenewalRequestDto>? _historyItems;
+    private int _historyAssignmentId;
+
+    private bool _isSuperAdmin;
+    private int? _workshopId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+        _isSuperAdmin = user.IsInRole("super_admin");
+
+        if (_isSuperAdmin)
+        {
+            await AdminWorkshopSelection.InitializeAsync();
+            AdminWorkshopSelection.OnChanged += OnWorkshopChanged;
+            _workshopId = AdminWorkshopSelection.SelectedWorkshopId;
+        }
+        else
+        {
+            var wsIdStr = user.Claims.FirstOrDefault(c => c.Type == "workshop_id")?.Value;
+            if (!string.IsNullOrWhiteSpace(wsIdStr) && int.TryParse(wsIdStr, out var wsId))
+                _workshopId = wsId;
+        }
+
+        await LoadData();
+    }
+
+    private void OnWorkshopChanged(int? wsId)
+    {
+        _workshopId = wsId;
+        _ = LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var qs = _workshopId.HasValue ? $"?workshopId={_workshopId}" : "";
+            _devices = await Http.GetFromJsonAsync<List<MyDeviceDto>>($"api/monitoring-devices/my-devices{qs}");
+        }
+        catch
+        {
+            _devices = new();
+            ToastService.ShowError("خطا در دریافت لیست دستگاه‌ها");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowRenewalModal(MyDeviceDto device)
+    {
+        _renewalDevice = device;
+        _renewalNote = null;
+        _selectedFile = null;
+        _selectedFileName = null;
+        _showRenewalModal = true;
+        StateHasChanged();
+
+        try
+        {
+            _plans = await Http.GetFromJsonAsync<List<MonitoringPlanDto>>("api/monitoring-plans?activeOnly=true");
+            if (_plans != null && _plans.Count > 0)
+                _selectedPlanId = _plans[0].Id;
+        }
+        catch
+        {
+            _plans = new();
+            ToastService.ShowError("خطا در دریافت پلن‌ها");
+        }
+    }
+
+    private void CloseRenewalModal()
+    {
+        _showRenewalModal = false;
+        _renewalDevice = null;
+        ClearSelectedFile();
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _selectedFile = e.File;
+        _selectedFileName = e.File?.Name;
+        if (_selectedFile != null)
+        {
+            try
+            {
+                var resized = await _selectedFile.RequestImageFileAsync("image/jpeg", 800, 800);
+                using var stream = resized.OpenReadStream(maxAllowedSize: 2_000_000);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                _receiptPreviewUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(ms.ToArray())}";
+            }
+            catch
+            {
+                _receiptPreviewUrl = null;
+            }
+        }
+    }
+
+    private void ClearSelectedFile()
+    {
+        _selectedFile = null;
+        _selectedFileName = null;
+        _receiptPreviewUrl = null;
+    }
+
+    private async Task SubmitRenewalRequest()
+    {
+        if (_renewalDevice == null || _selectedPlanId == 0) return;
+        _isSubmitting = true;
+        StateHasChanged();
+
+        try
+        {
+            var content = new MultipartFormDataContent();
+            content.Add(new StringContent(_selectedPlanId.ToString()), "planId");
+            if (!string.IsNullOrWhiteSpace(_renewalNote))
+                content.Add(new StringContent(_renewalNote), "note");
+
+            if (_selectedFile != null)
+            {
+                var stream = _selectedFile.OpenReadStream(maxAllowedSize: 5_000_000);
+                content.Add(new StreamContent(stream), "file", _selectedFile.Name);
+            }
+
+            var response = await Http.PostAsync($"api/monitoring-devices/assignments/{_renewalDevice.AssignmentId}/request-renewal", content);
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("درخواست تمدید با موفقیت ثبت شد");
+                CloseRenewalModal();
+                await LoadData();
+            }
+            else
+            {
+                var err = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(err);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally
+        {
+            _isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowHistoryModal(int assignmentId)
+    {
+        _historyAssignmentId = assignmentId;
+        _showHistoryModal = true;
+        _historyLoading = true;
+        _historyItems = null;
+        StateHasChanged();
+
+        try
+        {
+            _historyItems = await Http.GetFromJsonAsync<List<RenewalRequestDto>>($"api/monitoring-devices/assignments/{assignmentId}/renewal-history");
+        }
+        catch
+        {
+            _historyItems = new();
+            ToastService.ShowError("خطا در دریافت تاریخچه");
+        }
+        finally
+        {
+            _historyLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseHistoryModal()
+    {
+        _showHistoryModal = false;
+        _historyItems = null;
+    }
+
+    public void Dispose()
+    {
+        if (_isSuperAdmin)
+            AdminWorkshopSelection.OnChanged -= OnWorkshopChanged;
+    }
+}
+
+<style>
+    /* ══════════════════════════════════════
+       MY DEVICES — Premium Dark-Surface
+       ══════════════════════════════════════ */
+    .md-page * { box-sizing: border-box; }
+    .md-page {
+        padding-bottom: 24px; font-family: 'Vazirmatn', sans-serif;
+        min-height: 100%;
+        background:
+            radial-gradient(ellipse 120% 50% at 50% 0%, rgba(37,99,235,0.04) 0%, transparent 70%),
+            radial-gradient(ellipse 100% 40% at 80% 100%, rgba(16,185,129,0.03) 0%, transparent 70%),
+            linear-gradient(180deg, #f0f4f8 0%, #f8fafc 100%);
+    }
+
+    /* ── Top Bar ── */
+    .md-topbar {
+        display: flex; align-items: center; gap: 12px; margin-bottom: 22px;
+        padding-top: 4px;
+    }
+    .md-topbar__back {
+        width: 42px; height: 42px; border-radius: 16px;
+        background: rgba(255,255,255,0.7);
+        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255,255,255,0.5);
+        display: grid; place-items: center; text-decoration: none;
+        color: #475569; flex-shrink: 0;
+        transition: all 0.2s;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+    .md-topbar__back:active { transform: scale(0.9); background: rgba(255,255,255,0.95); }
+    .md-topbar__titles { flex: 1; min-width: 0; }
+    .md-topbar__kicker {
+        font-size: 0.6rem; font-weight: 850; color: #94a3b8;
+        text-transform: uppercase; letter-spacing: 0.6px;
+    }
+    .md-topbar__title {
+        font-size: 1.2rem; font-weight: 950; color: #0f172a; margin: 0; line-height: 1.3;
+        letter-spacing: -0.3px;
+    }
+    .md-topbar__refresh {
+        width: 42px; height: 42px; border-radius: 16px;
+        background: rgba(255,255,255,0.7);
+        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255,255,255,0.5);
+        display: grid; place-items: center; cursor: pointer; color: #475569;
+        flex-shrink: 0; transition: all 0.2s;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+    .md-topbar__refresh:active { transform: scale(0.9); }
+
+    /* ── Summary Chips ── */
+    .md-summary {
+        display: flex; gap: 10px; margin-bottom: 18px;
+    }
+    .md-summary__item {
+        flex: 1; border-radius: 18px; padding: 14px 8px 12px;
+        display: flex; flex-direction: column; align-items: center; gap: 4px;
+        border: 1px solid rgba(0,0,0,0.04);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+        transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+        position: relative; overflow: hidden;
+    }
+    .md-summary__item::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    }
+    .md-summary__item:active { transform: scale(0.94); }
+    .md-summary__item--active {
+        background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
+        color: #059669;
+    }
+    .md-summary__item--active::before { background: linear-gradient(90deg, #059669, #10b981); }
+    .md-summary__item--warning {
+        background: linear-gradient(135deg, #fffbeb, #fef3c7);
+        color: #d97706;
+    }
+    .md-summary__item--warning::before { background: linear-gradient(90deg, #d97706, #fbbf24); }
+    .md-summary__item--danger {
+        background: linear-gradient(135deg, #fef2f2, #fee2e2);
+        color: #dc2626;
+    }
+    .md-summary__item--danger::before { background: linear-gradient(90deg, #dc2626, #f87171); }
+    .md-summary__num { font-size: 1.35rem; font-weight: 950; line-height: 1; }
+    .md-summary__lbl { font-size: 0.6rem; font-weight: 850; color: rgba(0,0,0,0.35); text-transform: uppercase; letter-spacing: 0.3px; }
+
+    /* ── Shimmer Loading ── */
+    .md-shimmer { display: flex; flex-direction: column; gap: 12px; }
+    .md-shimmer__card {
+        background: #fff; border-radius: 20px; padding: 20px;
+        border: 1px solid rgba(0,0,0,0.04);
+    }
+    .md-shimmer__line {
+        height: 14px; border-radius: 8px; background: linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%);
+        background-size: 200% 100%; animation: mdShimmer 1.5s infinite;
+        margin-bottom: 10px;
+    }
+    .md-shimmer__line--lg { width: 70%; }
+    .md-shimmer__line--sm { width: 40%; height: 10px; }
+    .md-shimmer__line--md { width: 55%; }
+    @@keyframes mdShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* ── Empty State ── */
+    .md-empty {
+        text-align: center; padding: 52px 24px;
+        background: rgba(255,255,255,0.7);
+        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        border-radius: 28px;
+        border: 1px solid rgba(255,255,255,0.5);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+    }
+    .md-empty__graphic { margin-bottom: 18px; opacity: 0.6; }
+    .md-empty__title { font-size: 1.05rem; font-weight: 950; color: #0f172a; margin-bottom: 8px; }
+    .md-empty__desc { font-size: 0.8rem; color: #94a3b8; font-weight: 600; margin-bottom: 24px; line-height: 1.7; max-width: 260px; margin-left: auto; margin-right: auto; }
+
+    /* ── Buttons (generic) ── */
+    .mmd-btn {
+        padding: 10px 18px; border-radius: 14px; border: none; font-weight: 800;
+        font-size: 0.82rem; font-family: inherit; cursor: pointer;
+        transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .mmd-btn--ghost { background: transparent; color: #64748b; }
+    .mmd-btn--ghost:hover { background: #f1f5f9; }
+    .mmd-btn--primary { background: #2563eb; color: #fff; }
+    .mmd-btn--primary:hover { background: #1d4ed8; }
+    .mmd-btn--primary:active { transform: scale(0.96); }
+    .mmd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Device List ── */
+    .md-list { display: flex; flex-direction: column; gap: 14px; }
+
+    /* ── Device Card ── */
+    .md-card {
+        position: relative;
+        background: rgba(255,255,255,0.92);
+        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        border-radius: 24px; padding: 20px 18px 0;
+        border: 1px solid rgba(255,255,255,0.6);
+        box-shadow:
+            0 4px 20px rgba(0,0,0,0.04),
+            0 1px 3px rgba(0,0,0,0.02);
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+    }
+    .md-card:active { transform: scale(0.98); }
+    .md-card--dead { opacity: 0.6; }
+    .md-card--exp {
+        background: rgba(255,255,255,0.94);
+        border-color: rgba(245,158,11,0.15);
+        box-shadow:
+            0 4px 24px rgba(245,158,11,0.08),
+            0 0 0 1px rgba(245,158,11,0.08);
+    }
+
+    /* accent bar — thicker with glow */
+    .md-card__accent {
+        position: absolute; top: 0; left: 0; right: 0; height: 4px;
+        background: linear-gradient(90deg, #059669, #10b981, #34d399);
+        border-radius: 24px 24px 0 0;
+        box-shadow: 0 0 12px rgba(16,185,129,0.2);
+    }
+    .md-card--exp .md-card__accent {
+        background: linear-gradient(90deg, #d97706, #f59e0b, #fbbf24);
+        box-shadow: 0 0 12px rgba(245,158,11,0.2);
+    }
+    .md-card--dead .md-card__accent {
+        background: linear-gradient(90deg, #dc2626, #ef4444, #f87171);
+        box-shadow: 0 0 12px rgba(239,68,68,0.2);
+    }
+
+    /* top row: icon + title + chip */
+    .md-card__top {
+        display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+    }
+    .md-card__identity {
+        display: flex; align-items: center; gap: 10px; min-width: 0;
+    }
+    .md-card__icon {
+        width: 44px; height: 44px; border-radius: 16px;
+        background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+        color: #0369a1;
+        display: grid; place-items: center; flex-shrink: 0;
+        box-shadow: 0 4px 12px rgba(14,165,233,0.15);
+    }
+    .md-card--exp .md-card__icon {
+        background: linear-gradient(135deg, #fef3c7, #fde68a);
+        color: #b45309;
+        box-shadow: 0 4px 12px rgba(245,158,11,0.15);
+    }
+    .md-card--dead .md-card__icon {
+        background: linear-gradient(135deg, #fee2e2, #fecaca);
+        color: #b91c1c;
+        box-shadow: 0 4px 12px rgba(239,68,68,0.15);
+    }
+    .md-card__name { font-size: 0.9rem; font-weight: 900; color: #0f172a; }
+    .md-card__code { font-size: 0.65rem; color: #94a3b8; direction: ltr; text-align: left; font-family: 'Courier New', monospace; font-weight: 600; }
+
+    /* status chip */
+    .md-chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 5px 14px; border-radius: 999px;
+        font-size: 0.58rem; font-weight: 850; white-space: nowrap;
+        letter-spacing: 0.2px;
+    }
+    .md-chip--live {
+        background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.06));
+        color: #059669;
+        box-shadow: inset 0 0 0 1px rgba(16,185,129,0.2);
+    }
+    .md-chip--exp {
+        background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.06));
+        color: #d97706;
+        box-shadow: inset 0 0 0 1px rgba(245,158,11,0.2);
+    }
+    .md-chip--dead {
+        background: linear-gradient(135deg, rgba(239,68,68,0.12), rgba(239,68,68,0.06));
+        color: #dc2626;
+        box-shadow: inset 0 0 0 1px rgba(239,68,68,0.2);
+    }
+    .md-chip::before {
+        content: ''; width: 7px; height: 7px; border-radius: 50%;
+        background: currentColor; flex-shrink: 0;
+    }
+    .md-chip--live::before {
+        animation: mdPulse 1.8s ease-in-out infinite;
+        box-shadow: 0 0 8px currentColor;
+    }
+    @@keyframes mdPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.7); } }
+
+    /* body: ring + dates */
+    .md-card__body {
+        display: flex; align-items: center; gap: 18px; margin-bottom: 14px;
+    }
+    .md-card__ring {
+        flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 2px;
+        color: #059669;
+        filter: drop-shadow(0 2px 6px rgba(16,185,129,0.15));
+    }
+    .md-card--exp .md-card__ring { color: #f59e0b; filter: drop-shadow(0 2px 6px rgba(245,158,11,0.25)); }
+    .md-card--dead .md-card__ring { color: #dc2626; filter: drop-shadow(0 2px 6px rgba(239,68,68,0.2)); }
+    .md-card__ring svg { display: block; }
+    .md-card__ring-fill { transition: stroke-dashoffset 0.8s cubic-bezier(0.4,0,0.2,1); }
+    .md-card__ring-lbl { font-size: 0.5rem; font-weight: 800; color: #94a3b8; margin-top: 0; }
+    .md-card__inf {
+        display: flex; flex-direction: column; align-items: center; gap: 3px;
+        font-size: 0.68rem; font-weight: 800; color: #94a3b8;
+    }
+
+    /* timeline dates — premium connected dots */
+    .md-card__dates {
+        flex: 1; display: flex; flex-direction: column; gap: 14px;
+        padding-right: 12px;
+        position: relative;
+    }
+    .md-card__dates::before {
+        content: ''; position: absolute; right: 3px; top: 6px; bottom: 6px;
+        width: 2.5px;
+        background: linear-gradient(180deg, #059669 50%, #e2e8f0 50%);
+        border-radius: 2px;
+    }
+    .md-card--exp .md-card__dates::before {
+        background: linear-gradient(180deg, #d97706 50%, #e2e8f0 50%);
+    }
+    .md-card--dead .md-card__dates::before {
+        background: linear-gradient(180deg, #dc2626 50%, #e2e8f0 50%);
+    }
+    .md-card__date {
+        display: flex; align-items: center; gap: 12px;
+        position: relative;
+    }
+    .md-card__date-dot {
+        position: absolute; right: -14px;
+        width: 10px; height: 10px; border-radius: 50%;
+        background: #059669;
+        border: 2.5px solid #f0f4f8;
+        box-shadow: 0 0 0 2.5px #059669, 0 2px 8px rgba(5,150,105,0.2);
+        z-index: 1;
+    }
+    .md-card__date-dot--end {
+        background: #64748b;
+        box-shadow: 0 0 0 2.5px #64748b, 0 2px 8px rgba(100,116,139,0.2);
+    }
+    .md-card--exp .md-card__date-dot {
+        background: #d97706;
+        box-shadow: 0 0 0 2.5px #d97706, 0 2px 8px rgba(217,119,6,0.2);
+    }
+    .md-card--dead .md-card__date-dot {
+        background: #dc2626;
+        box-shadow: 0 0 0 2.5px #dc2626, 0 2px 8px rgba(220,38,38,0.2);
+    }
+    .md-card__date-lbl { font-size: 0.55rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.3px; }
+    .md-card__date-val { font-size: 0.78rem; font-weight: 900; color: #0f172a; }
+
+    /* action bar — glass divider */
+    .md-card__actions {
+        display: flex; margin: 0 -18px;
+        border-top: 1px solid rgba(0,0,0,0.04);
+        background: rgba(248,250,252,0.5);
+        margin-top: 6px;
+    }
+    .md-act {
+        flex: 1; display: flex; align-items: center; justify-content: center;
+        gap: 7px; padding: 13px 8px;
+        background: transparent; border: none; cursor: pointer;
+        font-size: 0.73rem; font-weight: 850; font-family: inherit;
+        transition: all 0.2s; color: #64748b;
+        -webkit-tap-highlight-color: transparent;
+        position: relative;
+    }
+    .md-act:active { background: rgba(0,0,0,0.03); }
+    .md-act--renew {
+        color: #2563eb;
+        font-weight: 900;
+    }
+    .md-act--renew:active { background: rgba(37,99,235,0.06); }
+    .md-act--history { color: #64748b; }
+    .md-act--pending {
+        color: #d97706; font-weight: 900; cursor: default; gap: 6px;
+    }
+    .md-act--pending svg { animation: mdPendingPulse 2s ease-in-out infinite; }
+    @@keyframes mdPendingPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .md-act:not(:last-child)::after {
+        content: ''; position: absolute; left: 0; top: 25%; bottom: 25%;
+        width: 1px; background: rgba(0,0,0,0.06);
+    }
+
+    /* ══════════════════════════════════════
+       MODALS
+       ══════════════════════════════════════ */
+    .mmd-modal-overlay {
+        position: fixed; inset: 0;
+        background: rgba(15,23,42,0.55);
+        backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        z-index: 2000; display: flex; align-items: center; justify-content: center;
+        padding: 16px;
+    }
+    .mmd-modal {
+        background: #fff; border-radius: 28px; width: 100%; max-width: 440px;
+        max-height: 90vh; overflow-y: auto;
+        animation: mmdModalIn 0.3s cubic-bezier(0.175,0.885,0.32,1.275);
+        box-shadow: 0 25px 60px rgba(0,0,0,0.12);
+    }
+    .mmd-modal--wide { max-width: 640px; }
+    @@keyframes mmdModalIn { from { opacity: 0; transform: scale(0.9) translateY(12px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+    .mmd-modal__head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 20px 24px;
+        background: linear-gradient(135deg, #f8fafc, #fff);
+        border-bottom: 1px solid rgba(0,0,0,0.04);
+        border-radius: 28px 28px 0 0;
+    }
+    .mmd-modal__title { font-weight: 950; font-size: 1.05rem; color: #0f172a; }
+    .mmd-modal__body { padding: 22px 24px; }
+    .mmd-modal__foot {
+        display: flex; justify-content: flex-end; gap: 10px;
+        padding: 16px 24px;
+        background: #f8fafc;
+        border-top: 1px solid rgba(0,0,0,0.04);
+        border-radius: 0 0 28px 28px;
+    }
+
+    .mmd-field { margin-bottom: 20px; }
+    .mmd-label {
+        display: block; font-size: 0.72rem; font-weight: 850; color: #475569; margin-bottom: 8px;
+        text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .mmd-static {
+        font-size: 0.85rem; font-weight: 700; color: #0f172a;
+        padding: 12px 14px; background: #f8fafc; border-radius: 14px;
+        border: 1px solid rgba(0,0,0,0.04);
+    }
+
+    .mmd-plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .mmd-plan {
+        padding: 18px 6px 14px; border-radius: 18px; border: 2px solid #e2e8f0;
+        background: #fff; cursor: pointer; text-align: center;
+        transition: all 0.25s; font-family: inherit;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .mmd-plan:active { transform: scale(0.94); }
+    .mmd-plan--active {
+        border-color: #2563eb;
+        background: linear-gradient(135deg, rgba(37,99,235,0.06), rgba(37,99,235,0.02));
+        box-shadow: 0 6px 20px rgba(37,99,235,0.12);
+    }
+    .mmd-plan__months { font-weight: 950; font-size: 1.1rem; color: #0f172a; }
+    .mmd-plan__price { font-size: 0.78rem; font-weight: 900; color: #059669; margin-top: 6px; }
+    .mmd-plan__desc { font-size: 0.6rem; color: #94a3b8; font-weight: 700; margin-top: 4px; }
+
+    .mmd-file-upload { width: 100%; }
+    .mmd-file-upload__zone {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 6px; padding: 22px 16px; border-radius: 18px;
+        border: 2px dashed #e2e8f0; background: #f8fafc;
+        cursor: pointer; transition: all 0.2s ease; margin: 0;
+    }
+    .mmd-file-upload__zone:hover { border-color: #2563eb; background: #f1f5f9; }
+    .mmd-file-upload__icon {
+        width: 48px; height: 48px; border-radius: 14px;
+        background: rgba(37,99,235,0.1); color: #2563eb;
+        display: grid; place-items: center; font-size: 1.3rem;
+    }
+    .mmd-file-upload__title { font-weight: 900; font-size: 0.85rem; color: #0f172a; }
+    .mmd-file-upload__hint { font-size: 0.68rem; color: #94a3b8; font-weight: 700; }
+    .mmd-file-upload__preview {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 14px; border-radius: 14px;
+        background: #f0fdf4; border: 1.5px solid rgba(5,150,105,0.2);
+    }
+    .mmd-file-upload__thumb {
+        width: 48px; height: 48px; min-width: 48px; border-radius: 10px;
+        object-fit: cover; border: 1px solid rgba(5,150,105,0.15);
+    }
+    .mmd-file-upload__file-icon {
+        width: 36px; height: 36px; min-width: 36px; border-radius: 10px;
+        background: rgba(5,150,105,0.12); color: #059669;
+        display: grid; place-items: center; font-size: 1rem;
+    }
+    .mmd-file-upload__info { flex: 1; min-width: 0; }
+    .mmd-file-upload__name { font-weight: 800; font-size: 0.78rem; color: #065f46; }
+    .mmd-file-upload__remove {
+        width: 28px; height: 28px; min-width: 28px; border-radius: 50%;
+        border: none; background: rgba(220,38,38,0.1); color: #dc2626;
+        display: grid; place-items: center; font-size: 0.7rem;
+        cursor: pointer; transition: all 0.15s;
+    }
+    .mmd-file-upload__remove:hover { background: #dc2626; color: #fff; }
+
+    .mmd-textarea {
+        width: 100%; padding: 12px 14px; border: 1.5px solid #e2e8f0;
+        border-radius: 14px; font-size: 0.85rem; font-family: inherit;
+        resize: vertical; outline: none; transition: all 0.15s;
+        background: #f8fafc;
+    }
+    .mmd-textarea:focus { border-color: #2563eb; background: #fff; box-shadow: 0 0 0 4px rgba(37,99,235,0.08); }
+
+    .mmd-loading { text-align: center; padding: 20px; color: #64748b; font-weight: 700; font-size: 0.85rem; }
+    .mmd-badge {
+        display: inline-block; padding: 3px 10px; border-radius: 999px;
+        font-size: 0.68rem; font-weight: 800;
+    }
+    .mmd-badge--success { background: rgba(5,150,105,0.1); color: #059669; }
+    .mmd-badge--danger { background: rgba(220,38,38,0.1); color: #dc2626; }
+    .mmd-badge--warning { background: rgba(245,158,11,0.12); color: #d97706; }
+
+    .mmd-empty-sm { text-align: center; padding: 20px; color: #94a3b8; font-weight: 700; font-size: 0.85rem; }
+
+    .mmd-history-table {
+        border: 1px solid rgba(0,0,0,0.06); border-radius: 14px; overflow: hidden;
+    }
+    .mmd-history-row {
+        display: grid; grid-template-columns: 1fr 0.7fr 0.7fr 0.7fr 0.5fr 0.8fr;
+        gap: 8px; padding: 10px 14px; align-items: center; font-size: 0.72rem; font-weight: 700;
+    }
+    .mmd-history-row--head {
+        background: #f8fafc; font-size: 0.6rem; color: #94a3b8; font-weight: 800;
+        text-transform: uppercase;
+    }
+    .mmd-history-row:not(:last-child) { border-bottom: 1px solid rgba(0,0,0,0.04); }
+    .mmd-link { color: #2563eb; text-decoration: none; font-weight: 800; }
+    .mmd-price { font-weight: 900; color: #059669; direction: ltr; }
+
+    @@media (max-width: 576px) {
+        .md-summary { gap: 8px; }
+        .md-summary__item { padding: 10px 4px; }
+        .mmd-history-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .mmd-history-row { font-size: 0.65rem; }
+    }
+</style>

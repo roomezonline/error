@@ -1,0 +1,320 @@
+@using ErrorService.Shared
+@using System.Globalization
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="cs-wrapper @(IsDark ? "cs-dark" : "")">
+    @* ─── Summary Card ─── *@
+    @if (ShowStarSummary)
+    {
+        <div class="cs-summary">
+            <div class="cs-summary__score">
+                <div class="cs-summary__number">@AverageRating.ToString("F1", CultureInfo.InvariantCulture)</div>
+                <div class="cs-summary__label">از @TotalCount @(TotalCount == 1 ? "نظر" : "نظر")</div>
+            </div>
+            <div class="cs-summary__stars-col">
+                <div class="cs-summary__stars">
+                    @for (int i = 1; i <= 5; i++)
+                    {
+                        var fill = i <= Math.Round(AverageRating, MidpointRounding.AwayFromZero) ? "#f59e0b" : "none";
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="@fill" stroke="#f59e0b" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                    }
+                </div>
+                <div class="cs-summary__sub">@HeaderTitle</div>
+            </div>
+        </div>
+    }
+
+    @* ─── Comment List ─── *@
+    @if (Comments != null && Comments.Count > 0)
+    {
+        <div class="cs-list">
+            @foreach (var comment in Comments)
+            {
+                <CommentNode Comment="comment" 
+                             ReplyFormVisible="@(_replyTargetId == comment.Id)"
+                             ToggleReply="@(() => ToggleReply(comment.Id))"
+                             OnReply="@(() => ToggleReply(comment.Id))"
+                             OnSubmitReply="@(async (req) => await SubmitReply(comment.Id, req))" />
+            }
+        </div>
+    }
+    else if (!ShowStarSummary)
+    {
+        <div class="cs-empty">
+            <div class="cs-empty__icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div class="cs-empty__title">هنوز نظری ثبت نشده</div>
+            <div class="cs-empty__sub">اولین نفر باشید و نظر خود را به اشتراک بگذارید.</div>
+        </div>
+    }
+
+    @* ─── Submit Form ─── *@
+    @if (!string.IsNullOrEmpty(SubmitEndpoint))
+    {
+        <div class="cs-form">
+            <h4 class="cs-form__title">@FormTitle</h4>
+
+            @if (ShowRating)
+            {
+                <div class="cs-field">
+                    <label class="cs-label">امتیاز شما</label>
+                    <div class="cs-stars-input">
+                        @foreach (var star in new[] { 1, 2, 3, 4, 5 })
+                        {
+                            <button type="button" class="cs-star-btn @StarClass(star)" @onclick="() => _form.Rating = star" aria-label="@star ستاره">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="@StarFill(star)" stroke="@StarStroke(star)" stroke-width="2">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                </svg>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="cs-row">
+                <div class="cs-field cs-field--half">
+                    <label class="cs-label">نام و نام خانوادگی</label>
+                    <input class="cs-input @(_nameError ? "cs-input--error" : "")" 
+                           placeholder="نام شما" 
+                           @bind="_form.FullName"
+                           @bind:event="oninput" />
+                    @if (_nameError) { <span class="cs-error">نام الزامی است</span> }
+                </div>
+                @if (RequireEmail || ShowRating)
+                {
+                    <div class="cs-field cs-field--half">
+                        <label class="cs-label">ایمیل</label>
+                        <input class="cs-input @(_emailError ? "cs-input--error" : "")" 
+                               type="email" 
+                               placeholder="example@domain.com" 
+                               @bind="_form.Email"
+                               @bind:event="oninput" />
+                        @if (_emailError) { <span class="cs-error">ایمیل الزامی است</span> }
+                    </div>
+                }
+            </div>
+
+            <div class="cs-field">
+                <label class="cs-label">متن نظر</label>
+                <textarea class="cs-input cs-textarea @(_contentError ? "cs-input--error" : "")" 
+                          rows="4" 
+                          placeholder="متن نظر خود را بنویسید..." 
+                          @bind="_form.Content"
+                          @bind:event="oninput"></textarea>
+                @if (_contentError) { <span class="cs-error">متن نظر الزامی است</span> }
+            </div>
+
+            <div class="cs-form__actions">
+                <button class="cs-btn cs-btn--primary" @onclick="SubmitAsync" disabled="@_isSubmitting">
+                    @if (_isSubmitting)
+                    {
+                        <span class="cs-spinner"></span>
+                    }
+                    @SubmitButtonText
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_successMsg))
+            {
+                <div class="cs-alert cs-alert--success">@_successMsg</div>
+            }
+            @if (!string.IsNullOrEmpty(_errorMsg))
+            {
+                <div class="cs-alert cs-alert--danger">@_errorMsg</div>
+            }
+        </div>
+    }
+</div>
+
+@* ─── Styles ─── *@
+<style>
+    .cs-wrapper { font-family: inherit; }
+    .cs-wrapper * { box-sizing: border-box; }
+
+    .cs-dark { --cs-bg: #0f172a; --cs-surface: #1e293b; --cs-border: #334155; --cs-text: #f1f5f9; --cs-muted: #94a3b8; --cs-input-bg: #1e293b; --cs-input-border: #334155; --cs-shadow: 0 4px 24px rgba(0,0,0,.3); }
+    :root { --cs-bg: transparent; --cs-surface: #fff; --cs-border: #e2e8f0; --cs-text: #0f172a; --cs-muted: #64748b; --cs-input-bg: #fff; --cs-input-border: #cbd5e1; --cs-shadow: 0 4px 24px rgba(15,23,42,.08); }
+
+    .cs-summary { display:flex; align-items:center; gap:1.25rem; padding:1.25rem; background:var(--cs-surface); border-radius:18px; box-shadow:var(--cs-shadow); margin-bottom:1.5rem; }
+    .cs-summary__score { text-align:center; min-width:90px; }
+    .cs-summary__number { font-size:2rem; font-weight:800; color:#2563eb; line-height:1; }
+    .cs-summary__label { font-size:.8rem; color:var(--cs-muted); margin-top:2px; }
+    .cs-summary__stars-col { flex:1; }
+    .cs-summary__stars { display:flex; gap:2px; margin-bottom:4px; }
+    .cs-summary__sub { font-size:.8rem; color:var(--cs-muted); }
+
+    .cs-list { display:flex; flex-direction:column; gap:1rem; margin-bottom:1.5rem; }
+
+    .cs-empty { text-align:center; padding:3rem 1rem; background:var(--cs-surface); border-radius:18px; box-shadow:var(--cs-shadow); margin-bottom:1.5rem; }
+    .cs-empty__icon { width:56px;height:56px;border-radius:18px;background:rgba(37,99,235,.1);color:#2563eb;display:grid;place-items:center;margin:0 auto 1rem; }
+    .cs-empty__title { font-weight:700;color:var(--cs-text);margin-bottom:4px; }
+    .cs-empty__sub { font-size:.88rem;color:var(--cs-muted); }
+
+    .cs-form { padding:1.5rem; background:var(--cs-surface); border-radius:18px; box-shadow:var(--cs-shadow); }
+    .cs-form__title { font-weight:700; font-size:1.1rem; margin-bottom:1.25rem; color:var(--cs-text); }
+    .cs-form__actions { display:flex; align-items:center; gap:1rem; margin-top:1rem; flex-wrap:wrap; }
+    .cs-field { margin-bottom:1rem; }
+    .cs-field--half { flex:1; min-width:0; }
+    .cs-row { display:flex; gap:1rem; }
+    .cs-label { display:block; font-size:.82rem; font-weight:600; color:var(--cs-text); margin-bottom:6px; }
+    .cs-input { display:block; width:100%; padding:.65rem .85rem; font-size:.92rem; border:1px solid var(--cs-input-border); border-radius:12px; background:var(--cs-input-bg); color:var(--cs-text); transition:border-color .2s; font-family:inherit; }
+    .cs-input:focus { outline:none;border-color:#2563eb; }
+    .cs-input--error { border-color:#ef4444 !important; }
+    .cs-textarea { resize:vertical;min-height:90px; }
+    .cs-error { display:block;color:#ef4444;font-size:.78rem;margin-top:4px; }
+    .cs-alert { padding:.75rem 1rem; border-radius:12px; font-size:.88rem; margin-top:1rem; }
+    .cs-alert--success { background:rgba(16,185,129,.12); color:#059669; border:1px solid rgba(16,185,129,.25); }
+    .cs-alert--danger { background:rgba(239,68,68,.12); color:#dc2626; border:1px solid rgba(239,68,68,.25); }
+
+    .cs-stars-input { display:flex;gap:4px; }
+    .cs-star-btn { background:none;border:none;padding:2px;cursor:pointer;transition:transform .15s;line-height:0; }
+    .cs-star-btn:hover { transform:scale(1.15); }
+    .cs-star-btn--active svg { filter:drop-shadow(0 2px 6px rgba(245,158,11,.35)); }
+    @@media(prefers-reduced-motion:reduce) { .cs-star-btn { transition:none; } }
+
+    .cs-btn { display:inline-flex;align-items:center;gap:6px;padding:.6rem 1.5rem;border:none;border-radius:999px;font-size:.9rem;font-weight:600;cursor:pointer;transition:opacity .2s,transform .15s;font-family:inherit; }
+    .cs-btn:disabled { opacity:.55;cursor:not-allowed; }
+    .cs-btn:hover:not(:disabled) { transform:translateY(-1px); }
+    .cs-btn--primary { background:#2563eb; color:#fff; }
+    .cs-btn--sm { padding:.4rem 1rem;font-size:.82rem; }
+    .cs-spinner { display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:cs-spin .5s linear infinite; }
+    @@keyframes cs-spin { to { transform:rotate(360deg); } }
+
+    .cs-comment { background:var(--cs-surface); border-radius:16px; box-shadow:0 2px 12px rgba(15,23,42,.06); overflow:hidden; transition:box-shadow .2s; }
+    .cs-comment:hover { box-shadow:0 4px 20px rgba(15,23,42,.1); }
+    .cs-comment__inner { padding:1rem 1.1rem; }
+    .cs-comment__head { display:flex;align-items:center;gap:10px;margin-bottom:8px; }
+    .cs-comment__avatar { width:40px;height:40px;border-radius:999px;display:grid;place-items:center;font-weight:800;font-size:.9rem;color:#fff;flex-shrink:0;background:linear-gradient(135deg,#3b82f6,#1d4ed8); }
+    .cs-comment:nth-child(2n) .cs-comment__avatar { background:linear-gradient(135deg,#34d399,#059669); }
+    .cs-comment--reply { border-right:3px solid #2563eb; }
+    .cs-comment--reply .cs-comment__inner { background:rgba(37,99,235,.03); }
+    .cs-reply-badge { display:inline-flex;align-items:center;gap:3px;font-size:.7rem;font-weight:600;color:#2563eb;background:rgba(37,99,235,.1);padding:1px 8px;border-radius:999px;margin-right:6px;vertical-align:middle; }
+    .cs-reply-badge::before { content:"↩";font-size:.75rem; }
+    .cs-comment__meta { flex:1;min-width:0; }
+    .cs-comment__name { font-weight:700;font-size:.9rem;color:var(--cs-text); }
+    .cs-comment__time { font-size:.75rem;color:var(--cs-muted);display:flex;align-items:center;gap:4px;margin-top:1px; }
+    .cs-comment__body { color:var(--cs-text);font-size:.92rem;line-height:1.8;white-space:pre-wrap; }
+    .cs-comment__footer { display:flex;align-items:center;gap:1rem;margin-top:10px; }
+    .cs-comment__stars { display:flex;gap:1px; }
+    .cs-comment__stars svg { display:block; }
+    .cs-comment__reply-btn { background:none;border:none;padding:4px 0;font-size:.8rem;font-weight:600;color:#2563eb;cursor:pointer;transition:opacity .15s;font-family:inherit; }
+    .cs-comment__reply-btn:hover { opacity:.75; }
+
+    .cs-reply-form { padding:.75rem 1rem 0; }
+    .cs-reply-form .cs-field { margin-bottom:.75rem; }
+    .cs-reply-form .cs-row { gap:.75rem; }
+    .cs-reply-form .cs-label { font-size:.78rem; }
+    .cs-reply-form .cs-input { padding:.5rem .75rem; font-size:.88rem; border-radius:10px; }
+    .cs-reply-form .cs-textarea { min-height:60px; }
+    .cs-reply-form .cs-form__actions { margin-top:0; }
+
+    .cs-replies { padding-right:1.25rem; margin-top:.5rem; border-right:2px solid var(--cs-border); }
+    .cs-replies .cs-comment { box-shadow:none; background:transparent; margin:5px; }
+    .cs-replies .cs-comment__inner { padding:.75rem .75rem .75rem 0; }
+    .cs-replies .cs-comment__avatar { width:32px;height:32px;font-size:.75rem; }
+
+    @@media(max-width:576px) {
+        .cs-row { flex-direction:column; gap:0; }
+        .cs-summary { flex-direction:column; text-align:center; }
+        .cs-summary__stars { justify-content:center; }
+        .cs-replies { padding-right:.75rem; }
+        .cs-form { padding:1.25rem; }
+    }
+</style>
+
+@code {
+    [Parameter] public string HeaderTitle { get; set; } = "نظرات کاربران";
+    [Parameter] public string FormTitle { get; set; } = "ثبت نظر";
+    [Parameter] public string SubmitButtonText { get; set; } = "ثبت نظر";
+    [Parameter] public string? SubmitEndpoint { get; set; }
+    [Parameter] public bool ShowRating { get; set; } = true;
+    [Parameter] public bool ShowStarSummary { get; set; } = true;
+    [Parameter] public bool RequireEmail { get; set; } = false;
+    [Parameter] public double AverageRating { get; set; }
+    [Parameter] public int TotalCount { get; set; }
+    [Parameter] public List<CommentDto> Comments { get; set; } = new();
+    [Parameter] public bool IsDark { get; set; }
+    [Parameter] public EventCallback<CommentRequest> SubmitComment { get; set; }
+
+    private CommentRequest _form = new();
+    private bool _nameError, _emailError, _contentError;
+    private bool _isSubmitting;
+    private string? _successMsg, _errorMsg;
+    private int? _replyTargetId;
+
+    private string StarClass(int star) => star <= (_form.Rating ?? 0) ? "cs-star-btn--active" : "";
+    private string StarFill(int star) => star <= (_form.Rating ?? 0) ? "#f59e0b" : "none";
+    private string StarStroke(int star) => star <= (_form.Rating ?? 0) ? "#f59e0b" : "#94a3b8";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            var name = authState.User.Identity.Name;
+            if (!string.IsNullOrWhiteSpace(name))
+                _form.FullName = name;
+            var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+            if (!string.IsNullOrWhiteSpace(email))
+                _form.Email = email;
+        }
+    }
+
+    private void ToggleReply(int commentId)
+    {
+        _replyTargetId = _replyTargetId == commentId ? null : commentId;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _nameError = false;
+        _emailError = false;
+        _contentError = false;
+        _successMsg = null;
+        _errorMsg = null;
+
+        if (string.IsNullOrWhiteSpace(_form.FullName) || _form.FullName.Trim().Length < 2) _nameError = true;
+        if ((_form.Rating ?? 0) <= 0 && ShowRating) _errorMsg = "لطفاً یک امتیاز انتخاب کنید";
+        if (RequireEmail && string.IsNullOrWhiteSpace(_form.Email)) _emailError = true;
+        if (!string.IsNullOrEmpty(_form.Email) && !IsValidEmail(_form.Email)) _emailError = true;
+        if (string.IsNullOrWhiteSpace(_form.Content) || _form.Content.Trim().Length < 2) _contentError = true;
+
+        if (_nameError || _emailError || _contentError || (!string.IsNullOrEmpty(_errorMsg))) return;
+
+        _isSubmitting = true;
+        try
+        {
+            await SubmitComment.InvokeAsync(_form);
+            _successMsg = "نظر شما با موفقیت ثبت شد و پس از تأیید نمایش داده خواهد شد.";
+            _form = new();
+        }
+        catch (Exception ex)
+        {
+            _errorMsg = ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private static bool IsValidEmail(string email)
+    {
+        try
+        {
+            var addr = new System.Net.Mail.MailAddress(email);
+            return addr.Address == email;
+        }
+        catch { return false; }
+    }
+
+    private async Task SubmitReply(int parentId, CommentRequest req)
+    {
+        req.ParentId = parentId;
+        await SubmitComment.InvokeAsync(req);
+        _replyTargetId = null;
+    }
+}

@@ -1,0 +1,906 @@
+@page "/admin/technical/error-codes"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.technical.errorcodes.manage")]
+@using ErrorService.Shared.Models
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService Toast
+
+<div class="ec-page">
+    <!-- Header -->
+    <div class="ec-header">
+        <div class="ec-header__top">
+            <a class="ec-back" href="/admin"><span class="oi oi-arrow-right"></span></a>
+            <div class="ec-header__title">
+                <div class="ec-header__kicker">مدیریت فنی</div>
+                <div class="ec-header__main">کدهای خطا</div>
+            </div>
+        </div>
+
+        <div class="ec-search-row">
+            <div class="ec-search-box">
+                <span class="oi oi-magnifying-glass ec-search-icon"></span>
+                <input class="ec-search-input" placeholder="جستجو برند، دستگاه یا کد خطا..."
+                       @bind="searchQuery" @bind:event="oninput" @bind:after="FilterList" />
+                @if (!string.IsNullOrEmpty(searchQuery))
+                {
+                    <button class="ec-search-clear" @onclick="ClearSearch">
+                        <span class="oi oi-x"></span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="ec-header__actions">
+            <div class="ec-import-box">
+                <label class="ec-import-label">
+                    <span class="oi oi-cloud-upload"></span>
+                    <span class="ec-import-text">ورودی JSON</span>
+                    <InputFile OnChange="HandleFileSelected" class="ec-import-input" accept=".json" />
+                </label>
+                @if (selectedFile != null)
+                {
+                    <button class="ec-import-btn" @onclick="ImportJson" disabled="@isImporting">
+                        @if (isImporting) { <span class="spinner-border spinner-border-sm"></span> }
+                        else { <span class="oi oi-check"></span> }
+                    </button>
+                }
+            </div>
+            <button class="ec-add-btn" @onclick="() => OpenModal()">
+                <span class="oi oi-plus"></span>
+                <span>افزودن</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="ec-stats">
+        <div class="ec-stat">
+            <div class="ec-stat__value">@filteredCodes.Count</div>
+            <div class="ec-stat__label">نتیجه</div>
+        </div>
+        <div class="ec-stat">
+            <div class="ec-stat__value">@brandCount</div>
+            <div class="ec-stat__label">برند</div>
+        </div>
+        <div class="ec-stat">
+            <div class="ec-stat__value">@deviceCount</div>
+            <div class="ec-stat__label">دستگاه</div>
+        </div>
+    </div>
+
+    <!-- List -->
+    <div class="ec-list">
+        @if (isLoading)
+        {
+            @for (int i = 0; i < 5; i++)
+            {
+                <div class="ec-skeleton">
+                    <div class="ec-skeleton__line ec-skeleton__line--short"></div>
+                    <div class="ec-skeleton__line ec-skeleton__line--long"></div>
+                    <div class="ec-skeleton__line ec-skeleton__line--medium"></div>
+                </div>
+            }
+        }
+        else if (!filteredCodes.Any())
+        {
+            <div class="ec-empty">
+                <span class="oi oi-magnifying-glass ec-empty__icon"></span>
+                <div class="ec-empty__title">موردی یافت نشد</div>
+                <div class="ec-empty__desc">هیچ کد خطایی با عبارت جستجوی شما مطابقت ندارد</div>
+            </div>
+        }
+        else
+        {
+            @foreach (var group in filteredCodes.GroupBy(x => x.Brand).OrderBy(x => x.Key))
+            {
+                <div class="ec-brand-group">
+                    <div class="ec-brand-header">
+                        <span class="ec-brand-dot"></span>
+                        <span class="ec-brand-name">@group.Key</span>
+                        <span class="ec-brand-count">@group.Count() مورد</span>
+                    </div>
+
+                    @foreach (var item in group.OrderBy(x => x.DeviceType).ThenBy(x => x.Code))
+                    {
+                        <div class="ec-card" @onclick="() => OpenModal(item)">
+                            <div class="ec-card__top">
+                                <span class="ec-card__device">@item.DeviceType</span>
+                                <span class="ec-card__code">@item.Code</span>
+                            </div>
+                            <div class="ec-card__desc">@item.Description</div>
+                            @if (!string.IsNullOrEmpty(item.Solution))
+                            {
+                                <div class="ec-card__solution">
+                                    <span class="oi oi-check ec-card__solution-icon"></span>
+                                    <span>@TruncateText(item.Solution, 80)</span>
+                                </div>
+                            }
+                            @if (item.ImageUrl != null)
+                            {
+                                <div class="ec-card__image-badge">
+                                    <span class="oi oi-image"></span> تصویر دارد
+                                </div>
+                            }
+                            <div class="ec-card__actions" @onclick:stopPropagation="true">
+                                <button class="ec-card__btn ec-card__btn--edit" @onclick="() => OpenModal(item)">
+                                    <span class="oi oi-pencil"></span>
+                                </button>
+                                <button class="ec-card__btn ec-card__btn--delete" @onclick="() => DeleteErrorCode(item.Id)">
+                                    <span class="oi oi-trash"></span>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<!-- Modal -->
+@if (showModal)
+{
+    <div class="ec-modal-overlay" @onclick="CloseModal">
+        <div class="ec-modal" @onclick:stopPropagation="true">
+            <div class="ec-modal__header">
+                <div class="ec-modal__title">
+                    <span class="oi oi-@(editingItem.Id == 0 ? "plus" : "pencil")"></span>
+                    @(editingItem.Id == 0 ? "افزودن کد جدید" : "ویرایش کد خطا")
+                </div>
+                <button class="ec-modal__close" @onclick="CloseModal">
+                    <span class="oi oi-x"></span>
+                </button>
+            </div>
+
+            <EditForm class="ec-modal__form" Model="editingItem" OnValidSubmit="HandleSubmit">
+                <div class="ec-modal__body">
+                    <DataAnnotationsValidator />
+
+                    <div class="ec-field">
+                        <label class="ec-field__label">برند <span class="ec-field__req">*</span></label>
+                        @if (existingBrands != null && existingBrands.Length > 0 && editingItem.Id == 0)
+                        {
+                            <div class="ec-brand-selector">
+                                <select class="ec-field__input ec-brand-select" @onchange="OnBrandSelected">
+                                    <option value="">-- انتخاب برند موجود --</option>
+                                    @foreach (var b in existingBrands)
+                                    {
+                                        <option value="@b">@b</option>
+                                    }
+                                </select>
+                                <span class="ec-brand-selector__or">یا</span>
+                            </div>
+                        }
+                        <InputText class="ec-field__input" @bind-Value="editingItem.Brand" placeholder="مثلاً: Samsung" />
+                        <ValidationMessage For="@(() => editingItem.Brand)" class="ec-field__error" />
+                    </div>
+
+                    <div class="ec-field">
+                        <label class="ec-field__label">نوع دستگاه <span class="ec-field__req">*</span></label>
+                        <InputText class="ec-field__input" @bind-Value="editingItem.DeviceType" placeholder="مثلاً: ماشین لباسشویی" />
+                        <ValidationMessage For="@(() => editingItem.DeviceType)" class="ec-field__error" />
+                    </div>
+
+                    <div class="ec-field">
+                        <label class="ec-field__label">کد خطا <span class="ec-field__req">*</span></label>
+                        <InputText class="ec-field__input ec-field__input--code" @bind-Value="editingItem.Code" placeholder="مثلاً: E01" />
+                        <ValidationMessage For="@(() => editingItem.Code)" class="ec-field__error" />
+                    </div>
+
+                    <div class="ec-field">
+                        <label class="ec-field__label">شرح خطا <span class="ec-field__req">*</span></label>
+                        <InputTextArea class="ec-field__textarea" @bind-Value="editingItem.Description" rows="2" />
+                        <ValidationMessage For="@(() => editingItem.Description)" class="ec-field__error" />
+                    </div>
+
+                    <div class="ec-field">
+                        <label class="ec-field__label">راه حل پیشنهادی</label>
+                        <InputTextArea class="ec-field__textarea" @bind-Value="editingItem.Solution" rows="3" />
+                    </div>
+
+                    <div class="ec-field">
+                        <label class="ec-field__label">تصویر</label>
+                        <ImageUploader @bind-ImageUrl="editingItem.ImageUrl"
+                                       UploadUrl="api/technical/error-codes/upload" />
+                    </div>
+
+                    <div class="ec-field">
+                        <label class="ec-field__label">نکات فنی</label>
+                        <InputTextArea class="ec-field__textarea" @bind-Value="editingItem.TechnicalNotes" rows="2" />
+                    </div>
+                </div>
+
+                <div class="ec-modal__footer">
+                    <button type="button" class="ec-modal__btn ec-modal__btn--cancel" @onclick="CloseModal">انصراف</button>
+                    <button type="submit" class="ec-modal__btn ec-modal__btn--submit" disabled="@isSubmitting">
+                        @if (isSubmitting) { <span class="spinner-border spinner-border-sm"></span> }
+                        ذخیره
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+<style>
+    .ec-page {
+        padding: 0 0 24px;
+        min-height: 100vh;
+        background: #f8fafc;
+    }
+
+    /* ── Header ── */
+    .ec-header {
+        background: #fff;
+        padding: 20px 16px 16px;
+        border-radius: 0 0 24px 24px;
+        box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .ec-header__top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+    .ec-back {
+        width: 36px; height: 36px;
+        display: flex; align-items: center; justify-content: center;
+        background: #f1f5f9;
+        border-radius: 10px;
+        color: #475569;
+        text-decoration: none;
+        font-size: 0.9rem;
+        transition: background 0.2s;
+    }
+    .ec-back:hover { background: #e2e8f0; color: #1e293b; }
+    .ec-header__kicker { font-size: 0.7rem; color: #94a3b8; letter-spacing: 0.5px; }
+    .ec-header__main { font-size: 1.15rem; font-weight: 800; color: #1e293b; }
+
+    .ec-search-row { margin-bottom: 12px; }
+    .ec-search-box {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+    .ec-search-icon {
+        position: absolute;
+        right: 12px;
+        color: #94a3b8;
+        font-size: 0.85rem;
+        pointer-events: none;
+    }
+    .ec-search-input {
+        width: 100%;
+        padding: 11px 40px 11px 12px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        background: #f8fafc;
+        color: #1e293b;
+        font-size: 0.85rem;
+        outline: none;
+        transition: border-color 0.2s, background 0.2s;
+        font-family: inherit;
+    }
+    .ec-search-input::placeholder { color: #94a3b8; }
+    .ec-search-input:focus {
+        border-color: #6366f1;
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+    }
+    .ec-search-clear {
+        position: absolute;
+        left: 8px;
+        background: #f1f5f9;
+        border: none;
+        border-radius: 8px;
+        color: #94a3b8;
+        width: 26px; height: 26px;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        font-size: 0.65rem;
+        transition: background 0.2s;
+    }
+    .ec-search-clear:hover { background: #e2e8f0; color: #475569; }
+
+    .ec-header__actions {
+        display: flex;
+        gap: 8px;
+    }
+    .ec-import-box {
+        position: relative;
+        flex: 1;
+    }
+    .ec-import-label {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 10px;
+        border: 1.5px dashed #e2e8f0;
+        border-radius: 12px;
+        color: #64748b;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: #f8fafc;
+    }
+    .ec-import-label:hover {
+        border-color: #6366f1;
+        background: #f1f5f9;
+        color: #1e293b;
+    }
+    .ec-import-input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+    }
+    .ec-import-btn {
+        position: absolute;
+        left: 6px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 30px; height: 30px;
+        border-radius: 8px;
+        border: none;
+        background: #22c55e;
+        color: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    .ec-import-btn:hover { background: #16a34a; }
+
+    .ec-add-btn {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 10px;
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #6366f1, #818cf8);
+        color: #fff;
+        font-size: 0.85rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 4px 14px rgba(99,102,241,0.3);
+    }
+    .ec-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99,102,241,0.4); }
+    .ec-add-btn:active { transform: scale(0.97); }
+
+    /* ── Stats ── */
+    .ec-stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        padding: 16px 16px 0;
+    }
+    .ec-stat {
+        background: #fff;
+        border-radius: 14px;
+        padding: 12px 8px;
+        text-align: center;
+        border: 1px solid rgba(0,0,0,0.04);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .ec-stat__value {
+        font-size: 1.3rem;
+        font-weight: 900;
+        color: #1e293b;
+        line-height: 1;
+    }
+    .ec-stat__label {
+        font-size: 0.65rem;
+        color: #94a3b8;
+        margin-top: 4px;
+        font-weight: 600;
+    }
+
+    /* ── List ── */
+    .ec-list {
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .ec-brand-group { display: flex; flex-direction: column; gap: 8px; }
+    .ec-brand-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 4px;
+    }
+    .ec-brand-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #6366f1, #818cf8);
+    }
+    .ec-brand-name {
+        font-size: 0.8rem;
+        font-weight: 800;
+        color: #334155;
+    }
+    .ec-brand-count {
+        font-size: 0.65rem;
+        color: #94a3b8;
+        margin-right: auto;
+    }
+
+    /* ── Card ── */
+    .ec-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 14px;
+        border: 1px solid rgba(0,0,0,0.04);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+    }
+    .ec-card:hover {
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+        transform: translateY(-1px);
+    }
+    .ec-card:active { transform: scale(0.99); }
+    .ec-card__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+    .ec-card__device {
+        font-size: 0.75rem;
+        color: #64748b;
+        font-weight: 600;
+    }
+    .ec-card__code {
+        background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+        color: #475569;
+        font-size: 0.75rem;
+        font-weight: 900;
+        padding: 3px 10px;
+        border-radius: 8px;
+        font-family: monospace;
+        letter-spacing: 0.5px;
+    }
+    .ec-card__desc {
+        font-size: 0.85rem;
+        color: #1e293b;
+        font-weight: 600;
+        line-height: 1.5;
+        margin-bottom: 6px;
+    }
+    .ec-card__solution {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        font-size: 0.75rem;
+        color: #22c55e;
+        background: #f0fdf4;
+        padding: 6px 10px;
+        border-radius: 8px;
+        line-height: 1.4;
+    }
+    .ec-card__solution-icon { font-size: 0.7rem; margin-top: 2px; flex-shrink: 0; }
+    .ec-card__image-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.65rem;
+        color: #8b5cf6;
+        background: #f5f3ff;
+        padding: 3px 8px;
+        border-radius: 6px;
+        margin-top: 6px;
+    }
+    .ec-card__actions {
+        position: absolute;
+        top: 14px;
+        left: 14px;
+        display: flex;
+        gap: 4px;
+    }
+    .ec-card__btn {
+        width: 32px; height: 32px;
+        border-radius: 10px;
+        border: none;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .ec-card__btn--edit {
+        background: #eff6ff;
+        color: #3b82f6;
+    }
+    .ec-card__btn--edit:hover { background: #3b82f6; color: #fff; }
+    .ec-card__btn--delete {
+        background: #fef2f2;
+        color: #ef4444;
+    }
+    .ec-card__btn--delete:hover { background: #ef4444; color: #fff; }
+
+    /* ── Skeleton ── */
+    .ec-skeleton {
+        background: #fff;
+        border-radius: 16px;
+        padding: 16px;
+        border: 1px solid rgba(0,0,0,0.04);
+    }
+    .ec-skeleton__line {
+        height: 12px;
+        border-radius: 6px;
+        background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+        margin-bottom: 10px;
+    }
+    .ec-skeleton__line:last-child { margin-bottom: 0; }
+    .ec-skeleton__line--short { width: 40%; }
+    .ec-skeleton__line--medium { width: 70%; }
+    .ec-skeleton__line--long { width: 90%; }
+    @@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+    /* ── Empty ── */
+    .ec-empty {
+        text-align: center;
+        padding: 48px 24px;
+    }
+    .ec-empty__icon {
+        font-size: 2.5rem;
+        color: #cbd5e1;
+        display: block;
+        margin-bottom: 12px;
+    }
+    .ec-empty__title {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #475569;
+        margin-bottom: 4px;
+    }
+    .ec-empty__desc {
+        font-size: 0.8rem;
+        color: #94a3b8;
+    }
+
+    /* ── Modal ── */
+    .ec-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.5);
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        animation: fadeIn 0.15s ease;
+        padding: 16px;
+    }
+    .ec-modal {
+        background: #fff;
+        border-radius: 20px;
+        width: 100%;
+        max-width: 560px;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        animation: fadeIn 0.2s ease;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.15);
+    }
+    .ec-modal__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 20px;
+        border-bottom: 1px solid #f1f5f9;
+        flex-shrink: 0;
+    }
+    .ec-modal__title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 1rem;
+        font-weight: 800;
+        color: #1e293b;
+    }
+    .ec-modal__title span { font-size: 1.1rem; }
+    .ec-modal__close {
+        width: 34px; height: 34px;
+        border-radius: 10px;
+        border: none;
+        background: #f1f5f9;
+        color: #64748b;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+    }
+    .ec-modal__close:hover { background: #e2e8f0; color: #1e293b; }
+
+    .ec-modal__body {
+        padding: 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        flex: 1;
+        min-height: 0;
+    }
+
+    .ec-modal__form {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .ec-brand-selector {
+        margin-bottom: 8px;
+    }
+    .ec-brand-select {
+        direction: rtl;
+        appearance: auto;
+        cursor: pointer;
+    }
+    .ec-brand-selector__or {
+        display: block;
+        text-align: center;
+        font-size: 0.75rem;
+        color: #94a3b8;
+        margin: 6px 0;
+        font-weight: 600;
+    }
+
+    .ec-field__label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #475569;
+        margin-bottom: 6px;
+    }
+    .ec-field__req { color: #ef4444; }
+    .ec-field__input,
+    .ec-field__textarea {
+        width: 100%;
+        padding: 11px 14px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        color: #1e293b;
+        background: #f8fafc;
+        outline: none;
+        transition: border-color 0.2s, background 0.2s;
+        font-family: inherit;
+        resize: vertical;
+    }
+    .ec-field__input:focus,
+    .ec-field__textarea:focus {
+        border-color: #6366f1;
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+    }
+    .ec-field__input--code {
+        font-family: monospace;
+        font-weight: 800;
+        letter-spacing: 1px;
+        font-size: 1rem;
+    }
+    .ec-field__error {
+        display: block;
+        font-size: 0.7rem;
+        color: #ef4444;
+        margin-top: 4px;
+        font-weight: 600;
+    }
+
+    .ec-modal__footer {
+        display: flex;
+        gap: 8px;
+        padding: 16px 20px;
+        border-top: 1px solid #f1f5f9;
+        flex-shrink: 0;
+    }
+    .ec-modal__btn {
+        flex: 1;
+        padding: 12px;
+        border-radius: 12px;
+        border: none;
+        font-size: 0.85rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: all 0.2s;
+    }
+    .ec-modal__btn--cancel {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+    .ec-modal__btn--cancel:hover { background: #e2e8f0; }
+    .ec-modal__btn--submit {
+        background: linear-gradient(135deg, #6366f1, #818cf8);
+        color: #fff;
+        box-shadow: 0 4px 14px rgba(99,102,241,0.3);
+    }
+    .ec-modal__btn--submit:hover { box-shadow: 0 6px 20px rgba(99,102,241,0.4); }
+    .ec-modal__btn--submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    @@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    /* ── Desktop ── */
+    @@media (min-width: 768px) {
+        .ec-header { padding: 24px 24px 20px; border-radius: 0 0 32px 32px; }
+        .ec-list { padding: 20px 24px; }
+        .ec-stats { padding: 20px 24px 0; }
+    }
+</style>
+
+@code {
+    private List<ErrorCode> errorCodes = new();
+    private List<ErrorCode> filteredCodes = new();
+    private ErrorCode editingItem = new();
+    private bool isLoading = true;
+    private bool showModal = false;
+    private bool isSubmitting = false;
+    private bool isImporting = false;
+    private IBrowserFile? selectedFile;
+    private string searchQuery = "";
+    private string[]? existingBrands;
+
+    private int brandCount => filteredCodes.Select(x => x.Brand).Distinct().Count();
+    private int deviceCount => filteredCodes.Select(x => x.DeviceType).Distinct().Count();
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private string TruncateText(string text, int max) =>
+        text.Length <= max ? text : text[..max] + "...";
+
+    private void FilterList()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredCodes = errorCodes;
+        }
+        else
+        {
+            var q = searchQuery.Trim().ToLower();
+            filteredCodes = errorCodes.Where(x =>
+                (x.Brand != null && x.Brand.ToLower().Contains(q)) ||
+                (x.DeviceType != null && x.DeviceType.ToLower().Contains(q)) ||
+                (x.Code != null && x.Code.ToLower().Contains(q)) ||
+                (x.Description != null && x.Description.ToLower().Contains(q))
+            ).ToList();
+        }
+    }
+
+    private void OnBrandSelected(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(val))
+        {
+            editingItem.Brand = val;
+        }
+    }
+
+    private void ClearSearch()
+    {
+        searchQuery = "";
+        FilterList();
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+    }
+
+    private async Task ImportJson()
+    {
+        if (selectedFile == null) return;
+
+        isImporting = true;
+        try
+        {
+            using var stream = selectedFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 10);
+            var items = await System.Text.Json.JsonSerializer.DeserializeAsync<List<ErrorCodeImportModel>>(stream, new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (items == null || !items.Any())
+            {
+                Toast.ShowError("فایل انتخابی خالی است یا فرمت اشتباه دارد");
+                return;
+            }
+
+            var response = await Http.PostAsJsonAsync("api/technical/error-codes/import", items);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<ErrorCodeImportResult>();
+                Toast.ShowSuccess($"عملیات با موفقیت انجام شد. جدید: {result?.InsertedCount}، بروزرسانی: {result?.UpdatedCount}");
+                selectedFile = null;
+                await LoadData();
+            }
+            else
+            {
+                Toast.ShowError("خطا در ارسال اطلاعات به سرور");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"خطا در پردازش فایل: {ex.Message}");
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try {
+            var codesTask = Http.GetFromJsonAsync<List<ErrorCode>>("api/technical/error-codes");
+            var brandsTask = Http.GetFromJsonAsync<string[]>("api/technical/error-codes/brands");
+            await Task.WhenAll(codesTask, brandsTask);
+            errorCodes = codesTask.Result ?? new();
+            existingBrands = brandsTask.Result;
+            FilterList();
+        } catch {
+            Toast.ShowError("خطا در بارگذاری اطلاعات");
+        }
+        isLoading = false;
+    }
+
+    private void OpenModal(ErrorCode? item = null)
+    {
+        editingItem = item != null ? new ErrorCode {
+            Id = item.Id, Brand = item.Brand, DeviceType = item.DeviceType,
+            Code = item.Code, Description = item.Description,
+            Solution = item.Solution, TechnicalNotes = item.TechnicalNotes,
+            ImageUrl = item.ImageUrl
+        } : new ErrorCode();
+        showModal = true;
+    }
+
+    private void CloseModal() => showModal = false;
+
+    private async Task HandleSubmit()
+    {
+        isSubmitting = true;
+        try {
+            if (editingItem.Id == 0)
+                await Http.PostAsJsonAsync("api/technical/error-codes", editingItem);
+            else
+                await Http.PutAsJsonAsync($"api/technical/error-codes/{editingItem.Id}", editingItem);
+
+            Toast.ShowSuccess("با موفقیت ذخیره شد");
+            CloseModal();
+            await LoadData();
+        } catch {
+            Toast.ShowError("خطا در عملیات ذخیره‌سازی");
+        }
+        isSubmitting = false;
+    }
+
+    private async Task DeleteErrorCode(int id)
+    {
+        var response = await Http.DeleteAsync($"api/technical/error-codes/{id}");
+        if (response.IsSuccessStatusCode) {
+            Toast.ShowSuccess("با موفقیت حذف شد");
+            await LoadData();
+        } else {
+            Toast.ShowError("خطا در حذف");
+        }
+    }
+}

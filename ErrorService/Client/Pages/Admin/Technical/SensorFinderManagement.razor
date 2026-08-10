@@ -1,0 +1,1090 @@
+@page "/admin/technical/sensor-finder"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.technical.sensorfinder.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using System.Net.Http.Headers
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService Toast
+@inject IJSRuntime JS
+
+<div class="sf-page">
+    <!-- Header -->
+    <div class="sf-header">
+        <div class="sf-header__top">
+            <a class="sf-back" href="/admin"><span class="oi oi-arrow-right"></span></a>
+            <div class="sf-header__title">
+                <div class="sf-header__kicker">مدیریت فنی</div>
+                <div class="sf-header__main">مدیریت سنسور یاب</div>
+            </div>
+            <button class="sf-reload-btn" @onclick="ReloadAll" disabled="@isLoading">
+                <span class="oi oi-reload"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="sf-tabs">
+        <button class="sf-tab @(activeTab == "devices" ? "sf-tab--active" : "")" @onclick="ShowDevicesTab">
+            <span class="oi oi-hard-drive"></span>
+            دستگاه‌ها
+            <span class="sf-tab__badge">@devices.Count</span>
+        </button>
+        <button class="sf-tab @(activeTab == "sensors" ? "sf-tab--active" : "")" @onclick="ShowSensorsTab">
+            <span class="oi oi-wrench"></span>
+            سنسورها
+            <span class="sf-tab__badge">@filteredRecords.Count</span>
+        </button>
+    </div>
+
+    <!-- Tab: Devices -->
+    @if (activeTab == "devices")
+    {
+        <div class="sf-tab-content">
+            <div class="sf-card">
+                <div class="sf-card__header">
+                    <span class="sf-card__title">@(editingDeviceId == 0 ? "افزودن دستگاه" : "ویرایش دستگاه")</span>
+                </div>
+                <EditForm Model="deviceModel" OnValidSubmit="SaveDevice">
+                    <DataAnnotationsValidator />
+                    <div class="sf-field">
+                        <InputText class="sf-input" @bind-Value="deviceModel.Name" placeholder="نام دستگاه (مثلاً: کولر گازی LG)" />
+                        <ValidationMessage For="@(() => deviceModel.Name)" class="sf-error" />
+                    </div>
+                    <div class="sf-btn-row">
+                        <button class="sf-btn sf-btn--primary" type="submit" disabled="@isSavingDevice">
+                            @if (isSavingDevice) { <span class="spinner-border spinner-border-sm"></span> }
+                            @(editingDeviceId == 0 ? "افزودن" : "ذخیره")
+                        </button>
+                        @if (editingDeviceId != 0)
+                        {
+                            <button type="button" class="sf-btn sf-btn--cancel" @onclick="ResetDeviceForm">انصراف</button>
+                        }
+                    </div>
+                </EditForm>
+            </div>
+
+            @if (isLoading)
+            {
+                <div class="sf-skeleton-list">
+                    @for (int i = 0; i < 4; i++)
+                    {
+                        <div class="sf-skeleton"><div class="sf-skeleton__line sf-skeleton__line--short"></div></div>
+                    }
+                </div>
+            }
+            else if (!devices.Any())
+            {
+                <div class="sf-empty"><div class="sf-empty__text">هیچ دستگاهی ثبت نشده است</div></div>
+            }
+            else
+            {
+                <div class="sf-list">
+                    @foreach (var d in devices)
+                    {
+                        <div class="sf-list-item">
+                            <span class="sf-list-item__text">@d.Name</span>
+                            <div class="sf-list-item__actions">
+                                <button class="sf-icon-btn sf-icon-btn--edit" @onclick="() => EditDevice(d)" title="ویرایش">
+                                    <span class="oi oi-pencil"></span>
+                                </button>
+                                <button class="sf-icon-btn sf-icon-btn--delete" @onclick="() => DeleteDevice(d.Id)" title="حذف">
+                                    <span class="oi oi-trash"></span>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <!-- Tab: Sensors -->
+    @if (activeTab == "sensors")
+    {
+        <div class="sf-tab-content">
+            <div class="sf-card">
+                <div class="sf-card__header">
+                    <span class="sf-card__title">@(editingRecordId == 0 ? "افزودن سنسور" : "ویرایش سنسور")</span>
+                </div>
+                <EditForm Model="recordModel" OnValidSubmit="SaveRecord">
+                    <DataAnnotationsValidator />
+                    <div class="sf-form-grid">
+                        <div class="sf-field">
+                            <label class="sf-label">دستگاه</label>
+                            <select class="sf-input" @bind="recordModel.DeviceId">
+                                <option value="0">انتخاب کنید</option>
+                                @foreach (var d in devices)
+                                {
+                                    <option value="@d.Id">@d.Name</option>
+                                }
+                            </select>
+                            <ValidationMessage For="@(() => recordModel.DeviceId)" class="sf-error" />
+                        </div>
+                        <div class="sf-field">
+                            <label class="sf-label">نام سنسور</label>
+                            <InputText class="sf-input" @bind-Value="recordModel.SensorName" placeholder="مثلاً: سنسور دما" />
+                            <ValidationMessage For="@(() => recordModel.SensorName)" class="sf-error" />
+                        </div>
+                        <div class="sf-field">
+                            <label class="sf-label">نوع/مدل</label>
+                            <InputText class="sf-input" @bind-Value="recordModel.SensorType" placeholder="مثلاً: NTC" />
+                        </div>
+                        <div class="sf-field">
+                            <label class="sf-label">اندازه</label>
+                            <InputText class="sf-input" @bind-Value="recordModel.SizeText" placeholder="مثلاً: 10 اهم" />
+                        </div>
+                        <div class="sf-field sf-field--wide">
+                            <label class="sf-label">توضیحات</label>
+                            <InputText class="sf-input" @bind-Value="recordModel.Notes" placeholder="نکات نصب / سیم‌کشی / محل قرارگیری..." />
+                        </div>
+                    </div>
+                    <div class="sf-btn-row">
+                        <button class="sf-btn sf-btn--primary" type="submit" disabled="@isSavingRecord">
+                            @if (isSavingRecord) { <span class="spinner-border spinner-border-sm"></span> }
+                            @(editingRecordId == 0 ? "افزودن" : "ذخیره")
+                        </button>
+                        @if (editingRecordId != 0)
+                        {
+                            <button type="button" class="sf-btn sf-btn--cancel" @onclick="ResetRecordForm">انصراف</button>
+                        }
+                    </div>
+                </EditForm>
+            </div>
+
+            <!-- Device filter chips -->
+            <div class="sf-filter-chips">
+                <button class="sf-chip @(selectedDeviceId == 0 ? "sf-chip--active" : "")" @onclick="() => SelectDevice(0)">همه</button>
+                @foreach (var d in devices)
+                {
+                    <button class="sf-chip @(selectedDeviceId == d.Id ? "sf-chip--active" : "")" @onclick="() => SelectDevice(d.Id)">@d.Name</button>
+                }
+            </div>
+
+            <!-- Search -->
+            <div class="sf-search-box">
+                <span class="oi oi-magnifying-glass sf-search-icon"></span>
+                <input class="sf-search-input" placeholder="جستجو نام سنسور، دستگاه یا نوع..."
+                       @bind="searchQuery" @bind:event="oninput" @bind:after="FilterRecords" />
+                @if (!string.IsNullOrEmpty(searchQuery))
+                {
+                    <button class="sf-search-clear" @onclick="ClearSearch"><span class="oi oi-x"></span></button>
+                }
+            </div>
+
+            @if (isLoading)
+            {
+                <div class="sf-skeleton-list">
+                    @for (int i = 0; i < 3; i++)
+                    {
+                        <div class="sf-skeleton">
+                            <div class="sf-skeleton__line sf-skeleton__line--short"></div>
+                            <div class="sf-skeleton__line sf-skeleton__line--medium"></div>
+                        </div>
+                    }
+                </div>
+            }
+            else if (!filteredRecords.Any())
+            {
+                <div class="sf-empty">
+                    <div class="sf-empty__text">@(string.IsNullOrEmpty(searchQuery) ? "رکوردی ثبت نشده است" : "نتیجه‌ای یافت نشد")</div>
+                </div>
+            }
+            else
+            {
+                <div class="sf-list">
+                    @foreach (var r in filteredRecords)
+                    {
+                        <div class="sf-record-card">
+                            <div class="sf-record-card__top">
+                                <span class="sf-record-card__device">@r.DeviceName</span>
+                                <span class="sf-record-card__img-count">
+                                    <span class="oi oi-image"></span> @(r.Images?.Count ?? 0)
+                                </span>
+                            </div>
+                            <div class="sf-record-card__name">@r.SensorName</div>
+                            <div class="sf-record-card__meta">
+                                @if (!string.IsNullOrEmpty(r.SensorType)) { <span class="sf-tag">@r.SensorType</span> }
+                                @if (!string.IsNullOrEmpty(r.SizeText)) { <span class="sf-tag">@r.SizeText</span> }
+                            </div>
+                            @if (!string.IsNullOrEmpty(r.Notes))
+                            {
+                                <div class="sf-record-card__notes">@r.Notes</div>
+                            }
+                            <div class="sf-record-card__actions">
+                                <button class="sf-icon-btn sf-icon-btn--image" @onclick="() => OpenImagesModal(r)" title="مدیریت عکس">
+                                    <span class="oi oi-image"></span>
+                                </button>
+                                <button class="sf-icon-btn sf-icon-btn--edit" @onclick="() => EditRecord(r)" title="ویرایش">
+                                    <span class="oi oi-pencil"></span>
+                                </button>
+                                <button class="sf-icon-btn sf-icon-btn--delete" @onclick="() => DeleteRecord(r.Id)" title="حذف">
+                                    <span class="oi oi-trash"></span>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Images Modal -->
+@if (showImagesModal && selectedRecord != null)
+{
+    <div class="sf-modal-overlay" @onclick="CloseImagesModal">
+        <div class="sf-modal" @onclick:stopPropagation="true">
+            <div class="sf-modal__header">
+                <div class="sf-modal__title"><span class="oi oi-image"></span> مدیریت تصاویر</div>
+                <div class="sf-modal__sub">@selectedRecord.DeviceName - @selectedRecord.SensorName</div>
+                <button class="sf-modal__close" @onclick="CloseImagesModal"><span class="oi oi-x"></span></button>
+            </div>
+            <div class="sf-modal__body">
+                <div class="sf-modal__info">
+                    <span>حداکثر 5 عکس</span>
+                    <span class="sf-modal__count">@((selectedRecord.Images?.Count ?? 0))/5</span>
+                </div>
+                <div class="sf-upload-row">
+                    <input class="sf-input" @bind="newImageTitle" placeholder="عنوان عکس (اختیاری)" />
+                    <label class="sf-btn sf-btn--upload">
+                        <span class="oi oi-camera"></span> انتخاب عکس
+                        <InputFile OnChange="OnImageSelected" accept="image/*" class="sf-upload-hidden" />
+                    </label>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(imageError))
+                {
+                    <div class="sf-error-msg">@imageError</div>
+                }
+                @if (selectedRecord.Images == null || !selectedRecord.Images.Any())
+                {
+                    <div class="sf-empty"><div class="sf-empty__text">تصویری ثبت نشده است</div></div>
+                }
+                else
+                {
+                    <div class="sf-image-grid">
+                        @foreach (var img in selectedRecord.Images.OrderBy(x => x.SortOrder))
+                        {
+                            <div class="sf-image-card">
+                                <img src="@img.Url" class="sf-image-card__img" />
+                                <div class="sf-image-card__title">@img.Title</div>
+                                <button class="sf-image-card__delete" @onclick="() => DeleteImage(img.Id)">
+                                    <span class="oi oi-trash"></span> حذف
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="sf-modal__footer">
+                <button class="sf-btn sf-btn--cancel" @onclick="CloseImagesModal">بستن</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .sf-page {
+        padding: 0 0 24px;
+        min-height: 100vh;
+        background: #f8fafc;
+    }
+
+    /* ── Header ── */
+    .sf-header {
+        background: #fff;
+        padding: 20px 16px 16px;
+        border-radius: 0 0 24px 24px;
+        box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .sf-header__top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .sf-back {
+        width: 36px; height: 36px;
+        display: flex; align-items: center; justify-content: center;
+        background: #f1f5f9;
+        border-radius: 10px;
+        color: #475569;
+        text-decoration: none;
+        font-size: 0.9rem;
+        transition: background 0.2s;
+        flex-shrink: 0;
+    }
+    .sf-back:hover { background: #e2e8f0; color: #1e293b; }
+    .sf-header__kicker { font-size: 0.7rem; color: #94a3b8; letter-spacing: 0.5px; }
+    .sf-header__main { font-size: 1.15rem; font-weight: 800; color: #1e293b; }
+    .sf-reload-btn {
+        margin-right: auto;
+        width: 36px; height: 36px;
+        display: flex; align-items: center; justify-content: center;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 10px;
+        background: #f8fafc;
+        color: #64748b;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        flex-shrink: 0;
+    }
+    .sf-reload-btn:hover { border-color: #6366f1; color: #6366f1; background: #f1f5f9; }
+    .sf-reload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Tabs ── */
+    .sf-tabs {
+        display: flex;
+        gap: 0;
+        margin: 16px 16px 0;
+        background: #fff;
+        border-radius: 14px;
+        padding: 4px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        border: 1px solid #f1f5f9;
+    }
+    .sf-tab {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 10px;
+        border: none;
+        border-radius: 10px;
+        background: transparent;
+        color: #94a3b8;
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: inherit;
+    }
+    .sf-tab:hover { color: #64748b; background: #f8fafc; }
+    .sf-tab--active {
+        background: linear-gradient(135deg, #6366f1, #818cf8);
+        color: #fff;
+        box-shadow: 0 2px 8px rgba(99,102,241,0.25);
+    }
+    .sf-tab--active:hover { color: #fff; background: linear-gradient(135deg, #6366f1, #818cf8); }
+    .sf-tab__badge {
+        font-size: 0.6rem;
+        background: rgba(0,0,0,0.08);
+        padding: 2px 7px;
+        border-radius: 20px;
+        font-weight: 800;
+    }
+    .sf-tab--active .sf-tab__badge { background: rgba(255,255,255,0.25); }
+
+    /* ── Tab Content ── */
+    .sf-tab-content {
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    /* ── Card ── */
+    .sf-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 16px;
+        border: 1px solid rgba(0,0,0,0.04);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .sf-card__header {
+        margin-bottom: 14px;
+    }
+    .sf-card__title {
+        font-size: 0.85rem;
+        font-weight: 800;
+        color: #1e293b;
+    }
+
+    /* ── Form ── */
+    .sf-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+    .sf-form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0;
+    }
+    .sf-field--wide { grid-column: 1 / -1; }
+    @@media (max-width: 500px) {
+        .sf-form-grid { grid-template-columns: 1fr; }
+        .sf-field--wide { grid-column: 1; }
+    }
+
+    .sf-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #475569;
+    }
+    .sf-input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        color: #1e293b;
+        background: #f8fafc;
+        outline: none;
+        transition: border-color 0.2s, background 0.2s;
+        font-family: inherit;
+        box-sizing: border-box;
+    }
+    .sf-input:focus {
+        border-color: #6366f1;
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+    }
+    select.sf-input { appearance: auto; cursor: pointer; }
+    .sf-error {
+        font-size: 0.7rem;
+        color: #ef4444;
+        font-weight: 600;
+    }
+    .sf-error-msg {
+        font-size: 0.8rem;
+        color: #ef4444;
+        font-weight: 600;
+        padding: 8px 12px;
+        background: #fef2f2;
+        border-radius: 8px;
+    }
+
+    /* ── Buttons ── */
+    .sf-btn-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 4px;
+    }
+    .sf-btn-row .sf-btn { flex: 1; }
+    .sf-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 11px 18px;
+        border: none;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: inherit;
+    }
+    .sf-btn--primary {
+        background: linear-gradient(135deg, #6366f1, #818cf8);
+        color: #fff;
+        box-shadow: 0 4px 14px rgba(99,102,241,0.3);
+    }
+    .sf-btn--primary:hover { box-shadow: 0 6px 20px rgba(99,102,241,0.4); }
+    .sf-btn--primary:disabled { opacity: 0.6; cursor: not-allowed; }
+    .sf-btn--cancel {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+    .sf-btn--cancel:hover { background: #e2e8f0; }
+    .sf-btn--upload {
+        background: #f1f5f9;
+        color: #475569;
+        white-space: nowrap;
+        cursor: pointer;
+        position: relative;
+        flex-shrink: 0;
+    }
+    .sf-btn--upload:hover { background: #e2e8f0; }
+
+    /* ── Filter Chips ── */
+    .sf-filter-chips {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 2px 0;
+        -webkit-overflow-scrolling: touch;
+    }
+    .sf-filter-chips::-webkit-scrollbar { display: none; }
+    .sf-chip {
+        flex-shrink: 0;
+        padding: 6px 14px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 20px;
+        background: #fff;
+        color: #64748b;
+        font-size: 0.75rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: inherit;
+        white-space: nowrap;
+    }
+    .sf-chip:hover { border-color: #6366f1; color: #6366f1; }
+    .sf-chip--active {
+        background: #6366f1;
+        border-color: #6366f1;
+        color: #fff;
+    }
+    .sf-chip--active:hover { color: #fff; background: #6366f1; }
+
+    /* ── Search ── */
+    .sf-search-box {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+    .sf-search-icon {
+        position: absolute;
+        right: 12px;
+        color: #94a3b8;
+        font-size: 0.85rem;
+        pointer-events: none;
+    }
+    .sf-search-input {
+        width: 100%;
+        padding: 11px 40px 11px 36px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        background: #fff;
+        color: #1e293b;
+        font-size: 0.85rem;
+        outline: none;
+        transition: border-color 0.2s, background 0.2s;
+        font-family: inherit;
+    }
+    .sf-search-input::placeholder { color: #94a3b8; }
+    .sf-search-input:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+    }
+    .sf-search-clear {
+        position: absolute;
+        left: 8px;
+        background: #f1f5f9;
+        border: none;
+        border-radius: 8px;
+        color: #94a3b8;
+        width: 26px; height: 26px;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        font-size: 0.65rem;
+        transition: background 0.2s;
+    }
+    .sf-search-clear:hover { background: #e2e8f0; color: #475569; }
+
+    /* ── List ── */
+    .sf-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    /* ── Device List Item ── */
+    .sf-list-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        background: #fff;
+        border: 1px solid #f1f5f9;
+        border-radius: 12px;
+        transition: all 0.2s;
+    }
+    .sf-list-item:hover { border-color: #e2e8f0; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+    .sf-list-item__text {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
+    .sf-list-item__actions {
+        display: flex;
+        gap: 4px;
+    }
+
+    /* ── Icon Buttons ── */
+    .sf-icon-btn {
+        width: 32px; height: 32px;
+        border: none;
+        border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .sf-icon-btn--edit { background: #eff6ff; color: #3b82f6; }
+    .sf-icon-btn--edit:hover { background: #3b82f6; color: #fff; }
+    .sf-icon-btn--delete { background: #fef2f2; color: #ef4444; }
+    .sf-icon-btn--delete:hover { background: #ef4444; color: #fff; }
+    .sf-icon-btn--image { background: #f0fdf4; color: #22c55e; }
+    .sf-icon-btn--image:hover { background: #22c55e; color: #fff; }
+
+    /* ── Record Card ── */
+    .sf-record-card {
+        background: #fff;
+        border: 1px solid #f1f5f9;
+        border-radius: 12px;
+        padding: 14px;
+        transition: all 0.2s;
+    }
+    .sf-record-card:hover { border-color: #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+    .sf-record-card__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+    }
+    .sf-record-card__device {
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #6366f1;
+        background: #eef2ff;
+        padding: 2px 8px;
+        border-radius: 6px;
+    }
+    .sf-record-card__img-count {
+        font-size: 0.65rem;
+        color: #94a3b8;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .sf-record-card__name {
+        font-size: 0.9rem;
+        font-weight: 800;
+        color: #1e293b;
+        margin-bottom: 4px;
+    }
+    .sf-record-card__meta {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 4px;
+    }
+    .sf-tag {
+        font-size: 0.65rem;
+        font-weight: 600;
+        color: #475569;
+        background: #f1f5f9;
+        padding: 2px 8px;
+        border-radius: 6px;
+    }
+    .sf-record-card__notes {
+        font-size: 0.75rem;
+        color: #64748b;
+        line-height: 1.5;
+        margin-bottom: 8px;
+    }
+    .sf-record-card__actions {
+        display: flex;
+        gap: 6px;
+        justify-content: center;
+    }
+    .sf-record-card__actions .sf-icon-btn { width: 36px; height: 36px; flex: 1; max-width: 80px; border-radius: 10px; }
+
+    /* ── Skeleton ── */
+    .sf-skeleton-list { display: flex; flex-direction: column; gap: 8px; }
+    .sf-skeleton {
+        padding: 14px;
+        border-radius: 12px;
+        background: #fff;
+        border: 1px solid #f1f5f9;
+    }
+    .sf-skeleton__line {
+        height: 12px;
+        border-radius: 6px;
+        background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+        background-size: 200% 100%;
+        animation: sfShimmer 1.5s infinite;
+        margin-bottom: 8px;
+    }
+    .sf-skeleton__line:last-child { margin-bottom: 0; }
+    .sf-skeleton__line--short { width: 40%; }
+    .sf-skeleton__line--medium { width: 60%; }
+    .sf-skeleton__line--long { width: 80%; }
+    @@keyframes sfShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+    /* ── Empty ── */
+    .sf-empty { text-align: center; padding: 32px; }
+    .sf-empty__text { font-size: 0.8rem; color: #94a3b8; font-weight: 600; }
+
+    /* ── Modal ── */
+    .sf-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.5);
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        animation: sfFadeIn 0.15s ease;
+        padding: 16px;
+    }
+    .sf-modal {
+        background: #fff;
+        border-radius: 20px;
+        width: 100%;
+        max-width: 560px;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        animation: sfFadeIn 0.2s ease;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.15);
+    }
+    .sf-modal__header {
+        padding: 18px 20px;
+        border-bottom: 1px solid #f1f5f9;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+    }
+    .sf-modal__title { font-size: 1rem; font-weight: 800; color: #1e293b; display: flex; align-items: center; gap: 8px; }
+    .sf-modal__sub { font-size: 0.75rem; color: #94a3b8; font-weight: 600; }
+    .sf-modal__close {
+        margin-right: auto;
+        width: 34px; height: 34px;
+        border-radius: 10px;
+        border: none;
+        background: #f1f5f9;
+        color: #64748b;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+    }
+    .sf-modal__close:hover { background: #e2e8f0; color: #1e293b; }
+    .sf-modal__body { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+    .sf-modal__info { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #64748b; font-weight: 600; }
+    .sf-modal__count { font-weight: 800; color: #6366f1; }
+    .sf-modal__footer { padding: 16px 20px; border-top: 1px solid #f1f5f9; display: flex; gap: 8px; flex-shrink: 0; }
+    .sf-modal__footer .sf-btn { flex: 1; }
+
+    .sf-upload-row { display: flex; gap: 8px; align-items: center; }
+    .sf-upload-hidden { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+    .sf-image-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @@media (min-width: 500px) { .sf-image-grid { grid-template-columns: repeat(3, 1fr); } }
+    .sf-image-card {
+        border: 1px solid #f1f5f9;
+        border-radius: 10px;
+        padding: 8px;
+        background: #fff;
+    }
+    .sf-image-card__img { width: 100%; height: 110px; object-fit: cover; border-radius: 8px; }
+    .sf-image-card__title { font-size: 0.7rem; color: #64748b; margin-top: 4px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+    .sf-image-card__delete {
+        width: 100%; margin-top: 6px; padding: 6px; border: none; border-radius: 6px;
+        background: #fef2f2; color: #ef4444; font-size: 0.7rem; font-weight: 600; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; gap: 4px; font-family: inherit; transition: background 0.2s;
+    }
+    .sf-image-card__delete:hover { background: #ef4444; color: #fff; }
+
+    @@keyframes sfFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    @@media (min-width: 768px) {
+        .sf-header { padding: 24px 24px 20px; border-radius: 0 0 32px 32px; }
+        .sf-tabs { margin: 20px 24px 0; }
+        .sf-tab-content { padding: 20px 24px; max-width: 700px; margin: 0 auto; }
+    }
+</style>
+
+@code {
+    private string activeTab = "devices";
+
+    private List<SensorFinderDeviceDto> devices = new();
+    private List<SensorFinderRecordDto> records = new();
+    private List<SensorFinderRecordDto> filteredRecords = new();
+    private string searchQuery = "";
+
+    private bool isLoading;
+
+    private SensorFinderDeviceUpsertRequest deviceModel = new();
+    private int editingDeviceId;
+    private bool isSavingDevice;
+
+    private SensorFinderRecordUpsertRequest recordModel = new();
+    private int editingRecordId;
+    private bool isSavingRecord;
+
+    private int selectedDeviceId;
+
+    private bool showImagesModal;
+    private SensorFinderRecordDto? selectedRecord;
+    private string? newImageTitle;
+    private string? imageError;
+
+    private void ShowDevicesTab() => activeTab = "devices";
+    private void ShowSensorsTab() => activeTab = "sensors";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAll();
+    }
+
+    private async Task ReloadAll()
+    {
+        isLoading = true;
+        try
+        {
+            devices = await Http.GetFromJsonAsync<List<SensorFinderDeviceDto>>("api/sensor-finder/admin/devices") ?? new();
+            records = await Http.GetFromJsonAsync<List<SensorFinderRecordDto>>("api/sensor-finder/admin/records") ?? new();
+
+            if (selectedDeviceId > 0)
+            {
+                records = records.Where(x => x.DeviceId == selectedDeviceId).ToList();
+            }
+
+            if (recordModel.DeviceId == 0 && selectedDeviceId > 0)
+            {
+                recordModel.DeviceId = selectedDeviceId;
+            }
+
+            filteredRecords = records;
+            ApplyFilter();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void SelectDevice(int deviceId)
+    {
+        selectedDeviceId = deviceId;
+        recordModel.DeviceId = deviceId;
+        _ = ReloadAll();
+    }
+
+    private void ResetDeviceForm()
+    {
+        editingDeviceId = 0;
+        deviceModel = new SensorFinderDeviceUpsertRequest();
+    }
+
+    private async Task SaveDevice()
+    {
+        isSavingDevice = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingDeviceId == 0)
+                resp = await Http.PostAsJsonAsync("api/sensor-finder/admin/devices", deviceModel);
+            else
+                resp = await Http.PutAsJsonAsync($"api/sensor-finder/admin/devices/{editingDeviceId}", deviceModel);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess(editingDeviceId == 0 ? "دستگاه اضافه شد" : "دستگاه ویرایش شد");
+                ResetDeviceForm();
+                await ReloadAll();
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                Toast.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا" : body.Trim('"'));
+            }
+        }
+        finally
+        {
+            isSavingDevice = false;
+        }
+    }
+
+    private void EditDevice(SensorFinderDeviceDto d)
+    {
+        editingDeviceId = d.Id;
+        deviceModel = new SensorFinderDeviceUpsertRequest { Name = d.Name };
+    }
+
+    private async Task DeleteDevice(int id)
+    {
+        var resp = await Http.DeleteAsync($"api/sensor-finder/admin/devices/{id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.ShowSuccess("حذف شد");
+            if (selectedDeviceId == id) selectedDeviceId = 0;
+            await ReloadAll();
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            Toast.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا" : body.Trim('"'));
+        }
+    }
+
+    private void ResetRecordForm()
+    {
+        editingRecordId = 0;
+        recordModel = new SensorFinderRecordUpsertRequest { DeviceId = selectedDeviceId };
+    }
+
+    private async Task SaveRecord()
+    {
+        isSavingRecord = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingRecordId == 0)
+                resp = await Http.PostAsJsonAsync("api/sensor-finder/admin/records", recordModel);
+            else
+                resp = await Http.PutAsJsonAsync($"api/sensor-finder/admin/records/{editingRecordId}", recordModel);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess(editingRecordId == 0 ? "سنسور اضافه شد" : "سنسور ویرایش شد");
+                ResetRecordForm();
+                await ReloadAll();
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                Toast.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا" : body.Trim('"'));
+            }
+        }
+        finally
+        {
+            isSavingRecord = false;
+        }
+    }
+
+    private void EditRecord(SensorFinderRecordDto r)
+    {
+        editingRecordId = r.Id;
+        recordModel = new SensorFinderRecordUpsertRequest
+        {
+            DeviceId = r.DeviceId,
+            SensorName = r.SensorName,
+            SensorType = r.SensorType,
+            SizeText = r.SizeText,
+            Notes = r.Notes
+        };
+    }
+
+    private async Task DeleteRecord(int id)
+    {
+        var resp = await Http.DeleteAsync($"api/sensor-finder/admin/records/{id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.ShowSuccess("حذف شد");
+            await ReloadAll();
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            Toast.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا" : body.Trim('"'));
+        }
+    }
+
+    private void FilterRecords() => ApplyFilter();
+
+    private void ClearSearch()
+    {
+        searchQuery = "";
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredRecords = records;
+        }
+        else
+        {
+            var q = searchQuery.Trim().ToLower();
+            filteredRecords = records.Where(x =>
+                (x.SensorName != null && x.SensorName.ToLower().Contains(q)) ||
+                (x.DeviceName != null && x.DeviceName.ToLower().Contains(q)) ||
+                (x.SensorType != null && x.SensorType.ToLower().Contains(q)) ||
+                (x.SizeText != null && x.SizeText.ToLower().Contains(q)) ||
+                (x.Notes != null && x.Notes.ToLower().Contains(q))
+            ).ToList();
+        }
+    }
+
+    private void OpenImagesModal(SensorFinderRecordDto r)
+    {
+        selectedRecord = r;
+        showImagesModal = true;
+        newImageTitle = null;
+        imageError = null;
+    }
+
+    private void CloseImagesModal()
+    {
+        showImagesModal = false;
+        selectedRecord = null;
+        newImageTitle = null;
+        imageError = null;
+    }
+
+    private async Task OnImageSelected(InputFileChangeEventArgs e)
+    {
+        imageError = null;
+        var file = e.File;
+
+        if (selectedRecord == null || file == null) return;
+        if (selectedRecord.Images != null && selectedRecord.Images.Count >= 5)
+        {
+            imageError = "حداکثر 5 عکس مجاز است";
+            return;
+        }
+
+        try
+        {
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            var content = new MultipartFormDataContent();
+
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            if (!string.IsNullOrWhiteSpace(newImageTitle))
+            {
+                content.Add(new StringContent(newImageTitle), "title");
+            }
+
+            var resp = await Http.PostAsync($"api/sensor-finder/admin/records/{selectedRecord.Id}/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("عکس اضافه شد");
+                await ReloadAll();
+                var updated = records.FirstOrDefault(x => x.Id == selectedRecord.Id);
+                if (updated != null) selectedRecord = updated;
+                newImageTitle = null;
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                imageError = string.IsNullOrWhiteSpace(body) ? "آپلود ناموفق" : body.Trim('"');
+            }
+        }
+        catch (Exception ex)
+        {
+            imageError = ex.Message;
+        }
+    }
+
+    private async Task DeleteImage(int id)
+    {
+        var resp = await Http.DeleteAsync($"api/sensor-finder/admin/images/{id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            Toast.ShowSuccess("حذف شد");
+            await ReloadAll();
+            if (selectedRecord != null)
+            {
+                var updated = records.FirstOrDefault(x => x.Id == selectedRecord.Id);
+                if (updated != null) selectedRecord = updated;
+            }
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            Toast.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا" : body.Trim('"'));
+        }
+    }
+}

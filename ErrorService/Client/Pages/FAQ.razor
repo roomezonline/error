@@ -1,0 +1,163 @@
+@page "/help/faq"
+@page "/faq"
+
+<SeoHeader 
+    Title="سوالات متداول | ارورسرویس"
+    Description="پاسخ به سوالات متداول درباره خدمات تعمیرات، سبد خرید، سفارش و ضمانت ارورسرویس"
+    Keywords="سوالات متداول, FAQ, راهنما, ارورسرویس"
+    OgType="website"
+    JsonLd="@_faqJsonLd" />
+
+<div class="faq-page py-5">
+    <div class="container">
+        <div class="text-center mb-5">
+            <div class="display-4 text-primary mb-3"><span class="oi oi-question-mark"></span></div>
+            <h1 class="fw-black mb-2">سوالات متداول</h1>
+            <p class="text-muted fs-6 max-w-600 mx-auto">پاسخ به پرتکرارترین سوالات شما درباره خدمات ارورسرویس</p>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-3">
+                <div class="faq-sidebar p-3">
+                    <div class="fw-bold mb-2 px-2 text-muted small">دسته‌بندی</div>
+                    @foreach (var cat in _categories)
+                    {
+                        <button class="faq-cat-btn d-block w-100 text-start btn @(_activeCategory == cat.Key ? "btn-primary" : "btn-light") rounded-pill mb-1 px-3 py-2 fw-bold small"
+                                @onclick="() => SetCategory(cat.Key)">
+                            <span class="oi oi-@cat.Icon ms-2"></span>@cat.Title
+                        </button>
+                    }
+                </div>
+            </div>
+            <div class="col-lg-9">
+                <div class="accordion" id="faqAccordion">
+                    @{
+                        var items = _faqItems.Where(x => x.Category == _activeCategory || _activeCategory == "all").ToList();
+                        var idx = 0;
+                    }
+                    @foreach (var item in items)
+                    {
+                        var id = $"faq-{idx}";
+                        <div class="accordion-item border-0 shadow-sm rounded-4 mb-3 overflow-hidden">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button @(idx > 0 ? "collapsed" : "") rounded-4 fw-bold py-3" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#@id">
+                                    @item.Question
+                                </button>
+                            </h2>
+                            <div id="@id" class="accordion-collapse collapse @(idx == 0 ? "show" : "")" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body text-muted pt-0 px-4 pb-4">
+                                    @item.Answer
+                                </div>
+                            </div>
+                        </div>
+                        idx++;
+                    }
+                </div>
+                @if (!items.Any())
+                {
+                    <div class="text-center py-5 text-muted">
+                        <p>سوالی در این دسته‌بندی یافت نشد.</p>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="text-center mt-5 pt-4 border-top">
+            <p class="text-muted mb-3">پاسخ سوال خود را پیدا نکردید؟</p>
+            <a href="/contact" class="btn btn-primary rounded-pill px-5 py-2 fw-bold">
+                <span class="oi oi-phone me-2"></span>تماس با ما
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+    .max-w-600 { max-width: 600px; }
+    .faq-cat-btn { transition: all 0.2s; }
+    .accordion-button:not(.collapsed) { background: var(--bs-primary-bg-subtle, #e8f0fe); color: var(--bs-primary); box-shadow: none; }
+    .accordion-button:focus { box-shadow: none; border-color: transparent; }
+    .accordion-body { line-height: 1.8; }
+
+    @@media (max-width: 991px) {
+        .faq-sidebar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+        .faq-cat-btn { width: auto !important; }
+        .faq-sidebar .text-muted { display: none; }
+    }
+</style>
+
+@code {
+    private string _activeCategory = "all";
+    private string _faqJsonLd = "";
+
+    private readonly List<FaqCategory> _categories = new()
+    {
+        new("all", "همه موارد", "list"),
+        new("shop", "خرید و سفارش", "basket"),
+        new("repair", "تعمیرات و سرویس", "wrench"),
+        new("payment", "پرداخت و هزینه", "credit-card"),
+        new("shipping", "ارسال و تحویل", "location"),
+        new("academy", "آکادمی و آموزش", "book"),
+        new("account", "حساب کاربری", "person"),
+    };
+
+    private readonly List<FaqItem> _faqItems = new()
+    {
+        new("shop", "چگونه می‌توانم محصولی را خریداری کنم؟",
+            "برای خرید کافیست محصول مورد نظر را به سبد خرید اضافه کنید. سپس از طریق گزینه \"تسویه حساب\" اطلاعات خود را وارد کرده و سفارش خود را ثبت کنید. پس از ثبت سفارش، می‌توانید رسید واریز را آپلود کنید."),
+        new("shop", "آیا امکان خرید حضوری وجود دارد؟",
+            "بله، شما می‌توانید پس از هماهنگی با کارشناسان ما به صورت حضوری مراجعه کرده و محصول مورد نظر را خریداری کنید."),
+        new("shop", "آیا محصولات شامل گارانتی هستند؟",
+            "بله، تمامی محصولات فروشگاه ارورسرویس دارای گارانتی اصالت کالا و ضمانت بازگشت هستند."),
+
+        new("repair", "چگونه درخواست تعمیر ثبت کنم؟",
+            "از طریق صفحه \"درخواست تعمیر\" می‌توانید اطلاعات دستگاه و مشکل خود را ثبت کنید. کارشناسان ما در اسرع وقت با شما تماس خواهند گرفت."),
+        new("repair", "هزینه تعمیرات چگونه محاسبه می‌شود؟",
+            "هزینه تعمیرات پس از تشخیص اولیه مشکل توسط کارشناس فنی و با تأیید شما تعیین می‌شود."),
+        new("repair", "آیا خدمات تعمیر در منزل ارائه می‌دهید؟",
+            "بله، کارشناسان ما برای تعمیر انواع لوازم خانگی به صورت حضوری در محل حاضر می‌شوند."),
+
+        new("payment", "چه روش‌های پرداختی وجود دارد؟",
+            "روش‌های پرداخت شامل واریز به کارت و پرداخت آنلاین است. اطلاعات حساب‌های بانکی در صفحه تسویه حساب قابل مشاهده است."),
+        new("payment", "آیا امکان پرداخت در محل وجود دارد؟",
+            "برای سفارشات آنلاین، پرداخت از طریق واریز بانکی انجام می‌شود. برای خدمات تعمیرات می‌توانید پس از اتمام کار پرداخت کنید."),
+
+        new("shipping", "مدت زمان ارسال چقدر است؟",
+            "مدت زمان ارسال بسته به نوع محصول و موقعیت مکانی بین ۱ تا ۵ روز کاری متغیر است."),
+        new("shipping", "هزینه ارسال چقدر است؟",
+            "هزینه ارسال بر اساس وزن و موقعیت مکانی محاسبه شده و در صفحه تسویه به شما نمایش داده می‌شود."),
+
+        new("academy", "دوره‌های آموزشی چگونه ارائه می‌شوند؟",
+            "دوره‌های آموزشی به صورت آنلاین و ویدئویی ارائه می‌شوند. پس از ثبت‌نام در دوره، به تمامی درس‌ها دسترسی خواهید داشت."),
+        new("academy", "آیا محتوای آموزشی رایگان هم دارید؟",
+            "بله، مقالات و آموزش‌های رایگان زیادی در بخش آکادمی و مقالات سایت منتشر شده است."),
+
+        new("account", "چگونه در سایت ثبت‌نام کنم؟",
+            "از طریق گزینه \"ورود / ثبت‌نام\" در منوی بالای سایت می‌توانید با شماره موبایل خود ثبت‌نام کنید."),
+        new("account", "چگونه سفارشات خود را پیگیری کنم؟",
+            "پس از ورود به حساب کاربری، از بخش \"سفارشات من\" می‌توانید وضعیت تمام سفارشات خود را مشاهده کنید."),
+    };
+
+    private record FaqCategory(string Key, string Title, string Icon);
+    private record FaqItem(string Category, string Question, string Answer);
+
+    private void SetCategory(string cat) => _activeCategory = cat;
+
+    protected override void OnInitialized()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("{\"@context\":\"https://schema.org\",\"@type\":\"FAQPage\",\"mainEntity\":[");
+        for (int i = 0; i < _faqItems.Count; i++)
+        {
+            var item = _faqItems[i];
+            if (i > 0) sb.Append(",");
+            sb.Append("{\"@type\":\"Question\",\"name\":\"");
+            sb.Append(System.Net.WebUtility.HtmlEncode(item.Question));
+            sb.Append("\",\"acceptedAnswer\":{\"@type\":\"Answer\",\"text\":\"");
+            sb.Append(System.Net.WebUtility.HtmlEncode(item.Answer));
+            sb.Append("\"}}");
+        }
+        sb.Append("]}");
+        _faqJsonLd = sb.ToString();
+    }
+}

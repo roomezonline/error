@@ -1,0 +1,464 @@
+@page "/checkout"
+@using ErrorService.Client.Services
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject CartService CartService
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject ToastService ToastService
+@inject AuthService AuthService
+
+<HeadContent>
+    <meta name="robots" content="noindex, nofollow" />
+</HeadContent>
+
+<PageTitle>ثبت سفارش - ارورسرویس</PageTitle>
+
+<div class="checkout-page" dir="rtl">
+    <div class="container py-4">
+        <div class="d-flex align-items-center gap-3 mb-5 px-1">
+            <a href="/cart" class="btn-back">
+                <span class="oi oi-arrow-right"></span>
+            </a>
+            <h1 class="page-title">تکمیل سفارش</h1>
+        </div>
+
+        @if (!CartService.GetItems().Any() && !isProcessing)
+        {
+            <div class="empty-state animate__animated animate__fadeIn">
+                <div class="empty-icon"><span class="oi oi-warning"></span></div>
+                <h3 class="empty-title">سبد خرید خالی شده</h3>
+                <p class="empty-desc">محصولی در سبد شما وجود ندارد</p>
+                <a href="/products" class="btn btn-primary-custom px-5 py-3">بازگشت به فروشگاه</a>
+            </div>
+        }
+        else
+        {
+            <div class="row g-4">
+                <div class="col-lg-7">
+                    <div class="section-card animate__animated animate__fadeInUp">
+                        <div class="section-header">
+                            <div class="step-num">۱</div>
+                            <div>
+                                <h2 class="section-title">اطلاعات تحویل‌گیرنده</h2>
+                                <p class="section-desc">مشخصات گیرنده سفارش را وارد کنید</p>
+                            </div>
+                        </div>
+
+                        <EditForm Model="request" OnValidSubmit="HandleSubmit">
+                            <DataAnnotationsValidator />
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <div class="field-group">
+                                        <label class="field-label">نام و نام خانوادگی</label>
+                                        <InputText @bind-Value="request.FullName" class="field-input" placeholder="مثال: علی رضایی" />
+                                        <ValidationMessage For="@(() => request.FullName)" class="field-error" />
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="field-group">
+                                        <label class="field-label">شماره موبایل</label>
+                                        <InputText @bind-Value="request.PhoneNumber" class="field-input" placeholder="09123456789" inputmode="numeric" />
+                                        <ValidationMessage For="@(() => request.PhoneNumber)" class="field-error" />
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="field-group">
+                                        <label class="field-label">ایمیل <span class="optional">(اختیاری)</span></label>
+                                        <InputText @bind-Value="request.Email" class="field-input" placeholder="mail@example.com" />
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="field-group">
+                                        <label class="field-label">آدرس پستی</label>
+                                        <InputTextArea @bind-Value="request.Address" class="field-input" style="height: 110px" placeholder="آدرس دقیق شامل استان، شهر، خیابان و..." />
+                                        <ValidationMessage For="@(() => request.Address)" class="field-error" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mt-5 d-none d-lg-block">
+                                <button type="submit" class="btn btn-primary-custom py-3 w-100" disabled="@isProcessing">
+                                    @if (isProcessing) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                                    تایید و پرداخت نهایی
+                                </button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+
+                <div class="col-lg-5">
+                    <div class="summary-card sticky-top animate__animated animate__fadeInRight">
+                        <div class="section-header">
+                            <div class="step-num step-num--ok">۲</div>
+                            <h2 class="section-title">خلاصه سفارش</h2>
+                        </div>
+
+                        <div class="order-items">
+                            @foreach (var item in CartService.GetItems())
+                            {
+                                <div class="order-item">
+                                    <div class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
+                                        <span class="qty-badge">@item.Quantity</span>
+                                        <span class="order-item-name">@item.Name</span>
+                                    </div>
+                                    <span class="order-item-price">@((item.Price * item.Quantity).ToString("N0")) <small>ت</small></span>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="price-breakdown">
+                            <div class="price-row">
+                                <span>جمع کل</span>
+                                <span>@CartService.GetTotalAmount().ToString("N0") <small>تومان</small></span>
+                            </div>
+                            <div class="price-row price-row--ship">
+                                <span>ارسال</span>
+                                <span class="text-success">رایگان</span>
+                            </div>
+                            @if (_couponDiscount > 0)
+                            {
+                                <div class="price-row price-row--discount">
+                                    <span>تخفیف (<span class="ltr">@_couponCode</span>)</span>
+                                    <span class="text-danger">-@_couponDiscount.ToString("N0") <small>تومان</small></span>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="coupon-section">
+                            <div class="coupon-row">
+                                <input type="text" class="coupon-input" placeholder="کد تخفیف دارید؟" @bind="_couponInput" disabled="@_couponApplied" />
+                                @if (_couponApplied)
+                                {
+                                    <button type="button" class="coupon-btn coupon-btn--remove" @onclick="RemoveCoupon">
+                                        <span class="oi oi-x"></span>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="coupon-btn" @onclick="ApplyCoupon" disabled="@string.IsNullOrWhiteSpace(_couponInput) || _couponLoading">
+                                        @if (_couponLoading) { <span class="spinner-border spinner-border-sm"></span> } else { <span>اعمال</span> }
+                                    </button>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(_couponMessage))
+                            {
+                                <div class="coupon-message @(_couponApplied ? "coupon-ok" : "coupon-err")">@_couponMessage</div>
+                            }
+                        </div>
+
+                        <div class="price-total">
+                            <span>مبلغ نهایی</span>
+                            <span class="price-total-amount">@((CartService.GetTotalAmount() - _couponDiscount).ToString("N0")) <small>تومان</small></span>
+                        </div>
+
+                        <div class="info-note">
+                            <span class="oi oi-info"></span>
+                            <p>در مرحله بعد اطلاعات کارت بانکی جهت واریز و آپلود فیش نمایش داده می‌شود.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bottom-bar">
+                <div class="bottom-bar-inner">
+                    <div class="d-flex align-items-center justify-content-between gap-3 w-100">
+                        <div>
+                            <div class="bottom-bar-label">مبلغ نهایی</div>
+                            <div class="bottom-bar-price">@((CartService.GetTotalAmount() - _couponDiscount).ToString("N0")) <small>تومان</small></div>
+                        </div>
+                        <button type="button" class="btn btn-primary-custom px-5 py-3" @onclick="TriggerFormSubmit" disabled="@isProcessing">
+                            @if (isProcessing) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                            تایید و ادامه
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .checkout-page { background: var(--shop-bg, #f8fafc); min-height: 100vh; }
+
+    .btn-back {
+        width: 42px; height: 42px; display: grid; place-items: center; flex-shrink: 0;
+        background: var(--shop-surface, #fff); color: var(--shop-text, #1e293b);
+        text-decoration: none; border: 1px solid var(--shop-border, #e2e8f0); border-radius: 12px;
+    }
+    .btn-back:active { transform: scale(0.95); }
+
+    .page-title { font-size: 1.25rem; font-weight: 800; margin: 0; color: var(--shop-text, #0f172a); }
+
+    .empty-state {
+        text-align: center; padding: 60px 24px;
+        background: var(--shop-surface, #fff); border: 1px solid var(--shop-border, #e2e8f0); border-radius: 24px;
+    }
+    .empty-icon { width: 80px; height: 80px; margin: 0 auto 20px; background: #fef3c7; border-radius: 24px; display: grid; place-items: center; font-size: 2rem; color: #f59e0b; }
+    .empty-title { font-size: 1.1rem; font-weight: 800; margin-bottom: 8px; }
+    .empty-desc { font-size: 0.85rem; color: #94a3b8; margin-bottom: 28px; }
+
+    .section-card {
+        background: var(--shop-surface, #fff); border: 1px solid var(--shop-border, #f1f5f9);
+        border-radius: 20px; padding: 28px;
+    }
+
+    .section-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 28px; }
+    .step-num {
+        width: 36px; height: 36px; flex-shrink: 0; display: grid; place-items: center;
+        background: #f1f5f9; color: var(--shop-primary, #4f46e5); border-radius: 12px;
+        font-size: 0.8rem; font-weight: 800;
+    }
+    .step-num--ok { background: #dcfce7; color: #16a34a; }
+    .section-title { font-size: 1rem; font-weight: 800; margin: 0 0 2px; }
+    .section-desc { font-size: 0.78rem; color: #94a3b8; margin: 0; }
+
+    .field-group { margin-bottom: 4px; }
+    .field-label { display: block; font-size: 0.8rem; font-weight: 700; color: #475569; margin-bottom: 6px; }
+    .field-label .optional { font-weight: 500; color: #cbd5e1; }
+    .field-input {
+        width: 100%; padding: 13px 16px; font-size: 0.88rem;
+        border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc;
+        color: var(--shop-text, #1e293b); transition: border-color 0.15s, box-shadow 0.15s;
+        outline: none;
+    }
+    .field-input:focus { border-color: var(--shop-primary, #4f46e5); box-shadow: 0 0 0 3px rgba(79,70,229,0.08); background: #fff; }
+    .field-input::placeholder { color: #cbd5e1; }
+
+    .form-control.modified.invalid { border-color: #ef4444 !important; background-color: rgba(239,68,68,0.03) !important; }
+    .form-control.modified.valid { border-color: #10b981 !important; background-color: rgba(16,185,129,0.03) !important; }
+    .form-control.invalid:focus { box-shadow: 0 0 0 3px rgba(239,68,68,0.1) !important; }
+    .form-control.valid:focus { box-shadow: 0 0 0 3px rgba(16,185,129,0.1) !important; }
+    .validation-message { font-size: 0.75rem; color: #ef4444; margin-top: 4px; font-weight: 600; }
+
+    .summary-card {
+        background: var(--shop-surface, #fff); border: 1px solid var(--shop-border, #f1f5f9);
+        border-radius: 20px; padding: 24px; top: 90px;
+    }
+
+    .order-items { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+    .order-item {
+        display: flex; align-items: center; justify-content: space-between; gap: 6px;
+        padding: 8px 10px; background: #f8fafc; border-radius: 10px;
+    }
+    .qty-badge {
+        width: 24px; height: 24px; flex-shrink: 0; display: grid; place-items: center;
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 6px;
+        font-size: 0.7rem; font-weight: 800; color: var(--shop-primary, #4f46e5);
+    }
+    .order-item-name { font-size: 0.8rem; font-weight: 600; color: var(--shop-text, #1e293b); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.4; }
+    .order-item-price { font-size: 0.8rem; font-weight: 800; color: var(--shop-primary, #4f46e5); white-space: nowrap; flex-shrink: 0; }
+
+    .price-breakdown { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-top: 1px solid #f1f5f9; }
+    .price-row { display: flex; justify-content: space-between; font-size: 0.82rem; color: #64748b; }
+    .price-row--ship { font-size: 0.78rem; }
+    .price-row--discount { font-size: 0.82rem; color: #dc2626; }
+
+    .coupon-section { padding: 12px 0; border-top: 1px solid #f1f5f9; }
+    .coupon-row { display: flex; gap: 8px; }
+    .coupon-input {
+        flex: 1; padding: 10px 14px; font-size: 0.82rem; direction: ltr;
+        border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc;
+        outline: none; transition: border-color 0.15s;
+    }
+    .coupon-input:focus { border-color: var(--shop-primary, #4f46e5); background: #fff; }
+    .coupon-input:disabled { opacity: 0.6; }
+    .coupon-btn {
+        padding: 10px 18px; border: none; border-radius: 10px;
+        background: var(--shop-primary, #4f46e5); color: #fff;
+        font-weight: 700; font-size: 0.82rem; cursor: pointer; white-space: nowrap;
+    }
+    .coupon-btn:disabled { opacity: 0.5; }
+    .coupon-btn--remove { background: #fee2e2; color: #dc2626; }
+    .coupon-message { font-size: 0.75rem; margin-top: 6px; font-weight: 600; }
+    .coupon-ok { color: #16a34a; }
+    .coupon-err { color: #dc2626; }
+
+    .price-total {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 14px 0 0; border-top: 1px solid #f1f5f9;
+    }
+    .price-total span:first-child { font-size: 0.9rem; font-weight: 800; }
+    .price-total-amount { font-size: 1.25rem; font-weight: 900; color: var(--shop-primary, #4f46e5); }
+    .price-total-amount small { font-size: 0.65rem; font-weight: 600; opacity: 0.7; }
+
+    .info-note {
+        display: flex; align-items: flex-start; gap: 10px; padding: 14px;
+        background: #f0f4ff; border-radius: 12px; margin-top: 20px; font-size: 0.78rem;
+        color: var(--shop-primary, #4f46e5); line-height: 1.6;
+    }
+    .info-note span { margin-top: 2px; flex-shrink: 0; }
+    .info-note p { margin: 0; }
+
+    .bottom-bar {
+        background: var(--shop-surface, #fff); border-top: 1px solid #e2e8f0;
+    }
+    .bottom-bar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 16px; }
+
+    .btn-primary-custom {
+        background: linear-gradient(135deg, var(--shop-primary, #4f46e5), var(--shop-primary-2, #6366f1));
+        color: #fff; border: none; border-radius: 14px; font-weight: 800; font-size: 0.88rem;
+        transition: transform 0.15s, box-shadow 0.15s; text-decoration: none;
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-primary-custom:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(79,70,229,0.25); color: #fff; }
+    .btn-primary-custom:active { transform: scale(0.98); }
+    .btn-primary-custom:disabled { opacity: 0.6; transform: none; box-shadow: none; }
+
+    .bottom-bar-label { font-size: 0.75rem; color: #94a3b8; }
+    .bottom-bar-price { font-size: 1.1rem; font-weight: 900; color: var(--shop-primary, #4f46e5); }
+    .bottom-bar-price small { font-size: 0.65rem; font-weight: 600; }
+
+    @@media (max-width: 768px) {
+        .checkout-page { padding-bottom: 100px; }
+        .section-card { padding: 16px 14px; }
+        .summary-card { padding: 16px 14px; border-radius: 16px; }
+        .section-header { margin-bottom: 20px; }
+        .section-title { font-size: 0.92rem; }
+        .order-items { gap: 6px; margin-bottom: 14px; }
+        .order-item { padding: 6px 8px; gap: 4px; }
+        .order-item-name { font-size: 0.75rem; -webkit-line-clamp: 1; }
+        .order-item-price { font-size: 0.75rem; }
+        .qty-badge { width: 20px; height: 20px; font-size: 0.65rem; }
+        .price-breakdown { gap: 6px; padding: 10px 0; }
+        .price-row { font-size: 0.76rem; }
+        .price-total { padding: 10px 0 0; }
+        .price-total span:first-child { font-size: 0.82rem; }
+        .price-total-amount { font-size: 1rem; }
+        .coupon-section { padding: 10px 0; }
+        .coupon-input { padding: 8px 10px; font-size: 0.76rem; }
+        .coupon-btn { padding: 8px 14px; font-size: 0.76rem; }
+        .info-note { padding: 10px 12px; margin-top: 14px; font-size: 0.72rem; }
+        .bottom-bar {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 1200;
+            padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.06);
+        }
+        .bottom-bar-price { font-size: 1rem; }
+        .btn-primary-custom { font-size: 0.82rem; padding: 12px 20px !important; border-radius: 12px; }
+    }
+
+    @@media (min-width: 769px) {
+        .bottom-bar {
+            position: relative; bottom: auto; margin-top: 20px;
+            border-radius: 16px; border: 1px solid #e2e8f0; background: var(--shop-surface, #fff);
+        }
+        .bottom-bar-inner { padding: 16px 24px; }
+    }
+</style>
+
+@code {
+    private OrderCreateRequest request = new();
+    private bool isProcessing = false;
+    private EditContext? editContext;
+
+    private string _couponInput = "";
+    private string _couponCode = "";
+    private decimal _couponDiscount;
+    private bool _couponApplied;
+    private bool _couponLoading;
+    private string _couponMessage = "";
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(request);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+            var allowGuest = settings?.AllowGuestCheckout ?? true;
+            var me = await AuthService.GetMeAsync();
+            if (me == null)
+            {
+                if (!allowGuest)
+                {
+                    Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString("/checkout")}");
+                }
+                return;
+            }
+            request.FullName = me.FullName;
+            request.PhoneNumber = me.PhoneNumber;
+            request.Email = me.Email;
+            request.Address = me.Address;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch { }
+    }
+
+    private async Task ApplyCoupon()
+    {
+        _couponLoading = true;
+        _couponMessage = "";
+        try
+        {
+            var result = await Http.PostAsJsonAsync("api/coupons/apply", new CouponApplyRequest
+            {
+                Code = _couponInput.Trim(),
+                OrderAmount = CartService.GetTotalAmount()
+            });
+            if (result.IsSuccessStatusCode)
+            {
+                var data = await result.Content.ReadFromJsonAsync<CouponApplyResult>();
+                if (data != null && data.IsValid)
+                {
+                    _couponApplied = true;
+                    _couponCode = _couponInput.Trim();
+                    _couponDiscount = data.DiscountAmount ?? 0;
+                    _couponMessage = data.Message ?? "کد تخفیف اعمال شد";
+                }
+                else
+                {
+                    _couponMessage = data?.Message ?? "کد تخفیف معتبر نیست";
+                }
+            }
+        }
+        catch { _couponMessage = "خطا در بررسی کد تخفیف"; }
+        finally { _couponLoading = false; }
+    }
+
+    private void RemoveCoupon()
+    {
+        _couponApplied = false;
+        _couponCode = "";
+        _couponDiscount = 0;
+        _couponInput = "";
+        _couponMessage = "";
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (isProcessing) return;
+        if (string.IsNullOrWhiteSpace(request.FullName)) { ToastService.ShowError("نام و نام خانوادگی را وارد کنید"); return; }
+        if (request.FullName.Length < 3) { ToastService.ShowError("نام وارد شده بیش از حد کوتاه است"); return; }
+        if (string.IsNullOrWhiteSpace(request.PhoneNumber)) { ToastService.ShowError("شماره موبایل را وارد کنید"); return; }
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.PhoneNumber, @"^09\d{9}$")) { ToastService.ShowError("فرمت شماره موبایل صحیح نیست"); return; }
+        if (string.IsNullOrWhiteSpace(request.Address)) { ToastService.ShowError("آدرس پستی را وارد کنید"); return; }
+        if (request.Address.Length < 10) { ToastService.ShowError("آدرس بسیار کوتاه است"); return; }
+
+        isProcessing = true;
+        try
+        {
+            request.Items = CartService.GetItems().Select(x => new OrderItemDto { ProductId = x.ProductId, ProductName = x.Name, Price = x.Price, Quantity = x.Quantity }).ToList();
+            request.CouponCode = _couponApplied ? _couponCode : null;
+            var response = await Http.PostAsJsonAsync("api/orders", request);
+            if (response.IsSuccessStatusCode)
+            {
+                var order = await response.Content.ReadFromJsonAsync<OrderDto>();
+                if (order != null) { await CartService.ClearCartAsync(); Nav.NavigateTo($"/payment/offline/{order.Id}"); }
+            }
+            else { ToastService.ShowError("خطا در ثبت سفارش"); }
+        }
+        catch { ToastService.ShowError("خطای ارتباط با سرور"); }
+        finally { isProcessing = false; }
+    }
+
+    private async Task TriggerFormSubmit()
+    {
+        if (editContext == null) return;
+        if (!editContext.Validate()) { ToastService.ShowError("لطفاً اطلاعات را صحیح وارد کنید"); return; }
+        await HandleSubmit();
+    }
+}

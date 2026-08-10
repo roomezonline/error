@@ -1,0 +1,1543 @@
+@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@using ErrorService.Shared
+@using ErrorService.Client.Pages
+@inject NavigationManager Nav
+@inject HttpClient Http
+@inject ErrorService.Client.Services.CartService CartService
+@inject ErrorService.Client.Services.ToastService ToastService
+@inject ErrorService.Client.Services.ThemeService Theme
+@inject ErrorService.Client.Services.AuthService Auth
+@inject ErrorService.Client.Services.JwtAuthStateProvider AuthStateProvider
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="app-wrapper">
+    <a href="#main-content" class="skip-link visually-hidden-focusable">پرش به محتوای اصلی</a>
+    @if (!_isOnline && !_dismissedOfflineBanner)
+    {
+        <div class="offline-banner" @onclick="() => _dismissedOfflineBanner = true" role="alert">
+            <span class="oi oi-warning me-2"></span>
+            اتصال اینترنت قطع شده است. برخی امکانات ممکن است در دسترس نباشند.
+            <button class="offline-banner-close" @onclick="() => _dismissedOfflineBanner = true" aria-label="بستن">×</button>
+        </div>
+    }
+    <div class="app-header-group">
+    <header class="app-header">
+        <div class="app-header-wrapper shadow-sm">
+        @if (isNavigating)
+        {
+            <div class="nav-progress-bar"></div>
+        }
+        <div class="container app-header-inner px-3">
+            <button class="hdr-menu-btn" @onclick="ToggleDrawer" aria-label="منوی اصلی">
+                <span class="hdr-menu-icon"></span>
+            </button>
+
+            <span class="hdr-title" @onclick="GoHome">
+                <span class="hdr-title__glow"></span>
+                <span class="hdr-title__text">
+                    ارورسرویس
+                    <span class="hdr-title__snow">
+                        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                    </span>
+                </span>
+            </span>
+
+            <a href="/cart" class="hdr-cart" aria-label="سبد خرید">
+                <svg class="hdr-cart__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+                    <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                </svg>
+                @if (CartService.GetTotalCount() > 0)
+                {
+                    <span class="hdr-cart__badge">@CartService.GetTotalCount()</span>
+                }
+            </a>
+
+            <AuthorizeView>
+                <Authorized>
+                    <div class="hdr-avatar-wrap">
+                        <div class="hdr-avatar" @onclick="ToggleUserMenu" @onclick:stopPropagation>
+                            @context.User.Identity?.Name?[0]
+                        </div>
+                    </div>
+                    @if (showUserMenu)
+                    {
+                        <div class="hdr-usermenu" @onclick:stopPropagation>
+                            <div class="hdr-usermenu__head">
+                                <div class="hdr-usermenu__avatar">@context.User.Identity?.Name?[0]</div>
+                                <div>
+                                    <div class="hdr-usermenu__name">@context.User.Identity?.Name</div>
+                                </div>
+                            </div>
+                            <div class="hdr-usermenu__body">
+                                <a class="hdr-usermenu__item" href="/profile" @onclick="ToggleUserMenu">
+                                    <span class="oi oi-person"></span> پروفایل
+                                </a>
+                                <AuthorizeView Policy="perm:admin.access" Context="adminCtx">
+                                    <a class="hdr-usermenu__item" href="/admin" @onclick="ToggleUserMenu">
+                                        <span class="oi oi-dashboard"></span> پنل مدیریت
+                                    </a>
+                                </AuthorizeView>
+                                <div class="hdr-usermenu__divider"></div>
+                                <button class="hdr-usermenu__item hdr-usermenu__item--danger" @onclick="HandleLogout">
+                                    <span class="oi oi-account-logout"></span> خروج
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </Authorized>
+                <NotAuthorized>
+                    <a href="/auth/login" class="hdr-login-btn">ورود</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+        </div>
+    </header>
+
+    <div class="app-quick-links d-none d-lg-block">
+        <div class="container px-3">
+            <div class="quick-links-row">
+                <a class="quick-link" href="/products">
+                    <span class="oi oi-box" aria-hidden="true"></span>
+                    <span class="quick-link__text">فروشگاه</span>
+                </a>
+                <a class="quick-link" href="/academy">
+                    <span class="oi oi-book" aria-hidden="true"></span>
+                    <span class="quick-link__text">آکادمی</span>
+                </a>
+                <a class="quick-link" href="/technical/error-codes">
+                    <span class="oi oi-magnifying-glass" aria-hidden="true"></span>
+                    <span class="quick-link__text">بانک کدهای خطا</span>
+                </a>
+                <a class="quick-link" href="/technical/calculators">
+                    <span class="oi oi-calculator" aria-hidden="true"></span>
+                    <span class="quick-link__text">محاسباتی</span>
+                </a>
+                <a class="quick-link" href="/technical/sensor-finder">
+                    <span class="oi oi-rss" aria-hidden="true"></span>
+                    <span class="quick-link__text">سنسور یاب</span>
+                </a>
+                <a class="quick-link" href="/technical/consultation">
+                    <span class="oi oi-chat" aria-hidden="true"></span>
+                    <span class="quick-link__text">مشاوره فنی</span>
+                </a>
+                <a class="quick-link" href="/contact">
+                    <span class="oi oi-phone" aria-hidden="true"></span>
+                    <span class="quick-link__text">تماس</span>
+                </a>
+                <a class="quick-link" href="/about">
+                    <span class="oi oi-info" aria-hidden="true"></span>
+                    <span class="quick-link__text">درباره ما</span>
+                </a>
+                <a class="quick-link" href="/commitment">
+                    <span class="oi oi-document-text" aria-hidden="true"></span>
+                    <span class="quick-link__text">تعهدنامه</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-search-bar px-3 py-2">
+        <div class="search-input-wrapper position-relative">
+            <span class="oi oi-magnifying-glass search-icon position-absolute top-50 translate-middle-y text-muted"></span>
+            <input type="text" class="form-control app-search-input" 
+                   placeholder="جستجو در محصولات، کدهای خطا و آموزش‌ها..." 
+                   aria-label="جستجو"
+                   value="@searchQuery"
+                   @oninput="HandleSearchInput"
+                   @onkeyup="HandleSearchKeyUp"
+                   @onfocus="ShowSuggestions" />
+
+            @if (showSuggestions && !string.IsNullOrWhiteSpace(searchQuery) && searchQuery.Trim().Length >= 2)
+            {
+                <div class="search-suggest shadow-lg">
+                    @if (suggestions == null)
+                    {
+                        <div class="p-3 text-center text-muted small">
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            در حال جستجو...
+                        </div>
+                    }
+                    else
+                    {
+                        @if (!HasAnySuggestions)
+                        {
+                            <div class="p-3 text-center text-muted small">نتیجه‌ای یافت نشد</div>
+                        }
+                        else
+                        {
+                            @if (suggestions.Products.Any())
+                            {
+                                <div class="suggest-section">
+                                    <div class="suggest-title">محصولات</div>
+                                    @foreach (var item in suggestions.Products.Take(4))
+                                    {
+                                        <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
+                                            <span class="oi oi-box text-success"></span>
+                                            <span class="flex-grow-1 text-truncate">@item.Title</span>
+                                            <span class="oi oi-chevron-left text-muted"></span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+
+                            @if (suggestions.ErrorCodes.Any())
+                            {
+                                <div class="suggest-section">
+                                    <div class="suggest-title">کدهای خطا</div>
+                                    @foreach (var item in suggestions.ErrorCodes.Take(4))
+                                    {
+                                        <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
+                                            <span class="oi oi-magnifying-glass text-primary"></span>
+                                            <span class="flex-grow-1 text-truncate">@item.Title</span>
+                                            <span class="oi oi-chevron-left text-muted"></span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+
+                            @if (suggestions.Courses.Any())
+                            {
+                                <div class="suggest-section">
+                                    <div class="suggest-title">آموزش‌ها</div>
+                                    @foreach (var item in suggestions.Courses.Take(4))
+                                    {
+                                        <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
+                                            <span class="oi oi-book text-warning"></span>
+                                            <span class="flex-grow-1 text-truncate">@item.Title</span>
+                                            <span class="oi oi-chevron-left text-muted"></span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+
+                            @if (suggestions.News.Any())
+                            {
+                                <div class="suggest-section">
+                                    <div class="suggest-title">اخبار</div>
+                                    @foreach (var item in suggestions.News.Take(4))
+                                    {
+                                        <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
+                                            <span class="oi oi-list text-danger"></span>
+                                            <span class="flex-grow-1 text-truncate">@item.Title</span>
+                                            <span class="oi oi-chevron-left text-muted"></span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        }
+
+                        <div class="suggest-footer">
+                            <div class="small text-muted">برای نتایج بیشتر Enter بزنید</div>
+                            <button type="button" class="btn btn-sm btn-primary rounded-pill px-3" @onclick="GoToFullSearch">مشاهده همه</button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (showSuggestions)
+    {
+        <div class="search-suggest-overlay" @onclick="HideSuggestions"></div>
+    }
+
+    </div> @* app-header-group *@
+
+    <main class="app-main" id="main-content">
+        <div class="page-content">
+            @Body
+        </div>
+    </main>
+
+    <nav class="app-bottom-nav @(_hideBottomNav ? "d-none" : "")">
+        <NavLink href="/" class="nav-item" Match="NavLinkMatch.All" ActiveClass="active">
+            <span class="oi oi-home"></span>
+            <span class="nav-label">خانه</span>
+        </NavLink>
+        <NavLink href="/products" class="nav-item" ActiveClass="active">
+            <span class="oi oi-box"></span>
+            <span class="nav-label">فروشگاه</span>
+        </NavLink>
+        <NavLink href="/academy" class="nav-item" ActiveClass="active">
+            <span class="oi oi-book"></span>
+            <span class="nav-label">آکادمی</span>
+        </NavLink>
+        <NavLink href="/profile" class="nav-item" ActiveClass="active">
+            <span class="oi oi-person"></span>
+            <span class="nav-label">پروفایل</span>
+        </NavLink>
+    </nav>
+
+    <ChatWidget />
+
+    @if (showDrawer)
+    {
+        <div class="drawer-overlay" @onclick="ToggleDrawer"></div>
+        <div class="app-drawer animate__animated animate__slideInRight">
+            <div class="drawer-header p-4 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="m-0 fw-bold">منوی دسترسی</h5>
+                <button class="btn-close" @onclick="ToggleDrawer"></button>
+            </div>
+            <div class="drawer-body p-0">
+                <div class="list-group list-group-flush py-2">
+                    <AuthorizeView Policy="perm:admin.access">
+                        <div class="px-4 py-2 small fw-bold text-primary">بخش مدیریت</div>
+                        <a href="/admin" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                            <div class="drawer-icon text-primary bg-primary-subtle"><span class="oi oi-dashboard"></span></div>
+                            <span class="fw-bold">پنل مدیریت (داشبورد)</span>
+                        </a>
+
+                        <AuthorizeView Policy="perm:security.roles.manage" Context="inner">
+                            <a href="/admin/roles" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                                <div class="drawer-icon text-dark bg-light border"><span class="oi oi-shield"></span></div>
+                                <span class="fw-bold">مدیریت نقش‌ها</span>
+                            </a>
+                        </AuthorizeView>
+                        <hr class="mx-4 opacity-10" />
+                    </AuthorizeView>
+
+                    <div class="px-4 pt-3 pb-2">
+                        <a href="/commitment" class="rl-commitment-drawer-btn" @onclick="ToggleDrawer">
+                            <span class="rl-commitment-drawer-icon"><span class="oi oi-document-text"></span></span>
+                            <div>
+                                <div class="rl-commitment-drawer-title">تعهدنامه دیجیتال</div>
+                                <div class="rl-commitment-drawer-desc">امضای دیجیتال تعهدنامه</div>
+                            </div>
+                            <span class="rl-commitment-drawer-arrow"><span class="oi oi-chevron-left"></span></span>
+                        </a>
+                    </div>
+                    <hr class="mx-4 opacity-10" />
+
+                    <AuthorizeView Context="auth">
+                        <Authorized>
+                            <div class="px-4 py-2 small fw-bold text-muted">حساب کاربری</div>
+                            <a href="/profile" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                                <div class="drawer-icon text-primary bg-primary-subtle"><span class="oi oi-person"></span></div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold">@auth.User.Identity?.Name</div>
+                                    <div class="text-muted x-small">مشاهده پروفایل</div>
+                                </div>
+                            </a>
+                            <a href="/my-orders" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                                <div class="drawer-icon text-warning bg-warning-subtle"><span class="oi oi-basket"></span></div>
+                                <span class="fw-bold">سفارشات من</span>
+                            </a>
+                            <a href="/wishlist" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                                <div class="drawer-icon text-danger bg-danger-subtle"><span class="oi oi-heart"></span></div>
+                                <span class="fw-bold">علاقمندی‌ها</span>
+                            </a>
+                            <button class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3 text-danger" @onclick="HandleLogout">
+                                <div class="drawer-icon text-danger bg-danger-subtle"><span class="oi oi-account-logout"></span></div>
+                                <span class="fw-bold">خروج از حساب</span>
+                            </button>
+                        </Authorized>
+                        <NotAuthorized>
+                            <a href="/auth/login" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                                <div class="drawer-icon text-primary bg-primary-subtle"><span class="oi oi-account-login"></span></div>
+                                <span class="fw-bold">ورود / ثبت‌نام</span>
+                            </a>
+                        </NotAuthorized>
+                    </AuthorizeView>
+                    <hr class="mx-4 opacity-10" />
+                    <div class="px-4 py-2 small fw-bold text-muted">دسترسی سریع</div>
+                    <a href="/" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                        <div class="drawer-icon text-primary bg-primary-subtle"><span class="oi oi-home"></span></div>
+                        <span class="fw-bold">صفحه اصلی</span>
+                    </a>
+                    <a href="/products" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                        <div class="drawer-icon text-success bg-success-subtle"><span class="oi oi-box"></span></div>
+                        <span class="fw-bold">فروشگاه ابزار</span>
+                    </a>
+                    <a href="/academy" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                        <div class="drawer-icon text-warning bg-warning-subtle"><span class="oi oi-book"></span></div>
+                        <span class="fw-bold">آکادمی آموزش</span>
+                    </a>
+                    <a href="/about" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                        <div class="drawer-icon text-info bg-info-subtle"><span class="oi oi-info"></span></div>
+                        <span class="fw-bold">درباره ما</span>
+                    </a>
+                    <a href="/contact" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                        <div class="drawer-icon text-danger bg-danger-subtle"><span class="oi oi-phone"></span></div>
+                        <span class="fw-bold">تماس با ما</span>
+                    </a>
+                    <hr class="mx-4 opacity-10" />
+                    <div class="px-4 py-2 small fw-bold text-muted">ابزارهای تخصصی</div>
+                    <a href="/technical/error-codes" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                        <div class="drawer-icon text-primary bg-primary-subtle"><span class="oi oi-magnifying-glass"></span></div>
+                        <span class="fw-bold">بانک کدهای خطا</span>
+                    </a>
+                    <a href="/technical/calculators" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                        <div class="drawer-icon text-success bg-success-subtle"><span class="oi oi-calculator"></span></div>
+                        <span class="fw-bold">ابزارهای محاسباتی</span>
+                    </a>
+                    <a href="/technical/sensor-finder" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                        <div class="drawer-icon text-info bg-info-subtle"><span class="oi oi-rss"></span></div>
+                        <span class="fw-bold">سنسور یاب</span>
+                    </a>
+                    <a href="/technical/consultation" class="list-group-item list-group-item-action border-0 py-3 px-4 d-flex align-items-center gap-3" @onclick="ToggleDrawer">
+                        <div class="drawer-icon text-warning bg-warning-subtle"><span class="oi oi-chat"></span></div>
+                        <span class="fw-bold">مشاوره فنی</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    }
+    
+    <ToastContainer />
+    @if (!Nav.Uri.Contains("/monitoring/shared", StringComparison.OrdinalIgnoreCase))
+    {
+        <Footer />
+    }
+</div>
+
+<style>
+@* CSS variables moved to wwwroot/css/theme.css *@
+
+    /* Skeleton Loading Animation */
+    .skeleton {
+        background: linear-gradient(90deg, var(--app-border) 25%, var(--app-bg) 50%, var(--app-border) 75%);
+        background-size: 200% 100%;
+        animation: skeleton-loading 1.5s infinite;
+        border-radius: 8px;
+    }
+
+    @@keyframes skeleton-loading {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    .skeleton-card {
+        background: var(--app-surface);
+        border-radius: 20px;
+        padding: 16px;
+        margin-bottom: 16px;
+        border: 1px solid var(--app-border);
+    }
+
+    .skeleton-img { height: 160px; width: 100%; margin-bottom: 12px; border-radius: 16px; }
+    .skeleton-title { height: 20px; width: 80%; margin-bottom: 8px; }
+    .skeleton-text { height: 14px; width: 60%; }
+
+    .btn, .nav-item, .quick-link, .suggest-item {
+        position: relative;
+        overflow: hidden;
+    }
+
+    .ripple-effect {
+        position: absolute;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.3);
+        transform: scale(0);
+        animation: ripple-animation 0.6s linear;
+        pointer-events: none;
+    }
+
+    @@keyframes ripple-animation {
+        to { transform: scale(4); opacity: 0; }
+    }
+
+    .app-wrapper {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        background-color: var(--app-bg);
+        color: var(--app-text);
+        padding-bottom: 80px;
+        padding-top: 138px;
+        font-family: 'Vazirmatn', sans-serif !important;
+        transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    .app-search-bar {
+        background: transparent;
+        padding-top: 8px;
+        padding-bottom: 10px;
+        margin-bottom: 6px;
+    }
+
+    .app-quick-links {
+        position: relative;
+        background: linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0));
+        padding: 4px 0 2px 0;
+        border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    }
+
+    .quick-links-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding:5px;
+    }
+
+    .quick-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--app-border);
+        background: var(--app-surface);
+        color: var(--app-text);
+        text-decoration: none;
+        font-weight: 800;
+        font-size: 0.88rem;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.06);
+        transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        user-select: none;
+        white-space: nowrap;
+    }
+
+    .quick-link .oi {
+        font-size: 1rem;
+        color: var(--app-text-muted);
+    }
+
+    .quick-link:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 26px rgba(15, 23, 42, 0.12);
+        border-color: rgba(37, 99, 235, 0.22);
+        color: var(--app-text);
+    }
+
+    .quick-link:active {
+        transform: translateY(0) scale(0.98);
+    }
+
+    .app-search-input {
+        width: 100%;
+        border-radius: 999px;
+        border: 1px solid var(--app-border);
+        background: var(--app-surface);
+        color: var(--app-text);
+        padding: 12px 44px 12px 16px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+        outline: none;
+        transition: all 0.2s ease;
+    }
+
+    .app-search-input::placeholder {
+        font-size: 0.9rem;
+        color: #94a3b8;
+    }
+
+    .app-search-input:focus {
+        border-color: rgba(37, 99, 235, 0.35);
+        box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+    }
+
+    .search-icon {
+        right: 16px;
+        font-size: 1.05rem;
+    }
+
+    .search-suggest-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 998;
+        background: transparent;
+    }
+
+    .search-suggest {
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        left: 0;
+        z-index: 999;
+        border-radius: 20px;
+        border: 1px solid var(--app-border);
+        background: var(--app-surface);
+        overflow: hidden;
+    }
+
+    .suggest-section { padding: 10px 10px 0 10px; }
+    .suggest-title {
+        font-size: 0.78rem;
+        font-weight: 900;
+        color: var(--app-text-muted);
+        padding: 8px 10px;
+    }
+
+    .suggest-item {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        text-align: right;
+        color: var(--app-text);
+    }
+
+    .suggest-item:hover { background: var(--app-bg); }
+    .suggest-item .oi { font-size: 1rem; }
+
+    .suggest-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 14px;
+        border-top: 1px solid var(--app-border);
+        background: rgba(0,0,0,0.02);
+    }
+
+    .app-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 280px;
+        background: var(--app-surface);
+        color: var(--app-text);
+        z-index: 1100;
+        box-shadow: -10px 0 40px rgba(0,0,0,0.15);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .drawer-body {
+        flex: 1;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .drawer-body .list-group-item {
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+        border-radius: 12px;
+        margin: 2px 12px;
+        width: auto;
+    }
+
+    .drawer-icon {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        font-size: 0.9rem;
+    }
+
+    .bg-primary-subtle { background: rgba(37, 99, 235, 0.1); }
+    .bg-success-subtle { background: rgba(16, 185, 129, 0.1); }
+    .bg-warning-subtle { background: rgba(245, 158, 11, 0.1); }
+    .bg-info-subtle { background: rgba(6, 182, 212, 0.1); }
+    .bg-danger-subtle { background: rgba(239, 68, 68, 0.1); }
+
+    .app-header-group {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        will-change: transform;
+    }
+
+    .app-header {
+        position: relative;
+        z-index: 2;
+        height: 68px;
+        background: transparent;
+        will-change: opacity;
+        transition: background-color 0.3s ease;
+    }
+
+    .app-header-wrapper {
+        height:60px;
+        background: var(--app-header-bg);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--app-border);
+    }
+
+    .nav-progress-bar {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--app-primary), #10b981);
+        z-index: 1001;
+        animation: nav-load 2s ease-in-out infinite;
+    }
+
+    @@keyframes nav-load {
+        0% { width: 0; left: 0; }
+        50% { width: 70%; left: 15%; }
+        100% { width: 0; left: 100%; }
+    }
+
+    /* ── App Header: RTL, minimal, premium ── */
+    .app-header-inner {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 20px;
+        direction: rtl;
+        user-select: none;
+    }
+
+    /* Hamburger — rightmost */
+    .hdr-menu-btn {
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        background: none;
+        border: none;
+        cursor: pointer;
+        border-radius: 12px;
+        transition: background 0.15s;
+        padding: 0;
+    }
+    .hdr-menu-btn:hover { background: rgba(0,0,0,0.04); }
+    .hdr-menu-btn:active { background: rgba(0,0,0,0.08); transform: scale(0.92); }
+
+    .hdr-menu-icon {
+        display: block;
+        width: 22px;
+        height: 2px;
+        background: #1a1a1a;
+        border-radius: 2px;
+        position: relative;
+        transition: background 0.2s;
+    }
+    .hdr-menu-icon::before,
+    .hdr-menu-icon::after {
+        content: "";
+        position: absolute;
+        right: 0;
+        width: 22px;
+        height: 2px;
+        background: #1a1a1a;
+        border-radius: 2px;
+        transition: transform 0.2s;
+    }
+    .hdr-menu-icon::before { top: -7px; }
+    .hdr-menu-icon::after { top: 7px; }
+
+    /* Title — center */
+    .hdr-title {
+        flex: 1;
+        text-align: center;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        padding: 4px 0;
+        position: relative;
+    }
+
+    .hdr-title__text {
+        font-size: 20px;
+        font-weight: 800;
+        font-family: 'Vazirmatn', system-ui, sans-serif;
+        position: relative;
+        letter-spacing: 0.4px;
+        transition: transform 0.2s;
+        background: linear-gradient(180deg, #ffffff 0%, #93c5fd 30%, #3b82f6 60%, #1e3a8a 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        filter: drop-shadow(0 1px 4px rgba(59,130,246,0.2));
+    }
+    .hdr-title__text::before {
+        content: "";
+        position: absolute;
+        top: -2px; left: 0; right: 0;
+        height: 55%;
+        background: linear-gradient(180deg, rgba(255,255,255,0.5) 0%, transparent 100%);
+        border-radius: 4px 4px 0 0;
+        -webkit-mask: linear-gradient(#fff 0 0);
+        mask: linear-gradient(#fff 0 0);
+        pointer-events: none;
+    }
+    .hdr-title__text::after {
+        content: "";
+        position: absolute;
+        inset: -10px;
+        background: radial-gradient(ellipse at 50% -20%, rgba(255,255,255,0.15) 0%, transparent 60%);
+        border-radius: 50%;
+        pointer-events: none;
+        animation: hdrFrost 4s ease-in-out infinite;
+    }
+    .hdr-title:active .hdr-title__text { transform: scale(0.96); }
+
+    /* ❄️ Snowflakes */
+    .hdr-title__snow {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        border-radius: 6px;
+    }
+    .hdr-title__snow::before,
+    .hdr-title__snow::after,
+    .hdr-title__snow i {
+        position: absolute;
+        top: -8px;
+        width: 4px;
+        height: 4px;
+        background: rgba(255,255,255,0.7);
+        border-radius: 50%;
+        animation: hdrSnowFall linear infinite;
+    }
+    .hdr-title__snow i:nth-child(1) { left: 5%; animation-duration: 2.4s; animation-delay: 0s; width: 3px; height: 3px; }
+    .hdr-title__snow i:nth-child(2) { left: 20%; animation-duration: 3s; animation-delay: 0.6s; width: 5px; height: 5px; }
+    .hdr-title__snow i:nth-child(3) { left: 38%; animation-duration: 2s; animation-delay: 1.2s; width: 3px; height: 3px; }
+    .hdr-title__snow i:nth-child(4) { left: 55%; animation-duration: 2.8s; animation-delay: 0.3s; width: 4px; height: 4px; }
+    .hdr-title__snow i:nth-child(5) { left: 70%; animation-duration: 2.2s; animation-delay: 1.6s; width: 3px; height: 3px; }
+    .hdr-title__snow i:nth-child(6) { left: 85%; animation-duration: 3.2s; animation-delay: 0.8s; width: 5px; height: 5px; }
+    .hdr-title__snow i:nth-child(7) { left: 95%; animation-duration: 2.6s; animation-delay: 0.1s; width: 3px; height: 3px; }
+    .hdr-title__snow i:nth-child(8) { left: 12%; animation-duration: 3.6s; animation-delay: 2s; width: 4px; height: 4px; }
+
+    @@keyframes hdrSnowFall {
+        0% { transform: translateY(-8px) scale(1); opacity: 1; }
+        80% { opacity: 0.6; }
+        100% { transform: translateY(80px) scale(0.4); opacity: 0; }
+    }
+
+    @@keyframes hdrFrost {
+        0%, 100% { opacity: 0.4; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.06); }
+    }
+
+    /* Seasonal glow pulse */
+    .hdr-title__glow {
+        position: absolute;
+        inset: -8px;
+        border-radius: 12px;
+        background: radial-gradient(ellipse at 50% 0%, rgba(147,197,253,0.08) 0%, transparent 70%);
+        animation: hdrGlowPulse 3s ease-in-out infinite;
+        pointer-events: none;
+    }
+
+    @@keyframes hdrGlowPulse {
+        0%, 100% { opacity: 0.3; }
+        50% { opacity: 0.8; }
+    }
+
+    .app-dark .hdr-title__text {
+        background: linear-gradient(180deg, #e0f2fe 0%, #7dd3fc 30%, #38bdf8 60%, #1e3a8a 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    /* ── Cart icon in header ── */
+    .hdr-cart {
+        flex-shrink: 0;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        color: #64748b;
+        text-decoration: none;
+        transition: background 0.15s, color 0.15s;
+    }
+    .hdr-cart:hover { background: rgba(0,0,0,0.04); color: #1a1a1a; }
+    .hdr-cart:active { background: rgba(0,0,0,0.08); transform: scale(0.92); }
+
+    .hdr-cart__icon { display: block; line-height: 0; }
+
+    .hdr-cart__badge {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        min-width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        background: #ef4444;
+        color: #fff;
+        font-size: 9px;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 4px;
+        box-shadow: 0 1px 4px rgba(239,68,68,0.3);
+        line-height: 1;
+        direction: ltr;
+    }
+
+    .app-dark .hdr-cart { color: #a1a1aa; }
+    .app-dark .hdr-cart:hover { background: rgba(255,255,255,0.06); color: #e4e4e7; }
+
+    /* Avatar wrap — leftmost */
+    .hdr-avatar-wrap {
+        position: relative;
+        flex-shrink: 0;
+    }
+
+    .hdr-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #4a6cf7, #6a8cff);
+        color: #fff;
+        font-size: 16px;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        user-select: none;
+        transition: transform 0.15s, box-shadow 0.15s;
+        box-shadow: 0 2px 8px rgba(74,108,247,0.2);
+    }
+    .hdr-avatar:active { transform: scale(0.92); }
+
+    /* Login button when not authorized */
+    .hdr-login-btn {
+        flex-shrink: 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: #4a6cf7;
+        text-decoration: none;
+        padding: 6px 16px;
+        border-radius: 100px;
+        border: 1.5px solid #4a6cf7;
+        transition: background 0.15s, color 0.15s;
+    }
+    .hdr-login-btn:hover {
+        background: #4a6cf7;
+        color: #fff;
+    }
+
+    /* User dropdown menu (appears below avatar) */
+    .hdr-usermenu {
+        position: fixed;
+        top: 66px;
+        left: 16px;
+        min-width: 200px;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+        z-index: 2100;
+        overflow: hidden;
+        animation: hdrMenuIn 0.18s ease-out;
+    }
+    @@keyframes hdrMenuIn {
+        from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .hdr-usermenu__head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .hdr-usermenu__avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #4a6cf7, #6a8cff);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+    }
+    .hdr-usermenu__name {
+        font-size: 14px;
+        font-weight: 600;
+        color: #1a1a1a;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .hdr-usermenu__body { padding: 6px; }
+    .hdr-usermenu__item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 500;
+        color: #1a1a1a;
+        text-decoration: none;
+        cursor: pointer;
+        background: none;
+        border: none;
+        width: 100%;
+        text-align: right;
+        transition: background 0.12s;
+        font-family: inherit;
+    }
+    .hdr-usermenu__item:hover { background: #f5f5f5; }
+    .hdr-usermenu__item:active { background: #eee; }
+    .hdr-usermenu__item--danger { color: #ef4444; }
+    .hdr-usermenu__divider {
+        height: 1px;
+        background: #f0f0f0;
+        margin: 4px 8px;
+    }
+
+    /* Dark mode overrides */
+    .app-dark .hdr-menu-icon,
+    .app-dark .hdr-menu-icon::before,
+    .app-dark .hdr-menu-icon::after { background: #e4e4e7; }
+    .app-dark .hdr-usermenu { background: #1e1e2e; }
+    .app-dark .hdr-usermenu__head { border-color: rgba(255,255,255,0.06); }
+    .app-dark .hdr-usermenu__name { color: #e4e4e7; }
+    .app-dark .hdr-usermenu__item { color: #e4e4e7; }
+    .app-dark .hdr-usermenu__item:hover { background: rgba(255,255,255,0.06); }
+    .app-dark .hdr-usermenu__item:active { background: rgba(255,255,255,0.1); }
+    .app-dark .hdr-usermenu__divider { background: rgba(255,255,255,0.06); }
+    .app-dark .hdr-login-btn {
+        color: #6a8cff;
+        border-color: #6a8cff;
+    }
+    .app-dark .hdr-login-btn:hover {
+        background: #6a8cff;
+        color: #fff;
+    }
+
+    .app-main { 
+        flex: 1;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    .app-bottom-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 70px;
+        background: var(--app-nav-bg);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        border-top: 1px solid var(--app-border);
+        z-index: 1000;
+        padding-bottom: env(safe-area-inset-bottom);
+        transition: background-color 0.3s ease;
+    }
+
+    .nav-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-decoration: none;
+        color: var(--app-text-muted);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        padding: 8px 16px;
+        border-radius: 18px;
+    }
+
+    .nav-item .oi { 
+        font-size: 1.4rem; 
+        margin-bottom: 4px; 
+        transition: transform 0.2s ease;
+    }
+    .nav-label { font-size: 0.75rem; font-weight: 700; }
+
+    .nav-item.active {
+        color: var(--app-primary);
+    }
+    
+    .nav-item.active .oi {
+        transform: translateY(-2px);
+    }
+
+    .list-group-item {
+        background: transparent !important;
+        color: var(--app-text) !important;
+    }
+    .list-group-item:hover {
+        background: var(--app-bg) !important;
+    }
+
+    .drawer-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        backdrop-filter: blur(4px);
+        z-index: 1050;
+    }
+
+    @@media (min-width: 992px) {
+        .app-bottom-nav {
+            display: none;
+        }
+        .app-wrapper { 
+            padding-bottom: 0;
+            padding-top: 183px;
+            width: 100%;
+            margin: 0;
+        }
+        .container, .container-fluid {
+            max-width: 100% !important;
+            padding-left: 20px !important;
+            padding-right: 20px !important;
+        }
+    }
+</style>
+
+<style>
+    .page-content {
+        animation: pageFadeIn 0.35s ease-out;
+    }
+    @@keyframes pageFadeIn {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .reveal {
+        opacity: 0;
+        transform: translateY(24px);
+        transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+    }
+    .reveal.visible {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+    .reveal-delay-3 { transition-delay: 0.3s; }
+    .reveal-delay-4 { transition-delay: 0.4s; }
+    .empty-state-box {
+        text-align: center;
+        padding: 60px 20px;
+        background: rgba(255,255,255,0.6);
+        border-radius: 24px;
+        border: 2px dashed rgba(0,0,0,0.08);
+    }
+    .empty-state-box .empty-icon {
+        font-size: 3.5rem;
+        color: rgba(0,0,0,0.12);
+        margin-bottom: 16px;
+        display: block;
+    }
+    .empty-state-box h4 {
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 8px;
+    }
+    .empty-state-box p {
+        color: #888;
+        margin-bottom: 20px;
+    }
+    .skip-link {
+        position: fixed;
+        top: -100%;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 9999;
+        padding: 8px 24px;
+        background: #0d6efd;
+        color: #fff;
+        border-radius: 0 0 12px 12px;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 0.9rem;
+        transition: top 0.2s;
+    }
+    .skip-link:focus {
+        top: 0;
+    }
+    .offline-banner {
+        position: sticky;
+        top: 0;
+        z-index: 9998;
+        background: #fff3cd;
+        color: #856404;
+        padding: 10px 16px;
+        text-align: center;
+        font-size: 0.85rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border-bottom: 1px solid #ffc107;
+        cursor: pointer;
+    }
+    .offline-banner-close {
+        background: none;
+        border: none;
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #856404;
+        cursor: pointer;
+        padding: 0 4px;
+        line-height: 1;
+    }
+
+    .rl-commitment-drawer-btn {
+        display: flex; align-items: center; gap: 12px;
+        padding: 14px 16px; border-radius: 16px;
+        background: linear-gradient(135deg, #1e40af, #2563eb);
+        color: #fff; text-decoration: none; transition: all 0.2s;
+        box-shadow: 0 4px 15px rgba(37,99,235,0.25);
+    }
+    .rl-commitment-drawer-btn:hover {
+        background: linear-gradient(135deg, #1e3a8a, #1d4ed8);
+        color: #fff; transform: translateY(-1px);
+        box-shadow: 0 6px 20px rgba(37,99,235,0.35);
+    }
+    .rl-commitment-drawer-icon {
+        width: 42px; height: 42px; border-radius: 12px;
+        background: rgba(255,255,255,0.15);
+        display: grid; place-items: center; font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+    .rl-commitment-drawer-title {
+        font-weight: 950; font-size: 0.85rem; line-height: 1.3;
+    }
+    .rl-commitment-drawer-desc {
+        font-size: 0.65rem; opacity: 0.75; font-weight: 700; margin-top: 1px;
+    }
+    .rl-commitment-drawer-arrow {
+        margin-right: auto; font-size: 0.8rem; opacity: 0.6;
+    }
+</style>
+
+@code {
+    private bool showDrawer = false;
+    private bool showUserMenu = false;
+    private bool isNavigating = false;
+    private DotNetObjectReference<MainLayout>? _dotNetRef;
+
+    private bool _hideBottomNav => Nav.Uri.Contains("/products/");
+    private bool _isOnline = true;
+    private bool _dismissedOfflineBanner;
+    private DotNetObjectReference<MainLayout>? _onlineRef;
+
+    private async Task ToggleUserMenu()
+    {
+        showUserMenu = !showUserMenu;
+        if (showUserMenu)
+        {
+            await JS.InvokeVoidAsync("__um_addHandler", _dotNetRef);
+        }
+        else
+        {
+            await JS.InvokeVoidAsync("__um_removeHandler");
+        }
+    }
+
+    [JSInvokable]
+    public void CloseUserMenuFromOutside()
+    {
+        showUserMenu = false;
+        StateHasChanged();
+    }
+    private string searchQuery = "";
+    private SearchResponseDto? suggestions;
+    private bool showSuggestions = false;
+    private CancellationTokenSource? suggestCts;
+
+    private void HandleSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(searchQuery))
+        {
+            Nav.NavigateTo($"/search?q={Uri.EscapeDataString(searchQuery)}");
+            searchQuery = "";
+            HideSuggestions();
+        }
+    }
+
+    private bool HasAnySuggestions =>
+        (suggestions?.Products?.Any() ?? false) ||
+        (suggestions?.ErrorCodes?.Any() ?? false) ||
+        (suggestions?.Courses?.Any() ?? false) ||
+        (suggestions?.News?.Any() ?? false);
+
+    private void ShowSuggestions()
+    {
+        showSuggestions = true;
+    }
+
+    private void HideSuggestions()
+    {
+        showSuggestions = false;
+        suggestions = null;
+        suggestCts?.Cancel();
+    }
+
+    private async Task HandleSearchInput(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? string.Empty;
+        showSuggestions = true;
+
+        var q = (searchQuery ?? string.Empty).Trim();
+        if (q.Length < 2)
+        {
+            suggestions = null;
+            return;
+        }
+
+        suggestCts?.Cancel();
+        suggestCts = new CancellationTokenSource();
+        var token = suggestCts.Token;
+
+        suggestions = null;
+        try
+        {
+            await Task.Delay(250, token);
+            suggestions = await Http.GetFromJsonAsync<SearchResponseDto>($"api/search?q={Uri.EscapeDataString(q)}&take=6", token);
+        }
+        catch
+        {
+            // ignore
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void NavigateToSuggestion(string url)
+    {
+        HideSuggestions();
+        Nav.NavigateTo(url);
+        searchQuery = "";
+    }
+
+    private void GoToFullSearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery)) return;
+        var q = searchQuery;
+        HideSuggestions();
+        Nav.NavigateTo($"/search?q={Uri.EscapeDataString(q)}");
+        searchQuery = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Theme.InitializeAsync();
+        Theme.OnChange += StateHasChanged;
+        await CartService.InitializeAsync();
+        CartService.OnChange += StateHasChanged;
+        Nav.LocationChanged += HandleLocationChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("eval", @"
+                window.__um_addHandler = function(dotNetRef) {
+                    if (window.__um_handler) {
+                        document.removeEventListener('click', window.__um_handler, true);
+                    }
+                    window.__um_handler = function(e) {
+                        var m = document.querySelector('.hdr-usermenu');
+                        var b = document.querySelector('.hdr-avatar');
+                        if (m && !m.contains(e.target) && b && !b.contains(e.target)) {
+                            document.removeEventListener('click', window.__um_handler, true);
+                            window.__um_handler = null;
+                            dotNetRef.invokeMethodAsync('CloseUserMenuFromOutside');
+                        }
+                    };
+                    document.addEventListener('click', window.__um_handler, true);
+                };
+                window.__um_removeHandler = function() {
+                    if (window.__um_handler) {
+                        document.removeEventListener('click', window.__um_handler, true);
+                        window.__um_handler = null;
+                    }
+                };
+            ");
+            await SetupHeaderScrollBehavior();
+            try { await JS.InvokeVoidAsync("initScrollReveal"); } catch { }
+            try { await InitOnlineDetection(); } catch { }
+        }
+    }
+
+    private async Task SetupHeaderScrollBehavior()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", @"
+                (function() {
+                    'use strict';
+
+                    var lastScrollTop = 0;
+                    var scrollStartPoint = 0;
+                    var lastDirection = 'none';
+                    var touchStartY = 0;
+                    var isTouching = false;
+                    var currentTransform = 0;
+                    var targetTransform = 0;
+                    var isScrollingByNav = false;
+
+                    var headerWrapper = document.querySelector('.app-header-group');
+                    var header = document.querySelector('.app-header');
+                    var scrollThreshold = 30;
+                    var maxTransform = -100;
+
+                    if (!headerWrapper || !header) return;
+
+                    function handleScroll() {
+                        if (isScrollingByNav) return;
+                        var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                        var scrollDirection = scrollTop > lastScrollTop ? 'down' : 'up';
+                        if (scrollDirection !== lastDirection) {
+                            scrollStartPoint = scrollTop;
+                            lastDirection = scrollDirection;
+                        }
+                        var scrollDistance = Math.abs(scrollTop - scrollStartPoint);
+                        if (scrollTop < 10 || isScrollingByNav) {
+                            targetTransform = 0;
+                        } else if (scrollDirection === 'down' && scrollDistance > scrollThreshold) {
+                            var hideProgress = Math.min((scrollDistance - scrollThreshold) / 50, 1);
+                            targetTransform = -hideProgress * 100;
+                        } else if (scrollDirection === 'up' && scrollDistance > scrollThreshold) {
+                            var showProgress = Math.min((scrollDistance - scrollThreshold) / 50, 1);
+                            targetTransform = maxTransform + showProgress * 100;
+                            if (targetTransform > 0) targetTransform = 0;
+                        }
+                        lastScrollTop = scrollTop;
+                    }
+
+                    function animateHeader() {
+                        if (isScrollingByNav) {
+                            currentTransform = 0;
+                            targetTransform = 0;
+                            headerWrapper.style.transform = 'translateY(0%)';
+                            header.style.opacity = '1';
+                            return;
+                        }
+                        var diff = targetTransform - currentTransform;
+                        if (Math.abs(diff) > 0.1) {
+                            currentTransform += diff * 0.15;
+                            headerWrapper.style.transform = 'translateY(' + currentTransform + '%)';
+                            header.style.opacity = 1 - Math.abs(currentTransform) / 100;
+                            requestAnimationFrame(animateHeader);
+                        } else {
+                            currentTransform = targetTransform;
+                            headerWrapper.style.transform = 'translateY(' + currentTransform + '%)';
+                            header.style.opacity = 1 - Math.abs(currentTransform) / 100;
+                        }
+                    }
+
+                    var ticking = false;
+                    function throttledScroll() {
+                        if (!ticking && !isScrollingByNav) {
+                            window.requestAnimationFrame(function() {
+                                handleScroll();
+                                animateHeader();
+                                ticking = false;
+                            });
+                            ticking = true;
+                        }
+                    }
+
+                    function handleTouchStart(e) {
+                        touchStartY = e.touches[0].clientY;
+                        isTouching = true;
+                    }
+
+                    function handleTouchMove(e) {
+                        if (!isTouching || isScrollingByNav) return;
+                        var currentY = e.touches[0].clientY;
+                        var deltaY = touchStartY - currentY;
+                        if (Math.abs(deltaY) > 5) throttledScroll();
+                    }
+
+                    function handleTouchEnd() {
+                        isTouching = false;
+                        setTimeout(function() {
+                            isScrollingByNav = false;
+                            throttledScroll();
+                        }, 100);
+                    }
+
+                    window.addEventListener('scroll', throttledScroll, { passive: true });
+                    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+                    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+                    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+                    scrollStartPoint = window.pageYOffset || document.documentElement.scrollTop;
+                    handleScroll();
+                })();
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error setting up header scroll behavior: {ex.Message}");
+        }
+    }
+
+    private async Task InitOnlineDetection()
+    {
+        try
+        {
+            _onlineRef?.Dispose();
+            _onlineRef = DotNetObjectReference.Create(this);
+            _isOnline = await JS.InvokeAsync<bool>("__initOnlineDetection", _onlineRef);
+        }
+        catch { }
+    }
+
+    [JSInvokable]
+    public void SetOnlineStatus(bool online)
+    {
+        _isOnline = online;
+        if (online) _dismissedOfflineBanner = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        isNavigating = true;
+        StateHasChanged();
+        
+        Task.Run(async () => {
+            await Task.Delay(800);
+            isNavigating = false;
+            await InvokeAsync(StateHasChanged);
+            await InvokeAsync(async () => {
+                try { await JS.InvokeVoidAsync("initScrollReveal"); } catch { }
+            });
+        });
+    }
+
+    public void Dispose()
+    {
+        Theme.OnChange -= StateHasChanged;
+        CartService.OnChange -= StateHasChanged;
+        Nav.LocationChanged -= HandleLocationChanged;
+        _dotNetRef?.Dispose();
+        _onlineRef?.Dispose();
+        try { JS.InvokeVoidAsync("__um_removeHandler"); } catch { }
+        try { JS.InvokeVoidAsync("__removeOnlineDetection"); } catch { }
+    }
+
+    private void ToggleDrawer() => showDrawer = !showDrawer;
+
+    private void GoHome() => Nav.NavigateTo("/");
+
+    private async Task HandleLogout()
+    {
+        await Auth.LogoutAsync();
+        AuthStateProvider.NotifyAuthStateChanged();
+        ToastService.ShowSuccess("با موفقیت از حساب خارج شدید");
+        showDrawer = false;
+        Nav.NavigateTo("/");
+    }
+}

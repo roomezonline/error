@@ -1,0 +1,875 @@
+@page "/admin/comments"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using System.Net.Http.Json
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@inject HttpClient Http
+@inject ToastService ToastService
+
+<ConfirmDialog IsVisible="_showConfirm"
+               Title="حذف نظر"
+               Message="آیا از حذف این نظر اطمینان دارید؟"
+               OnResult="HandleDeleteResult" />
+
+<div class="comments-unified" dir="rtl">
+    <div class="cu-header">
+        <div class="cu-header-right">
+            <h1 class="cu-title">مدیریت نظرات</h1>
+            <span class="cu-badge">@_totalPending در انتظار تایید</span>
+        </div>
+        <button class="cu-mobile-filter-btn" @onclick="() => _showMobileFilter = !_showMobileFilter">
+            <span class="oi oi-list"></span>
+        </button>
+    </div>
+
+    <div class="cu-tabs">
+        <button class="cu-tab @(_activeSection == 0 ? "active" : "")" @onclick='() => SwitchTab(0)'>
+            <span class="oi oi-star"></span><span>محصولات</span>
+            <span class="cu-tab-count">@_productPending</span>
+        </button>
+        <button class="cu-tab @(_activeSection == 1 ? "active" : "")" @onclick='() => SwitchTab(1)'>
+            <span class="oi oi-book"></span><span>مقالات</span>
+            <span class="cu-tab-count">@_academyPending</span>
+        </button>
+        <button class="cu-tab @(_activeSection == 2 ? "active" : "")" @onclick='() => SwitchTab(2)'>
+            <span class="oi oi-people"></span><span>مشتریان</span>
+            <span class="cu-tab-count">@_testimonialPending</span>
+        </button>
+        <button class="cu-tab @(_activeSection == 3 ? "active" : "")" @onclick='() => SwitchTab(3)'>
+            <span class="oi oi-newspaper"></span><span>اخبار</span>
+            <span class="cu-tab-count">@_newsPending</span>
+        </button>
+    </div>
+
+    <div class="cu-body">
+        <div class="cu-sidebar @(_showMobileFilter ? "open" : "")">
+            <div class="cu-sidebar-header">
+                <span class="fw-bold">فیلتر و آمار</span>
+                <button class="cu-sidebar-close" @onclick="() => _showMobileFilter = false">&times;</button>
+            </div>
+            <div class="cu-stats">
+                <div class="cu-stat"><span class="cu-stat-num">@_currentTotal</span><span class="cu-stat-lbl">کل</span></div>
+                <div class="cu-stat approved"><span class="cu-stat-num">@_currentApproved</span><span class="cu-stat-lbl">تایید شده</span></div>
+                <div class="cu-stat pending"><span class="cu-stat-num">@_currentPending</span><span class="cu-stat-lbl">در انتظار</span></div>
+            </div>
+            <div class="cu-filter-group">
+                <label class="cu-filter-label">وضعیت</label>
+                <div class="cu-filter-chips">
+                    <button class="cu-chip @(_activeFilter == "all" ? "active" : "")" @onclick='() => SetFilter("all")'>همه</button>
+                    <button class="cu-chip @(_activeFilter == "approved" ? "active" : "")" @onclick='() => SetFilter("approved")'>تایید شده</button>
+                    <button class="cu-chip @(_activeFilter == "pending" ? "active" : "")" @onclick='() => SetFilter("pending")'>در انتظار</button>
+                </div>
+            </div>
+            <div class="cu-search">
+                <input type="text" class="cu-search-input" placeholder="جستجو در نام یا متن نظر..."
+                       @bind="_searchText" @bind:event="oninput" />
+            </div>
+            <div class="cu-bulk-actions">
+                <button class="btn btn-sm btn-primary rounded-pill w-100" @onclick="ApproveAllShown">تایید همه نمایش داده شده</button>
+            </div>
+        </div>
+
+        <div class="cu-main">
+            @if (_loading)
+            {
+                <div class="cu-loading">
+                    <div class="spinner-border text-primary"></div>
+                    <p>در حال بارگذاری...</p>
+                </div>
+            }
+            else if (!_flatFiltered.Any())
+            {
+                <div class="cu-empty">
+                    <div class="cu-empty-icon"><span class="oi oi-chat"></span></div>
+                    <h5>@EmptyMessage</h5>
+                    <p>@(_searchText != "" ? "نتیجه‌ای یافت نشد." : "هنوز موردی ثبت نشده.")</p>
+                </div>
+            }
+            else
+            {
+                <div class="cu-list">
+                    @foreach (var node in _flatFiltered)
+                    {
+                        var isReply = node.Item.ParentId != null;
+                        var isEditing = _editTargetId == node.Item.Id;
+                        var isReplying = _replyTargetId == node.Item.Id;
+                        <div class="cu-card @(node.Item.IsApproved ? "" : "cu-card--pending") @(isReply ? "cu-card--reply" : "")" style="@($"margin-right:{node.Depth * 20}px")">
+                            <div class="cu-card-top">
+                                <div class="cu-card-user">
+                                    <div class="cu-avatar">@node.Item.Initial</div>
+                                    <div>
+                                        <div class="cu-name">@node.Item.Author</div>
+                                        <div class="cu-date">@node.Item.DateText</div>
+                                    </div>
+                                </div>
+                                <div class="cu-card-status">
+                                    @if (node.Item.IsApproved)
+                                    {
+                                        <span class="cu-badge-success">تایید شده</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="cu-badge-pending">در انتظار</span>
+                                    }
+                                    @if (isReply)
+                                    {
+                                        <span class="cu-badge-reply">پاسخ</span>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="cu-card-meta">
+                                @if (node.Item.SectionLabel != null)
+                                {
+                                    <a href="@node.Item.SectionLink" target="_blank" class="cu-meta-link">
+                                        <span class="oi oi-link-intact"></span>
+                                        @node.Item.SectionLabel
+                                    </a>
+                                }
+                                @if (node.Item.ParentLabel != null)
+                                {
+                                    <span class="cu-meta-reply">
+                                        <span class="oi oi-action-redo"></span>
+                                        پاسخ به @node.Item.ParentLabel
+                                    </span>
+                                }
+                                @if (node.Item.Rating.HasValue)
+                                {
+                                    <span class="cu-stars">@RatingStars(node.Item.Rating.Value)</span>
+                                }
+                            </div>
+
+                            @if (node.Item.ParentContent != null)
+                            {
+                                <div class="cu-parent-preview">@node.Item.ParentContent</div>
+                            }
+
+                            @if (isEditing)
+                            {
+                                <div class="cu-edit-form">
+                                    <div class="cu-edit-form-row">
+                                        <input class="cu-edit-input" placeholder="نام" @bind="_editName" @bind:event="oninput" />
+                                    </div>
+                                    <div class="cu-edit-form-row">
+                                        <textarea class="cu-edit-input cu-edit-textarea" rows="3" placeholder="متن نظر..." @bind="_editContent" @bind:event="oninput"></textarea>
+                                    </div>
+                                    @if (node.Item.Rating != null || node.Item.SourceType == SECTION_PRODUCTS)
+                                    {
+                                        <div class="cu-edit-form-row cu-edit-stars">
+                                            <label class="cu-edit-label">امتیاز:</label>
+                                            <div class="cu-edit-star-group">
+                                                @for (int s = 1; s <= 5; s++)
+                                                {
+                                                    <button type="button" class="cu-edit-star-btn @(s <= (_editRating ?? 0) ? "active" : "")" @onclick="() => _editRating = s">
+                                                        @(s <= (_editRating ?? 0) ? "★" : "☆")
+                                                    </button>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                    <div class="cu-edit-actions">
+                                        <button class="cu-btn cu-btn-primary-sm" @onclick="() => SubmitEdit(node.Item)" disabled="@_isEditing">
+                                            @if (_isEditing) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                            <span>ذخیره</span>
+                                        </button>
+                                        <button class="cu-btn cu-btn-cancel-sm" @onclick="CancelEdit">انصراف</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="cu-card-body">
+                                    <div class="cu-content">@node.Item.Content</div>
+                                </div>
+                            }
+
+                            <div class="cu-card-actions">
+                                <button class="cu-btn cu-btn-approve" @onclick="() => ToggleApproveItem(node.Item)" title="@(node.Item.IsApproved ? "لغو تایید" : "تایید")">
+                                    <span class="oi oi-circle-check"></span><span>@(node.Item.IsApproved ? "لغو تایید" : "تایید")</span>
+                                </button>
+                                <button class="cu-btn cu-btn-edit" @onclick="() => StartEdit(node.Item)">
+                                    <span class="oi oi-pencil"></span><span>ویرایش</span>
+                                </button>
+                                @if (!isReply)
+                                {
+                                    <button class="cu-btn cu-btn-reply" @onclick="() => ToggleReply(node.Item)">
+                                        <span class="oi oi-action-redo"></span><span>پاسخ</span>
+                                    </button>
+                                }
+                                <button class="cu-btn cu-btn-delete" @onclick="() => AskDelete(node.Item)">
+                                    <span class="oi oi-trash"></span><span>حذف</span>
+                                </button>
+                            </div>
+
+                            @if (isReplying)
+                            {
+                                <div class="cu-reply-form">
+                                    <div class="cu-reply-form-row">
+                                        <input class="cu-reply-input" placeholder="نام شما (پیش‌فرض: مدیریت)" @bind="_replyName" @bind:event="oninput" />
+                                    </div>
+                                    <div class="cu-reply-form-row">
+                                        <textarea class="cu-reply-input cu-reply-textarea" rows="2" placeholder="متن پاسخ..." @bind="_replyContent" @bind:event="oninput"></textarea>
+                                    </div>
+                                    <div class="cu-reply-actions">
+                                        <button class="cu-btn cu-btn-primary-sm" @onclick="() => SubmitReply(node.Item)" disabled="@_isReplying">
+                                            @if (_isReplying) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                            <span>ارسال پاسخ</span>
+                                        </button>
+                                        <button class="cu-btn cu-btn-cancel-sm" @onclick="CancelReply">انصراف</button>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(_replyError))
+                                    {
+                                        <div class="cu-reply-error">@_replyError</div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(_replySuccess))
+                                    {
+                                        <div class="cu-reply-success">@_replySuccess</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .comments-unified { min-height: 100vh; background: #f1f5f9; font-family: 'Vazirmatn','IRANSans',sans-serif; }
+    .cu-header { background: #fff; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(0,0,0,.06); position: sticky; top: 0; z-index: 100; }
+    .cu-header-right { display: flex; align-items: center; gap: 12px; }
+    .cu-title { font-size: 1.05rem; font-weight: 900; color: #0f172a; margin: 0; }
+    .cu-badge { background: rgba(245,158,11,.12); color: #d97706; padding: 4px 12px; border-radius: 20px; font-size: .7rem; font-weight: 800; }
+    .cu-mobile-filter-btn { display: none; width: 42px; height: 42px; border-radius: 12px; border: 1px solid rgba(0,0,0,.08); background: #fff; font-size: 1.2rem; color: #475569; cursor: pointer; }
+    .cu-tabs { display: flex; background: #fff; border-bottom: 1px solid rgba(0,0,0,.06); padding: 0 16px; gap: 4px; overflow-x: auto; }
+    .cu-tab { display: flex; align-items: center; gap: 6px; padding: 14px 18px; border: none; background: transparent; font-size: .82rem; font-weight: 700; color: #64748b; cursor: pointer; white-space: nowrap; border-bottom: 3px solid transparent; transition: all .2s; }
+    .cu-tab:hover { color: #1e293b; background: rgba(0,0,0,.02); }
+    .cu-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+    .cu-tab-count { background: rgba(0,0,0,.06); padding: 1px 8px; border-radius: 10px; font-size: .65rem; font-weight: 800; }
+    .cu-tab.active .cu-tab-count { background: rgba(37,99,235,.12); color: #2563eb; }
+    .cu-body { display: grid; grid-template-columns: 270px 1fr; min-height: calc(100vh - 110px); }
+    .cu-sidebar { background: #fff; border-left: 1px solid rgba(0,0,0,.06); padding: 20px; position: sticky; top: 110px; height: calc(100vh - 110px); overflow-y: auto; }
+    .cu-sidebar-header { display: none; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid rgba(0,0,0,.06); }
+    .cu-sidebar-close { background: none; border: none; font-size: 1.5rem; color: #64748b; cursor: pointer; }
+    .cu-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 20px; }
+    .cu-stat { text-align: center; padding: 12px 4px; background: #f8fafc; border-radius: 12px; }
+    .cu-stat-num { display: block; font-size: 1.3rem; font-weight: 900; color: #0f172a; }
+    .cu-stat-lbl { display: block; font-size: .6rem; color: #64748b; font-weight: 700; margin-top: 2px; }
+    .cu-stat.approved .cu-stat-num { color: #10b981; }
+    .cu-stat.pending .cu-stat-num { color: #f59e0b; }
+    .cu-filter-group { margin-bottom: 16px; }
+    .cu-filter-label { font-size: .72rem; font-weight: 800; color: #64748b; margin-bottom: 6px; display: block; }
+    .cu-filter-chips { display: flex; gap: 6px; }
+    .cu-chip { flex: 1; padding: 8px; border: none; border-radius: 10px; font-size: .72rem; font-weight: 700; cursor: pointer; background: #f1f5f9; color: #475569; transition: all .2s; }
+    .cu-chip:hover { background: #e2e8f0; }
+    .cu-chip.active { background: #2563eb; color: #fff; }
+    .cu-search { margin-bottom: 16px; }
+    .cu-search-input { width: 100%; padding: 10px 14px; border: 1px solid rgba(0,0,0,.08); border-radius: 10px; font-size: .8rem; background: #f8fafc; text-align: right; }
+    .cu-search-input:focus { outline: none; border-color: #2563eb; background: #fff; }
+    .cu-bulk-actions { margin-top: 12px; }
+    .cu-main { padding: 20px; }
+    .cu-loading, .cu-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; color: #94a3b8; }
+    .cu-empty-icon { width: 72px; height: 72px; background: rgba(0,0,0,.04); border-radius: 50%; display: grid; place-items: center; font-size: 1.8rem; margin-bottom: 14px; }
+    .cu-list { display: flex; flex-direction: column; gap: 10px; }
+    .cu-card { background: #fff; border-radius: 14px; padding: 16px 18px; border: 1px solid rgba(0,0,0,.04); transition: all .2s; }
+    .cu-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.06); }
+    .cu-card--pending { border-right: 4px solid #f59e0b; }
+    .cu-card--reply { border-right: 3px solid #7c3aed; background: rgba(124,58,237,.015); }
+    .cu-card--reply .cu-card-top .cu-avatar { width: 32px; height: 32px; font-size: .75rem; }
+    .cu-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+    .cu-card-user { display: flex; align-items: center; gap: 10px; }
+    .cu-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg,#2563eb,#7c3aed); color: #fff; display: grid; place-items: center; font-weight: 900; font-size: .9rem; flex-shrink: 0; }
+    .cu-name { font-weight: 800; font-size: .85rem; color: #0f172a; }
+    .cu-date { font-size: .7rem; color: #94a3b8; margin-top: 1px; }
+    .cu-badge-success { background: rgba(16,185,129,.1); color: #10b981; padding: 3px 10px; border-radius: 20px; font-size: .65rem; font-weight: 800; }
+    .cu-badge-pending { background: rgba(245,158,11,.1); color: #d97706; padding: 3px 10px; border-radius: 20px; font-size: .65rem; font-weight: 800; }
+    .cu-badge-reply { background: rgba(124,58,237,.1); color: #7c3aed; padding: 3px 10px; border-radius: 20px; font-size: .65rem; font-weight: 800; margin-right: 4px; }
+    .cu-card-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+    .cu-meta-link { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: #f1f5f9; border-radius: 8px; font-size: .72rem; font-weight: 700; color: #475569; text-decoration: none; transition: all .2s; }
+    .cu-meta-link:hover { background: #e2e8f0; color: #2563eb; }
+    .cu-meta-reply { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: rgba(139,92,246,.08); border-radius: 8px; font-size: .7rem; font-weight: 700; color: #7c3aed; }
+    .cu-stars { color: #f59e0b; font-size: .8rem; letter-spacing: 2px; }
+    .cu-parent-preview { font-size: .75rem; color: #64748b; background: #f8fafc; padding: 6px 10px; border-radius: 8px; margin-bottom: 8px; border-right: 3px solid #cbd5e1; }
+    .cu-card-body { margin-bottom: 10px; }
+    .cu-content { font-size: .82rem; color: #334155; line-height: 1.7; padding: 10px 14px; background: #f8fafc; border-radius: 10px; word-wrap: break-word; }
+    .cu-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .cu-btn { display: inline-flex; align-items: center; gap: 4px; padding: 7px 14px; border-radius: 10px; border: none; font-size: .75rem; font-weight: 700; cursor: pointer; transition: all .2s; }
+    .cu-btn-approve { background: rgba(16,185,129,.1); color: #10b981; }
+    .cu-btn-approve:hover { background: #10b981; color: #fff; }
+    .cu-btn-edit { background: rgba(245,158,11,.1); color: #d97706; }
+    .cu-btn-edit:hover { background: #d97706; color: #fff; }
+    .cu-btn-reply { background: rgba(99,102,241,.1); color: #6366f1; }
+    .cu-btn-reply:hover { background: #6366f1; color: #fff; }
+    .cu-btn-delete { background: rgba(239,68,68,.1); color: #ef4444; }
+    .cu-btn-delete:hover { background: #ef4444; color: #fff; }
+    .cu-btn-primary-sm { background: #2563eb; color: #fff; padding: 6px 16px; border-radius: 8px; font-size: .78rem; border: none; }
+    .cu-btn-primary-sm:disabled { opacity: .55; cursor: not-allowed; }
+    .cu-btn-cancel-sm { background: #e2e8f0; color: #475569; padding: 6px 16px; border-radius: 8px; font-size: .78rem; border: none; }
+    .cu-reply-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,.06); }
+    .cu-reply-form-row { margin-bottom: 8px; }
+    .cu-reply-input { width: 100%; padding: 8px 12px; border: 1px solid rgba(0,0,0,.08); border-radius: 8px; font-size: .8rem; background: #f8fafc; text-align: right; }
+    .cu-reply-input:focus { outline: none; border-color: #2563eb; background: #fff; }
+    .cu-reply-textarea { resize: vertical; min-height: 50px; }
+    .cu-reply-actions { display: flex; gap: 8px; }
+    .cu-reply-error { color: #ef4444; font-size: .75rem; margin-top: 6px; }
+    .cu-reply-success { color: #10b981; font-size: .75rem; margin-top: 6px; }
+
+    .cu-edit-form { margin-top: 12px; padding: 12px; background: #fffbeb; border-radius: 10px; border: 1px solid rgba(245,158,11,.2); }
+    .cu-edit-form-row { margin-bottom: 8px; }
+    .cu-edit-input { width: 100%; padding: 8px 12px; border: 1px solid rgba(0,0,0,.08); border-radius: 8px; font-size: .8rem; background: #fff; text-align: right; }
+    .cu-edit-input:focus { outline: none; border-color: #d97706; background: #fff; }
+    .cu-edit-textarea { resize: vertical; min-height: 60px; }
+    .cu-edit-label { font-size: .75rem; font-weight: 700; color: #92400e; margin-left: 6px; }
+    .cu-edit-stars { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .cu-edit-star-group { display: flex; gap: 2px; }
+    .cu-edit-star-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #d1d5db; padding: 2px; line-height: 1; transition: transform .15s; }
+    .cu-edit-star-btn.active { color: #f59e0b; }
+    .cu-edit-star-btn:hover { transform: scale(1.2); }
+    .cu-edit-actions { display: flex; gap: 8px; margin-top: 4px; }
+
+    @@media (max-width: 768px) {
+        .cu-mobile-filter-btn { display: grid; place-items: center; }
+        .cu-body { grid-template-columns: 1fr; }
+        .cu-sidebar { position: fixed; top: 0; right: -300px; width: 300px; height: 100vh; z-index: 1000; border-left: 1px solid rgba(0,0,0,.1); box-shadow: -4px 0 30px rgba(0,0,0,.15); transition: right .3s ease; }
+        .cu-sidebar.open { right: 0; }
+        .cu-sidebar-header { display: flex; }
+        .cu-main { padding: 12px; }
+        .cu-card { padding: 14px; }
+        .cu-card-top { flex-direction: column; gap: 8px; }
+        .cu-tabs { padding: 0 8px; }
+        .cu-tab { padding: 12px 12px; font-size: .75rem; }
+        .cu-card-actions { gap: 6px; }
+        .cu-btn { padding: 6px 10px; font-size: .7rem; }
+        .cu-edit-form { padding: 10px; }
+    }
+</style>
+
+@code {
+    private const int SECTION_PRODUCTS = 0;
+    private const int SECTION_ACADEMY = 1;
+    private const int SECTION_TESTIMONIALS = 2;
+    private const int SECTION_NEWS = 3;
+
+    private int _activeSection = 0;
+    private string _activeFilter = "all";
+    private string _searchText = "";
+    private bool _loading = true;
+    private bool _showMobileFilter;
+
+    private List<CommentItem> _productReviews = new();
+    private List<CommentItem> _academyComments = new();
+    private List<CommentItem> _testimonials = new();
+    private List<CommentItem> _newsComments = new();
+
+    private int _productPending, _academyPending, _testimonialPending, _newsPending, _totalPending;
+    private int _currentTotal, _currentApproved, _currentPending;
+
+    private List<FlatNode> _flatFiltered => BuildFlatList();
+
+    private string EmptyMessage => _activeSection switch
+    {
+        SECTION_PRODUCTS => "نظری برای محصولات ثبت نشده",
+        SECTION_ACADEMY => "نظری برای مقالات ثبت نشده",
+        SECTION_NEWS => "نظری برای اخبار ثبت نشده",
+        _ => "نظری از مشتریان ثبت نشده"
+    };
+
+    private int? _replyTargetId;
+    private string _replyName = "مدیریت";
+    private string _replyContent = "";
+    private bool _isReplying;
+    private string? _replyError;
+    private string? _replySuccess;
+
+    private int? _editTargetId;
+    private string _editName = "";
+    private string _editContent = "";
+    private int? _editRating;
+    private bool _isEditing;
+
+    protected override async Task OnInitializedAsync() => await LoadAll();
+
+    private async Task LoadAll()
+    {
+        _loading = true;
+        try
+        {
+            await Task.WhenAll(LoadProducts(), LoadAcademy(), LoadTestimonials(), LoadNews());
+        }
+        catch { }
+        _loading = false;
+    }
+
+    private async Task LoadProducts()
+    {
+        try
+        {
+            var data = await Http.GetFromJsonAsync<List<ProductReviewAdminDto>>("api/products/0/reviews/all");
+            if (data != null)
+            {
+                _productReviews = data.Select(r => new CommentItem
+                {
+                    Id = r.Id,
+                    Author = r.FullName,
+                    Initial = r.FullName.Length > 0 ? r.FullName[0].ToString() : "?",
+                    Content = r.Content,
+                    IsApproved = r.IsApproved,
+                    DateText = r.CreatedAtFa,
+                    Rating = r.Rating,
+                    ParentId = r.ParentId,
+                    SectionLabel = r.ProductTitle,
+                    SectionLink = $"/products/{r.ProductId}",
+                    SourceType = SECTION_PRODUCTS,
+                    OwnerId = r.ProductId
+                }).ToList();
+                ResolveParents(_productReviews);
+                _productPending = _productReviews.Count(r => !r.IsApproved);
+            }
+        }
+        catch { }
+    }
+
+    private async Task LoadAcademy()
+    {
+        try
+        {
+            var data = await Http.GetFromJsonAsync<List<AcademyCommentAdminDto>>("api/trainingarticles/all-comments");
+            if (data != null)
+            {
+                _academyComments = data.Select(r => new CommentItem
+                {
+                    Id = r.Id,
+                    Author = r.FullName,
+                    Initial = r.FullName.Length > 0 ? r.FullName[0].ToString() : "?",
+                    Content = r.Content,
+                    IsApproved = r.IsApproved,
+                    DateText = r.CreatedAtFa,
+                    Rating = null,
+                    ParentId = r.ParentId,
+                    SectionLabel = r.ArticleTitle,
+                    SectionLink = $"/academy/articles/{r.ArticleId}",
+                    SourceType = SECTION_ACADEMY,
+                    OwnerId = r.ArticleId
+                }).ToList();
+                ResolveParents(_academyComments);
+                _academyPending = _academyComments.Count(r => !r.IsApproved);
+            }
+        }
+        catch { }
+    }
+
+    private async Task LoadTestimonials()
+    {
+        try
+        {
+            var data = await Http.GetFromJsonAsync<List<TestimonialAdminDto>>("api/trust/admin/testimonials");
+            if (data != null)
+            {
+                _testimonials = data.Select(r => new CommentItem
+                {
+                    Id = r.Id,
+                    Author = r.CustomerName,
+                    Initial = r.CustomerName.Length > 0 ? r.CustomerName[0].ToString() : "?",
+                    Content = r.Content,
+                    IsApproved = r.IsApproved,
+                    DateText = PersianDate.ToJalaliDate(r.CreatedAt),
+                    Rating = r.Rating,
+                    SectionLabel = r.CustomerRole,
+                    SourceType = SECTION_TESTIMONIALS
+                }).ToList();
+                _testimonialPending = _testimonials.Count(r => !r.IsApproved);
+            }
+        }
+        catch { }
+    }
+
+    private async Task LoadNews()
+    {
+        try
+        {
+            var data = await Http.GetFromJsonAsync<List<NewsCommentAdminDto>>("api/news/0/comments/all");
+            if (data != null)
+            {
+                _newsComments = data.Select(r => new CommentItem
+                {
+                    Id = r.Id,
+                    Author = r.FullName,
+                    Initial = r.FullName.Length > 0 ? r.FullName[0].ToString() : "?",
+                    Content = r.Content,
+                    IsApproved = r.IsApproved,
+                    DateText = r.CreatedAtFa,
+                    Rating = r.Rating,
+                    ParentId = r.ParentId,
+                    SectionLabel = r.NewsTitle,
+                    SectionLink = $"/news/{r.NewsId}",
+                    SourceType = SECTION_NEWS,
+                    OwnerId = r.NewsId
+                }).ToList();
+                ResolveParents(_newsComments);
+                _newsPending = _newsComments.Count(r => !r.IsApproved);
+            }
+        }
+        catch { }
+    }
+
+    private void ResolveParents(List<CommentItem> items)
+    {
+        var parentIds = items.Where(i => i.ParentId.HasValue).Select(i => i.ParentId!.Value).ToHashSet();
+        foreach (var item in items.Where(i => parentIds.Contains(i.Id)))
+        {
+            item._children ??= new();
+        }
+        foreach (var item in items.Where(i => i.ParentId.HasValue))
+        {
+            var parent = items.FirstOrDefault(p => p.Id == item.ParentId);
+            if (parent != null)
+            {
+                item.ParentLabel = parent.Author;
+                item.ParentContent = parent.Content.Length > 100 ? parent.Content[..100] + "..." : parent.Content;
+                parent._children ??= new();
+                parent._children.Add(item);
+            }
+        }
+    }
+
+    private void SwitchTab(int section)
+    {
+        _activeSection = section;
+        _showMobileFilter = false;
+        _activeFilter = "all";
+        _searchText = "";
+        _replyTargetId = null;
+        _editTargetId = null;
+        UpdateStats();
+    }
+
+    private void SetFilter(string filter)
+    {
+        _activeFilter = filter;
+        _showMobileFilter = false;
+    }
+
+    private List<CommentItem> GetCurrentList() => _activeSection switch
+    {
+        SECTION_PRODUCTS => _productReviews,
+        SECTION_ACADEMY => _academyComments,
+        SECTION_TESTIMONIALS => _testimonials,
+        _ => _newsComments
+    };
+
+    private List<FlatNode> BuildFlatList()
+    {
+        var flat = GetCurrentList();
+        _currentTotal = flat.Count;
+        _currentApproved = flat.Count(r => r.IsApproved);
+        _currentPending = flat.Count(r => !r.IsApproved);
+        _totalPending = _productPending + _academyPending + _testimonialPending + _newsPending;
+
+        var roots = flat.Where(r => r.ParentId == null).OrderByDescending(r => r.Id).ToList();
+        var result = new List<FlatNode>();
+        foreach (var root in roots)
+            FlattenTree(root, 0, result);
+
+        var hasMatch = result.Any(n => IsVisible(n.Item));
+        if (!hasMatch) return new();
+
+        return result;
+    }
+
+    private bool IsVisible(CommentItem item)
+    {
+        if (_activeFilter == "approved" && !item.IsApproved) return false;
+        if (_activeFilter == "pending" && item.IsApproved) return false;
+        if (!string.IsNullOrEmpty(_searchText)
+            && !item.Author.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+            && !item.Content.Contains(_searchText, StringComparison.OrdinalIgnoreCase))
+            return false;
+        return true;
+    }
+
+    private void FlattenTree(CommentItem item, int depth, List<FlatNode> result)
+    {
+        result.Add(new FlatNode { Item = item, Depth = depth });
+        if (item._children != null)
+        {
+            foreach (var child in item._children)
+                FlattenTree(child, depth + 1, result);
+        }
+    }
+
+    private void UpdateStats()
+    {
+        var list = GetCurrentList();
+        _currentTotal = list.Count;
+        _currentApproved = list.Count(r => r.IsApproved);
+        _currentPending = list.Count(r => !r.IsApproved);
+    }
+
+    private async Task ToggleApproveItem(CommentItem item)
+    {
+        try
+        {
+            var resp = item.SourceType switch
+            {
+                SECTION_PRODUCTS => await Http.PutAsync($"api/products/{item.OwnerId}/reviews/{item.Id}/approve", null),
+                SECTION_ACADEMY => await Http.PutAsync($"api/trainingarticles/comments/{item.Id}/approve", null),
+                SECTION_NEWS => await Http.PutAsync($"api/news/{item.OwnerId}/comments/{item.Id}/approve", null),
+                _ => await Http.PutAsync($"api/trust/admin/testimonials/{item.Id}/approve", null)
+            };
+            if (resp.IsSuccessStatusCode)
+            {
+                item.IsApproved = !item.IsApproved;
+                RecalcCounts();
+                ToastService.ShowSuccess(item.IsApproved ? "نظر تایید شد" : "تایید نظر لغو شد");
+            }
+        }
+        catch { ToastService.ShowError("خطا در تغییر وضعیت"); }
+    }
+
+    private CommentItem? _deleteItem;
+    private bool _showConfirm;
+
+    private void AskDelete(CommentItem item)
+    {
+        _deleteItem = item;
+        _showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool ok)
+    {
+        _showConfirm = false;
+        if (!ok || _deleteItem == null) return;
+        try
+        {
+            var resp = _deleteItem.SourceType switch
+            {
+                SECTION_PRODUCTS => await Http.DeleteAsync($"api/products/{_deleteItem.OwnerId}/reviews/{_deleteItem.Id}"),
+                SECTION_ACADEMY => await Http.DeleteAsync($"api/trainingarticles/comments/{_deleteItem.Id}"),
+                SECTION_NEWS => await Http.DeleteAsync($"api/news/{_deleteItem.OwnerId}/comments/{_deleteItem.Id}"),
+                _ => await Http.DeleteAsync($"api/trust/admin/testimonials/{_deleteItem.Id}")
+            };
+            if (resp.IsSuccessStatusCode)
+            {
+                RemoveFromList(GetCurrentList(), _deleteItem);
+                RecalcCounts();
+                ToastService.ShowSuccess("نظر حذف شد");
+            }
+        }
+        catch { ToastService.ShowError("خطا در حذف"); }
+    }
+
+    private void RemoveFromList(List<CommentItem> list, CommentItem item)
+    {
+        list.Remove(item);
+        if (item._children != null)
+        {
+            foreach (var child in item._children.ToList())
+                RemoveFromList(list, child);
+        }
+    }
+
+    private async Task ApproveAllShown()
+    {
+        var pending = _flatFiltered.Where(n => !n.Item.IsApproved).Select(n => n.Item).ToList();
+        foreach (var item in pending)
+        {
+            try
+            {
+                var resp = item.SourceType switch
+                {
+                    SECTION_PRODUCTS => await Http.PutAsync($"api/products/{item.OwnerId}/reviews/{item.Id}/approve", null),
+                    SECTION_ACADEMY => await Http.PutAsync($"api/trainingarticles/comments/{item.Id}/approve", null),
+                    SECTION_NEWS => await Http.PutAsync($"api/news/{item.OwnerId}/comments/{item.Id}/approve", null),
+                    _ => await Http.PutAsync($"api/trust/admin/testimonials/{item.Id}/approve", null)
+                };
+                if (resp.IsSuccessStatusCode) item.IsApproved = true;
+            }
+            catch { }
+        }
+        RecalcCounts();
+        ToastService.ShowSuccess($"{pending.Count} نظر تایید شد");
+    }
+
+    private void RecalcCounts()
+    {
+        _productPending = _productReviews.Count(r => !r.IsApproved);
+        _academyPending = _academyComments.Count(r => !r.IsApproved);
+        _testimonialPending = _testimonials.Count(r => !r.IsApproved);
+        _newsPending = _newsComments.Count(r => !r.IsApproved);
+    }
+
+    private string RatingStars(int rating) =>
+        string.Concat(Enumerable.Repeat("★", rating)) + string.Concat(Enumerable.Repeat("☆", 5 - rating));
+
+    private void ToggleReply(CommentItem item)
+    {
+        _editTargetId = null;
+        _replyTargetId = _replyTargetId == item.Id ? null : item.Id;
+        _replyName = "مدیریت";
+        _replyContent = "";
+        _replyError = null;
+        _replySuccess = null;
+    }
+
+    private void CancelReply()
+    {
+        _replyTargetId = null;
+        _replyName = "مدیریت";
+        _replyContent = "";
+        _replyError = null;
+        _replySuccess = null;
+    }
+
+    private async Task SubmitReply(CommentItem parent)
+    {
+        _replyError = null;
+        _replySuccess = null;
+        if (string.IsNullOrWhiteSpace(_replyContent))
+        {
+            _replyError = "متن پاسخ نمی‌تواند خالی باشد";
+            return;
+        }
+        _isReplying = true;
+        try
+        {
+            var name = string.IsNullOrWhiteSpace(_replyName) ? "مدیریت" : _replyName.Trim();
+            HttpResponseMessage resp = parent.SourceType switch
+            {
+                SECTION_PRODUCTS => await Http.PostAsJsonAsync($"api/products/{parent.OwnerId}/reviews", new ProductReviewRequest
+                {
+                    FullName = name,
+                    Email = "admin@errorservice.ir",
+                    Content = _replyContent.Trim(),
+                    Rating = 5,
+                    ParentId = parent.Id
+                }),
+                SECTION_ACADEMY => await Http.PostAsJsonAsync($"api/trainingarticles/{parent.OwnerId}/comments", new TrainingArticleCommentRequest
+                {
+                    FullName = name,
+                    Content = _replyContent.Trim(),
+                    ParentId = parent.Id
+                }),
+                SECTION_NEWS => await Http.PostAsJsonAsync($"api/news/{parent.OwnerId}/comments", new CommentRequest
+                {
+                    FullName = name,
+                    Content = _replyContent.Trim(),
+                    ParentId = parent.Id
+                }),
+                _ => throw new NotSupportedException()
+            };
+            if (resp.IsSuccessStatusCode)
+            {
+                _replySuccess = "پاسخ با موفقیت ارسال شد.";
+                _replyContent = "";
+                await Task.Delay(1500);
+                _replyTargetId = null;
+            }
+            else
+            {
+                _replyError = "خطا در ارسال پاسخ";
+            }
+        }
+        catch
+        {
+            _replyError = "خطا در ارسال پاسخ";
+        }
+        finally
+        {
+            _isReplying = false;
+        }
+    }
+
+    private void StartEdit(CommentItem item)
+    {
+        _replyTargetId = null;
+        _editTargetId = _editTargetId == item.Id ? null : item.Id;
+        _editName = item.Author;
+        _editContent = item.Content;
+        _editRating = item.Rating;
+    }
+
+    private void CancelEdit()
+    {
+        _editTargetId = null;
+        _editName = "";
+        _editContent = "";
+        _editRating = null;
+    }
+
+    private async Task SubmitEdit(CommentItem item)
+    {
+        if (string.IsNullOrWhiteSpace(_editContent))
+        {
+            ToastService.ShowError("متن نظر نمی‌تواند خالی باشد");
+            return;
+        }
+        _isEditing = true;
+        try
+        {
+            var req = new CommentEditRequest
+            {
+                FullName = string.IsNullOrWhiteSpace(_editName) ? null : _editName.Trim(),
+                Content = _editContent.Trim(),
+                Rating = _editRating
+            };
+            var resp = item.SourceType switch
+            {
+                SECTION_PRODUCTS => await Http.PutAsJsonAsync($"api/products/{item.OwnerId}/reviews/{item.Id}", req),
+                SECTION_ACADEMY => await Http.PutAsJsonAsync($"api/trainingarticles/comments/{item.Id}", req),
+                SECTION_NEWS => await Http.PutAsJsonAsync($"api/news/{item.OwnerId}/comments/{item.Id}", req),
+                _ => await Http.PutAsJsonAsync($"api/trust/admin/testimonials/{item.Id}", req)
+            };
+            if (resp.IsSuccessStatusCode)
+            {
+                item.Author = req.FullName ?? item.Author;
+                item.Content = req.Content;
+                item.Rating = req.Rating;
+                ToastService.ShowSuccess("نظر ویرایش شد");
+                _editTargetId = null;
+            }
+            else
+            {
+                ToastService.ShowError("خطا در ویرایش");
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در ویرایش");
+        }
+        finally
+        {
+            _isEditing = false;
+        }
+    }
+
+    private sealed class FlatNode
+    {
+        public CommentItem Item { get; set; } = default!;
+        public int Depth { get; set; }
+    }
+
+    private sealed class CommentItem
+    {
+        public int Id { get; set; }
+        public string Author { get; set; } = "";
+        public string Initial { get; set; } = "";
+        public string Content { get; set; } = "";
+        public bool IsApproved { get; set; }
+        public string DateText { get; set; } = "";
+        public int? Rating { get; set; }
+        public int? ParentId { get; set; }
+        public string? ParentLabel { get; set; }
+        public string? ParentContent { get; set; }
+        public string? SectionLabel { get; set; }
+        public string? SectionLink { get; set; }
+        public int SourceType { get; set; }
+        public int OwnerId { get; set; }
+        public List<CommentItem>? _children { get; set; }
+    }
+
+    private sealed class TestimonialAdminDto : TestimonialDto { public bool IsApproved { get; set; } }
+}

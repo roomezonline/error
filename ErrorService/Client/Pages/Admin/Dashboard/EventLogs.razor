@@ -1,0 +1,338 @@
+@page "/admin/logs"
+@layout AdminLayout
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.logs.view")]
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<div class="logs-container p-3 p-md-4" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4 gap-2">
+        <div class="min-w-0">
+            <h4 class="fw-black m-0 text-truncate">مدیریت رویدادها</h4>
+            <p class="text-muted small mb-0 text-truncate">چشمان ناظر سیستم</p>
+        </div>
+        <button class="btn btn-light rounded-circle p-0 refresh-btn" @onclick="LoadLogs" title="بروزرسانی">
+            <span class="oi oi-reload"></span>
+            <span class="d-none d-md-inline ms-2">بروزرسانی</span>
+        </button>
+    </div>
+
+    <!-- Filters -->
+    <div class="card border-0 shadow-sm rounded-4 p-3 mb-4 bg-white">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="small fw-bold text-muted mb-2">جستجو (عنوان، کد خطا)</label>
+                <input type="text" class="form-control rounded-pill border-light bg-light" placeholder="چیزی تایپ کنید..." @bind="filter.SearchTerm" />
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold text-muted mb-2">سطح اهمیت</label>
+                <select class="form-select rounded-pill border-light bg-light" @onchange="OnSeverityChanged">
+                    <option value="">همه</option>
+                    @foreach (var s in Enum.GetValues<EventSeverity>())
+                    {
+                        <option value="@s">@s.ToString()</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" role="switch" @bind="filter.OnlyUnresolved">
+                    <label class="form-check-label small fw-bold">فقط حل نشده‌ها</label>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100 rounded-pill fw-bold" @onclick="LoadLogs">فیلتر</button>
+            </div>
+        </div>
+    </div>
+
+    @if (logs == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-3 text-muted">در حال بارگذاری لاگ‌ها...</p>
+        </div>
+    }
+    else if (!logs.Any())
+    {
+        <div class="card border-0 shadow-sm rounded-4 p-5 text-center bg-white">
+            <div class="display-4 text-light mb-3"><span class="oi oi-circle-check"></span></div>
+            <h5 class="fw-bold">موردی یافت نشد</h5>
+            <p class="text-muted mb-0">سیستم در این بازه زمانی با تنظیمات فعلی رویدادی ثبت نکرده است.</p>
+        </div>
+    }
+    else
+    {
+        <div class="logs-list">
+            @foreach (var log in logs)
+            {
+                <div class="log-item card border-0 shadow-sm rounded-4 p-3 mb-3 bg-white border-start border-4 @GetSeverityBorderClass(log.Severity)" @onclick="() => ShowDetails(log)">
+                    <div class="d-flex justify-content-between align-items-start gap-3">
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                <span class="badge rounded-pill" style="background-color: @log.SeverityColor">@log.Severity</span>
+                                <span class="text-muted x-small">@log.OccurredAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss")</span>
+                                @if (log.OccurrenceCount > 1)
+                                {
+                                    <span class="badge bg-danger-subtle text-danger rounded-pill">@log.OccurrenceCount تکرار</span>
+                                }
+                            </div>
+                            <h6 class="fw-bold mb-1 text-wrap text-break">@log.PersianTitle</h6>
+                            <p class="text-muted small mb-0 text-wrap text-break">@log.PersianDescription</p>
+                        </div>
+                        <div class="text-start flex-shrink-0">
+                            @if (log.IsResolved)
+                            {
+                                <span class="badge bg-success-subtle text-success rounded-pill px-2 py-1 x-small">
+                                    <span class="oi oi-check"></span>
+                                    <span class="d-none d-md-inline ms-1">حل شده</span>
+                                </span>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-success rounded-circle p-0 d-flex align-items-center justify-content-center resolve-btn" 
+                                        @onclick:stopPropagation @onclick="() => Resolve(log.Id)" title="تایید حل مشکل">
+                                    <span class="oi oi-check"></span>
+                                    <span class="d-none d-md-inline ms-1 px-2">حل شد</span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (selectedLog != null)
+{
+    <div class="modal-backdrop show"></div>
+    <div class="modal show d-block" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 rounded-5 shadow-lg overflow-hidden" dir="rtl">
+                <div class="modal-header border-0 p-4" style="background-color: @selectedLog.SeverityColor; color: white;">
+                    <h5 class="modal-title fw-black">جزئیات دقیق رویداد</h5>
+                    <button type="button" class="btn-close btn-close-white shadow-none" @onclick="CloseDetails"></button>
+                </div>
+                <div class="modal-body p-4 bg-light">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <div class="detail-group">
+                                <label>گزارش فارسی</label>
+                                <div class="fw-bold text-dark mb-2">@selectedLog.PersianTitle</div>
+                                <div class="text-muted small">@selectedLog.PersianDescription</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 text-start" dir="ltr">
+                            <div class="detail-group text-end" dir="rtl">
+                                <label>اطلاعات فنی (Technical)</label>
+                            </div>
+                            <div class="fw-bold text-primary mb-2">@selectedLog.TechnicalTitle</div>
+                            <div class="bg-dark text-success p-2 rounded-3 small font-monospace overflow-auto" style="max-height: 100px;">
+                                @selectedLog.RequestPath
+                            </div>
+                        </div>
+                        
+                        <div class="col-12">
+                            <label class="small fw-bold text-muted mb-2">ردپای خطا (Stack Trace)</label>
+                            <pre class="bg-white border rounded-4 p-3 x-small text-danger font-monospace overflow-auto" style="max-height: 250px; direction: ltr; text-align: left;">
+                                @GetFullTechnicalInfo(selectedLog)
+                            </pre>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="bg-white rounded-4 p-3 text-center border">
+                                <label class="x-small fw-bold text-muted d-block">آدرس IP</label>
+                                <span class="font-monospace">@selectedLog.ClientIp</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="bg-white rounded-4 p-3 text-center border">
+                                <label class="x-small fw-bold text-muted d-block">کاربر</label>
+                                <span>@(selectedLog.UserName ?? "مهمان")</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="bg-white rounded-4 p-3 text-center border">
+                                <label class="x-small fw-bold text-muted d-block">دسته‌بندی</label>
+                                <span class="badge bg-light text-dark border">@selectedLog.Category</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 p-4 bg-white">
+                    <button type="button" class="btn btn-light rounded-pill px-4" @onclick="CloseDetails">بستن</button>
+                    @if (!selectedLog.IsResolved)
+                    {
+                        <button type="button" class="btn btn-success rounded-pill px-4 fw-bold" @onclick="() => Resolve(selectedLog.Id)">تایید حل مشکل</button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .fw-black { font-weight: 950; }
+    .x-small { font-size: 0.7rem; }
+    .logs-container { max-width: 1200px; margin: 0 auto; }
+    
+    .refresh-btn {
+        width: 42px !important;
+        height: 42px !important;
+        min-width: 42px !important;
+        min-height: 42px !important;
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(0,0,0,0.08);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        padding: 0 !important;
+    }
+
+    .resolve-btn {
+        width: 32px !important;
+        height: 32px !important;
+        min-width: 32px !important;
+        min-height: 32px !important;
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        padding: 0 !important;
+    }
+
+    @@media (min-width: 768px) {
+        .refresh-btn {
+            width: auto !important;
+            height: 42px !important;
+            padding: 0 20px !important;
+            border-radius: 50px !important;
+        }
+        .resolve-btn {
+            width: auto !important;
+            height: 32px !important;
+            padding: 0 12px !important;
+            border-radius: 50px !important;
+        }
+    }
+
+    .log-item {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        overflow: hidden;
+    }
+    .log-item:hover {
+        transform: translateX(-5px);
+        background-color: #f8fafc !important;
+    }
+
+    .min-w-0 { min-width: 0; }
+    .text-break { word-break: break-word; overflow-wrap: anywhere; }
+
+    .border-severity-info { border-right-color: #3b82f6 !important; }
+    .border-severity-warning { border-right-color: #f59e0b !important; }
+    .border-severity-error { border-right-color: #f97316 !important; }
+    .border-severity-critical { border-right-color: #ef4444 !important; }
+    .border-severity-fatal { border-right-color: #dc2626 !important; }
+
+    .detail-group label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #64748b;
+        margin-bottom: 4px;
+    }
+
+    pre { font-size: 0.75rem; margin: 0; }
+</style>
+
+@code {
+    private List<SystemEventLogDto>? logs;
+    private EventLogFilterDto filter = new() { Take = 50, OnlyUnresolved = false };
+    private SystemEventLogDto? selectedLog;
+    private string fullTechnicalDetails = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLogs();
+    }
+
+    private async Task LoadLogs()
+    {
+        try
+        {
+            logs = null;
+            var query = $"searchTerm={filter.SearchTerm}&onlyUnresolved={filter.OnlyUnresolved?.ToString().ToLower()}&take={filter.Take}";
+            if (filter.Severities?.Any() == true)
+            {
+                foreach (var s in filter.Severities) query += $"&severities={s}";
+            }
+            logs = await Http.GetFromJsonAsync<List<SystemEventLogDto>>($"api/systemevents/logs?{query}");
+        }
+        catch (Exception ex)
+        {
+            logs = new List<SystemEventLogDto>();
+            Console.WriteLine($"Error loading logs: {ex.Message}");
+        }
+    }
+
+    private void OnSeverityChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (string.IsNullOrEmpty(val))
+        {
+            filter.Severities = null;
+        }
+        else if (Enum.TryParse<EventSeverity>(val, out var severity))
+        {
+            filter.Severities = new List<EventSeverity> { severity };
+        }
+    }
+
+    private string GetSeverityBorderClass(string severity) => $"border-severity-{severity.ToLower()}";
+
+    private async Task ShowDetails(SystemEventLogDto log)
+    {
+        selectedLog = log;
+        // در اینجا معمولاً جزئیات فنی کامل را دوباره از سرور می‌گیریم یا اگر در لاگ هست نمایش می‌دهیم
+        // برای سادگی فرض می‌کنیم در PersianDescription یا فیلد دیگری هست یا یک متد برای گرفتن جزئیات داریم
+        // در این پیاده‌سازی، TechnicalTitle و TechnicalDetails را در DTO هم می‌فرستیم
+        fullTechnicalDetails = log.PersianDescription; // Placeholder
+        
+        // اصلاح DTO برای داشتن جزئیات فنی کامل در صورت نیاز
+        // اما اینجا فعلاً از اطلاعات موجود استفاده می‌کنیم
+    }
+
+    private void CloseDetails()
+    {
+        selectedLog = null;
+    }
+
+    private string GetFullTechnicalInfo(SystemEventLogDto log)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Title: {log.TechnicalTitle}");
+        if (!string.IsNullOrEmpty(log.RequestPath))
+            sb.AppendLine($"Path: {log.RequestPath}");
+        if (!string.IsNullOrEmpty(log.TechnicalDetails))
+            sb.AppendLine($"\nDetails:\n{log.TechnicalDetails}");
+        if (!string.IsNullOrEmpty(log.StackTrace))
+            sb.AppendLine($"\nStack Trace:\n{log.StackTrace}");
+        return sb.ToString();
+    }
+
+    private async Task Resolve(int id)
+    {
+        var resp = await Http.PostAsync($"api/systemevents/resolve/{id}", null);
+        if (resp.IsSuccessStatusCode)
+        {
+            if (selectedLog?.Id == id) selectedLog.IsResolved = true;
+            var log = logs?.FirstOrDefault(x => x.Id == id);
+            if (log != null) log.IsResolved = true;
+            StateHasChanged();
+        }
+    }
+}

@@ -1,0 +1,225 @@
+@page "/admin/academy/lessons/{CourseId:int}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.academy.lessons.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Services
+@inject HttpClient Http
+@inject ToastService ToastService
+@inject NavigationManager Nav
+
+<div class="admin-container" dir="rtl">
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/admin/academy">مدیریت دوره‌ها</a></li>
+                <li class="breadcrumb-item active">مدیریت قسمت‌های دوره: @(course?.Title ?? "...")</li>
+            </ol>
+        </nav>
+        <div class="d-flex justify-content-between align-items-center">
+            <h3 class="admin-page-title m-0">مدیریت قسمت‌ها</h3>
+            <button class="btn btn-primary shadow-sm rounded-3" @onclick="NewLesson">
+                <span class="oi oi-plus me-1"></span> قسمت جدید
+            </button>
+        </div>
+    </div>
+
+    @if (showEditor)
+    {
+        <div class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="m-0 fw-bold">@(editingId == 0 ? "ایجاد قسمت جدید" : "ویرایش قسمت")</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+
+            <EditForm Model="model" OnValidSubmit="SaveLesson">
+                <DataAnnotationsValidator />
+                <div class="row g-4">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">عنوان قسمت</label>
+                            <InputText @bind-Value="model.Title" class="form-control rounded-3" />
+                            <ValidationMessage For="@(() => model.Title)" class="text-danger small" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">خلاصه یا توضیحات کوتاه</label>
+                            <InputTextArea @bind-Value="model.Summary" class="form-control rounded-3" rows="3" />
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light border-0 rounded-4 p-3 mb-3">
+                            <div class="form-check form-switch mb-2">
+                                <InputCheckbox @bind-Value="model.IsPublished" class="form-check-input" id="isPublished" />
+                                <label class="form-check-label fw-bold" for="isPublished">انتشار در سایت</label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <InputCheckbox @bind-Value="model.IsPremium" class="form-check-input" id="isPremium" />
+                                <label class="form-check-label fw-bold text-warning" for="isPremium">قسمت ویژه (VIP)</label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">ترتیب نمایش</label>
+                            <InputNumber @bind-Value="model.SortOrder" class="form-control rounded-3" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+                    <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseEditor">انصراف</button>
+                    <button type="submit" class="btn btn-primary rounded-3 px-4 shadow-sm" disabled="@isSaving">
+                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        ذخیره قسمت
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    }
+
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4" style="width: 80px;">ترتیب</th>
+                        <th>عنوان قسمت</th>
+                        <th>وضعیت</th>
+                        <th>دسترسی</th>
+                        <th class="text-end pe-4">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (lessons == null)
+                    {
+                        <tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
+                    }
+                    else if (!lessons.Any())
+                    {
+                        <tr><td colspan="5" class="text-center py-5 text-muted">هیچ قسمتی برای این دوره ثبت نشده است.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var lesson in lessons)
+                        {
+                            <tr>
+                                <td class="ps-4 text-center"><span class="badge bg-light text-dark border">@lesson.SortOrder</span></td>
+                                <td>
+                                    <div class="fw-bold text-dark">@lesson.Title</div>
+                                    @if (!string.IsNullOrEmpty(lesson.Summary))
+                                    {
+                                        <div class="small text-muted text-truncate" style="max-width: 400px;">@lesson.Summary</div>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="badge @(lesson.IsPublished ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning") rounded-pill px-3">
+                                        @(lesson.IsPublished ? "منتشر شده" : "پیش‌نویس")
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge @(lesson.IsPremium ? "bg-warning-subtle text-warning" : "bg-info-subtle text-info") rounded-pill px-3">
+                                        @(lesson.IsPremium ? "ویژه" : "رایگان")
+                                    </span>
+                                </td>
+                                <td class="text-end pe-4">
+                                    <button class="btn btn-sm btn-outline-info border-0 rounded-circle me-1" @onclick="() => ManageContent(lesson.Id)" title="مدیریت محتوا و بلوک‌ها">
+                                        <span class="oi oi-spreadsheet"></span>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary border-0 rounded-circle me-1" @onclick="() => EditLesson(lesson)" title="ویرایش">
+                                        <span class="oi oi-pencil"></span>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger border-0 rounded-circle" @onclick="() => ConfirmDelete(lesson.Id)" title="حذف">
+                                        <span class="oi oi-trash"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-success-subtle { background-color: #d1e7dd; }
+    .bg-warning-subtle { background-color: #fff3cd; }
+    .bg-info-subtle { background-color: #cff4fc; }
+    .admin-container { padding: 20px; }
+</style>
+
+@code {
+    [Parameter] public int CourseId { get; set; }
+    private TrainingCourseDto? course;
+    private List<TrainingLessonDto>? lessons;
+    private TrainingLessonUpsertRequest model = new();
+    private bool showEditor;
+    private int editingId;
+    private bool isSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        model.CourseId = CourseId;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        course = await Http.GetFromJsonAsync<TrainingCourseDto>($"api/trainings/courses/{CourseId}");
+        lessons = await Http.GetFromJsonAsync<List<TrainingLessonDto>>($"api/trainings/courses/{CourseId}/lessons");
+    }
+
+    private void NewLesson()
+    {
+        editingId = 0;
+        model = new TrainingLessonUpsertRequest { CourseId = CourseId, IsPublished = true, SortOrder = (lessons?.Count ?? 0) + 1 };
+        showEditor = true;
+    }
+
+    private void EditLesson(TrainingLessonDto lesson)
+    {
+        editingId = lesson.Id;
+        model = new TrainingLessonUpsertRequest
+        {
+            CourseId = CourseId,
+            Title = lesson.Title,
+            Summary = lesson.Summary,
+            IsPublished = lesson.IsPublished,
+            IsPremium = lesson.IsPremium,
+            SortOrder = lesson.SortOrder
+        };
+        showEditor = true;
+    }
+
+    private void CloseEditor() => showEditor = false;
+
+    private async Task SaveLesson()
+    {
+        isSaving = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingId == 0) resp = await Http.PostAsJsonAsync("api/trainings/lessons", model);
+            else resp = await Http.PutAsJsonAsync($"api/trainings/lessons/{editingId}", model);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("قسمت ذخیره شد");
+                await LoadData();
+                showEditor = false;
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا: " + ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private void ManageContent(int lessonId) => Nav.NavigateTo($"/admin/academy/lesson-content/{lessonId}");
+
+    private async Task ConfirmDelete(int id)
+    {
+        if (await Http.DeleteAsync($"api/trainings/lessons/{id}") != null)
+        {
+            ToastService.ShowSuccess("قسمت حذف شد");
+            await LoadData();
+        }
+    }
+}

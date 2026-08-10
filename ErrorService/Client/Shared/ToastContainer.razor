@@ -1,0 +1,233 @@
+@using ErrorService.Client.Services
+@implements IDisposable
+
+<div class="toast-wrapper">
+    @foreach (var toast in Toasts)
+    {
+        <div class="toast-card @toast.Level.ToString().ToLower() @(toast.IsClosing ? "fade-out" : "fade-in")">
+            <div class="toast-content">
+                <div class="toast-icon-box">
+                    @switch (toast.Level)
+                    {
+                        case ToastLevel.Success: <span class="oi oi-circle-check"></span> break;
+                        case ToastLevel.Error: <span class="oi oi-circle-x"></span> break;
+                        case ToastLevel.Warning: <span class="oi oi-warning"></span> break;
+                        case ToastLevel.Info: <span class="oi oi-info"></span> break;
+                    }
+                </div>
+                <div class="toast-msg">@toast.Message</div>
+                <button class="toast-close-btn" @onclick="() => CloseToast(toast)">
+                    <span class="oi oi-x"></span>
+                </button>
+            </div>
+            <div class="toast-progress">
+                <div class="toast-progress-bar" style="animation-duration: @(DurationMs)ms"></div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .toast-wrapper {
+        position: fixed;
+        top: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 20000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        pointer-events: none;
+        width: 100%;
+        max-width: 450px;
+    }
+
+    .toast-card {
+        pointer-events: auto;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 12px 30px rgba(0,0,0,0.08);
+        width: calc(100% - 40px);
+        overflow: hidden;
+        position: relative;
+        border: 1px solid #f0f0f0;
+    }
+
+    .toast-content {
+        display: flex;
+        align-items: center;
+        padding: 14px 18px;
+        gap: 14px;
+    }
+
+    .toast-icon-box {
+        font-size: 1.4rem;
+        display: flex;
+        align-items: center;
+    }
+
+    .toast-msg {
+        flex: 1;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #1a202c;
+        line-height: 1.4;
+        text-align: right;
+        direction: rtl;
+    }
+
+    .toast-close-btn {
+        background: none;
+        border: none;
+        color: #a0aec0;
+        cursor: pointer;
+        padding: 4px;
+        display: flex;
+        transition: color 0.2s;
+    }
+    .toast-close-btn:hover { color: #4a5568; }
+
+    /* Colors */
+    .toast-card.success {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95));
+        border-color: rgba(5, 150, 105, 0.25);
+    }
+    .toast-card.error {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+        border-color: rgba(220, 38, 38, 0.25);
+    }
+    .toast-card.warning {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.95), rgba(217, 119, 6, 0.95));
+        border-color: rgba(217, 119, 6, 0.25);
+    }
+    .toast-card.info {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.95), rgba(37, 99, 235, 0.95));
+        border-color: rgba(37, 99, 235, 0.25);
+    }
+
+    .toast-card.success .toast-icon-box,
+    .toast-card.error .toast-icon-box,
+    .toast-card.warning .toast-icon-box,
+    .toast-card.info .toast-icon-box,
+    .toast-card.success .toast-msg,
+    .toast-card.error .toast-msg,
+    .toast-card.warning .toast-msg,
+    .toast-card.info .toast-msg,
+    .toast-card.success .toast-close-btn,
+    .toast-card.error .toast-close-btn,
+    .toast-card.warning .toast-close-btn,
+    .toast-card.info .toast-close-btn {
+        color: #ffffff;
+    }
+
+    .toast-card.success .toast-close-btn,
+    .toast-card.error .toast-close-btn,
+    .toast-card.warning .toast-close-btn,
+    .toast-card.info .toast-close-btn {
+        opacity: 0.85;
+    }
+    .toast-card.success .toast-close-btn:hover,
+    .toast-card.error .toast-close-btn:hover,
+    .toast-card.warning .toast-close-btn:hover,
+    .toast-card.info .toast-close-btn:hover {
+        opacity: 1;
+        color: #ffffff;
+    }
+
+    .toast-card.success .toast-progress,
+    .toast-card.error .toast-progress,
+    .toast-card.warning .toast-progress,
+    .toast-card.info .toast-progress {
+        background: rgba(255,255,255,0.22);
+    }
+    .toast-card.success .toast-progress-bar,
+    .toast-card.error .toast-progress-bar,
+    .toast-card.warning .toast-progress-bar,
+    .toast-card.info .toast-progress-bar {
+        background: rgba(255,255,255,0.85);
+    }
+
+    /* Progress Bar */
+    .toast-progress {
+        height: 4px;
+        background: #f7fafc;
+        width: 100%;
+    }
+    .toast-progress-bar {
+        height: 100%;
+        width: 100%;
+        animation: toast-progress-anim linear forwards;
+    }
+
+    @@keyframes toast-progress-anim {
+        from { width: 100%; }
+        to { width: 0%; }
+    }
+
+    /* Animations */
+    .fade-in {
+        animation: toast-fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .fade-out {
+        animation: toast-fade-out 0.3s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+    }
+
+    @@keyframes toast-fade-in {
+        from { transform: translateY(-20px); opacity: 0; scale: 0.95; }
+        to { transform: translateY(0); opacity: 1; scale: 1; }
+    }
+
+    @@keyframes toast-fade-out {
+        from { transform: translateY(0); opacity: 1; scale: 1; }
+        to { transform: translateY(-10px); opacity: 0; scale: 0.95; }
+    }
+</style>
+
+@code {
+    [Inject] private ToastService ToastService { get; set; } = default!;
+    private List<ToastInstance> Toasts = new();
+    private const int DurationMs = 4000;
+
+    protected override void OnInitialized()
+    {
+        ToastService.OnShow += HandleShow;
+    }
+
+    private void HandleShow(string message, ToastLevel level)
+    {
+        var toast = new ToastInstance { Message = message, Level = level };
+        Toasts.Add(toast);
+        InvokeAsync(StateHasChanged);
+
+        // Schedule closing
+        Task.Delay(DurationMs).ContinueWith(_ => CloseToast(toast));
+    }
+
+    private async Task CloseToast(ToastInstance toast)
+    {
+        if (toast.IsClosing) return;
+        
+        toast.IsClosing = true;
+        await InvokeAsync(StateHasChanged);
+        
+        // Wait for fade-out animation
+        await Task.Delay(300);
+        
+        Toasts.Remove(toast);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ToastService.OnShow -= HandleShow;
+    }
+
+    private class ToastInstance
+    {
+        public string Message { get; set; } = "";
+        public ToastLevel Level { get; set; }
+        public bool IsClosing { get; set; }
+    }
+}
+
