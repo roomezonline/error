@@ -83,8 +83,22 @@ public static class PersianDate
         var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0) return false;
 
-        var datePart = parts[0];
-        var timePart = parts.Length > 1 ? parts[1] : "00:00";
+        string datePart, timePart;
+        if (parts.Length == 1)
+        {
+            datePart = parts[0];
+            timePart = "00:00";
+        }
+        else if (parts.Length == 2)
+        {
+            // Accept both "yyyy/MM/dd HH:mm" and legacy "HH:mm yyyy/MM/dd" orders
+            if (parts[0].Contains('/')) { datePart = parts[0]; timePart = parts[1]; }
+            else { datePart = parts[1]; timePart = parts[0]; }
+        }
+        else
+        {
+            return false;
+        }
 
         var dateBits = datePart.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (dateBits.Length != 3) return false;

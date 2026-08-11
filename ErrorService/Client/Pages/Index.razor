@@ -11,7 +11,7 @@
     OgImage="@(settings?.DefaultOgImage ?? "/images/og-default.jpg")"
     JsonLd="@orgJsonLd" />
 
-<PublicHero />
+<PublicHero ShowFeaturedSide="@(settings?.ShowFeaturedProducts ?? true)" />
 
 @if (isInitialLoading)
 {
@@ -83,6 +83,9 @@ else
             case SiteHomeModuleKey.LatestProducts:
                 <LatestProducts />
                 break;
+            case SiteHomeModuleKey.FeaturedProducts:
+                <FeaturedProducts />
+                break;
             case SiteHomeModuleKey.HomeCategories:
                 <HomeCategories Categories="categories" />
                 break;
@@ -144,6 +147,7 @@ else
                     new() { Key = SiteHomeModuleKey.SomeCustomers, IsEnabled = true, SortOrder = 21 },
                     new() { Key = SiteHomeModuleKey.LatestNews, IsEnabled = settings?.ShowLatestNews ?? true, SortOrder = 20 },
                     new() { Key = SiteHomeModuleKey.LatestProducts, IsEnabled = settings?.ShowLatestProducts ?? true, SortOrder = 30 },
+                    new() { Key = SiteHomeModuleKey.FeaturedProducts, IsEnabled = settings?.ShowFeaturedProducts ?? true, SortOrder = 12 },
                     new() { Key = SiteHomeModuleKey.LatestCourses, IsEnabled = settings?.ShowLatestCourses ?? true, SortOrder = 40 },
                     new() { Key = SiteHomeModuleKey.LatestArticles, IsEnabled = settings?.ShowLatestArticles ?? true, SortOrder = 45 },
                     new() { Key = SiteHomeModuleKey.TeamMembers, IsEnabled = settings?.ShowTeamMembers ?? true, SortOrder = 50 },

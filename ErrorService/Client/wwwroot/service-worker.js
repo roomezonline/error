@@ -1,4 +1,4 @@
-const CACHE_NAME = 'errorservice-cache-v1.0.8';
+const CACHE_NAME = 'errorservice-cache-v1.0.9';
 const urlsToCache = [
     './',
     './index.html',
@@ -60,6 +60,29 @@ self.addEventListener('fetch', event => {
                     // Try to match normalized cache key (without query string)
                     const cacheKey = new Request('./releases.json', { method: 'GET' });
                     return caches.match(cacheKey);
+                })
+        );
+        return;
+    }
+
+    // Network-first for the Blazor manifest and navigations, so a stale
+    // service-worker cache can never serve files deleted by a rebuild
+    if (url.pathname.includes('blazor.boot.json') || event.request.mode === 'navigate')
+    {
+        event.respondWith(
+            fetch(event.request)
+                .then(networkResponse => {
+                    if (networkResponse && networkResponse.ok)
+                    {
+                        const responseClone = networkResponse.clone();
+                        caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
+                    }
+                    return networkResponse;
+                })
+                .catch(() => {
+                    if (event.request.mode === 'navigate')
+                        return caches.match('./index.html');
+                    return caches.match(event.request);
                 })
         );
         return;

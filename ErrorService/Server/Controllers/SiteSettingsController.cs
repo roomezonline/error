@@ -60,6 +60,7 @@ public sealed class SiteSettingsController : ControllerBase
             ShowHomeCategories = settings.ShowHomeCategories,
             ShowFeatureCards = settings.ShowFeatureCards,
             ShowStories = settings.ShowStories,
+            ShowFeaturedProducts = settings.ShowFeaturedProducts,
             AllowGuestCheckout = settings.AllowGuestCheckout,
             EnableOnlineChat = settings.EnableOnlineChat,
             AllowGuestChat = settings.AllowGuestChat,
@@ -151,6 +152,7 @@ public sealed class SiteSettingsController : ControllerBase
             settings.ShowHomeCategories = dto.ShowHomeCategories;
             settings.ShowFeatureCards = dto.ShowFeatureCards;
             settings.ShowStories = dto.ShowStories;
+            settings.ShowFeaturedProducts = dto.ShowFeaturedProducts;
             if (homeModulesAvailable)
             {
                 SyncModulesFromLegacyFlags(settings);
@@ -198,6 +200,7 @@ public sealed class SiteSettingsController : ControllerBase
         AddIfMissing(settings, SiteHomeModuleKey.LatestArticles, 42);
         AddIfMissing(settings, SiteHomeModuleKey.TeamMembers, 50);
         AddIfMissing(settings, SiteHomeModuleKey.Stories, 5);
+        AddIfMissing(settings, SiteHomeModuleKey.FeaturedProducts, 12);
     }
 
     private static void AddIfMissing(SiteSettings settings, SiteHomeModuleKey key, int sortOrder)
@@ -227,6 +230,7 @@ public sealed class SiteSettingsController : ControllerBase
             SiteHomeModuleKey.LatestArticles => settings.ShowLatestArticles,
             SiteHomeModuleKey.TeamMembers => settings.ShowTeamMembers,
             SiteHomeModuleKey.Stories => settings.ShowStories,
+            SiteHomeModuleKey.FeaturedProducts => settings.ShowFeaturedProducts,
             _ => true
         };
     }
@@ -243,6 +247,7 @@ public sealed class SiteSettingsController : ControllerBase
         settings.ShowLatestArticles = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.LatestArticles)?.IsEnabled ?? settings.ShowLatestArticles;
         settings.ShowTeamMembers = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.TeamMembers)?.IsEnabled ?? settings.ShowTeamMembers;
         settings.ShowStories = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.Stories)?.IsEnabled ?? settings.ShowStories;
+        settings.ShowFeaturedProducts = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.FeaturedProducts)?.IsEnabled ?? settings.ShowFeaturedProducts;
     }
 
     private static void SyncModulesFromLegacyFlags(SiteSettings settings)
@@ -261,6 +266,7 @@ public sealed class SiteSettingsController : ControllerBase
                 (int)SiteHomeModuleKey.LatestArticles => settings.ShowLatestArticles,
                 (int)SiteHomeModuleKey.TeamMembers => settings.ShowTeamMembers,
                 (int)SiteHomeModuleKey.Stories => settings.ShowStories,
+                (int)SiteHomeModuleKey.FeaturedProducts => settings.ShowFeaturedProducts,
                 _ => m.IsEnabled
             };
         }

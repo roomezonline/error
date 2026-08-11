@@ -16,7 +16,8 @@ public enum SiteHomeModuleKey
     LatestArticles = 10,
     PopularBrands = 11,
     SomeCustomers = 12,
-    TechnicalGuide = 13
+    TechnicalGuide = 13,
+    FeaturedProducts = 14
 }
 
 public sealed class SiteHomeModuleDto
@@ -38,6 +39,7 @@ public sealed class SiteSettingsDto
     public bool ShowHomeCategories { get; set; } = true;
     public bool ShowFeatureCards { get; set; } = true;
     public bool ShowStories { get; set; } = true;
+    public bool ShowFeaturedProducts { get; set; } = true;
     public string? SeoTitle { get; set; }
     public string? SeoDescription { get; set; }
     public string? SeoKeywords { get; set; }

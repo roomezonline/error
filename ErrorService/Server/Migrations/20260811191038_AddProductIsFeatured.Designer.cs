@@ -4,16 +4,19 @@ using ErrorService.Server.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace ErrorService.Server.Data.Migrations
+namespace ErrorService.Server.Migrations
 {
     [DbContext(typeof(ErrorServiceDbContext))]
-    partial class ErrorServiceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260811191038_AddProductIsFeatured")]
+    partial class AddProductIsFeatured
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2527,9 +2530,6 @@ namespace ErrorService.Server.Data.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("ShowFeatureCards")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("ShowFeaturedProducts")
                         .HasColumnType("bit");
 
                     b.Property<bool>("ShowHomeCategories")

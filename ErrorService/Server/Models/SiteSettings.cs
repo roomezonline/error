@@ -16,6 +16,7 @@ public sealed class SiteSettings
     public bool ShowHomeCategories { get; set; } = true;
     public bool ShowFeatureCards { get; set; } = true;
     public bool ShowStories { get; set; } = true;
+    public bool ShowFeaturedProducts { get; set; } = true;
     public string? SeoTitle { get; set; }
     public string? SeoDescription { get; set; }
     public string? SeoKeywords { get; set; }

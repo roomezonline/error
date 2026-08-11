@@ -289,9 +289,9 @@
             document.body.removeChild(link);
         };
 
-        window.scrollToElement = function(element) {
+        window.scrollToElement = function(element, block) {
             if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                element.scrollIntoView({ behavior: 'smooth', block: block || 'center' });
             }
         };
 

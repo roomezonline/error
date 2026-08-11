@@ -27,7 +27,7 @@
 
     @if (showEditor)
     {
-        <div class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
+        <div @ref="editorCard" class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h5 class="m-0">@(editingId == 0 ? "ایجاد محصول جدید" : "ویرایش محصول")</h5>
                 <button class="btn-close" @onclick="CloseEditor"></button>
@@ -150,6 +150,10 @@
                             <InputCheckbox @bind-Value="model.IsAvailable" class="form-check-input" id="isAvailable" />
                             <label class="form-check-label fw-bold" for="isAvailable">قابل فروش</label>
                         </div>
+                        <div class="form-check form-switch mt-3">
+                            <InputCheckbox @bind-Value="model.IsFeatured" class="form-check-input" id="isFeatured" />
+                            <label class="form-check-label fw-bold" for="isFeatured">محصول مهم (نمایش در هیرو و صفحه اصلی)</label>
+                        </div>
                         <div class="mt-3">
                             <label class="form-label fw-bold">موجودی انبار (تعداد)</label>
                             <InputNumber @bind-Value="model.StockQuantity" class="form-control rounded-3" min="0" />
@@ -219,6 +223,10 @@
             <span class="oi oi-@(_showLowStockOnly ? "check" : "warning") me-1"></span>
             موجودی کم (≤ ۵)
         </button>
+        <button type="button" class="stock-filter-chip @(_showFeaturedOnly ? "stock-filter-chip--active" : "")" @onclick="ToggleFeaturedFilter">
+            <span class="oi oi-@(_showFeaturedOnly ? "check" : "star") me-1"></span>
+            فقط مهم‌ها
+        </button>
         @if (products != null)
         {
             <span class="admin-toolbar__count">@FilteredProducts.Count از @totalCount محصول</span>
@@ -265,7 +273,15 @@
                             }
                         </div>
                         <div class="product-card__info">
-                            <div class="product-card__name">@prod.Name</div>
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <div class="product-card__name">@prod.Name</div>
+                                @if (prod.IsFeatured)
+                                {
+                                    <span class="badge bg-warning text-dark rounded-pill" title="محصول مهم">
+                                        <span class="oi oi-star"></span> مهم
+                                    </span>
+                                }
+                            </div>
                             <div class="product-card__id">کد: #@prod.Id@(!string.IsNullOrWhiteSpace(prod.Sku) ? $" • {prod.Sku}" : "")</div>
                         </div>
                         <span class="product-card__status @(prod.IsAvailable ? "status-available" : "status-unavailable")">
@@ -597,6 +613,8 @@
     private List<CategoryDto>? categories;
     private ProductUpsertRequest model = new();
     private bool showEditor = false;
+    private ElementReference editorCard;
+    private bool _editorScrolled;
     private int editingId = 0;
     private bool isSaving = false;
     private bool isUploading = false;
@@ -633,6 +651,12 @@
             await JS.InvokeVoidAsync("initJalali");
             try { await JS.InvokeVoidAsync("formatPriceInputs"); } catch { }
 
+            if (!_editorScrolled)
+            {
+                _editorScrolled = true;
+                await JS.InvokeVoidAsync("scrollToElement", editorCard, "start");
+            }
+
             if (!_tinyInitialized)
             {
                 objRef ??= DotNetObjectReference.Create(this);
@@ -643,11 +667,13 @@
         else
         {
             _tinyInitialized = false;
+            _editorScrolled = false;
         }
     }
 
     private string? _searchQuery;
     private bool _showLowStockOnly;
+    private bool _showFeaturedOnly;
     private int skip = 0;
     private int take = 10;
     private int totalCount = 0;
@@ -662,6 +688,8 @@
             IEnumerable<ProductDto> list = products;
             if (_showLowStockOnly)
                 list = list.Where(p => p.StockQuantity <= 5);
+            if (_showFeaturedOnly)
+                list = list.Where(p => p.IsFeatured);
             if (!string.IsNullOrWhiteSpace(_searchQuery))
             {
                 var q = _searchQuery.Trim().ToLower();
@@ -674,6 +702,8 @@
     }
 
     private void ToggleLowStock() => _showLowStockOnly = !_showLowStockOnly;
+
+    private void ToggleFeaturedFilter() => _showFeaturedOnly = !_showFeaturedOnly;
 
     private void OnSearchInput(ChangeEventArgs e)
     {
@@ -764,6 +794,7 @@
             CategoryId = prod.CategoryId,
             IsAvailable = prod.IsAvailable,
             StockQuantity = prod.StockQuantity,
+            IsFeatured = prod.IsFeatured,
             CompatibilityInfo = prod.CompatibilityInfo,
             FailureSymptoms = prod.FailureSymptoms,
             DatasheetUrl = prod.DatasheetUrl,

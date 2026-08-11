@@ -74,6 +74,7 @@ public class ProductDto : IDiscountInfo
     public string? CategoryName { get; set; }
     public bool IsAvailable { get; set; } = true;
     public int StockQuantity { get; set; } = 0;
+    public bool IsFeatured { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
     // Technical details
@@ -109,6 +110,8 @@ public class ProductUpsertRequest
     public bool IsAvailable { get; set; } = true;
 
     public int StockQuantity { get; set; } = 0;
+
+    public bool IsFeatured { get; set; }
 
     public DateTimeOffset? CreatedAt { get; set; }
 

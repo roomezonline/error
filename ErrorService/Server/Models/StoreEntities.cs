@@ -66,6 +66,8 @@ public class Product : IDiscountInfo
 
     public int StockQuantity { get; set; } = 0;
 
+    public bool IsFeatured { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 

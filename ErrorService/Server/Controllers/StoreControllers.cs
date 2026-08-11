@@ -243,6 +243,8 @@ public class ProductsController : ControllerBase
         bool onlyAvailable = false,
         bool onlyDiscounted = false,
         bool timedOnly = false,
+        bool featuredOnly = false,
+        bool random = false,
         string? search = null,
         decimal? minPrice = null,
         decimal? maxPrice = null,
@@ -273,6 +275,11 @@ public class ProductsController : ControllerBase
                 && (!p.DiscountStartDate.HasValue || p.DiscountStartDate.Value <= now));
         }
 
+        if (featuredOnly)
+        {
+            query = query.Where(p => p.IsFeatured);
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim();
@@ -290,6 +297,48 @@ public class ProductsController : ControllerBase
 
         var totalCount = await query.CountAsync();
         Response.Headers["X-Total-Count"] = totalCount.ToString();
+
+        if (random)
+        {
+            var cacheFeature = HttpContext.Features.Get<Microsoft.AspNetCore.OutputCaching.IOutputCacheFeature>();
+            if (cacheFeature != null)
+            {
+                cacheFeature.Context.EnableOutputCaching = false;
+            }
+            var picked = (await query.Select(p => p.Id).ToListAsync())
+                .OrderBy(_ => Guid.NewGuid())
+                .Take(take)
+                .ToList();
+            var items = await query
+                .Where(p => picked.Contains(p.Id))
+                .Select(p => new ProductDto
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Slug = p.Slug,
+                    Sku = p.Sku,
+                    Description = p.Description,
+                    Price = p.Price,
+                    DiscountPrice = p.DiscountPrice,
+                    DiscountStartDate = p.DiscountStartDate,
+                    DiscountExpiryDate = p.DiscountExpiryDate,
+                    MainImageUrl = p.MainImageUrl,
+                    ImageUrl2 = p.ImageUrl2,
+                    ImageUrl3 = p.ImageUrl3,
+                    ImageUrl4 = p.ImageUrl4,
+                    CategoryId = p.CategoryId,
+                    CategoryName = p.Category.Name,
+                    IsAvailable = p.IsAvailable,
+                    StockQuantity = p.StockQuantity,
+                    IsFeatured = p.IsFeatured,
+                    CreatedAt = p.CreatedAt,
+                    CompatibilityInfo = p.CompatibilityInfo,
+                    DatasheetUrl = p.DatasheetUrl,
+                    FailureSymptoms = p.FailureSymptoms,
+                    RelatedProductIds = p.RelatedProductIds
+                }).ToListAsync();
+            return Ok(items.OrderBy(p => picked.IndexOf(p.Id)));
+        }
 
         query = sort?.ToLowerInvariant() switch
         {
@@ -332,6 +381,7 @@ public class ProductsController : ControllerBase
                 CategoryName = p.Category.Name,
                 IsAvailable = p.IsAvailable,
                 StockQuantity = p.StockQuantity,
+                IsFeatured = p.IsFeatured,
                 CreatedAt = p.CreatedAt,
                 CompatibilityInfo = p.CompatibilityInfo,
                 DatasheetUrl = p.DatasheetUrl,
@@ -367,6 +417,7 @@ public class ProductsController : ControllerBase
                 CategoryName = p.Category.Name,
                 IsAvailable = p.IsAvailable,
                 StockQuantity = p.StockQuantity,
+                IsFeatured = p.IsFeatured,
                 CreatedAt = p.CreatedAt,
                 CompatibilityInfo = p.CompatibilityInfo,
                 DatasheetUrl = p.DatasheetUrl,
@@ -447,6 +498,7 @@ public class ProductsController : ControllerBase
             CategoryId = request.CategoryId,
             IsAvailable = request.IsAvailable,
             StockQuantity = request.StockQuantity,
+            IsFeatured = request.IsFeatured,
             CompatibilityInfo = request.CompatibilityInfo,
             DatasheetUrl = request.DatasheetUrl,
             FailureSymptoms = request.FailureSymptoms,
@@ -495,6 +547,7 @@ public class ProductsController : ControllerBase
         product.CategoryId = request.CategoryId;
         product.IsAvailable = request.IsAvailable;
         product.StockQuantity = request.StockQuantity;
+        product.IsFeatured = request.IsFeatured;
         if (product.StockQuantity <= 0) product.IsAvailable = false;
         product.CompatibilityInfo = request.CompatibilityInfo;
         product.DatasheetUrl = request.DatasheetUrl;
