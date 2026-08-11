@@ -121,31 +121,13 @@ namespace ErrorService.Server.Data.Migrations
                 type: "nvarchar(max)",
                 nullable: true);
 
-            migrationBuilder.AddColumn<string>(
-                name: "UserPhone",
-                table: "ChatSessions",
-                type: "nvarchar(30)",
-                maxLength: 30,
-                nullable: true);
+            migrationBuilder.Sql("ALTER TABLE [dbo].[ChatSessions] ADD [UserPhone] nvarchar(30) NULL;");
 
-            migrationBuilder.AddColumn<DateTime>(
-                name: "EditedAt",
-                table: "ChatMessages",
-                type: "datetime2",
-                nullable: true);
+            migrationBuilder.Sql("ALTER TABLE [dbo].[ChatMessages] ADD [EditedAt] datetime2 NULL;");
 
-            migrationBuilder.AddColumn<bool>(
-                name: "IsDeleted",
-                table: "ChatMessages",
-                type: "bit",
-                nullable: false,
-                defaultValue: false);
+            migrationBuilder.Sql("ALTER TABLE [dbo].[ChatMessages] ADD [IsDeleted] bit NOT NULL DEFAULT 0;");
 
-            migrationBuilder.AddColumn<int>(
-                name: "ReplyToId",
-                table: "ChatMessages",
-                type: "int",
-                nullable: true);
+            migrationBuilder.Sql("ALTER TABLE [dbo].[ChatMessages] ADD [ReplyToId] int NULL;");
 
             migrationBuilder.CreateTable(
                 name: "CannedResponses",
@@ -265,21 +247,13 @@ namespace ErrorService.Server.Data.Migrations
                 name: "TelegramGroupId",
                 table: "SiteSettings");
 
-            migrationBuilder.DropColumn(
-                name: "UserPhone",
-                table: "ChatSessions");
+            migrationBuilder.Sql("ALTER TABLE [dbo].[ChatSessions] DROP COLUMN [UserPhone];");
 
-            migrationBuilder.DropColumn(
-                name: "EditedAt",
-                table: "ChatMessages");
+            migrationBuilder.Sql("ALTER TABLE [dbo].[ChatMessages] DROP COLUMN [EditedAt];");
 
-            migrationBuilder.DropColumn(
-                name: "IsDeleted",
-                table: "ChatMessages");
+            migrationBuilder.Sql("ALTER TABLE [dbo].[ChatMessages] DROP COLUMN [IsDeleted];");
 
-            migrationBuilder.DropColumn(
-                name: "ReplyToId",
-                table: "ChatMessages");
+            migrationBuilder.Sql("ALTER TABLE [dbo].[ChatMessages] DROP COLUMN [ReplyToId];");
 
             migrationBuilder.Sql("IF COL_LENGTH('dbo.SiteSettings', 'EnableTelegramChat') IS NOT NULL ALTER TABLE dbo.SiteSettings DROP COLUMN EnableTelegramChat;");
             migrationBuilder.AddColumn<bool>(
