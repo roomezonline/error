@@ -105,15 +105,26 @@
 
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
     private List<NewsDto>? newsList;
     private int skip = 0;
     private int take = 12;
     private int totalCount = 0;
     private bool isLoadingMore = false;
+    private bool _needsRevealScan;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadNews(loadMore: false);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_needsRevealScan)
+        {
+            _needsRevealScan = false;
+            try { await JS.InvokeVoidAsync("observeNewReveals"); } catch { }
+        }
     }
 
     private async Task LoadMore() => await LoadNews(loadMore: true);
@@ -148,6 +159,8 @@
                 newsList.AddRange(data);
             else
                 newsList = data;
+
+            _needsRevealScan = true;
         }
         catch
         {

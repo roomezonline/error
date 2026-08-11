@@ -31,10 +31,34 @@
             <h5 class="text-muted fw-bold">هنوز سفارشی ثبت نشده است.</h5>
         </div>
     }
+    else if (!filteredOrders.Any())
+    {
+        <div class="text-center py-5 bg-white rounded-4 shadow-sm border-0">
+            <div class="display-1 text-light mb-3"><span class="oi oi-filter"></span></div>
+            <h5 class="text-muted fw-bold">سفارشی با این فیلتر یافت نشد.</h5>
+        </div>
+    }
     else
     {
+        <div class="mb-3">
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-sm @(statusFilter == null ? "btn-primary" : "btn-light") rounded-pill px-3" @onclick="() => FilterByStatus(null)">
+                    همه <span class="badge bg-white text-primary ms-1">@orders.Count</span>
+                </button>
+                @foreach (OrderStatus status in Enum.GetValues(typeof(OrderStatus)))
+                {
+                    var count = orders.Count(o => o.Status == status);
+                    if (count > 0)
+                    {
+                        <button class="btn btn-sm @(statusFilter == status ? "btn-primary" : "btn-light") rounded-pill px-3" @onclick="() => FilterByStatus(status)">
+                            @GetStatusLabel(status) <span class="badge bg-white text-primary ms-1">@count</span>
+                        </button>
+                    }
+                }
+            </div>
+        </div>
         <div class="row g-3">
-            @foreach (var order in orders)
+            @foreach (var order in filteredOrders)
             {
                 <div class="col-12">
                     <div class="order-card rounded-4 shadow-sm bg-white overflow-hidden border p-3">
@@ -99,10 +123,59 @@
                 <div class="modal-body p-4" dir="rtl">
                     <div class="row g-4">
                         <div class="col-md-6">
-                            <h6 class="fw-bold border-bottom pb-2 mb-3 text-primary">اطلاعات مشتری</h6>
-                            <div class="mb-2"><strong>نام:</strong> @selectedOrder.FullName</div>
-                            <div class="mb-2"><strong>موبایل:</strong> @selectedOrder.PhoneNumber</div>
-                            <div class="mb-2"><strong>آدرس:</strong> @(selectedOrder.Address ?? "ثبت نشده")</div>
+                            <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
+                                <h6 class="fw-bold text-primary m-0">اطلاعات مشتری</h6>
+                                @if (!isEditingInfo)
+                                {
+                                    <button class="btn btn-outline-primary btn-sm rounded-pill px-3" @onclick="StartEditingInfo">
+                                        <span class="oi oi-pencil me-1"></span>ویرایش
+                                    </button>
+                                }
+                            </div>
+                            @if (isEditingInfo)
+                            {
+                                <div class="edit-info-form">
+                                    <div class="mb-2">
+                                        <label class="form-label small text-muted">نام</label>
+                                        <input class="form-control form-control-sm rounded-3" @bind="editInfoModel.FullName" />
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small text-muted">موبایل</label>
+                                        <input class="form-control form-control-sm rounded-3" @bind="editInfoModel.PhoneNumber" />
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small text-muted">ایمیل</label>
+                                        <input class="form-control form-control-sm rounded-3" @bind="editInfoModel.Email" />
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small text-muted">آدرس</label>
+                                        <textarea class="form-control form-control-sm rounded-3" rows="2" @bind="editInfoModel.Address"></textarea>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small text-muted">کد پستی</label>
+                                        <input class="form-control form-control-sm rounded-3 ltr" @bind="editInfoModel.PostalCode" />
+                                    </div>
+                                    <div class="mb-2 small">
+                                        <span class="text-muted">استان / شهر:</span>
+                                        <span class="fw-bold">@($"{editInfoModel.ProvinceName}{(!string.IsNullOrEmpty(editInfoModel.CityName) ? " - " + editInfoModel.CityName : "")}")</span>
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-primary btn-sm rounded-pill px-3" @onclick="UpdateOrderInfo" disabled="@isUpdating">
+                                            @if (isUpdating) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                            ذخیره
+                                        </button>
+                                        <button class="btn btn-light btn-sm rounded-pill px-3" @onclick="() => isEditingInfo = false">انصراف</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="mb-2"><strong>نام:</strong> @selectedOrder.FullName</div>
+                                <div class="mb-2"><strong>موبایل:</strong> @selectedOrder.PhoneNumber</div>
+                                <div class="mb-2"><strong>آدرس:</strong> @(selectedOrder.Address ?? "ثبت نشده")</div>
+                                <div class="mb-2"><strong>استان / شهر:</strong> @FormatProvinceCity(selectedOrder)</div>
+                                <div class="mb-2"><strong>کد پستی:</strong> @(string.IsNullOrWhiteSpace(selectedOrder.PostalCode) ? "ثبت نشده" : selectedOrder.PostalCode)</div>
+                            }
                         </div>
                         <div class="col-md-6">
                             <h6 class="fw-bold border-bottom pb-2 mb-3 text-primary">وضعیت پرداخت</h6>
@@ -201,6 +274,9 @@
     .fw-black { font-weight: 900; }
     .order-card { transition: all 0.2s ease; }
     .order-card:hover { border-color: #2563eb; }
+    .edit-info-form .form-control { font-size: 0.85rem; }
+    .edit-info-form .form-label { margin-bottom: 2px; }
+    .ltr { direction: ltr; text-align: left; }
 </style>
 
 @code {
@@ -215,6 +291,22 @@
     private string? adminNote;
     private bool isEditingInfo = false;
     private OrderUpdateInfoRequest editInfoModel = new();
+    private OrderStatus? statusFilter = null;
+
+    private List<OrderDto> filteredOrders => orders?.Where(o => statusFilter == null || o.Status == statusFilter.Value).ToList() ?? new();
+
+    private static string FormatProvinceCity(OrderDto o)
+    {
+        if (string.IsNullOrWhiteSpace(o.ProvinceName) && string.IsNullOrWhiteSpace(o.CityName))
+            return "ثبت نشده";
+        if (string.IsNullOrWhiteSpace(o.CityName)) return o.ProvinceName!;
+        return $"{o.ProvinceName} - {o.CityName}";
+    }
+
+    private void FilterByStatus(OrderStatus? status)
+    {
+        statusFilter = status;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -298,7 +390,12 @@
             FullName = selectedOrder.FullName,
             PhoneNumber = selectedOrder.PhoneNumber,
             Email = selectedOrder.Email,
-            Address = selectedOrder.Address ?? ""
+            Address = selectedOrder.Address ?? "",
+            ProvinceId = selectedOrder.ProvinceId,
+            CityId = selectedOrder.CityId,
+            ProvinceName = selectedOrder.ProvinceName,
+            CityName = selectedOrder.CityName,
+            PostalCode = selectedOrder.PostalCode
         };
         isEditingInfo = true;
     }
@@ -317,6 +414,11 @@
                 selectedOrder.PhoneNumber = editInfoModel.PhoneNumber;
                 selectedOrder.Email = editInfoModel.Email;
                 selectedOrder.Address = editInfoModel.Address;
+                selectedOrder.ProvinceId = editInfoModel.ProvinceId;
+                selectedOrder.CityId = editInfoModel.CityId;
+                selectedOrder.ProvinceName = editInfoModel.ProvinceName;
+                selectedOrder.CityName = editInfoModel.CityName;
+                selectedOrder.PostalCode = editInfoModel.PostalCode;
                 isEditingInfo = false;
                 await LoadOrders();
             }

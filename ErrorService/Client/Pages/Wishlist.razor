@@ -37,7 +37,7 @@
                 {
                     <div class="col-6 col-md-4 col-lg-3">
                         <div class="wishlist-card rounded-3 shadow-sm bg-white overflow-hidden">
-                            <a href="/product/@item.ProductId" class="text-decoration-none">
+                            <a href="/products/@item.ProductId" class="text-decoration-none">
                                 <div class="wishlist-img" style="height:160px;background:#f8fafc;">
                                     @if (!string.IsNullOrEmpty(item.ImageUrl))
                                     {
@@ -50,7 +50,7 @@
                                 </div>
                             </a>
                             <div class="p-3">
-                                <a href="/product/@item.ProductId" class="text-decoration-none text-dark">
+                                <a href="/products/@item.ProductId" class="text-decoration-none text-dark">
                                     <div class="fw-bold small mb-2 text-truncate">@item.Name</div>
                                 </a>
                                 <div class="d-flex align-items-center justify-content-between">
@@ -65,7 +65,7 @@
                                         <span class="oi oi-heart" style="font-size:0.8rem;"></span>
                                     </button>
                                 </div>
-                                <a href="/product/@item.ProductId" class="btn btn-primary btn-sm w-100 rounded-pill mt-2 fw-bold">
+                                <a href="/products/@item.ProductId" class="btn btn-primary btn-sm w-100 rounded-pill mt-2 fw-bold">
                                     <span class="oi oi-eye me-1"></span>مشاهده محصول
                                 </a>
                             </div>

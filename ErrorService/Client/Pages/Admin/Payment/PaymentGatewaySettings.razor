@@ -1,0 +1,482 @@
+@page "/admin/payment-settings"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.shop.gateway.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService Toast
+
+<div class="pgs-page" dir="rtl">
+    <div class="pgs-header">
+        <div>
+            <h3 class="pgs-title mb-1">درگاه‌های پرداخت</h3>
+            <p class="pgs-sub mb-0">تعریف و اتصال درگاه‌های بانکی مختلف؛ هر درگاه به‌صورت جداگانه پیکربندی و فعال می‌شود</p>
+        </div>
+        <button type="button" class="pgs-add-btn" @onclick="OpenAdd">
+            <span class="oi oi-plus"></span> افزودن درگاه جدید
+        </button>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary"></div>
+        </div>
+    }
+    else
+    {
+        <div class="pgs-layout">
+            <div class="pgs-main">
+                <section class="pgs-card">
+                    <div class="pgs-list-head">
+                        <span class="fw-bold small">@_gateways.Count درگاه تعریف شده</span>
+                        <span class="pgs-hint mb-0">درگاه‌های آنلاینِ فعال و اماده در تسویه به مشتری نمایش داده می‌شوند.</span>
+                    </div>
+
+                    @if (_gateways.Count == 0)
+                    {
+                        <div class="pgs-empty">
+                            <div class="pgs-empty-ico"><span class="oi oi-credit-card"></span></div>
+                            <p class="mb-0">هنوز درگاهی تعریف نشده است. برای شروع یک درگاه اضافه کنید.</p>
+                        </div>
+                    }
+
+                    <div class="pgs-list">
+                        @foreach (var g in _gateways)
+                        {
+                            <div class="pgs-row">
+                                <div class="pgs-row-main">
+                                    <div class="pgs-row-ico @(g.Online ? "pgs-row-ico--online" : "pgs-row-ico--manual")">
+                                        <span class="oi oi-@(g.Online ? "globe" : "credit-card")"></span>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="pgs-row-title">@g.Title</span>
+                                            @if (g.Online)
+                                            {
+                                                <span class="pgs-row-badge pgs-row-badge--online">آنلاین</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="pgs-row-badge">دستی</span>
+                                            }
+                                            @if (g.IsConfigured)
+                                            {
+                                                <span class="pgs-row-badge pgs-row-badge--ok">پیکربندی شده</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="pgs-row-badge pgs-row-badge--warn">در انتظار تنظیمات</span>
+                                            }
+                                        </div>
+                                        <div class="pgs-row-sub">
+                                            <span class="ltr d-inline-block">@g.Provider</span>
+                                            @if (g.Sandbox) { <span class="dot-sep">·</span> <span>آزمایشگاهی</span> }
+                                            <span class="dot-sep">·</span> <span>چیدمان @g.SortOrder</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="pgs-row-actions">
+                                    <label class="pgs-switch" title="فعال/غیرفعال">
+                                        <input type="checkbox" checked="@g.IsActive" @onchange="(e) => ToggleActive(g, e)" />
+                                        <span class="pgs-switch-track"></span>
+                                    </label>
+                                    <button type="button" class="pgs-row-btn" @onclick="() => OpenEdit(g)" title="ویرایش">
+                                        <span class="oi oi-pencil"></span>
+                                    </button>
+                                    <button type="button" class="pgs-row-btn pgs-row-btn--danger" @onclick="() => DeleteGateway(g)" title="حذف">
+                                        <span class="oi oi-trash"></span>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </section>
+
+                <aside class="pgs-side">
+                    <div class="pgs-card pgs-card--side">
+                        <h6 class="pgs-side-title mb-3">راهنمای سریع</h6>
+                        <ul class="pgs-side-list">
+                            <li><span class="oi oi-credit-card"></span> کارت‌به‌کارت: هیچ تنظیمی لازم ندارد و همیشه پیشنهاد می‌شود.</li>
+                            <li><span class="oi oi-shield"></span> برای اتصال هر درگاه آنلاین، اطلاعات آن را در پنل درگاه بسازید و اینجا ثبت کنید.</li>
+                            <li><span class="oi oi-beaker"></span> درگاه تست برای آزمایش داخلی است؛ پرداخت فوراً موفق برمی‌گردد.</li>
+                            <li><span class="oi oi-document"></span> مبلغ به تومان ارسال می‌شود.</li>
+                            <li><span class="oi oi-info"></span> درگاه آنلاین فقط وقتی در تسویه نمایش داده می‌شود که فعال و پیکربندی شده باشد.</li>
+                        </ul>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    }
+</div>
+
+@if (_showAdd)
+{
+    <div class="pgs-overlay" @onclick="CloseAdd">
+        <div class="pgs-modal" @onclick:stopPropagation="true">
+            <div class="pgs-modal-head">
+                <h5 class="pgs-modal-title">افزودن درگاه جدید</h5>
+                <button type="button" class="pgs-modal-x" @onclick="CloseAdd"><span class="oi oi-x"></span></button>
+            </div>
+            <p class="pgs-modal-sub">درگاه موردنظر را انتخاب کنید؛ پس از افزودن، اطلاعات اتصال آن را تکمیل می‌کنید.</p>
+            <div class="pgs-add-grid">
+                @foreach (var p in _providers)
+                {
+                    <button type="button" class="pgs-add-opt" @onclick="() => CreateGateway(p.Key)" disabled="@_saving">
+                        <span class="pgs-add-opt__title">@p.Title</span>
+                        <span class="pgs-add-opt__desc">@p.Description</span>
+                        @if (p.Online) { <span class="pgs-row-badge pgs-row-badge--online mt-2">آنلاین</span> }
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showEdit && _draft != null)
+{
+    <div class="pgs-overlay" @onclick="CloseEdit">
+        <div class="pgs-modal pgs-modal--wide" @onclick:stopPropagation="true">
+            <div class="pgs-modal-head">
+                <div>
+                    <h5 class="pgs-modal-title">تنظیمات درگاه</h5>
+                    <div class="pgs-modal-sub mb-0">
+                        <span>@_draft.Title</span>
+                        <span class="ltr d-inline-block ms-2 opacity-50">(@_draft.Provider)</span>
+                    </div>
+                </div>
+                <button type="button" class="pgs-modal-x" @onclick="CloseEdit"><span class="oi oi-x"></span></button>
+            </div>
+
+            <div class="pgs-field">
+                <label class="pgs-label">عنوان نمایشی</label>
+                <input class="pgs-input" @bind="_draft.Title" placeholder="مثلا زرین‌پال" />
+            </div>
+
+            @foreach (var f in _draft.Fields)
+            {
+                <div class="pgs-field">
+                    <label class="pgs-label">@f.Label @(f.Required ? "(الزامی)" : "(اختیاری)")</label>
+                    <input class="pgs-input ltr" value="@GetConfigValue(f)" @onchange="args => OnConfigChange(f, args)" placeholder="@f.Placeholder" autocomplete="off" />
+                    @if (f.IsSecret)
+                    {
+                        <div class="pgs-hint">این مقدار محرمانه است و رمزگذاری نمی‌شود؛ فقط مدیران می‌توانند آن را ببینند.</div>
+                    }
+                </div>
+            }
+
+            @if (_draft.SupportsSandbox)
+            {
+                <div class="pgs-field">
+                    <label class="pgs-label">حالت آزمایشگاهی (Sandbox)</label>
+                    <label class="pgs-switch">
+                        <input type="checkbox" @bind="_draft.Sandbox" />
+                        <span class="pgs-switch-track"></span>
+                        <span class="pgs-switch-label">@(_draft.Sandbox ? "فعال (تست بدون مبلغ واقعی)" : "غیرفعال (پرداخت واقعی)")</span>
+                    </label>
+                    <div class="pgs-hint">@SandboxHint</div>
+                </div>
+            }
+
+            <div class="pgs-field">
+                <label class="pgs-label">آدرس بازگشت (Callback URL) <span class="optional-txt">(اختیاری)</span></label>
+                <input class="pgs-input ltr" @bind="_draft.CallbackBaseUrl" placeholder="https://errorservice.ir" autocomplete="off" />
+                <div class="pgs-hint">این آدرس را در پنل درگاه به‌عنوان «آدرس بازگشت» ثبت کنید. اگر خالی باشد از دامنه فعلی سایت استفاده می‌شود.</div>
+            </div>
+
+            <div class="pgs-callback-preview">
+                <span class="pgs-callback-preview__label">نشانی کامل بازگشت برای ثبت در پنل درگاه:</span>
+                <code dir="ltr">@CallbackPreview</code>
+            </div>
+
+            <div class="pgs-field">
+                <label class="pgs-label">چیدمان</label>
+                <input class="pgs-input ltr" type="number" @bind="_draft.SortOrder" />
+            </div>
+
+            <label class="pgs-switch pgs-switch--big">
+                <input type="checkbox" @bind="_draft.IsActive" />
+                <span class="pgs-switch-track"></span>
+                <span class="pgs-switch-label fw-bold">@(_draft.IsActive ? "درگاه فعال است" : "درگاه غیرفعال است")</span>
+            </label>
+
+            <div class="pgs-modal-actions">
+                <button type="button" class="btn btn-primary rounded-pill px-5 py-2 fw-bold shadow-sm" @onclick="Save" disabled="@_saving">
+                    @if (_saving) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                    <span class="oi oi-check-circle me-1"></span> ذخیره درگاه
+                </button>
+                <button type="button" class="btn btn-light rounded-pill px-4 py-2 fw-bold" @onclick="CloseEdit" disabled="@_saving">انصراف</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .pgs-page { max-width: 1020px; margin: 0 auto; padding-bottom: 40px; }
+    .pgs-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 22px; flex-wrap: wrap; }
+    .pgs-title { font-size: 1.3rem; font-weight: 900; }
+    .pgs-sub { font-size: 0.82rem; color: #64748b; }
+    .pgs-add-btn { display: inline-flex; align-items: center; gap: 8px; border: none; background: #4f46e5; color: #fff; font-weight: 800; font-size: 0.82rem; border-radius: 12px; padding: 11px 18px; cursor: pointer; box-shadow: 0 8px 20px rgba(79,70,229,.22); }
+    .pgs-add-btn:hover { background: #4338ca; }
+
+    .pgs-layout { display: grid; grid-template-columns: 1fr 300px; gap: 18px; align-items: start; }
+    .pgs-side { position: sticky; top: 90px; }
+    .pgs-card { background: #fff; border: 1px solid #eef2f7; border-radius: 18px; padding: 20px; }
+    .pgs-card--side { background: linear-gradient(180deg,#f8fafc,#fff); }
+    .pgs-list { display: flex; flex-direction: column; gap: 10px; }
+    .pgs-list-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .pgs-empty { text-align: center; padding: 36px 16px; color: #64748b; font-size: 0.85rem; background: #f8fafc; border: 1px dashed #e2e8f0; border-radius: 14px; }
+    .pgs-empty-ico { font-size: 1.6rem; color: #cbd5e1; margin-bottom: 8px; }
+
+    .pgs-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #eef2f7; border-radius: 14px; padding: 14px 16px; background: #fff; }
+    .pgs-row:hover { border-color: #e2e8f0; }
+    .pgs-row-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .pgs-row-ico { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border-radius: 12px; font-size: 1.05rem; }
+    .pgs-row-ico--manual { background: #dcfce7; color: #16a34a; }
+    .pgs-row-ico--online { background: #eef2ff; color: #4f46e5; }
+    .pgs-row-title { font-weight: 900; font-size: 0.9rem; color: #0f172a; }
+    .pgs-row-sub { font-size: 0.72rem; color: #94a3b8; margin-top: 3px; }
+    .dot-sep { margin: 0 4px; color: #cbd5e1; }
+    .ltr { direction: ltr; }
+    .pgs-row-badge { display: inline-flex; font-size: 0.66rem; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: #f1f5f9; color: #64748b; }
+    .pgs-row-badge--online { background: #eef2ff; color: #4f46e5; }
+    .pgs-row-badge--ok { background: #dcfce7; color: #16a34a; }
+    .pgs-row-badge--warn { background: #fef3c7; color: #d97706; }
+    .pgs-row-actions { display: flex; align-items: center; gap: 8px; }
+    .pgs-row-btn { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; color: #64748b; cursor: pointer; font-size: 0.8rem; }
+    .pgs-row-btn:hover { border-color: #c7d2fe; color: #4f46e5; }
+    .pgs-row-btn--danger:hover { border-color: #fecaca; color: #dc2626; }
+
+    .pgs-switch { display: inline-flex; align-items: center; gap: 12px; cursor: pointer; margin: 6px 0; }
+    .pgs-switch input { display: none; }
+    .pgs-switch-track { position: relative; width: 46px; height: 26px; border-radius: 999px; background: #cbd5e1; transition: background .2s; flex-shrink: 0; }
+    .pgs-switch-track::after { content: ""; position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: right .2s; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+    .pgs-switch input:checked + .pgs-switch-track { background: #4f46e5; }
+    .pgs-switch input:checked + .pgs-switch-track::after { right: 23px; }
+    .pgs-switch--big { display: flex; }
+    .pgs-switch--big .pgs-switch-track { width: 54px; height: 30px; }
+    .pgs-switch--big .pgs-switch-track::after { width: 24px; height: 24px; }
+    .pgs-switch--big input:checked + .pgs-switch-track::after { right: 27px; }
+    .pgs-switch-label { font-size: 0.83rem; color: #334155; }
+
+    .pgs-side-title { font-weight: 900; font-size: 0.9rem; }
+    .pgs-side-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+    .pgs-side-list li { display: flex; gap: 10px; font-size: 0.75rem; color: #475569; line-height: 1.9; }
+    .pgs-side-list .oi { color: #4f46e5; }
+
+    .pgs-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.55); backdrop-filter: blur(2px); z-index: 1200; display: grid; place-items: center; padding: 20px; }
+    .pgs-modal { background: #fff; border-radius: 18px; width: 100%; max-width: 460px; max-height: 88vh; overflow-y: auto; padding: 24px; box-shadow: 0 24px 60px rgba(0,0,0,.25); }
+    .pgs-modal--wide { max-width: 620px; }
+    .pgs-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+    .pgs-modal-title { font-size: 1.02rem; font-weight: 900; margin: 0; }
+    .pgs-modal-sub { font-size: 0.78rem; color: #64748b; margin-bottom: 18px; }
+    .pgs-modal-x { border: none; background: #f1f5f9; width: 34px; height: 34px; border-radius: 10px; color: #64748b; cursor: pointer; font-size: 0.8rem; }
+    .pgs-modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+
+    .pgs-add-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .pgs-add-opt { text-align: right; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .pgs-add-opt:hover { border-color: #c7d2fe; background: #eef2ff; }
+    .pgs-add-opt__title { display: block; font-weight: 900; font-size: 0.9rem; color: #0f172a; }
+    .pgs-add-opt__desc { display: block; font-size: 0.74rem; color: #64748b; line-height: 1.9; margin-top: 3px; }
+
+    .pgs-field { margin-bottom: 18px; }
+    .pgs-label { display: block; font-size: 0.8rem; font-weight: 800; color: #334155; margin-bottom: 7px; }
+    .pgs-input { width: 100%; padding: 11px 14px; font-size: 0.85rem; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; color: #0f172a; outline: none; transition: border-color .15s, box-shadow .15s; }
+    .pgs-input:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.08); background: #fff; }
+    .pgs-hint { font-size: 0.72rem; color: #94a3b8; margin-top: 5px; line-height: 1.9; }
+    .optional-txt { font-weight: 600; color: #cbd5e1; }
+    .ltr { direction: ltr; text-align: left; }
+
+    .pgs-callback-preview { background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 12px 16px; margin-bottom: 18px; }
+    .pgs-callback-preview__label { display: block; font-size: 0.72rem; color: #94a3b8; margin-bottom: 6px; }
+    .pgs-callback-preview code { font-size: 0.78rem; word-break: break-all; }
+
+    @@media (max-width: 900px) {
+        .pgs-layout { grid-template-columns: 1fr; }
+        .pgs-side { position: static; }
+        .pgs-row { flex-direction: column; align-items: flex-start; }
+    }
+</style>
+
+@code {
+    private List<PaymentGatewayDto> _gateways = new();
+    private List<PaymentProviderDefinition> _providers = new();
+    private bool _loading = true;
+    private bool _saving;
+    private bool _showAdd;
+    private bool _showEdit;
+    private PaymentGatewayDto? _draft;
+    private Dictionary<string, string> _editConfig = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _providers = await Http.GetFromJsonAsync<List<PaymentProviderDefinition>>("api/payment/providers") ?? new();
+            _gateways = await Http.GetFromJsonAsync<List<PaymentGatewayDto>>("api/payment/admin/gateways") ?? new();
+        }
+        catch { }
+        _loading = false;
+    }
+
+    private string SandboxHint => _draft?.SandboxHint ?? "";
+    private string CallbackPreview
+    {
+        get
+        {
+            if (_draft == null) return "";
+            var baseUrl = string.IsNullOrWhiteSpace(_draft.CallbackBaseUrl) ? "https://errorservice.ir" : _draft.CallbackBaseUrl.TrimEnd('/');
+            if (baseUrl.Contains("{orderId}"))
+                return baseUrl.Replace("{orderId}", "123");
+            return $"{baseUrl}/api/orders/123/payment/callback";
+        }
+    }
+
+    private string GetConfigValue(GatewayConfigField f)
+        => _editConfig.TryGetValue(f.Key, out var v) ? v : string.Empty;
+
+    private void OnConfigChange(GatewayConfigField f, ChangeEventArgs e)
+        => _editConfig[f.Key] = e.Value?.ToString() ?? string.Empty;
+
+    private void OpenAdd() => _showAdd = true;
+    private void CloseAdd() { _showAdd = false; }
+
+    private async Task CreateGateway(string provider)
+    {
+        _saving = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/payment/admin/gateways", new PaymentGatewayCreateRequest { Provider = provider });
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<PaymentGatewayDto>();
+                _showAdd = false;
+                await Reload();
+                if (dto != null) OpenEdit(dto);
+            }
+            else
+            {
+                var err = await resp.Content.ReadAsStringAsync();
+                Toast.ShowError(string.IsNullOrWhiteSpace(err) ? "خطا در افزودن درگاه" : err);
+            }
+        }
+        catch { Toast.ShowError("خطای ارتباط با سرور"); }
+        finally { _saving = false; }
+    }
+
+    private void OpenEdit(PaymentGatewayDto g)
+    {
+        _draft = new PaymentGatewayDto
+        {
+            Id = g.Id,
+            Provider = g.Provider,
+            Title = g.Title,
+            Online = g.Online,
+            IsActive = g.IsActive,
+            IsConfigured = g.IsConfigured,
+            Sandbox = g.Sandbox,
+            SupportsSandbox = g.SupportsSandbox,
+            SandboxHint = g.SandboxHint,
+            CallbackBaseUrl = g.CallbackBaseUrl,
+            CallbackUrl = g.CallbackUrl,
+            SortOrder = g.SortOrder,
+            Config = new Dictionary<string, string>(g.Config),
+            Fields = g.Fields
+        };
+        _editConfig = new Dictionary<string, string>(g.Config);
+        _showEdit = true;
+    }
+
+    private void CloseEdit() { _showEdit = false; _draft = null; }
+
+    private async Task ToggleActive(PaymentGatewayDto g, ChangeEventArgs e)
+    {
+        var value = e.Value is bool b && b;
+        try
+        {
+            await SaveInternal(new PaymentGatewaySaveRequest
+            {
+                Id = g.Id,
+                Provider = g.Provider,
+                Title = g.Title,
+                IsActive = value,
+                Sandbox = g.Sandbox,
+                CallbackBaseUrl = g.CallbackBaseUrl,
+                SortOrder = g.SortOrder,
+                Config = g.Config
+            });
+        }
+        catch { Toast.ShowError("خطا در تغییر وضعیت درگاه"); }
+    }
+
+    private async Task Save()
+    {
+        if (_draft == null) return;
+        await SaveInternal(new PaymentGatewaySaveRequest
+        {
+            Id = _draft.Id,
+            Provider = _draft.Provider,
+            Title = _draft.Title,
+            IsActive = _draft.IsActive,
+            Sandbox = _draft.Sandbox,
+            CallbackBaseUrl = _draft.CallbackBaseUrl,
+            SortOrder = _draft.SortOrder,
+            Config = new Dictionary<string, string>(_editConfig)
+        });
+    }
+
+    private async Task SaveInternal(PaymentGatewaySaveRequest request)
+    {
+        _saving = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"api/payment/admin/gateways/{request.Id}", request);
+            if (resp.IsSuccessStatusCode)
+            {
+                await Reload();
+                Toast.ShowSuccess("تنظیمات درگاه ذخیره شد");
+                _showEdit = false;
+                _draft = null;
+            }
+            else
+            {
+                var err = await resp.Content.ReadAsStringAsync();
+                Toast.ShowError(string.IsNullOrWhiteSpace(err) ? "خطا در ذخیره تنظیمات درگاه" : err);
+            }
+        }
+        catch { Toast.ShowError("خطای ارتباط با سرور"); }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteGateway(PaymentGatewayDto g)
+    {
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/payment/admin/gateways/{g.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _gateways.RemoveAll(x => x.Id == g.Id);
+                Toast.ShowSuccess("درگاه حذف شد");
+            }
+            else
+            {
+                var err = await resp.Content.ReadAsStringAsync();
+                Toast.ShowError(string.IsNullOrWhiteSpace(err) ? "خطا در حذف درگاه" : err);
+            }
+        }
+        catch { Toast.ShowError("خطای ارتباط با سرور"); }
+    }
+
+    private async Task Reload()
+    {
+        try
+        {
+            _gateways = await Http.GetFromJsonAsync<List<PaymentGatewayDto>>("api/payment/admin/gateways") ?? new();
+        }
+        catch { }
+    }
+}

@@ -1,0 +1,218 @@
+@page "/order-tracking"
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject ToastService Toast
+
+<SeoHeader Title="پیگیری سفارش | ارورسرویس" Description="وضعیت سفارش خود را با شماره سفارش و شماره موبایل دنبال کنید" OgType="website" />
+
+<div class="tracking-page py-5">
+    <div class="container" style="max-width: 880px;">
+        <h1 class="fw-black fs-3 mb-1">پیگیری سفارش</h1>
+        <p class="text-muted mb-4">شماره سفارش (کد سفارش) و شماره موبایلی را که هنگام ثبت سفارش وارد کرده‌اید بنویسید.</p>
+
+        <div class="tracking-form p-4 rounded-4 shadow-sm bg-white">
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label small text-muted">شماره سفارش</label>
+                    <input class="form-control rounded-3 ltr" dir="ltr" @bind="OrderNumber" placeholder="مثلا ORD-20260811-482913" />
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small text-muted">شماره موبایل</label>
+                    <input class="form-control rounded-3 ltr" dir="ltr" @bind="Phone" placeholder="09xxxxxxxxx" inputmode="tel" />
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button class="btn btn-primary rounded-pill w-100 fw-bold" @onclick="Search" disabled="@_loading">
+                        @if (_loading) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                        <span class="oi oi-magnifying-glass me-1"></span>جستجو
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+            </div>
+        }
+        else if (_error != null)
+        {
+            <div class="alert alert-warning text-center rounded-4 mt-4">
+                <div class="display-6 mb-2"><span class="oi oi-warning"></span></div>
+                @_error
+            </div>
+        }
+        else if (_order != null)
+        {
+            var netTotal = _order.TotalAmount - (_order.DiscountAmount ?? 0);
+            <div class="tracking-result p-4 rounded-4 shadow-sm bg-white mt-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                    <div>
+                        <div class="small text-muted">نتیجه سفارش:</div>
+                        <div class="fs-4 fw-bold mt-1" dir="ltr">@_order.OrderNumber</div>
+                        <div class="small text-muted mt-1">تاریخ ثبت: @PersianDate.ToJalaliDateTime(_order.CreatedAt)</div>
+                    </div>
+                    <span class="badge fs-6 px-3 py-2 rounded-pill @GetStatusBadgeClass(_order.Status)">@GetStatusText(_order.Status)</span>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    @foreach (var item in _order.Items)
+                    {
+                        <div class="col-md-6">
+                            <div class="d-flex justify-content-between align-items-center bg-light rounded-3 px-3 py-2">
+                                <span class="small fw-bold">@item.ProductName</span>
+                                <span class="small text-muted">@item.Quantity عدد × @item.Price.ToString("N0") تومان</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="d-flex flex-wrap justify-content-between align-items-center pt-3 border-top">
+                    <div class="small">
+                        @if ((_order.DiscountAmount ?? 0) > 0)
+                        {
+                            <div class="text-danger mb-2">تخفیف (@_order.CouponCode): <span dir="ltr">-@_order.DiscountAmount?.ToString("N0")</span> تومان</div>
+                        }
+                        @if (!string.IsNullOrEmpty(_order.TrackingNumber))
+                        {
+                            <div>کد رهگیری: <span dir="ltr" class="fw-bold">@_order.TrackingNumber</span></div>
+                        }
+                        @if (!string.IsNullOrEmpty(_order.AdminNotes))
+                        {
+                            <div class="text-muted mt-2 fst-italic">یادداشت مدیر: @_order.AdminNotes</div>
+                        }
+                    </div>
+                    <div class="text-end">
+                        <span class="text-muted small d-block">مبلغ سفارش</span>
+                        <span class="fw-bold text-primary fs-4">@netTotal.ToString("N0") <small class="text-muted fs-6">تومان</small></span>
+                    </div>
+                </div>
+
+                @if (_order.Status == OrderStatus.PendingPayment || _order.Status == OrderStatus.ReceiptUploaded)
+                {
+                    <div class="alert alert-warning rounded-3 mt-4 mb-0">
+                        <div class="fw-bold mb-1">پرداخت سفارش نهایی نشده است</div>
+                        <div class="small">در صورت پرداخت کارت‌به‌کارت، می‌توانید رسید را ثبت کنید تا پس از تایید، سفارش برای شما ارسال شود.</div>
+                        <a class="btn btn-warning rounded-pill px-4 py-2 fw-bold mt-3" href="/payment/offline/@_order.Id?token=@_order.AccessToken">
+                            <span class="oi oi-credit-card me-2"></span>ثبت رسید پرداخت
+                        </a>
+                    </div>
+                }
+
+                @if (_order.Status == OrderStatus.Approved || _order.Status == OrderStatus.Completed)
+                {
+                    <div class="alert alert-success rounded-3 mt-4 mb-0">
+                        <span class="oi oi-check me-2"></span>سفارش شما تایید شده و در حال ارسال است. شماره رهگیری پستی پس از ارسال در همین صفحه نمایش داده می‌شود.
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .tracking-form { border: 1px solid rgba(0,0,0,0.05); }
+    .tracking-result { border: 1px solid rgba(0,0,0,0.05); }
+    .ltr { direction: ltr; text-align: left; }
+    @@media (max-width: 576px) {
+        .tracking-page .container { padding-inline: 0.75rem; }
+        .tracking-page h1 { font-size: 1.15rem; }
+    }
+</style>
+
+@code {
+    private string OrderNumber { get; set; } = "";
+    private string Phone { get; set; } = "";
+    private OrderDto? _order;
+    private string? _error;
+    private bool _loading;
+
+    [SupplyParameterFromQuery(Name = "orderNumber")]
+    public string? InitialOrderNumber { get; set; }
+
+    [SupplyParameterFromQuery(Name = "phone")]
+    public string? InitialPhone { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(InitialOrderNumber) && string.IsNullOrWhiteSpace(OrderNumber))
+            OrderNumber = InitialOrderNumber.Trim();
+        if (!string.IsNullOrWhiteSpace(InitialPhone) && string.IsNullOrWhiteSpace(Phone))
+            Phone = InitialPhone.Trim();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !string.IsNullOrWhiteSpace(OrderNumber) && !string.IsNullOrWhiteSpace(Phone) && _order == null)
+            await Search();
+    }
+
+    private async Task Search()
+    {
+        if (_loading) return;
+
+        if (string.IsNullOrWhiteSpace(OrderNumber) || string.IsNullOrWhiteSpace(Phone))
+        {
+            Toast.ShowError("شماره سفارش و شماره موبایل را وارد کنید");
+            return;
+        }
+
+        _loading = true;
+        _error = null;
+        _order = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var url = $"api/orders/track?orderNumber={Uri.EscapeDataString(OrderNumber.Trim())}&phone={Uri.EscapeDataString(Phone.Trim())}";
+            using var response = await Http.GetAsync(url);
+            if (response.IsSuccessStatusCode)
+            {
+                _order = await response.Content.ReadFromJsonAsync<OrderDto>();
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _error = "سفارشی با این مشخصات یافت نشد. شماره سفارش و شماره موبایل را مجددا بررسی کنید.";
+            }
+            else
+            {
+                _error = "خطا در دریافت اطلاعات سفارش. لطفا دوباره تلاش کنید.";
+            }
+        }
+        catch
+        {
+            _error = "خطا در دریافت اطلاعات سفارش. لطفا دوباره تلاش کنید.";
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string GetStatusText(OrderStatus status) => status switch
+    {
+        OrderStatus.PendingPayment => "در انتظار پرداخت",
+        OrderStatus.ReceiptUploaded => "در انتظار تایید",
+        OrderStatus.Approved => "تایید شده",
+        OrderStatus.Rejected => "رد شده",
+        OrderStatus.Cancelled => "لغو شده",
+        OrderStatus.Completed => "تکمیل شده",
+        _ => "نامشخص"
+    };
+
+    private string GetStatusBadgeClass(OrderStatus status) => status switch
+    {
+        OrderStatus.PendingPayment => "bg-warning text-dark",
+        OrderStatus.ReceiptUploaded => "bg-info text-white",
+        OrderStatus.Approved => "bg-success text-white",
+        OrderStatus.Rejected => "bg-danger text-white",
+        OrderStatus.Cancelled => "bg-secondary text-white",
+        OrderStatus.Completed => "bg-primary text-white",
+        _ => "bg-light text-dark"
+    };
+}

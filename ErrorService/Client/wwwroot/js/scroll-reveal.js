@@ -1,15 +1,17 @@
 window.initScrollReveal = function () {
-    var observer = new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-            if (entry.isIntersecting) {
-                entry.target.classList.add('visible');
-                observer.unobserve(entry.target);
-            }
-        });
-    }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+    if (!window.__srObserver) {
+        window.__srObserver = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    window.__srObserver.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.05, rootMargin: '0px 0px -30px 0px' });
+    }
 
-    document.querySelectorAll('.reveal').forEach(function (el) {
-        observer.observe(el);
+    document.querySelectorAll('.reveal:not(.visible)').forEach(function (el) {
+        window.__srObserver.observe(el);
     });
 
     return true;

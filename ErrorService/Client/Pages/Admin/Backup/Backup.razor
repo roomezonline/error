@@ -1,0 +1,550 @@
+@page "/admin/backup"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.backup.view")]
+@using ErrorService.Shared
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService Toast
+@inject IJSRuntime JSRuntime
+
+<div class="backup-page">
+    <div class="backup-page__header">
+        <h1 class="backup-page__title">پشتیبان‌گیری</h1>
+        <p class="backup-page__subtitle">مدیریت بک‌آپ پایگاه داده و تنظیمات زمان‌بندی</p>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="backup-page__loading">
+            <div class="spinner-border text-primary"></div>
+            <span>در حال بارگذاری...</span>
+        </div>
+    }
+    else
+    {
+        <div class="backup-page__stats">
+            <div class="stat-card">
+                <div class="stat-card__icon bg-success-subtle text-success">
+                    <span class="oi oi-check"></span>
+                </div>
+                <div class="stat-card__info">
+                    <span class="stat-card__value">@(_info?.Settings?.TotalBackups ?? 0)</span>
+                    <span class="stat-card__label">کل بک‌آپ‌ها</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card__icon bg-primary-subtle text-primary">
+                    <span class="oi oi-clock"></span>
+                </div>
+                <div class="stat-card__info">
+                    <span class="stat-card__value">@(_info?.Settings?.LastBackupAt ?? "—")</span>
+                    <span class="stat-card__label">آخرین بک‌آپ</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card__icon bg-@(IsAutoRunning ? "success" : "secondary")-subtle text-@(IsAutoRunning ? "success" : "secondary")">
+                    <span class="oi oi-@(IsAutoRunning ? "media-play" : "media-pause")"></span>
+                </div>
+                <div class="stat-card__info">
+                    <span class="stat-card__value">@(IsAutoRunning ? "فعال" : "غیرفعال")</span>
+                    <span class="stat-card__label">بک‌آپ خودکار</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="backup-page__actions">
+            <button class="btn btn-success" @onclick="CreateManualBackup" disabled="@_creating">
+                @if (_creating)
+                {
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                }
+                <span class="oi oi-plus me-2"></span>
+                بک‌آپ دستی
+            </button>
+            <button class="btn btn-outline-secondary" @onclick="LoadData" disabled="@_loading">
+                <span class="oi oi-reload me-2"></span>
+                بروزرسانی
+            </button>
+            <button class="btn btn-outline-warning" @onclick="CleanupFiles" disabled="@_creating">
+                <span class="oi oi-trash me-2"></span>
+                پاکسازی فایل‌های اضافی
+            </button>
+        </div>
+
+        <div class="backup-page__tabs">
+            <ul class="nav nav-tabs">
+                <li>
+                    <button class="nav-link @(_activeTab == "history" ? "active" : "")" @onclick='() => _activeTab = "history"'>
+                        <span class="oi oi-list me-2"></span>
+                        تاریخچه
+                    </button>
+                </li>
+                <li>
+                    <button class="nav-link @(_activeTab == "settings" ? "active" : "")" @onclick='() => _activeTab = "settings"'>
+                        <span class="oi oi-cog me-2"></span>
+                        تنظیمات
+                    </button>
+                </li>
+            </ul>
+        </div>
+
+        @if (_activeTab == "history")
+        {
+            <div class="backup-page__history">
+                @if (_history.Count == 0)
+                {
+                    <div class="empty-state">
+                        <span class="oi oi-folder-open empty-state__icon"></span>
+                        <p>هنوز بک‌آپی ثبت نشده است</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>فایل</th>
+                                    <th>حجم</th>
+                                    <th>وضعیت</th>
+                                    <th>تاریخ</th>
+                                    <th>نوع</th>
+                                    <th>عملیات</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _history)
+                                {
+                                    <tr class="@(item.Status == "Failed" ? "table-danger" : "")">
+                                        <td>
+                                            <span class="oi oi-file me-2"></span>
+                                            @item.FileName
+                                        </td>
+                                        <td>@item.FileSizeFormatted</td>
+                                        <td>
+                                            @if (item.Status == "Success")
+                                            {
+                                                <span class="badge bg-success">موفق</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger">ناموفق</span>
+                                                @if (!string.IsNullOrEmpty(item.ErrorMessage))
+                                                {
+                                                    <div class="text-danger small mt-1">@item.ErrorMessage</div>
+                                                }
+                                            }
+                                        </td>
+                                        <td>@item.CreatedAtFa</td>
+                                        <td>
+                                            @if (item.IsManual)
+                                            {
+                                                <span class="badge bg-info">دستی</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-primary">خودکار</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (item.Status == "Success")
+                                            {
+                                                <button class="btn btn-sm btn-outline-warning" @onclick="() => RestoreBackup(item)" title="بازیابی">
+                                                    <span class="oi oi-action-undo"></span>
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+        else if (_activeTab == "settings")
+        {
+            <div class="backup-page__settings">
+                <EditForm Model="_settings" OnValidSubmit="SaveSettings">
+                    <div class="settings-section">
+                        <h3 class="settings-section__title">زمان‌بندی بک‌آپ</h3>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <InputCheckbox class="form-check-input" @bind-Value="_settings.IsAutoBackupEnabled" id="autoBackup" />
+                                    <label class="form-check-label" for="autoBackup">فعال‌سازی بک‌آپ خودکار</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">فرکانس (ساعت)</label>
+                                <InputNumber class="form-control" @bind-Value="_settings.FrequencyHours" min="1" max="720" />
+                                <div class="form-text">هر چند ساعت یک‌بار بک‌آپ گرفته شود (پیشفرض: 24 ساعت = روزانه)</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">مسیر ذخیره‌سازی</label>
+                                <InputText class="form-control" @bind-Value="_settings.BackupPath" />
+                                <div class="form-text">مسیر نسبی یا مطلق ذخیره فایل‌های بک‌آپ</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">حداکثر فایل نگهداری</label>
+                                <InputNumber class="form-control" @bind-Value="_settings.MaxFiles" min="1" max="100" />
+                                <div class="form-text">بیش از این تعداد فایل بک‌آپ خودکار حذف می‌شود</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3 class="settings-section__title">اعلام ایمیلی</h3>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <InputCheckbox class="form-check-input" @bind-Value="_settings.EmailNotifyEnabled" id="emailNotify" />
+                                    <label class="form-check-label" for="emailNotify">ارسال ایمیل پس از بک‌آپ</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">ایمیل دریافت‌کننده</label>
+                                <InputText class="form-control" @bind-Value="_settings.EmailTo" type="email" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3 class="settings-section__title">تنظیمات SMTP (Gmail)</h3>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">SMTP Host</label>
+                                <InputText class="form-control" @bind-Value="_settings.SmtpHost" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">پورت</label>
+                                <InputNumber class="form-control" @bind-Value="_settings.SmtpPort" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">نام کاربری (ایمیل Gmail)</label>
+                                <InputText class="form-control" @bind-Value="_settings.SmtpUser" type="email" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">رمز عبور (App Password)</label>
+                                <InputText class="form-control" @bind-Value="_settings.SmtpPassword" type="password" placeholder="برای ویرایش رمز جدید وارد کنید" />
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <InputCheckbox class="form-check-input" @bind-Value="_settings.SmtpUseSsl" id="useSsl" />
+                                    <label class="form-check-label" for="useSsl">استفاده از SSL</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">نام فرستنده</label>
+                                <InputText class="form-control" @bind-Value="_settings.SmtpFromName" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">ایمیل فرستنده</label>
+                                <InputText class="form-control" @bind-Value="_settings.SmtpFromEmail" type="email" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section__actions">
+                        <button type="submit" class="btn btn-primary" disabled="@_saving">
+                            @if (_saving)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                            }
+                            ذخیره تنظیمات
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private BackupInfoDto? _info;
+    private BackupSettingsDto _settings = new();
+    private List<BackupHistoryItemDto> _history = new();
+    private bool _loading = true;
+    private bool _creating;
+    private bool _saving;
+    private string _activeTab = "history";
+
+    private bool IsAutoRunning => _info?.Settings?.IsAutoBackupEnabled == true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        try
+        {
+            _info = await Http.GetFromJsonAsync<BackupInfoDto>("api/backup/info");
+            if (_info != null)
+            {
+                _settings = _info.Settings;
+                _history = _info.RecentHistory;
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"خطا در بارگذاری: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task CreateManualBackup()
+    {
+        _creating = true;
+        try
+        {
+            var result = await Http.PostAsJsonAsync<BackupCreateRequest>("api/backup/create", new());
+            var data = await result.Content.ReadFromJsonAsync<BackupResult>();
+            if (data?.Success == true)
+            {
+                Toast.ShowSuccess($"بک‌آپ با موفقیت ایجاد شد: {data.FileName}");
+                await LoadData();
+            }
+            else
+            {
+                Toast.ShowError($"خطا: {data?.ErrorMessage}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"خطا: {ex.Message}");
+        }
+        finally
+        {
+            _creating = false;
+        }
+    }
+
+    private async Task RestoreBackup(BackupHistoryItemDto item)
+    {
+        if (!await Confirm($"آیا از بک‌آپ {item.FileName} بازیابی شود؟\nتمام تغییرات فعلی دیتابیس از بین خواهد رفت!"))
+            return;
+
+        try
+        {
+            var result = await Http.PostAsJsonAsync("api/backup/restore", new BackupRestoreRequest
+            {
+                HistoryId = item.Id,
+                Confirm = true
+            });
+            var data = await result.Content.ReadFromJsonAsync<RestoreResult>();
+            if (data?.Success == true)
+            {
+                Toast.ShowSuccess("بازیابی با موفقیت انجام شد");
+            }
+            else
+            {
+                Toast.ShowError($"خطا: {data?.ErrorMessage}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"خطا: {ex.Message}");
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        _saving = true;
+        try
+        {
+            var result = await Http.PutAsJsonAsync("api/backup/settings", _settings);
+            if (result.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("تنظیمات ذخیره شد");
+                await LoadData();
+            }
+            else
+            {
+                Toast.ShowError("خطا در ذخیره تنظیمات");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"خطا: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CleanupFiles()
+    {
+        try
+        {
+            await Http.PostAsync("api/backup/cleanup", null);
+            Toast.ShowSuccess("پاکسازی انجام شد");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"خطا: {ex.Message}");
+        }
+    }
+
+    private async Task<bool> Confirm(string message)
+    {
+        return await JSRuntime.InvokeAsync<bool>("confirm", message);
+    }
+}
+
+<style>
+    .backup-page {
+        padding: 24px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    .backup-page__header {
+        margin-bottom: 24px;
+    }
+    .backup-page__title {
+        font-size: 24px;
+        font-weight: 800;
+        color: #1e293b;
+        margin: 0 0 4px;
+    }
+    .backup-page__subtitle {
+        color: #64748b;
+        margin: 0;
+    }
+    .backup-page__loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        padding: 60px 0;
+        color: #64748b;
+    }
+    .backup-page__stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .stat-card__icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        flex-shrink: 0;
+    }
+    .stat-card__info {
+        display: flex;
+        flex-direction: column;
+    }
+    .stat-card__value {
+        font-size: 14px;
+        font-weight: 700;
+        color: #1e293b;
+    }
+    .stat-card__label {
+        font-size: 12px;
+        color: #64748b;
+    }
+    .backup-page__actions {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+    }
+    .backup-page__tabs {
+        margin-bottom: 20px;
+    }
+    .backup-page__tabs .nav-tabs {
+        border-bottom: 2px solid #e2e8f0;
+    }
+    .backup-page__tabs .nav-link {
+        color: #64748b;
+        border: none;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+        padding: 10px 20px;
+        font-weight: 600;
+        cursor: pointer;
+        background: none;
+    }
+    .backup-page__tabs .nav-link.active {
+        color: #3b82f6;
+        border-bottom-color: #3b82f6;
+        background: none;
+    }
+    .backup-page__history {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: #94a3b8;
+    }
+    .empty-state__icon {
+        font-size: 48px;
+        display: block;
+        margin-bottom: 12px;
+    }
+    .backup-page__settings {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .settings-section {
+        margin-bottom: 28px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .settings-section:last-of-type {
+        border-bottom: none;
+    }
+    .settings-section__title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0 0 16px;
+    }
+    .settings-section__actions {
+        display: flex;
+        justify-content: flex-start;
+        gap: 8px;
+        padding-top: 8px;
+    }
+    .table td, .table th {
+        vertical-align: middle;
+    }
+    .badge {
+        font-weight: 600;
+    }
+    .form-check-input:checked {
+        background-color: #3b82f6;
+        border-color: #3b82f6;
+    }
+    .form-text {
+        font-size: 11px;
+        color: #94a3b8;
+    }
+</style>

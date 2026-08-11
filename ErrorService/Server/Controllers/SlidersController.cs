@@ -2,6 +2,7 @@ using ErrorService.Server.Data;
 using ErrorService.Server.Infrastructure;
 using ErrorService.Server.Models;
 using ErrorService.Shared;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SixLabors.ImageSharp;
@@ -69,6 +70,7 @@ public sealed class SlidersController : ControllerBase
         return items;
     }
 
+    [Authorize(Policy = "perm:admin.sliders.manage")]
     [HttpPost]
     public async Task<ActionResult<SliderItemDto>> Create([FromBody] SliderUpsertRequest request, CancellationToken cancellationToken)
     {
@@ -102,6 +104,7 @@ public sealed class SlidersController : ControllerBase
         };
     }
 
+    [Authorize(Policy = "perm:admin.sliders.manage")]
     [HttpPut("{id:int}")]
     public async Task<ActionResult<SliderItemDto>> Update(int id, [FromBody] SliderUpsertRequest request, CancellationToken cancellationToken)
     {
@@ -137,6 +140,7 @@ public sealed class SlidersController : ControllerBase
         };
     }
 
+    [Authorize(Policy = "perm:admin.sliders.manage")]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
     {
@@ -152,6 +156,7 @@ public sealed class SlidersController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Policy = "perm:admin.sliders.manage")]
     [HttpPost("upload")]
     [RequestSizeLimit(15_000_000)]
     public async Task<ActionResult<string>> Upload([FromForm] IFormFile file, [FromQuery] bool force = false, [FromQuery] string? variant = null, CancellationToken cancellationToken = default)

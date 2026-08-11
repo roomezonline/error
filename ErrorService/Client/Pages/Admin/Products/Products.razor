@@ -43,6 +43,10 @@
                             <ValidationMessage For="@(() => model.Name)" class="text-danger small" />
                         </div>
                         <div class="mb-3">
+                            <label class="form-label fw-bold">کد محصول - SKU (اختیاری)</label>
+                            <InputText @bind-Value="model.Sku" class="form-control rounded-3 ltr" placeholder="مثال: ERR-SENS-001" />
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label fw-bold">توضیحات</label>
                             <div class="editor-container">
                                 <textarea id="tiny-editor-product" class="form-control">@model.Description</textarea>
@@ -179,6 +183,10 @@
                 </button>
             }
         </div>
+        <button type="button" class="stock-filter-chip @(_showLowStockOnly ? "stock-filter-chip--active" : "")" @onclick="ToggleLowStock">
+            <span class="oi oi-@(_showLowStockOnly ? "check" : "warning") me-1"></span>
+            موجودی کم (≤ ۵)
+        </button>
         @if (products != null)
         {
             <span class="admin-toolbar__count">@FilteredProducts.Count از @totalCount محصول</span>
@@ -226,7 +234,7 @@
                         </div>
                         <div class="product-card__info">
                             <div class="product-card__name">@prod.Name</div>
-                            <div class="product-card__id">کد: #@prod.Id</div>
+                            <div class="product-card__id">کد: #@prod.Id@(!string.IsNullOrWhiteSpace(prod.Sku) ? $" • {prod.Sku}" : "")</div>
                         </div>
                         <span class="product-card__status @(prod.IsAvailable ? "status-available" : "status-unavailable")">
                             @(prod.IsAvailable ? $"موجود ({prod.StockQuantity} عدد)" : "ناموجود")
@@ -307,6 +315,26 @@
         position: relative;
         flex: 1;
         max-width: 360px;
+    }
+    .stock-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 14px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #94a3b8;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 800;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .stock-filter-chip--active {
+        background: #fef3c7;
+        border-color: #f59e0b;
+        color: #b45309;
     }
     .search-box__icon {
         position: absolute;
@@ -557,6 +585,7 @@
     }
 
     private string? _searchQuery;
+    private bool _showLowStockOnly;
     private int skip = 0;
     private int take = 10;
     private int totalCount = 0;
@@ -568,14 +597,21 @@
         get
         {
             if (products == null) return new();
-            if (string.IsNullOrWhiteSpace(_searchQuery)) return products;
-            var q = _searchQuery.Trim().ToLower();
-            return products.Where(p =>
-                (p.Name?.ToLower().Contains(q) ?? false) ||
-                (p.CategoryName?.ToLower().Contains(q) ?? false)
-            ).ToList();
+            IEnumerable<ProductDto> list = products;
+            if (_showLowStockOnly)
+                list = list.Where(p => p.StockQuantity <= 5);
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.Trim().ToLower();
+                list = list.Where(p =>
+                    (p.Name?.ToLower().Contains(q) ?? false) ||
+                    (p.CategoryName?.ToLower().Contains(q) ?? false));
+            }
+            return list.ToList();
         }
     }
+
+    private void ToggleLowStock() => _showLowStockOnly = !_showLowStockOnly;
 
     private void OnSearchInput(ChangeEventArgs e)
     {
@@ -651,6 +687,7 @@
         model = new ProductUpsertRequest
         {
             Name = prod.Name,
+            Sku = prod.Sku,
             Description = prod.Description,
             Price = prod.Price,
             DiscountPrice = prod.DiscountPrice,

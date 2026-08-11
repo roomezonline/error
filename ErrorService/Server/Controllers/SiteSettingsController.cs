@@ -1,6 +1,7 @@
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
 using ErrorService.Shared;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -88,6 +89,7 @@ public sealed class SiteSettingsController : ControllerBase
         };
     }
 
+    [Authorize(Policy = "perm:admin.settings.manage")]
     [HttpPut]
     public async Task<IActionResult> Update(SiteSettingsDto dto)
     {

@@ -73,8 +73,24 @@
                                         <span class="small ms-2" dir="ltr">@order.TrackingNumber</span>
                                     }
                                 </div>
-                                <div class="fw-bold text-primary fs-5">@order.TotalAmount.ToString("N0") <small class="text-muted fs-6">تومان</small></div>
+                                <div class="text-end">
+                                    @if ((order.DiscountAmount ?? 0) > 0)
+                                    {
+                                        <div class="small text-danger">
+                                            تخفیف (@order.CouponCode): <span dir="ltr">-@order.DiscountAmount?.ToString("N0")</span> تومان
+                                        </div>
+                                    }
+                                    <div class="fw-bold text-primary fs-5">@((order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0")) <small class="text-muted fs-6">تومان</small></div>
+                                </div>
                             </div>
+
+                            @if (!string.IsNullOrEmpty(order.ProvinceName) || !string.IsNullOrEmpty(order.CityName) || !string.IsNullOrEmpty(order.PostalCode))
+                            {
+                                <div class="small text-muted mt-2">
+                                    <span class="oi oi-map-marker me-1"></span>
+                                    @(FormatProvinceCity(order))@(!string.IsNullOrWhiteSpace(order.PostalCode) ? $" — کد پستی {order.PostalCode}" : "")
+                                </div>
+                            }
 
                             @if (order.Status == OrderStatus.PendingPayment)
                             {
@@ -122,6 +138,13 @@
             Toast.ShowError("خطا در دریافت سفارش‌ها");
         }
         _loading = false;
+    }
+
+    private static string FormatProvinceCity(OrderDto o)
+    {
+        if (string.IsNullOrWhiteSpace(o.ProvinceName)) return o.CityName ?? "ثبت نشده";
+        if (string.IsNullOrWhiteSpace(o.CityName)) return o.ProvinceName;
+        return $"{o.ProvinceName} - {o.CityName}";
     }
 
     private string GetStatusText(OrderStatus status) => status switch

@@ -2,6 +2,7 @@ using ErrorService.Server.Data;
 using ErrorService.Server.Infrastructure;
 using ErrorService.Server.Models;
 using ErrorService.Shared;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -37,6 +38,7 @@ public class CategoriesController : ControllerBase
             }).ToListAsync();
     }
 
+    [Authorize(Policy = "perm:admin.categories.manage")]
     [HttpPost]
     public async Task<ActionResult<CategoryDto>> PostCategory(CategoryDto categoryDto)
     {
@@ -54,6 +56,7 @@ public class CategoriesController : ControllerBase
         return CreatedAtAction(nameof(GetCategories), new { id = category.Id }, categoryDto);
     }
 
+    [Authorize(Policy = "perm:admin.categories.manage")]
     [HttpPost("upload")]
     [RequestSizeLimit(3_000_000)]
     public async Task<ActionResult<string>> Upload([FromForm] IFormFile file, CancellationToken cancellationToken)
@@ -72,10 +75,10 @@ public class CategoriesController : ControllerBase
             }
 
             var safeExt = ext.ToLowerInvariant();
-            var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp", ".svg" };
+            var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp" };
             if (!allowed.Contains(safeExt))
             {
-                return BadRequest("فرمت فایل مجاز نیست. فقط jpg, jpeg, png, webp, svg");
+                return BadRequest("فرمت فایل مجاز نیست. فقط jpg, jpeg, png, webp");
             }
 
             var relativeFolder = _configuration["Uploads:CategoriesRelativePath"];
@@ -115,6 +118,7 @@ public class CategoriesController : ControllerBase
         }
     }
 
+    [Authorize(Policy = "perm:admin.categories.manage")]
     [HttpPut("{id:int}")]
     public async Task<IActionResult> PutCategory(int id, CategoryDto categoryDto)
     {
@@ -147,6 +151,7 @@ public class CategoriesController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Policy = "perm:admin.categories.manage")]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteCategory(int id)
     {
@@ -185,6 +190,7 @@ public class ProductsController : ControllerBase
         _configuration = configuration;
     }
 
+    [Authorize(Policy = "perm:admin.products.manage")]
     [HttpPost("upload")]
     [RequestSizeLimit(15_000_000)]
     public async Task<ActionResult<string>> Upload([FromForm] IFormFile file, CancellationToken cancellationToken)
@@ -198,9 +204,9 @@ public class ProductsController : ControllerBase
             if (string.IsNullOrWhiteSpace(ext)) ext = ".bin";
 
             var safeExt = ext.ToLowerInvariant();
-            var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp", ".svg" };
+            var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp" };
             if (!allowed.Contains(safeExt))
-                return BadRequest("فرمت فایل مجاز نیست. فقط jpg, jpeg, png, webp, svg");
+                return BadRequest("فرمت فایل مجاز نیست. فقط jpg, jpeg, png, webp");
 
             var relativeFolder = _configuration["Uploads:ProductsRelativePath"];
             if (string.IsNullOrWhiteSpace(relativeFolder))
@@ -294,6 +300,7 @@ public class ProductsController : ControllerBase
                 Id = p.Id,
                 Name = p.Name,
                 Slug = p.Slug,
+                Sku = p.Sku,
                 Description = p.Description,
                 Price = p.Price,
                 DiscountPrice = p.DiscountPrice,
@@ -327,6 +334,7 @@ public class ProductsController : ControllerBase
                 Id = p.Id,
                 Name = p.Name,
                 Slug = p.Slug,
+                Sku = p.Sku,
                 Description = p.Description,
                 Price = p.Price,
                 DiscountPrice = p.DiscountPrice,
@@ -366,6 +374,7 @@ public class ProductsController : ControllerBase
                 Id = p.Id,
                 Name = p.Name,
                 Slug = p.Slug,
+                Sku = p.Sku,
                 Description = p.Description,
                 Price = p.Price,
                 DiscountPrice = p.DiscountPrice,
@@ -394,6 +403,7 @@ public class ProductsController : ControllerBase
         return Ok(product);
     }
 
+    [Authorize(Policy = "perm:admin.products.manage")]
     [HttpPost]
     public async Task<ActionResult<ProductDto>> PostProduct(ProductUpsertRequest request)
     {
@@ -403,6 +413,7 @@ public class ProductsController : ControllerBase
             Slug = await SlugService.ResolveUniqueAsync(
                 _context.Products.Where(p => p.Slug != null).Select(p => p.Slug!),
                 request.Name),
+            Sku = request.Sku,
             Description = request.Description,
             Price = request.Price,
             DiscountPrice = request.DiscountPrice,
@@ -430,6 +441,7 @@ public class ProductsController : ControllerBase
         return Ok(new ProductDto { Id = product.Id, Name = product.Name, Slug = product.Slug });
     }
 
+    [Authorize(Policy = "perm:admin.products.manage")]
     [HttpPut("{id:int}")]
     public async Task<IActionResult> PutProduct(int id, ProductUpsertRequest request)
     {
@@ -441,6 +453,7 @@ public class ProductsController : ControllerBase
 
         var oldName = product.Name;
         product.Name = request.Name;
+        product.Sku = request.Sku;
         product.Description = request.Description;
         product.Price = request.Price;
         product.DiscountPrice = request.DiscountPrice;
@@ -472,6 +485,7 @@ public class ProductsController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Policy = "perm:admin.products.manage")]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteProduct(int id)
     {

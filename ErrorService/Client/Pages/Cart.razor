@@ -65,6 +65,9 @@
                                                          OnIncrease="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity + 1)"
                                                          OnDecrease="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity - 1)" />
                                     </div>
+                                    <button class="btn btn-sm text-danger p-1" @onclick="() => CartService.RemoveItemAsync(item.ProductId)" title="حذف از سبد">
+                                        <span class="oi oi-x" style="font-size:0.75rem;"></span>
+                                    </button>
                                 </div>
                             </div>
                         }
@@ -106,6 +109,18 @@
                         <div class="summary-row">
                             <span class="summary-label">مجموع کالاها</span>
                             <span class="summary-value">@CartService.GetTotalAmount().ToString("N0") <small>تومان</small></span>
+                        </div>
+                        <div class="coupon-row">
+                            <div class="input-group">
+                                <input class="form-control form-control-sm" placeholder="کد تخفیف" @bind="couponCode" />
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3" @onclick="ApplyCoupon" disabled="@string.IsNullOrWhiteSpace(couponCode)">
+                                    اعمال
+                                </button>
+                            </div>
+                            @if (!string.IsNullOrEmpty(couponMessage))
+                            {
+                                <div class="small mt-1 @(couponSuccess ? "text-success" : "text-danger")">@couponMessage</div>
+                            }
                         </div>
                         <div class="summary-divider"></div>
                         <div class="summary-total">
@@ -191,6 +206,20 @@
 
     .summary-divider { height: 1px; background: var(--shop-border, #f1f5f9); margin: 12px 0; }
 
+    .coupon-row {
+        padding: 10px 0;
+        border-bottom: 1px solid var(--shop-border, #f1f5f9);
+    }
+    .coupon-row .input-group {
+        border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    .coupon-row .form-control {
+        border: 0;
+        font-size: 0.85rem;
+    }
+
     .summary-total { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
     .summary-total span:first-child { font-size: 0.85rem; font-weight: 700; color: var(--shop-text, #0f172a); }
     .total-amount { font-size: 1.3rem; font-weight: 900; color: var(--shop-primary, #4f46e5); }
@@ -268,5 +297,43 @@
         }
 
         Nav.NavigateTo("/checkout");
+    }
+
+    private string couponCode = "";
+    private string couponMessage = "";
+    private bool couponSuccess = false;
+
+    private async Task ApplyCoupon()
+    {
+        if (string.IsNullOrWhiteSpace(couponCode)) return;
+        couponMessage = "";
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/coupons/apply", new CouponApplyRequest { Code = couponCode.Trim(), OrderAmount = CartService.GetTotalAmount() });
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<CouponApplyResult>();
+                if (result?.IsValid == true)
+                {
+                    couponSuccess = true;
+                    couponMessage = result.Message;
+                }
+                else
+                {
+                    couponSuccess = false;
+                    couponMessage = result?.Message ?? "کد تخفیف نامعتبر است.";
+                }
+            }
+            else
+            {
+                couponSuccess = false;
+                couponMessage = "کد تخفیف نامعتبر است.";
+            }
+        }
+        catch
+        {
+            couponSuccess = false;
+            couponMessage = "خطا در بررسی کد تخفیف.";
+        }
     }
 }

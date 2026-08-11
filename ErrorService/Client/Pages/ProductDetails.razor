@@ -176,14 +176,14 @@
                     }
 
                     <div class="pd-pricebox">
-                        @if (product.DiscountPrice.HasValue)
+                        @if (IsDiscountActive(product))
                         {
                             <div class="pd-price-row">
                                 <span class="pd-price-old">@product.Price.ToString("N0") تومان</span>
                                 <span class="pd-price-badge">تخفیف ویژه</span>
                             </div>
                             <div class="pd-price-current">
-                                <span class="pd-price-num">@product.DiscountPrice.Value.ToString("N0")</span>
+                                <span class="pd-price-num">@product.DiscountPrice!.Value.ToString("N0")</span>
                                 <span class="pd-price-unit">تومان</span>
                             </div>
                         }
@@ -338,10 +338,10 @@
                                 <div class="pd-related-body">
                                     <span class="pd-related-name">@rp.Name</span>
                                     <div class="pd-related-price">
-                                        @if (rp.DiscountPrice.HasValue)
+                                        @if (IsDiscountActive(rp))
                                         {
                                             <span class="pd-related-old">@rp.Price.ToString("N0")</span>
-                                            <span class="pd-related-current">@rp.DiscountPrice.Value.ToString("N0")</span>
+                                            <span class="pd-related-current">@rp.DiscountPrice!.Value.ToString("N0")</span>
                                         }
                                         else
                                         {
@@ -462,11 +462,11 @@
     <div class="pd-sticky-bar">
         <div class="pd-sticky-inner">
             <div class="pd-sticky-price">
-                @if (product.DiscountPrice.HasValue)
+                @if (IsDiscountActive(product))
                 {
                     <span class="pd-sticky-old">@((product.Price * _quantity).ToString("N0"))</span>
                 }
-                <span class="pd-sticky-current">@(((product.DiscountPrice ?? product.Price) * _quantity).ToString("N0"))</span>
+                <span class="pd-sticky-current">@((EffectivePrice * _quantity).ToString("N0"))</span>
                 <span class="pd-sticky-label">قیمت کل</span>
             </div>
             <div class="pd-sticky-actions">
@@ -1001,10 +1001,17 @@
 
     private bool isInWishlist;
 
+    private static bool IsDiscountActive(ProductDto p)
+        => p.DiscountPrice.HasValue && p.DiscountExpiryDate.HasValue && p.DiscountExpiryDate.Value > DateTimeOffset.Now;
+
+    private decimal EffectivePrice => product != null
+        ? (IsDiscountActive(product) ? product.DiscountPrice!.Value : product.Price)
+        : 0m;
+
     private async Task ToggleWishlist()
     {
         if (product == null) return;
-        await Ws.ToggleAsync(product.Id, product.Name, product.MainImageUrl, product.Price, product.DiscountPrice);
+        await Ws.ToggleAsync(product.Id, product.Name, product.MainImageUrl, product.Price, IsDiscountActive(product) ? product.DiscountPrice : null);
         isInWishlist = !isInWishlist;
     }
 
@@ -1134,7 +1141,7 @@
     private string GetShareText()
     {
         if (product == null) return "";
-        var price = (product.DiscountPrice ?? product.Price).ToString("N0");
+        var price = EffectivePrice.ToString("N0");
         var desc = string.IsNullOrEmpty(product.Description)
             ? $"قیمت: {price} تومان"
             : TruncateText(StripHtml(product.Description), 120);
@@ -1144,7 +1151,7 @@
     private string GetShareTextForTelegram()
     {
         if (product == null) return "";
-        var price = (product.DiscountPrice ?? product.Price).ToString("N0");
+        var price = EffectivePrice.ToString("N0");
         var name = StripHtml(product.Name);
         return $"{name} - {price} تومان";
     }
@@ -1265,7 +1272,7 @@
             Name = p.Name,
             ImageUrl = p.MainImageUrl,
             Price = p.Price,
-            DiscountPrice = p.DiscountPrice
+            DiscountPrice = IsDiscountActive(p) ? p.DiscountPrice : null
         });
         _recentItems = await RecentSvc.GetItemsAsync();
         StateHasChanged();
@@ -1335,7 +1342,7 @@
 
     private string BuildProductJsonLd(ProductDto product)
     {
-        var price = product.DiscountPrice ?? product.Price;
+        var price = IsDiscountActive(product) ? product.DiscountPrice!.Value : product.Price;
         var images = GetAllImages();
         var baseUrl = Nav.BaseUri.TrimEnd('/');
 

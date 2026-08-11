@@ -30,6 +30,9 @@ public class Product
     [MaxLength(200)]
     public string? Slug { get; set; }
 
+    [MaxLength(100)]
+    public string? Sku { get; set; }
+
     [MaxLength(10000)]
     public string? Description { get; set; }
 

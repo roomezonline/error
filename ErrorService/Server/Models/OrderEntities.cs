@@ -51,6 +51,16 @@ public class Order
     [MaxLength(1000)]
     public string? Address { get; set; }
 
+    // Location (province/city/postal) - additive & optional
+    public int? ProvinceId { get; set; }
+    public int? CityId { get; set; }
+    [MaxLength(100)]
+    public string? ProvinceName { get; set; }
+    [MaxLength(100)]
+    public string? CityName { get; set; }
+    [MaxLength(20)]
+    public string? PostalCode { get; set; }
+
     // Payment Info
     [MaxLength(500)]
     public string? ReceiptImageUrl { get; set; }
@@ -60,8 +70,17 @@ public class Order
 
     public DateTimeOffset? PaymentDate { get; set; }
 
+    // Online gateway info (additive & optional)
+    public PaymentProvider? PaymentProvider { get; set; }
+
+    [MaxLength(200)]
+    public string? PaymentReference { get; set; }
+
     [MaxLength(1000)]
     public string? AdminNotes { get; set; }
+
+    [MaxLength(64)]
+    public string? AccessToken { get; set; }
 
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
 }
@@ -104,4 +123,33 @@ public class Coupon
     public bool IsActive { get; set; } = true;
     public DateTimeOffset? ExpiryDate { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class PaymentGateway
+{
+    public int Id { get; set; }
+
+    [Required]
+    [MaxLength(30)]
+    public string Provider { get; set; } = string.Empty;
+
+    [Required]
+    [MaxLength(100)]
+    public string Title { get; set; } = string.Empty;
+
+    [MaxLength(2000)]
+    public string? ConfigJson { get; set; }
+
+    public bool Sandbox { get; set; } = true;
+
+    public bool IsActive { get; set; } = true;
+
+    public bool IsConfigured { get; set; }
+
+    [MaxLength(500)]
+    public string? CallbackBaseUrl { get; set; }
+
+    public int SortOrder { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

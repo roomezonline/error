@@ -1,108 +1,151 @@
-@page "/products"
+﻿@page "/products"
 @using ErrorService.Shared
 @using System.Net.Http.Json
 @using ErrorService.Client.Shared
 @implements IDisposable
 @inject ErrorService.Client.Services.CartService CartService
+@inject IJSRuntime JS
 
 <PageTitle>ارورسرویس - محصولات</PageTitle>
 
 <SeoHeader 
-    Title="ارورسرویس | فروشگاه قطعات یدکی لوازم خانگی"
-    Description="فروشگاه قطعات یدکی اصل لوازم خانگی شامل ماشین لباسشویی، یخچال، ظرفشویی و ماکروفر با بهترین قیمت و ارسال سریع"
-    Keywords="قطعات یدکی لوازم خانگی, خرید قطعات یدکی, لوازم یدکی ماشین لباسشویی, لوازم یدکی یخچال"
+    Title="ارورسرویس | لوازم الکترونیک، ابزار دقیق و تجهیزات صنعتی"
+    Description="فروشگاه تخصصی لوازم الکترونیک، قطعات الکترونیکی، بردهای آماده، تجهیزات ابزار دقیق، ابزارآلات تخصصی و ملزومات فنی با بهترین قیمت و ارسال سریع"
+    Keywords="لوازم الکترونیک, قطعات الکترونیکی, ابزار دقیق, تجهیزات صنعتی, بردهای آماده, ابزارآلات تخصصی"
     OgType="website" />
 
-<section class="products-list-page py-5 bg-light" dir="rtl">
+<section class="shop-page py-4 py-md-5" dir="rtl">
     <div class="container">
-        <div class="d-flex justify-content-between align-items-center mb-5">
-            <h1 class="fw-bold h2 m-0">همه محصولات</h1>
-            <div class="text-muted">نمایش @((products?.Count ?? 0)) از @totalCount محصول</div>
-        </div>
 
-        <div class="filters-card bg-white rounded-5 shadow-sm border-0 p-3 p-md-4 mb-4">
-            <button class="filters-toggle d-lg-none btn btn-light w-100 mb-2" @onclick="() => showFilters = !showFilters">
+        <nav class="shop-breadcrumb d-none d-md-flex" aria-label="breadcrumb">
+            <ol>
+                <li><a href="/">خانه</a></li>
+                <li class="active">فروشگاه</li>
+            </ol>
+        </nav>
+
+    <div class="shop-hero">
+        <div class="shop-hero__bg"></div>
+        <div class="shop-hero__content">
+            <div class="shop-hero__text">
+                <div class="shop-hero__badge">
+                    <span class="icon-circle-play"></span>
+                    <span>فروشگاه تجهیزات الکترونیک</span>
+                </div>
+                <h1 class="shop-hero__title">لوازم الکترونیک، ابزار دقیق و تجهیزات صنعتی</h1>
+                <p class="shop-hero__sub">
+                    قطعات الکترونیکی، بردهای آماده، تجهیزات ابزار دقیق، ابزارآلات تخصصی و ملزومات فنی با کیفیت تضمینی و ارسال به سراسر کشور.
+                </p>
+                <div class="shop-hero__tags">
+                    <span class="shop-hero__tag"><span class="icon-truck" style="font-size:10px"></span>ارسال سریع</span>
+                    <span class="shop-hero__tag"><span class="icon-shield-check" style="font-size:10px"></span>گارانتی اصالت</span>
+                    <span class="shop-hero__tag"><span class="icon-headset" style="font-size:10px"></span>مشاوره تخصصی</span>
+                    <span class="shop-hero__tag"><span class="icon-credit-card" style="font-size:10px"></span>پرداخت امن</span>
+                </div>
+            </div>
+            <div class="shop-hero__stat">
+                <span class="shop-hero__stat-num">@(products?.Count ?? 0)</span>
+                <span class="shop-hero__stat-label">محصول</span>
+            </div>
+        </div>
+    </div>
+
+        <div class="shop-filters">
+            <button class="shop-filters__toggle d-lg-none" @onclick="() => showFilters = !showFilters">
                 <span class="oi oi-elevator me-1"></span>
                 @(showFilters ? "پنهان کردن فیلترها" : "نمایش فیلترها")
             </button>
-            <div class="filters-body @(showFilters ? "" : "d-none d-lg-block")">
-            <div class="filters-top">
-                <div class="search-wrap">
-                    <div class="input-group">
-                        <span class="input-group-text bg-transparent border-0">
-                            <span class="oi oi-magnifying-glass text-muted"></span>
-                        </span>
-                        <input class="form-control border-0" placeholder="جستجو در محصولات..." @bind="search" @bind:event="oninput" />
+            <div class="shop-filters__body @(showFilters ? "" : "d-none d-lg-block")">
+                <div class="shop-filters__top">
+                    <div class="shop-search">
+                        <span class="oi oi-magnifying-glass shop-search__icon"></span>
+                        <input class="shop-search__input" placeholder="جستجو در محصولات..." @bind="search" @bind:event="oninput" />
+                        @if (!string.IsNullOrWhiteSpace(search))
+                        {
+                            <button type="button" class="shop-search__clear" @onclick="ClearFilters" aria-label="پاک کردن جستجو">
+                                <span class="oi oi-x"></span>
+                            </button>
+                        }
+                    </div>
+
+                    <div class="shop-tools">
+                        <select class="shop-sort" @bind="sort">
+                            <option value="">جدیدترین</option>
+                            <option value="price_asc">ارزان‌ترین</option>
+                            <option value="price_desc">گران‌ترین</option>
+                            <option value="discount_desc">بیشترین تخفیف</option>
+                        </select>
+
+                        <label class="shop-toggle">
+                            <input type="checkbox" @bind="onlyAvailable" />
+                            <span>فقط موجود</span>
+                        </label>
+
+                        <label class="shop-toggle">
+                            <input type="checkbox" @bind="onlyDiscounted" />
+                            <span>فقط تخفیف‌دار</span>
+                        </label>
+
+                        <button class="shop-btn-apply" @onclick="ApplyFilters">
+                            <span class="oi oi-check me-1"></span> اعمال
+                        </button>
+                        <button class="shop-btn-clear" @onclick="ClearFilters">
+                            <span class="oi oi-x me-1"></span> پاک کردن
+                        </button>
                     </div>
                 </div>
 
-                <div class="filters-actions">
-                    <select class="form-select sort-select" @bind="sort">
-                        <option value="">جدیدترین</option>
-                        <option value="price_asc">ارزان‌ترین</option>
-                        <option value="price_desc">گران‌ترین</option>
-                        <option value="discount_desc">بیشترین تخفیف</option>
-                    </select>
-
-                    <label class="chip-toggle">
-                        <input type="checkbox" class="form-check-input" @bind="onlyAvailable" />
-                        <span>فقط موجود</span>
-                    </label>
-
-                    <label class="chip-toggle">
-                        <input type="checkbox" class="form-check-input" @bind="onlyDiscounted" />
-                        <span>فقط تخفیف‌دار</span>
-                    </label>
-
-                    <div class="btn-group-wrap">
-                        <button class="btn btn-danger rounded-pill px-4" @onclick="ApplyFilters">
-                            اعمال
-                        </button>
-                        <button class="btn btn-light rounded-pill px-4" @onclick="ClearFilters">
-                            پاک کردن
-                        </button>
+                <div class="shop-price">
+                    <div class="shop-price__box">
+                        <label>حداقل قیمت (تومان)</label>
+                        <div class="shop-price__input">
+                            <input type="text" inputmode="numeric" value="@minPriceText" @oninput="OnMinPriceInput" placeholder="0" />
+                            <span class="shop-price__unit">تومان</span>
+                        </div>
+                    </div>
+                    <div class="shop-price__sep">تا</div>
+                    <div class="shop-price__box">
+                        <label>حداکثر قیمت (تومان)</label>
+                        <div class="shop-price__input">
+                            <input type="text" inputmode="numeric" value="@maxPriceText" @oninput="OnMaxPriceInput" placeholder="..." />
+                            <span class="shop-price__unit">تومان</span>
+                        </div>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <div class="price-row mt-3">
-                <div class="price-box">
-                    <span class="text-muted small">حداقل قیمت</span>
-                    <input type="text" inputmode="numeric" class="form-control" value="@minPriceText" @oninput="OnMinPriceInput" placeholder="0" />
-                </div>
-                <div class="price-box">
-                    <span class="text-muted small">حداکثر قیمت</span>
-                    <input type="text" inputmode="numeric" class="form-control" value="@maxPriceText" @oninput="OnMaxPriceInput" placeholder="..." />
-                </div>
-            </div>
-
-            @if (categories != null && categories.Any())
-            {
-                <div class="category-chips mt-3">
-                    <button type="button" class="cat-chip @(selectedCategoryId == null ? "active" : "")" @onclick="() => SelectCategory(null)">
-                        همه
+        @if (categories != null && categories.Any())
+        {
+            <div class="shop-cats">
+                <button type="button" class="shop-cat @(selectedCategoryId == null ? "is-active" : "")" @onclick="() => SelectCategory(null)">
+                    همه
+                </button>
+                @foreach (var cat in categories)
+                {
+                    <button type="button" class="shop-cat @(selectedCategoryId == cat.Id ? "is-active" : "")" @onclick="() => SelectCategory(cat.Id)">
+                        @cat.Name
                     </button>
-                    @foreach (var cat in categories)
-                    {
-                        <button type="button" class="cat-chip @(selectedCategoryId == cat.Id ? "active" : "")" @onclick="() => SelectCategory(cat.Id)">
-                            @cat.Name
-                        </button>
-                    }
-                </div>
-            }
+                }
             </div>
+        }
+
+        <div class="shop-meta">
+            <div class="shop-meta__count">نمایش <b>@(products?.Count ?? 0)</b> از <b>@totalCount</b> محصول</div>
+            <div class="shop-meta__hint">برای یافتن سریع‌تر، از جستجو یا دسته‌بندی استفاده کنید</div>
         </div>
 
         @if (products == null)
         {
-            <div class="row g-3 g-md-4">
-                @for (int i = 0; i < 8; i++)
+            <div class="row g-3 g-lg-4">
+                @for (int i = 0; i < 12; i++)
                 {
-                    <div class="col-6 col-md-3">
-                        <div class="skeleton-card">
-                            <div class="skeleton skeleton-img"></div>
-                            <div class="skeleton skeleton-title"></div>
-                            <div class="skeleton skeleton-text"></div>
+                    <div class="col-6 col-md-4 col-lg-3 col-xxl-2">
+                        <div class="shop-skeleton">
+                            <div class="shop-skeleton__img"></div>
+                            <div class="shop-skeleton__cat"></div>
+                            <div class="shop-skeleton__title"></div>
+                            <div class="shop-skeleton__price"></div>
                         </div>
                     </div>
                 }
@@ -110,37 +153,47 @@
         }
         else if (!products.Any())
         {
-            <div class="empty-state-box">
-                <span class="empty-icon oi oi-box"></span>
+            <div class="shop-empty">
+                <span class="oi oi-box shop-empty__icon"></span>
                 <h4>محصولی یافت نشد</h4>
-                <p>هیچ محصولی با فیلترهای انتخابی شما مطابقت ندارد.</p>
+                <p>هیچ قطعه یا تجهیزاتی با فیلترهای انتخابی مطابقت ندارد.</p>
                 <button class="btn btn-outline-primary rounded-pill px-4" @onclick="ClearFilters">پاک کردن فیلترها</button>
             </div>
         }
         else
         {
-            <div class="row g-3 g-md-4">
-                @foreach (var prod in products)
+            <div class="row g-3 g-lg-4">
+                @for (int _i = 0; _i < products.Count; _i++)
                 {
-                    <div class="col-6 col-md-3 reveal">
-                        <a href="@SeoUrl.Product(prod.Id, prod.Slug)" class="text-decoration-none h-100 d-block">
-                            <div class="product-card rounded-4 bg-white shadow-sm overflow-hidden h-100 border-0 @(prod.IsAvailable ? "" : "product-card--unavailable")">
-                                <div class="product-card__img-wrap bg-light position-relative">
-                                    @if (IsDiscountActive(prod))
-                                    {
-                                        <div class="discount-badge">@CalculateDiscount(prod)% تخفیف</div>
-                                    }
-                                    @if (!prod.IsAvailable || prod.StockQuantity <= 0)
-                                    {
-                                        <span class="badge bg-secondary position-absolute top-0 start-0 m-2 rounded-pill">ناموجود</span>
-                                    }
-                                    else if (prod.StockQuantity <= 5)
-                                    {
-                                        <span class="badge bg-warning position-absolute top-0 start-0 m-2 rounded-pill">تنها @prod.StockQuantity عدد</span>
-                                    }
-                                    <img src="@(string.IsNullOrEmpty(prod.MainImageUrl) ? "/images/placeholder-product.svg" : prod.MainImageUrl)" loading="lazy" class="product-card__img" alt="@prod.Name" />
+                    var prod = products[_i];
+                    var _cls = (_i % 6) switch { 1 => "reveal-delay-1", 2 => "reveal-delay-2", 3 => "reveal-delay-3", 4 => "reveal-delay-4", 5 => "reveal-delay-2", _ => "reveal-delay-3" };
+                    <div class="col-6 col-md-4 col-lg-3 col-xxl-2 reveal @_cls">
+                        <a href="@SeoUrl.Product(prod.Id, prod.Slug)" class="shop-card-link" aria-label="@prod.Name">
+                            <article class="shop-card @(prod.IsAvailable ? "" : "is-unavailable") @(IsDiscountActive(prod) ? "is-sale" : "")">
+                                <div class="shop-card__media">
+                                    <div class="shop-card__badges">
+                                        @if (IsDiscountActive(prod))
+                                        {
+                                            <span class="shop-badge shop-badge--sale">
+                                                <span class="shop-badge__pct">@(CalculateDiscount(prod))٪</span>
+                                                <span class="shop-badge__lbl">تخفیف</span>
+                                            </span>
+                                        }
+                                        @if (!prod.IsAvailable || prod.StockQuantity <= 0)
+                                        {
+                                            <span class="shop-badge shop-badge--out">ناموجود</span>
+                                        }
+                                        else if (prod.StockQuantity <= 5)
+                                        {
+                                            <span class="shop-badge shop-badge--low">تنها @prod.StockQuantity عدد</span>
+                                        }
+                                    </div>
+                                    <img src="@(string.IsNullOrEmpty(prod.MainImageUrl) ? "/images/placeholder-product.svg" : prod.MainImageUrl)"
+                                         loading="lazy"
+                                         class="shop-card__img"
+                                         alt="@prod.Name" />
 
-                                    <div class="product-card__actions">
+                                    <div class="shop-card__actions">
                                         <QuantityControl Quantity="@CartService.GetQuantity(prod.Id)"
                                                          Disabled="@(!prod.IsAvailable || prod.StockQuantity <= 0)"
                                                          OnAdd="() => AddToCart(prod)"
@@ -149,33 +202,37 @@
                                     </div>
                                 </div>
 
-                                <div class="product-card__body p-3 d-flex flex-column">
-                                    @if (IsDiscountActive(prod))
-                                    {
-                                        <div class="discount-timer shadow-sm mb-2">
-                                            <span class="oi oi-timer"></span>
-                                            <span class="timer-text">@GetCountdown(prod.Id)</span>
-                                        </div>
-                                    }
+                                <div class="shop-card__body">
+                                    <div class="shop-card__top">
+                                        <span class="shop-card__cat">@prod.CategoryName</span>
+                                        @if (IsDiscountActive(prod))
+                                        {
+                                            <span class="shop-card__timer" title="پایان تخفیف">
+                                                <span class="oi oi-timer"></span>
+                                                @GetCountdown(prod.Id)
+                                            </span>
+                                        }
+                                    </div>
 
-                                    <div class="small text-muted mb-1">@prod.CategoryName</div>
-                                    <h3 class="product-card__title h6 fw-bold mb-2 text-dark">@prod.Name</h3>
+                                    <h3 class="shop-card__title">@prod.Name</h3>
 
-                                    <div class="d-flex justify-content-between align-items-center mt-auto">
-                                        <div class="product-card__price w-100">
-                                            @if (prod.DiscountPrice.HasValue)
-                                            {
-                                                <div class="small text-muted text-decoration-line-through">@prod.Price.ToString("N0")</div>
-                                                <div class="fw-bold text-primary h6 m-0">@prod.DiscountPrice.Value.ToString("N0") <small class="small">تومان</small></div>
-                                            }
-                                            else
-                                            {
-                                                <div class="fw-bold text-primary h6 m-0">@prod.Price.ToString("N0") <small class="small">تومان</small></div>
-                                            }
-                                        </div>
+                                    <div class="shop-card__price">
+                                        @if (IsDiscountActive(prod))
+                                        {
+                                            <div class="shop-card__price-rows">
+                                                <span class="shop-card__current">@prod.DiscountPrice!.Value.ToString("N0") <small>تومان</small></span>
+                                                <span class="shop-card__old">@prod.Price.ToString("N0") <small>تومان</small></span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="shop-card__price-rows">
+                                                <span class="shop-card__current">@prod.Price.ToString("N0") <small>تومان</small></span>
+                                            </div>
+                                        }
                                     </div>
                                 </div>
-                            </div>
+                            </article>
                         </a>
                     </div>
                 }
@@ -183,8 +240,8 @@
 
             @if (products.Count < totalCount)
             {
-                <div class="text-center mt-4">
-                    <button class="btn btn-outline-primary rounded-pill px-5" @onclick="LoadMore" disabled="@isLoadingMore">
+                <div class="text-center mt-5">
+                    <button class="shop-loadmore" @onclick="LoadMore" disabled="@isLoadingMore">
                         @if (isLoadingMore)
                         {
                             <span class="spinner-border spinner-border-sm me-2"></span>
@@ -198,226 +255,150 @@
 </section>
 
 <style>
-    .filters-card {
-        border: 1px solid rgba(2, 6, 23, 0.06);
+    .shop-page {
+        --brand: #7c3aed; --brand-2: #6d28d9; --brand-light: #ede9fe; --brand-glow: rgba(124,58,237,.15);
+        --sale: #dc2626; --ok: #059669; --warn: #d97706;
+        --bg: #f5f3ff; --surface: #fff; --surface-2: #faf5ff;
+        --border: rgba(124,58,237,.08); --text: #1e1b4b; --muted: #7c7c9a;
+        background: var(--bg); color: var(--text); min-height: 100vh;
+        font-family: 'Vazirmatn', system-ui, sans-serif;
     }
-    .filters-top {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 12px;
+    .shop-breadcrumb ol { list-style:none; display:flex; align-items:center; gap:.4rem; padding:0; margin:0 0 1rem; font-size:.78rem; color:var(--muted); }
+    .shop-breadcrumb li { display:flex; align-items:center; }
+    .shop-breadcrumb li+li::before { content:"/"; margin:0 .35rem; color:#c4b5fd; }
+    .shop-breadcrumb a { color:var(--brand); text-decoration:none; font-weight:700; }
+    .shop-breadcrumb a:hover { text-decoration:underline; }
+
+    .shop-hero { position:relative; border-radius:28px; overflow:hidden; margin-bottom:1.5rem; background:linear-gradient(135deg,#7c3aed 0%,#6d28d9 40%,#5b21b6 100%); color:#fff; }
+    .shop-hero__bg { position:absolute; inset:0; background:radial-gradient(ellipse 500px 300px at 90% 10%,rgba(196,181,253,.25),transparent),radial-gradient(ellipse 400px 250px at 10% 90%,rgba(167,139,250,.2),transparent),radial-gradient(circle 200px at 70% 60%,rgba(255,255,255,.06),transparent); pointer-events:none; }
+    .shop-hero__content { position:relative; z-index:1; display:flex; align-items:flex-end; justify-content:space-between; gap:1.5rem; padding:2.2rem 2rem 2.6rem; }
+    .shop-hero__badge { display:inline-flex; align-items:center; gap:.4rem; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.2); border-radius:999px; padding:.35rem 1rem; font-size:.72rem; font-weight:800; margin-bottom:.8rem; backdrop-filter:blur(4px); }
+    .shop-hero__title { font-size:clamp(1.5rem,4vw,2.2rem); font-weight:900; margin:0 0 .4rem; text-shadow:0 2px 12px rgba(0,0,0,.15); }
+    .shop-hero__sub { font-size:.88rem; margin:0 0 1rem; opacity:.88; font-weight:600; line-height:1.7; }
+    .shop-hero__tags { display:flex; flex-wrap:wrap; gap:.5rem; }
+    .shop-hero__tag { display:inline-flex; align-items:center; gap:.35rem; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.15); border-radius:999px; padding:.3rem .8rem; font-size:.7rem; font-weight:700; backdrop-filter:blur(4px); }
+    .shop-hero__stat { display:flex; flex-direction:column; align-items:center; gap:4px; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.22); border-radius:22px; padding:1rem 1.6rem; min-width:100px; backdrop-filter:blur(8px); flex-shrink:0; }
+    .shop-hero__stat-num { font-size:2rem; font-weight:900; line-height:1; }
+    .shop-hero__stat-label { font-size:.7rem; opacity:.85; font-weight:700; }
+
+    .shop-filters { background:var(--surface); border:1px solid var(--border); border-radius:22px; padding:1rem 1.25rem; margin-bottom:1.25rem; box-shadow:0 4px 20px rgba(124,58,237,.06); }
+    .shop-filters__toggle { width:100%; border:none; background:linear-gradient(135deg,var(--brand),var(--brand-2)); color:#fff; border-radius:14px; padding:.72rem 1.1rem; font-size:.88rem; font-weight:800; margin-bottom:.9rem; box-shadow:0 8px 20px rgba(124,58,237,.25); }
+    .shop-filters__top { display:grid; grid-template-columns:1fr; gap:.9rem; }
+    .shop-search { display:flex; align-items:center; gap:.5rem; background:var(--surface-2); border:1.5px solid var(--border); border-radius:14px; padding:.55rem 1rem; transition:border-color .2s; min-width:0; }
+    .shop-search:focus-within { border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-glow); }
+    .shop-search__icon { color:var(--muted); font-size:.85rem; }
+    .shop-search__input { flex:1; min-width:0; border:none; outline:none; background:transparent; color:var(--text); font-size:.9rem; }
+    .shop-search__input::placeholder { color:var(--muted); }
+    .shop-search__clear { border:none; background:rgba(124,58,237,.1); color:var(--brand); width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size:.7rem; flex-shrink:0; }
+    .shop-tools { display:flex; align-items:center; gap:.55rem; flex-wrap:wrap; }
+    .shop-sort { border:1.5px solid var(--border); background:var(--surface-2); color:var(--text); border-radius:12px; padding:.5rem 2rem .5rem .8rem; font-size:.82rem; font-weight:700; outline:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%237c7c9a' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:left .7rem center; min-width:130px; }
+    .shop-toggle { display:inline-flex; align-items:center; gap:.45rem; background:var(--surface-2); border:1.5px solid var(--border); border-radius:12px; padding:.5rem .8rem; font-size:.8rem; font-weight:800; color:var(--text); user-select:none; cursor:pointer; }
+    .shop-toggle input { width:15px; height:15px; accent-color:var(--brand); margin:0; }
+    .shop-btn-apply,.shop-btn-clear { border:none; border-radius:12px; padding:.5rem 1.1rem; font-size:.82rem; font-weight:800; cursor:pointer; transition:transform .15s,box-shadow .2s; }
+    .shop-btn-apply { background:var(--brand); color:#fff; box-shadow:0 6px 16px rgba(124,58,237,.28); }
+    .shop-btn-apply:hover { transform:translateY(-1px); box-shadow:0 8px 24px rgba(124,58,237,.35); }
+    .shop-btn-clear { background:var(--surface-2); color:var(--muted); border:1.5px solid var(--border); }
+    .shop-btn-clear:hover { color:var(--sale); border-color:rgba(220,38,38,.3); }
+    .shop-price { display:grid; grid-template-columns:1fr auto 1fr; align-items:end; gap:.75rem; margin-top:.9rem; }
+    .shop-price__box { display:grid; gap:.3rem; }
+    .shop-price__box label { font-size:.72rem; font-weight:700; color:var(--muted); }
+    .shop-price__input { display:flex; align-items:center; gap:.45rem; border:1.5px solid var(--border); background:var(--surface-2); border-radius:12px; padding:.5rem .8rem; }
+    .shop-price__input:focus-within { border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-glow); }
+    .shop-price__unit { color:var(--muted); font-size:.72rem; font-weight:700; padding-right:.5rem; border-right:1px solid var(--border); white-space:nowrap; }
+    .shop-price__input input { border:none; outline:none; background:transparent; width:100%; color:var(--text); font-size:.85rem; font-weight:700; }
+    .shop-price__sep { color:var(--muted); font-size:.8rem; padding-bottom:.6rem; }
+
+    .shop-cats { display:flex; gap:.5rem; overflow-x:auto; padding-bottom:.5rem; margin-bottom:1.1rem; scrollbar-width:none; }
+    .shop-cats::-webkit-scrollbar { display:none; }
+    .shop-cat { border:1.5px solid var(--border); background:var(--surface); color:var(--text); border-radius:999px; padding:.5rem 1.1rem; font-size:.82rem; font-weight:800; white-space:nowrap; cursor:pointer; transition:all .2s; flex-shrink:0; }
+    .shop-cat:hover { border-color:var(--brand); color:var(--brand); background:var(--brand-light); }
+    .shop-cat.is-active { background:linear-gradient(135deg,var(--brand),var(--brand-2)); border-color:var(--brand); color:#fff; box-shadow:0 6px 16px rgba(124,58,237,.30); }
+
+    .shop-meta { display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; }
+    .shop-meta__count { font-size:.82rem; color:var(--muted); font-weight:600; }
+    .shop-meta__count b { font-weight:900; color:var(--text); }
+    .shop-meta__hint { font-size:.72rem; color:var(--muted); }
+
+    .shop-card-link { display:block; height:100%; text-decoration:none; }
+    .shop-card { display:flex; flex-direction:column; height:100%; background:var(--surface); border:1px solid var(--border); border-radius:22px; overflow:hidden; transition:transform .3s cubic-bezier(.2,.8,.3,1),box-shadow .3s ease,border-color .3s ease; will-change:transform; }
+    .shop-card:hover { transform:translateY(-8px); box-shadow:0 20px 50px rgba(124,58,237,.12); border-color:rgba(124,58,237,.3); }
+    .shop-card.is-unavailable .shop-card__media { -webkit-filter:grayscale(.5); filter:grayscale(.5); }
+    .shop-card.is-unavailable { opacity:.75; }
+    .shop-card__media { position:relative; aspect-ratio:1/1; background:linear-gradient(135deg,var(--surface-2),#f0eaff); overflow:hidden; }
+    .shop-card__img { width:100%; height:100%; object-fit:contain; padding:.75rem; transition:transform .5s ease; }
+    .shop-card:hover .shop-card__img { transform:scale(1.08); }
+    .shop-card__badges { position:absolute; top:.6rem; right:.6rem; left:.6rem; display:flex; gap:.4rem; z-index:2; pointer-events:none; }
+    .shop-badge { border-radius:999px; padding:.26rem .62rem; font-size:.7rem; font-weight:900; box-shadow:0 4px 12px rgba(0,0,0,.12); white-space:nowrap; }
+    .shop-badge--sale { display:inline-flex; align-items:center; gap:.3rem; background:linear-gradient(135deg,#ef4444,#b91c1c); color:#fff; padding:.35rem .8rem; box-shadow:0 5px 16px rgba(220,38,38,.4); }
+    .shop-badge__pct { font-size:.82rem; font-weight:900; }
+    .shop-badge__lbl { font-size:.62rem; font-weight:700; opacity:.9; }
+    .shop-badge--out { background:#475569; color:#fff; }
+    .shop-badge--low { background:#fef3c7; color:#92400e; font-weight:800; }
+    .shop-card.is-sale { border-color:rgba(220,38,38,.15); }
+    .shop-card__actions { position:absolute; bottom:.6rem; left:.6rem; right:.6rem; z-index:3; opacity:0; transform:translateY(10px); transition:all .28s ease; }
+    .shop-card:hover .shop-card__actions { opacity:1; transform:translateY(0); }
+    .shop-card__actions ::deep .qc { width:100%; }
+    .shop-card__actions ::deep .qc-add,.shop-card__actions ::deep .qc-qty,.shop-card__actions ::deep .qc-badge { width:100%; justify-content:center; box-shadow:none; background:rgba(255,255,255,.96); }
+    .shop-card__body { display:flex; flex-direction:column; gap:.4rem; padding:.8rem .9rem 1rem; flex:1; }
+    .shop-card__top { display:flex; align-items:center; justify-content:space-between; gap:.4rem; min-height:20px; }
+    .shop-card__cat { font-size:.66rem; font-weight:800; color:var(--brand); background:var(--brand-light); border-radius:999px; padding:.15rem .55rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%; }
+    .shop-card__timer { display:inline-flex; align-items:center; gap:.3rem; font-size:.64rem; font-weight:800; color:var(--sale); white-space:nowrap; direction:ltr; }
+    .shop-card__title { font-size:.85rem; font-weight:800; color:var(--text); line-height:1.55; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin:0; min-height:2.64em; }
+    .shop-card__price { margin-top:auto; padding-top:.5rem; border-top:1px dashed var(--border); }
+    .shop-card__price-rows { display:flex; flex-direction:column; gap:.15rem; }
+    .shop-card__current { font-size:1rem; font-weight:900; color:var(--brand); }
+    .shop-card__current small { font-size:.62rem; font-weight:700; opacity:.7; }
+    .shop-card.is-sale .shop-card__current { color:var(--sale); }
+    .shop-card__old { font-size:.72rem; font-weight:600; color:#a8a8b8; text-decoration:line-through; text-decoration-color:var(--sale); text-decoration-thickness:1.5px; }
+    .shop-card__old small { font-size:.6rem; }
+
+    .shop-skeleton { border-radius:22px; background:var(--surface); border:1px solid var(--border); overflow:hidden; padding-bottom:1rem; }
+    .shop-skeleton__img { aspect-ratio:1/1; background:linear-gradient(90deg,#f0eaff 25%,#faf5ff 50%,#f0eaff 75%); background-size:200% 100%; animation:shop-shimmer 1.5s infinite; }
+    .shop-skeleton__cat,.shop-skeleton__title,.shop-skeleton__price { border-radius:6px; background:linear-gradient(90deg,#f0eaff 25%,#faf5ff 50%,#f0eaff 75%); background-size:200% 100%; animation:shop-shimmer 1.5s infinite; }
+    .shop-skeleton__cat { height:14px; width:40%; margin:.9rem .9rem .5rem; }
+    .shop-skeleton__title { height:14px; width:85%; margin:0 .9rem; }
+    .shop-skeleton__price { height:16px; width:45%; margin:.75rem .9rem 0; }
+    @@keyframes shop-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    .shop-empty { text-align:center; padding:70px 20px; background:var(--surface); border:2px dashed var(--border); border-radius:24px; }
+    .shop-empty__icon { font-size:3.2rem; color:rgba(124,58,237,.2); display:block; margin-bottom:1rem; }
+    .shop-empty h4 { font-weight:800; color:var(--text); margin-bottom:.4rem; }
+    .shop-empty p { color:var(--muted); font-size:.88rem; margin-bottom:1.2rem; }
+
+    .shop-loadmore { border:1.5px solid var(--brand); background:transparent; color:var(--brand); border-radius:999px; padding:.7rem 2.6rem; font-size:.9rem; font-weight:800; cursor:pointer; transition:all .25s; }
+    .shop-loadmore:hover:not(:disabled) { background:var(--brand); color:#fff; box-shadow:0 8px 22px rgba(124,58,237,.3); }
+    .shop-loadmore:disabled { opacity:.6; cursor:not-allowed; }
+
+    @@media (max-width:575.98px) {
+        .shop-hero__content { flex-direction:column; align-items:flex-start; padding:1.6rem 1.3rem 1.8rem; }
+        .shop-hero__stat { flex-direction:row; gap:.6rem; min-width:auto; padding:.6rem 1.2rem; }
+        .shop-hero__stat-num { font-size:1.4rem; }
+        .shop-filters { padding:.85rem; }
+        .shop-tools { display:grid; grid-template-columns:repeat(2,1fr); gap:.55rem; }
+        .shop-sort { grid-column:1/-1; width:100%; min-width:0; padding:.6rem 2rem .6rem .8rem; }
+        .shop-toggle { justify-content:center; text-align:center; }
+        .shop-price { grid-template-columns:1fr; }
+        .shop-price__sep { display:none; }
+        .shop-meta__hint { display:none; }
+    }
+    @@media (min-width:992px) {
+        .shop-filters__top { grid-template-columns:1.2fr 1fr; align-items:center; }
+        .shop-tools { justify-content:flex-end; }
+    }
+    @@media (min-width:1400px) {
+        .shop-card__body { padding:.7rem .72rem .85rem; }
+        .shop-card__title { font-size:.8rem; }
+        .shop-card__current { font-size:.92rem; }
+    }
+    @@media (max-width:767.98px) {
+        .shop-card__actions { opacity:1; transform:none; }
+        .shop-card__actions ::deep .qc { max-width:150px; }
     }
 
-    .search-wrap {
-        background: rgba(79, 70, 229, 0.06);
-        border: 1px solid rgba(79, 70, 229, 0.12);
-        border-radius: 999px;
-        padding: 4px 10px;
-    }
-    .search-wrap .form-control { background: transparent; box-shadow: none; }
-    .search-wrap .input-group-text { padding-right: 4px; }
-
-    .filters-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-        justify-content: space-between;
-    }
-
-    .sort-select {
-        border-radius: 999px;
-        border: 1px solid rgba(2, 6, 23, 0.08);
-        padding: 10px 35px 10px 14px;
-        min-width: 150px;
-        background-position: left 0.75rem center;
-    }
-
-    .btn-group-wrap {
-        display: inline-flex;
-        gap: 10px;
-        flex-wrap: nowrap;
-    }
-
-    .chip-toggle {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: rgba(2, 6, 23, 0.03);
-        border: 1px solid rgba(2, 6, 23, 0.06);
-        border-radius: 999px;
-        padding: 8px 12px;
-        font-weight: 800;
-        font-size: 0.85rem;
-        color: #0f172a;
-        user-select: none;
-    }
-    .chip-toggle input { margin: 0; }
-
-    .price-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-    }
-
-    .price-row .price-box {
-        display: grid;
-        gap: 6px;
-    }
-    .price-row .form-control {
-        border-radius: 14px;
-        border: 1px solid rgba(2, 6, 23, 0.08);
-        padding: 10px 12px;
-    }
-
-    .category-chips {
-        display: flex;
-        gap: 10px;
-        overflow: auto;
-        padding-bottom: 6px;
-    }
-    .cat-chip {
-        border: 1px solid rgba(2, 6, 23, 0.08);
-        background: #fff;
-        color: #0f172a;
-        border-radius: 999px;
-        padding: 8px 14px;
-        font-weight: 900;
-        font-size: 0.85rem;
-        white-space: nowrap;
-    }
-    .cat-chip.active {
-        background: rgba(79, 70, 229, 0.12);
-        border-color: rgba(79, 70, 229, 0.25);
-        color: #4f46e5;
-    }
-
-    .filters-toggle {
-        border-radius: 999px;
-        font-size: 0.9rem;
-        font-weight: 700;
-    }
-
-    @@media (min-width: 992px) {
-        .filters-top {
-            grid-template-columns: 1.3fr 1fr;
-            align-items: center;
-        }
-        .filters-actions {
-            justify-content: flex-end;
-        }
-        .sort-select { min-width: 170px; }
-        .search-wrap {
-            padding: 6px 12px;
-        }
-    }
-
-    @@media (max-width: 480px) {
-        .price-row {
-            grid-template-columns: 1fr;
-        }
-        .btn-group-wrap {
-            width: 100%;
-        }
-        .btn-group-wrap .btn {
-            flex: 1;
-        }
-    }
-
-    .product-card {
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
-        border: 1px solid #f0f0f0 !important;
-        border-radius: 24px !important;
-    }
-    .product-card--unavailable {
-        opacity: 0.65;
-        filter: grayscale(0.35);
-    }
-    .product-card--unavailable .product-card__img-wrap {
-        background: #f3f4f6 !important;
-    }
-    .product-card:hover {
-        transform: translateY(-8px);
-        box-shadow: 0 15px 35px rgba(0,0,0,0.1) !important;
-    }
-    .product-card__img-wrap {
-        aspect-ratio: 1 / 1;
-        overflow: hidden;
-        border-radius: 24px 24px 0 0;
-    }
-    .product-card__img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        transition: transform 0.5s ease;
-    }
-    .product-card:hover .product-card__img {
-        transform: scale(1.1);
-    }
-    .product-card__title {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        height: 2.8em;
-        line-height: 1.4;
-        font-size: 0.9rem;
-    }
-
-    .discount-badge {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        background: #ef4444;
-        color: white;
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-size: 0.75rem;
-        font-weight: bold;
-        z-index: 2;
-    }
-
-    .discount-timer {
-        color: #fff;
-        font-size: 0.75rem;
-        font-weight: 800;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        background: linear-gradient(135deg, #ef4444, #b91c1c);
-        padding: 6px 10px;
-        border-radius: 8px;
-        width: 100%;
-        justify-content: center;
-    }
-    .timer-text { white-space: nowrap; }
-
-    .product-card__actions {
-        position: absolute;
-        bottom: 10px;
-        right: 10px;
-        opacity: 1;
-        transform: none;
-        transition: all 0.3s ease;
-        z-index: 3;
-    }
-
-    /* Skeleton Loading */
-    .product-card-skeleton .skeleton-img {
-        height: 200px;
-        background: linear-gradient(90deg, #f0f0f0 25%, #f8f8f8 50%, #f0f0f0 75%);
-        background-size: 200% 100%;
-        animation: skeleton-loading 1.5s infinite;
-    }
-    .skeleton-text {
-        height: 15px;
-        background: #f0f0f0;
-        border-radius: 4px;
-        animation: skeleton-loading 1.5s infinite;
-    }
-    @@keyframes skeleton-loading {
-        0% { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
-    }
+    html[data-theme="dark"] .shop-page { --bg:#0b1220; --surface:#131c2e; --surface-2:#0f172a; --border:rgba(148,163,184,.16); --text:#e2e8f0; --muted:#94a3b8; --brand-light:#2e1065; }
+    html[data-theme="dark"] .shop-hero { background:linear-gradient(135deg,#4338ca 0%,#6d28d9 55%,#7c3aed 100%); }
+    html[data-theme="dark"] .shop-card__actions ::deep .qc-add,html[data-theme="dark"] .shop-card__actions ::deep .qc-qty,html[data-theme="dark"] .shop-card__actions ::deep .qc-badge { background:rgba(19,28,46,.97); color:#e2e8f0; border-color:rgba(148,163,184,.2); }
+    html[data-theme="dark"] .shop-skeleton__img,html[data-theme="dark"] .shop-skeleton__cat,html[data-theme="dark"] .shop-skeleton__title,html[data-theme="dark"] .shop-skeleton__price { background:linear-gradient(90deg,#1c2740 25%,#24364f 50%,#1c2740 75%); background-size:200% 100%; animation:shop-shimmer 1.5s infinite; }
 </style>
 
 @code {
@@ -430,6 +411,9 @@
     private bool isLoadingMore = false;
 
     private int? selectedCategoryId = null;
+    [SupplyParameterFromQuery(Name = "categoryId")]
+    private int? CategoryId { get; set; }
+    private int? _appliedCategoryId;
     private bool onlyAvailable = false;
     private bool onlyDiscounted = false;
     private string? search;
@@ -443,12 +427,40 @@
 
     private System.Threading.Timer? timer;
     private Dictionary<int, string> countDowns = new();
+    private bool _needsRevealScan;
 
     protected override async Task OnInitializedAsync()
     {
         CartService.OnChange += HandleCartChanged;
         await LoadCategories();
+
+        if (CategoryId.HasValue)
+        {
+            selectedCategoryId = CategoryId;
+            _appliedCategoryId = CategoryId;
+        }
+
         await LoadProducts(loadMore: false);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (CategoryId != _appliedCategoryId)
+        {
+            _appliedCategoryId = CategoryId;
+            selectedCategoryId = CategoryId;
+            skip = 0;
+            await LoadProducts(loadMore: false);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_needsRevealScan)
+        {
+            _needsRevealScan = false;
+            try { await JS.InvokeVoidAsync("observeNewReveals"); } catch { }
+        }
     }
 
     private void HandleCartChanged() => InvokeAsync(StateHasChanged);
@@ -500,6 +512,7 @@
             else
                 products = data;
 
+            _needsRevealScan = true;
             StartOrStopTimer();
         }
         catch
@@ -616,9 +629,11 @@
         await LoadProducts(loadMore: false);
     }
 
-    private void SelectCategory(int? categoryId)
+    private async Task SelectCategory(int? categoryId)
     {
         selectedCategoryId = categoryId;
+        skip = 0;
+        await LoadProducts(loadMore: false);
     }
 
     private async Task AddToCart(ProductDto prod) => await CartService.AddToCartAsync(prod, 1);

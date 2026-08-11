@@ -29,6 +29,7 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<OrderItem> OrderItems { get; set; }
     public DbSet<CartItem> CartItems { get; set; }
     public DbSet<Coupon> Coupons { get; set; }
+    public DbSet<PaymentGateway> PaymentGateways { get; set; }
     public DbSet<AppUser> Users { get; set; }
     public DbSet<ErrorCode> ErrorCodes { get; set; }
     public DbSet<ErrorCodeDocument> ErrorCodeDocuments { get; set; }
@@ -103,6 +104,9 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<SmsLog> SmsLogs { get; set; }
 
     public DbSet<DigitalCommitment> DigitalCommitments { get; set; }
+
+    public DbSet<BackupSettings> BackupSettings { get; set; }
+    public DbSet<BackupHistory> BackupHistories { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -847,6 +851,17 @@ public sealed class ErrorServiceDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<PaymentGateway>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Provider).IsRequired().HasMaxLength(30);
+            entity.Property(x => x.Title).IsRequired().HasMaxLength(100);
+            entity.Property(x => x.ConfigJson).HasMaxLength(4000);
+            entity.Property(x => x.CallbackBaseUrl).HasMaxLength(500);
+            entity.HasIndex(x => x.Provider);
+            entity.HasIndex(x => new { x.IsActive, x.IsConfigured, x.SortOrder });
+        });
+
         modelBuilder.Entity<Order>(entity =>
         {
             entity.HasKey(x => x.Id);
@@ -1087,6 +1102,29 @@ public sealed class ErrorServiceDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(x => x.WorkshopId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BackupSettings>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.BackupPath).IsRequired().HasMaxLength(500);
+            entity.Property(x => x.EmailTo).HasMaxLength(200);
+            entity.Property(x => x.SmtpHost).HasMaxLength(200);
+            entity.Property(x => x.SmtpUser).HasMaxLength(200);
+            entity.Property(x => x.SmtpPassword).HasMaxLength(500);
+            entity.Property(x => x.SmtpFromName).HasMaxLength(200);
+            entity.Property(x => x.SmtpFromEmail).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<BackupHistory>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.FileName).IsRequired().HasMaxLength(300);
+            entity.Property(x => x.FilePath).IsRequired().HasMaxLength(1000);
+            entity.Property(x => x.Status).IsRequired().HasMaxLength(50);
+            entity.Property(x => x.ErrorMessage).HasMaxLength(2000);
+            entity.HasIndex(x => x.CreatedAt);
+            entity.HasIndex(x => x.Status);
         });
     }
 }

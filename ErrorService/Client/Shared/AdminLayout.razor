@@ -662,6 +662,10 @@
                                 <span class="oi oi-credit-card"></span>
                                 <span>حساب‌های بانکی</span>
                             </a>
+                            <a href="/admin/payment-settings" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-globe"></span>
+                                <span>درگاه پرداخت</span>
+                            </a>
                             <a href="/admin/coupons" class="admin-drawer__item" @onclick="ToggleNavDrawer">
                                 <span class="oi oi-star"></span>
                                 <span>کدهای تخفیف</span>
@@ -779,6 +783,16 @@
                             </a>
                         </div>
                     }
+
+                    <AuthorizeView Policy="perm:admin.backup.view">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">پشتیبان‌گیری</div>
+                            <a href="/admin/backup" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-hard-drive"></span>
+                                <span>بک‌آپ دیتابیس</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
 
                     <AuthorizeView Policy="perm:admin.settings.manage">
                         <div class="admin-drawer__section">

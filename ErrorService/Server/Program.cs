@@ -39,6 +39,12 @@ builder.Services.AddScoped<SystemEventService>();
 builder.Services.AddSingleton<MonitoringCacheService>();
 builder.Services.AddScoped<MonitoringAuthorizationService>();
 builder.Services.AddHttpClient();
+
+builder.Services.AddScoped<ErrorService.Server.Services.Payment.IPaymentGatewayFactory, ErrorService.Server.Services.Payment.PaymentGatewayFactory>();
+
+builder.Services.AddScoped<ErrorService.Server.Services.Backup.IBackupService, ErrorService.Server.Services.Backup.SqlServerBackupService>();
+builder.Services.AddSingleton<ErrorService.Server.Services.IEmailService, ErrorService.Server.Services.SmtpEmailService>();
+builder.Services.AddHostedService<ErrorService.Server.Services.Backup.BackupBackgroundService>();
 var redisConnection = builder.Configuration.GetSection("Redis")["ConnectionString"];
 if (!string.IsNullOrEmpty(redisConnection))
 {

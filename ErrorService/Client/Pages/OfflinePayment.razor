@@ -48,7 +48,14 @@
                         <div class="order-banner">
                             <div>
                                 <div class="order-banner-label">مبلغ قابل پرداخت</div>
-                                <div class="order-banner-amount">@order.TotalAmount.ToString("N0") <small>تومان</small></div>
+                                <div class="order-banner-amount">@((order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0")) <small>تومان</small></div>
+                                @if ((order.DiscountAmount ?? 0) > 0)
+                                {
+                                    <div class="order-banner-note">
+                                        جمع اولیه: @order.TotalAmount.ToString("N0") تومان
+                                        <span class="text-warning">— تخفیف (@order.CouponCode): -@order.DiscountAmount?.ToString("N0") تومان</span>
+                                    </div>
+                                }
                             </div>
                             <div class="order-banner-code">
                                 <span class="order-banner-code-label">شماره سفارش</span>
@@ -200,6 +207,7 @@
     .order-banner-label { font-size: 0.78rem; opacity: 0.8; margin-bottom: 4px; }
     .order-banner-amount { font-size: 1.6rem; font-weight: 900; }
     .order-banner-amount small { font-size: 0.75rem; font-weight: 600; opacity: 0.8; }
+    .order-banner-note { font-size: 0.72rem; opacity: 0.85; margin-top: 4px; font-weight: 600; }
     .order-banner-code { text-align: left; }
     .order-banner-code-label { display: block; font-size: 0.7rem; opacity: 0.7; margin-bottom: 4px; }
     .order-banner-code-val {
@@ -347,6 +355,8 @@
 
 @code {
     [Parameter] public int OrderId { get; set; }
+    [SupplyParameterFromQuery(Name = "token")]
+    public string? AccessToken { get; set; }
     private OrderDto? order;
     private List<BankAccountDto>? bankAccounts;
     private bool isLoading = true;
@@ -372,12 +382,16 @@
         ToastService.ShowSuccess($"{label} کپی شد");
     }
 
+    private string OrderUrl() => string.IsNullOrWhiteSpace(AccessToken)
+        ? $"api/orders/{OrderId}"
+        : $"api/orders/{OrderId}?token={Uri.EscapeDataString(AccessToken)}";
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
             isLoading = true;
-            order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/{OrderId}");
+            order = await Http.GetFromJsonAsync<OrderDto>($"{OrderUrl()}");
             bankAccounts = await Http.GetFromJsonAsync<List<BankAccountDto>>("api/bankaccounts/gateway");
         }
         catch (Exception ex) { ToastService.ShowError("خطا در دریافت اطلاعات: " + ex.Message); }
@@ -412,12 +426,13 @@
             byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(fileContentType ?? "image/jpeg");
             content.Add(byteArrayContent, "file", fileName ?? "receipt.jpg");
             if (!string.IsNullOrEmpty(trackingNumber)) content.Add(new StringContent(trackingNumber), "trackingNumber");
+            if (!string.IsNullOrWhiteSpace(AccessToken)) content.Add(new StringContent(AccessToken), "accessToken");
 
             var response = await Http.PostAsync($"api/orders/{OrderId}/receipt", content);
             if (response.IsSuccessStatusCode)
             {
                 ToastService.ShowSuccess("رسید پرداخت با موفقیت ثبت شد");
-                order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/{OrderId}");
+                order = await Http.GetFromJsonAsync<OrderDto>(OrderUrl());
                 previewUrl = null; fileBuffer = null;
             }
             else { ToastService.ShowError("خطا در ارسال فایل"); }

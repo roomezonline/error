@@ -75,6 +75,36 @@
                                         <ValidationMessage For="@(() => request.Address)" class="field-error" />
                                     </div>
                                 </div>
+                                <div class="col-12">
+                                    <div class="field-group">
+                                        <label class="field-label">روش پرداخت</label>
+                                        <div class="pm-grid">
+                                            <button type="button" class="pm-option pm-option--active" @onclick="SelectManual">
+                                                <span class="oi oi-credit-card pm-option__ico"></span>
+                                                <span>
+                                                    <span class="pm-option__title d-block">کارت‌به‌کارت</span>
+                                                    <span class="pm-option__desc d-block">واریز و آپلود رسید</span>
+                                                </span>
+                                                <span class="pm-option__check pm-option__check--on"><span class="oi oi-check"></span></span>
+                                            </button>
+                                            @foreach (var g in _gateways)
+                                            {
+                                                <button type="button" class="pm-option @(_selectedGatewayId == g.Id ? "pm-option--active" : "")" @onclick="() => SelectGateway(g.Id)">
+                                                    <span class="oi oi-globe pm-option__ico pm-option__ico--online"></span>
+                                                    <span>
+                                                        <span class="pm-option__title d-block">@g.Title</span>
+                                                        <span class="pm-option__desc d-block">پرداخت آنلاین</span>
+                                                    </span>
+                                                    <span class="pm-option__check @(_selectedGatewayId == g.Id ? "pm-option__check--on" : "")"><span class="oi oi-check"></span></span>
+                                                </button>
+                                            }
+                                        </div>
+                                        @if (_gateways.Count == 0)
+                                        {
+                                            <div class="field-hint">در حال حاضر درگاه پرداخت آنلاین فعال نیست.</div>
+                                        }
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="mt-5 d-none d-lg-block">
@@ -290,6 +320,17 @@
     .info-note span { margin-top: 2px; flex-shrink: 0; }
     .info-note p { margin: 0; }
 
+    .pm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+    .pm-option { display: flex; align-items: center; gap: 10px; text-align: right; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .pm-option:hover { border-color: #c7d2fe; }
+    .pm-option--active { border-color: var(--shop-primary, #4f46e5); background: rgba(79,70,229,.05); }
+    .pm-option__ico { font-size: 1.15rem; color: #16a34a; }
+    .pm-option__ico--online { color: var(--shop-primary, #4f46e5); }
+    .pm-option__title { font-size: 0.82rem; font-weight: 800; color: var(--shop-text, #1e293b); }
+    .pm-option__desc { font-size: 0.7rem; color: #94a3b8; }
+    .pm-option__check { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #e2e8f0; color: transparent; font-size: 0.6rem; margin-inline-start: auto; flex-shrink: 0; }
+    .pm-option__check--on { background: var(--shop-primary, #4f46e5); border-color: var(--shop-primary, #4f46e5); color: #fff; }
+
     .bottom-bar {
         background: var(--shop-surface, #fff); border-top: 1px solid #e2e8f0;
     }
@@ -329,6 +370,7 @@
         .coupon-input { padding: 8px 10px; font-size: 0.76rem; }
         .coupon-btn { padding: 8px 14px; font-size: 0.76rem; }
         .info-note { padding: 10px 12px; margin-top: 14px; font-size: 0.72rem; }
+        .pm-grid { grid-template-columns: 1fr; }
         .bottom-bar {
             position: fixed; bottom: 0; left: 0; right: 0; z-index: 1200;
             padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
@@ -359,13 +401,16 @@
     private bool _couponLoading;
     private string _couponMessage = "";
 
-    protected override void OnInitialized()
-    {
-        editContext = new EditContext(request);
-    }
+    private List<PaymentGatewayListItemDto> _gateways = new();
+    private int? _selectedGatewayId;
+
+    private void SelectManual() => _selectedGatewayId = null;
+    private void SelectGateway(int id) => _selectedGatewayId = id;
 
     protected override async Task OnInitializedAsync()
     {
+        editContext = new EditContext(request);
+
         try
         {
             var settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
@@ -386,6 +431,12 @@
             await InvokeAsync(StateHasChanged);
         }
         catch { }
+
+        try
+        {
+            _gateways = await Http.GetFromJsonAsync<List<PaymentGatewayListItemDto>>("api/payment/gateways") ?? new();
+        }
+        catch { _gateways = new(); }
     }
 
     private async Task ApplyCoupon()
@@ -447,9 +498,31 @@
             if (response.IsSuccessStatusCode)
             {
                 var order = await response.Content.ReadFromJsonAsync<OrderDto>();
-                if (order != null) { await CartService.ClearCartAsync(); Nav.NavigateTo($"/payment/offline/{order.Id}"); }
+                if (order != null)
+                {
+                    if (_selectedGatewayId.HasValue)
+                    {
+                        var tokenParam = string.IsNullOrWhiteSpace(order.AccessToken) ? "" : Uri.EscapeDataString(order.AccessToken);
+                        var intent = await Http.GetFromJsonAsync<PaymentIntentResult>($"api/orders/{order.Id}/payment/intent?gatewayId={_selectedGatewayId.Value}&token={tokenParam}");
+                        if (intent?.Success == true && !string.IsNullOrWhiteSpace(intent.GatewayUrl))
+                        {
+                            await CartService.ClearCartAsync();
+                            Nav.NavigateTo(intent.GatewayUrl);
+                            return;
+                        }
+                        ToastService.ShowError(intent?.Message ?? "خطا در ایجاد پرداخت آنلاین؛ به پرداخت کارت‌به‌کارت منتقل می‌شوید.");
+                    }
+
+                    await CartService.ClearCartAsync();
+                    var accessToken = string.IsNullOrWhiteSpace(order.AccessToken) ? "" : $"?token={Uri.EscapeDataString(order.AccessToken)}";
+                    Nav.NavigateTo($"/payment/offline/{order.Id}{accessToken}");
+                }
             }
-            else { ToastService.ShowError("خطا در ثبت سفارش"); }
+            else
+            {
+                var errBody = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError($"خطا در ثبت سفارش ({(int)response.StatusCode}): {errBody}");
+            }
         }
         catch { ToastService.ShowError("خطای ارتباط با سرور"); }
         finally { isProcessing = false; }
@@ -457,8 +530,11 @@
 
     private async Task TriggerFormSubmit()
     {
-        if (editContext == null) return;
-        if (!editContext.Validate()) { ToastService.ShowError("لطفاً اطلاعات را صحیح وارد کنید"); return; }
+        if (editContext != null && !editContext.Validate())
+        {
+            ToastService.ShowError("لطفاً اطلاعات را صحیح وارد کنید");
+            return;
+        }
         await HandleSubmit();
     }
 }

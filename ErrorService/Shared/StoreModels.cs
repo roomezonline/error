@@ -15,6 +15,7 @@ public class ProductDto
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Slug { get; set; }
+    public string? Sku { get; set; }
     public string? Description { get; set; }
     public decimal Price { get; set; }
     public decimal? DiscountPrice { get; set; }
@@ -40,12 +41,14 @@ public class ProductUpsertRequest
 {
     [Required(ErrorMessage = "نام محصول الزامی است")]
     public string Name { get; set; } = string.Empty;
-    
+
+    public string? Sku { get; set; }
+
     public string? Description { get; set; }
-    
+
     [Range(0, 1000000000, ErrorMessage = "قیمت نمی‌تواند منفی باشد")]
     public decimal Price { get; set; }
-    
+
     public decimal? DiscountPrice { get; set; }
     public DateTimeOffset? DiscountExpiryDate { get; set; }
     public string? MainImageUrl { get; set; }

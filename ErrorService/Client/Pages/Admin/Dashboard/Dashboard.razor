@@ -801,6 +801,15 @@
                             </a>
                         </AuthorizeView>
 
+                        <AuthorizeView Policy="perm:admin.shop.gateway.view">
+                            <a class="app-item shadow-sm" href="/admin/payment-settings">
+                                <div class="app-icon-box bg-info-subtle text-info">
+                                    <span class="oi oi-globe"></span>
+                                </div>
+                                <span class="app-name">درگاه پرداخت</span>
+                            </a>
+                        </AuthorizeView>
+
                         <AuthorizeView Policy="perm:admin.settings.manage">
                             <a class="app-item shadow-sm" href="/admin/coupons">
                                 <div class="app-icon-box bg-success-subtle text-success">
@@ -1011,6 +1020,15 @@
                                     <span class="oi oi-cog"></span>
                                 </div>
                                 <span class="app-name">تنظیمات</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.backup.view">
+                            <a class="app-item shadow-sm" href="/admin/backup">
+                                <div class="app-icon-box bg-danger-subtle text-danger">
+                                    <span class="oi oi-hard-drive"></span>
+                                </div>
+                                <span class="app-name">بک‌آپ</span>
                             </a>
                         </AuthorizeView>
 

@@ -25,6 +25,13 @@ public class OrderDto
     public string PhoneNumber { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string? Address { get; set; }
+
+    // Location
+    public int? ProvinceId { get; set; }
+    public int? CityId { get; set; }
+    public string? ProvinceName { get; set; }
+    public string? CityName { get; set; }
+    public string? PostalCode { get; set; }
     
     // Payment Info
     public string? ReceiptImageUrl { get; set; }
@@ -32,9 +39,14 @@ public class OrderDto
     public DateTimeOffset? PaymentDate { get; set; }
     public string? AdminNotes { get; set; }
 
+    public PaymentProvider? PaymentProvider { get; set; }
+    public string? PaymentReference { get; set; }
+
     public List<OrderItemDto> Items { get; set; } = new();
     public decimal? DiscountAmount { get; set; }
     public string? CouponCode { get; set; }
+
+    public string? AccessToken { get; set; }
 }
 
 public class OrderItemDto
@@ -61,6 +73,14 @@ public class OrderCreateRequest
     [Required(ErrorMessage = "آدرس وارد نشده است")]
     [MinLength(10, ErrorMessage = "آدرس دقیق نیست")]
     public string? Address { get; set; }
+
+    public int? ProvinceId { get; set; }
+    public int? CityId { get; set; }
+    public string? ProvinceName { get; set; }
+    public string? CityName { get; set; }
+
+    [MaxLength(20, ErrorMessage = "کد پستی معتبر نیست")]
+    public string? PostalCode { get; set; }
 
     public List<OrderItemDto> Items { get; set; } = new();
 
@@ -92,6 +112,12 @@ public class OrderUpdateInfoRequest
 
     [Required(ErrorMessage = "آدرس پستی الزامی است")]
     public string Address { get; set; } = string.Empty;
+
+    public int? ProvinceId { get; set; }
+    public int? CityId { get; set; }
+    public string? ProvinceName { get; set; }
+    public string? CityName { get; set; }
+    public string? PostalCode { get; set; }
 }
 
 public class CartItemDto
