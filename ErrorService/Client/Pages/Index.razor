@@ -5,8 +5,8 @@
 @inject NavigationManager NavigationManager
 
 <SeoHeader 
-    Title="@(settings?.SeoTitle ?? "ارورسرویس | تعمیر و سرویس لوازم خانگی، کد خطا و قطعات یدکی")" 
-    Description="@(settings?.SeoDescription ?? "ارورسرویس، مرجع تخصصی کدهای خطای لوازم خانگی، آموزش تعمیرات، قطعات یدکی و سرویس در منزل. بانک جامع ارور ماشین لباسشویی، یخچال، ظرفشویی و ماکروفر.")"
+    Title="@(settings?.SeoTitle ?? "ارورسرویس | فروشگاه لوازم الکترونیک، ابزار دقیق و تعمیر تخصصی لوازم خانگی و بردها")" 
+    Description="@(settings?.SeoDescription ?? "ارورسرویس، فروشگاه تخصصی لوازم الکترونیکی، قطعات الکترونیک، تجهیزات ابزار دقیق و ابزارآلات صنعتی. تعمیر تخصصی لوازم خانگی و بردهای الکترونیکی با ضمانت اصالت و ارسال سریع.")"
     Keywords="@settings?.SeoKeywords"
     OgImage="@(settings?.DefaultOgImage ?? "/images/og-default.jpg")"
     JsonLd="@orgJsonLd" />
@@ -188,7 +188,7 @@ else
             ["name"] = "ارورسرویس",
             ["url"] = baseUrl,
             ["logo"] = $"{baseUrl}/favicon.png",
-            ["description"] = settings?.SeoDescription ?? "مرجع تخصصی عیب‌یابی و تعمیرات لوازم خانگی",
+            ["description"] = settings?.SeoDescription ?? "فروشگاه لوازم الکترونیک، قطعات و تجهیزات ابزار دقیق و تعمیر تخصصی لوازم خانگی و بردهای الکترونیکی",
             ["contactPoint"] = new Dictionary<string, object?>
             {
                 ["@type"] = "ContactPoint",

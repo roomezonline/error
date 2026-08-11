@@ -258,6 +258,55 @@ public sealed class OrdersController : ControllerBase
         });
     }
 
+    [AllowAnonymous]
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<OrderDto>> GetOrder(int id, [FromQuery] string? token, CancellationToken ct)
+    {
+        var order = await _db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound();
+
+        if (!await CanAccessOrderAsync(order, token))
+            return NotFound();
+
+        var items = await _db.OrderItems.AsNoTracking()
+            .Where(i => i.OrderId == id)
+            .ToListAsync(ct);
+
+        return Ok(new OrderDto
+        {
+            Id = order.Id,
+            OrderNumber = order.OrderNumber,
+            Status = order.Status,
+            TotalAmount = order.TotalAmount,
+            DiscountAmount = order.DiscountAmount,
+            CouponCode = order.CouponCode,
+            AccessToken = order.AccessToken,
+            CreatedAt = order.CreatedAt,
+            FullName = order.FullName,
+            PhoneNumber = order.PhoneNumber,
+            Email = order.Email,
+            Address = order.Address,
+            ProvinceId = order.ProvinceId,
+            CityId = order.CityId,
+            ProvinceName = order.ProvinceName,
+            CityName = order.CityName,
+            PostalCode = order.PostalCode,
+            ReceiptImageUrl = order.ReceiptImageUrl,
+            TrackingNumber = order.TrackingNumber,
+            PaymentDate = order.PaymentDate,
+            PaymentProvider = order.PaymentProvider,
+            PaymentReference = order.PaymentReference,
+            Items = items.Select(i => new OrderItemDto
+            {
+                Id = i.Id,
+                ProductId = i.ProductId,
+                ProductName = i.ProductName,
+                Price = i.Price,
+                Quantity = i.Quantity
+            }).ToList()
+        });
+    }
+
     [Authorize]
     [HttpGet("my")]
     public async Task<ActionResult<List<OrderDto>>> GetMyOrders()
