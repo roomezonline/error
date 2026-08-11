@@ -92,7 +92,7 @@
                         @if (IsDiscountActive(product))
                         {
                             <div class="pd-discount-ribbon">
-                                <span class="pd-discount-label">@(IsTimedActive(product) ? "پیشنهاد ویژه" : "تخفیف دائمی")</span>
+                                <span class="pd-discount-label">@(IsTimedActive(product) ? "پیشنهاد ویژه" : "تخفیف ویژه")</span>
                                 @if (IsTimedActive(product))
                                 {
                                     <span class="pd-discount-timer">@countdownText</span>
@@ -183,7 +183,7 @@
                         {
                             <div class="pd-price-row">
                                 <span class="pd-price-old">@product.Price.ToString("N0") تومان</span>
-                                <span class="pd-price-badge">@(IsTimedActive(product) ? "تخفیف ویژه" : "تخفیف دائمی")</span>
+                                <span class="pd-price-badge">تخفیف ویژه</span>
                             </div>
                             <div class="pd-price-current">
                                 <span class="pd-price-num">@product.DiscountPrice!.Value.ToString("N0")</span>

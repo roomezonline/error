@@ -164,8 +164,10 @@ public class MonitoringAlertController : ControllerBase
             .AsNoTracking()
             .Where(a => a.State)
             .Where(a => _db.MonitoringReceiptConnections
-                .Any(mrc => mrc.MonitoringDevice!.DeviceNumber == a.DeviceCode
-                    && mrc.EndedAt == null && mrc.WorkshopId == targetWorkshopId))
+                .Any(mrc => mrc.WorkshopId == targetWorkshopId
+                    && mrc.EndedAt == null
+                    && ((a.MonitoringId.HasValue && mrc.Id == a.MonitoringId.Value)
+                        || (!a.MonitoringId.HasValue && mrc.MonitoringDevice!.DeviceNumber == a.DeviceCode))))
             .CountAsync();
 
         return Ok(new { count });

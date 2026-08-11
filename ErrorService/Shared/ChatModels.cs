@@ -38,6 +38,7 @@ public sealed class ChatSessionDto
     public string VisitorId { get; set; } = string.Empty;
     public string? UserName { get; set; }
     public string? UserEmail { get; set; }
+    public string? UserPhone { get; set; }
     public int? OperatorId { get; set; }
     public string? OperatorName { get; set; }
     public ChatSessionStatusDto Status { get; set; }
@@ -64,6 +65,10 @@ public sealed class ChatMessageDto
     public DateTime CreatedAt { get; set; }
     public bool IsRead { get; set; }
     public ChatMessageStatusDto Status { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? EditedAt { get; set; }
+    public int? ReplyToId { get; set; }
+    public string? ReplyToText { get; set; }
 }
 
 public sealed class StartChatRequest
@@ -147,4 +152,61 @@ public sealed class OperatorStatusDto
 {
     public bool IsAvailable { get; set; }
     public int ActiveSessions { get; set; }
+}
+
+public sealed class ChatPresenceDto
+{
+    public int OnlineAdmins { get; set; }
+    public List<string> ActiveChannels { get; set; } = new();
+}
+
+public sealed class CannedResponseDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string? Category { get; set; }
+    public bool IsShared { get; set; }
+    public int CreatedByUserId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public sealed class ChatFaqEntryDto
+{
+    public int Id { get; set; }
+    public string Question { get; set; } = string.Empty;
+    public string Answer { get; set; } = string.Empty;
+    public string? Keywords { get; set; }
+    public bool IsEnabled { get; set; } = true;
+}
+
+public sealed class ChatOperatorDto
+{
+    public int Id { get; set; }
+    public string? FullName { get; set; }
+    public bool IsOnline { get; set; }
+}
+
+public sealed class ChatSettingsDto
+{
+    public bool EnableBaleChat { get; set; } = true;
+    public string? BaleToken { get; set; }
+    public string? BaleGroupId { get; set; }
+    public bool EnableTelegramChat { get; set; }
+    public string? TelegramToken { get; set; }
+    public string? TelegramGroupId { get; set; }
+    public bool EnableEitaaChat { get; set; }
+    public string? EitaaToken { get; set; }
+    public string? EitaaGroupId { get; set; }
+    public string? WebhookSecret { get; set; }
+    public string? WebhookUrl { get; set; }
+    public string? WelcomeMessage { get; set; }
+    public bool EnableAutoMessage { get; set; }
+    public int AutoMessageSeconds { get; set; } = 60;
+    public bool PhoneRequired { get; set; }
+    public bool EnableAiAssistant { get; set; }
+    public string? AiProvider { get; set; }
+    public string? AiApiUrl { get; set; }
+    public string? AiModel { get; set; }
+    public string? AiSystemPrompt { get; set; }
 }

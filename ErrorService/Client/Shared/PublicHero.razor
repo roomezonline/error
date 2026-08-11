@@ -19,90 +19,47 @@
         </div>
     </section>
 }
-else if (Slides.Count > 0 || (ShowFeaturedSide && _sideProducts.Count > 0))
+else if (Slides.Count > 0)
 {
     <section class="hero" dir="rtl">
         <div class="hero__wrap">
-            <div class="hero__grid @(Slides.Count == 0 ? "hero__grid--sideonly" : "")">
-                @if (Slides.Count > 0)
+            <div class="hero__slider" role="region" aria-label="Hero slider" @ref="_sliderElement">
+                @for (var i = 0; i < Slides.Count; i++)
                 {
-                    <div class="hero__slider" role="region" aria-label="Hero slider" @ref="_sliderElement">
-                        @for (var i = 0; i < Slides.Count; i++)
-                        {
-                            <div class="hero__slide @(i == activeIndex ? $"is-active {activeFxClass}" : "")" @(i == activeIndex ? "" : "aria-hidden=\"true\"")>
-                                <div class="hero__media">
-                                    <picture>
-                                        @if (!string.IsNullOrWhiteSpace(Slides[i].MobileImageUrl))
-                                        {
-                                            <source media="(max-width: 899.98px)" srcset="@Slides[i].MobileImageUrl" />
-                                        }
-                                        <img class="hero__imgFg" src="@Slides[i].ImageUrl" alt="@Slides[i].Title" loading="@(i == activeIndex ? "eager" : "lazy")" decoding="async" />
-                                    </picture>
-                                </div>
-
-                                <div class="hero__caption">
-                                    <div class="hero__contentCard">
-                                        <div class="hero__typed">
-                                            <h1 class="hero__typedTitle" data-text="@Slides[i].Title"></h1>
-                                            <div class="hero__typedSubtitle" data-text="@(string.IsNullOrWhiteSpace(Slides[i].Subtitle) ? Slides[i].Tagline : Slides[i].Subtitle)"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        }
-
-                        @if (Slides.Count > 1)
-                        {
-                            <div class="hero__dots" role="tablist" aria-label="انتخاب اسلاید">
-                                @for (var i = 0; i < Slides.Count; i++)
+                    <div class="hero__slide @(i == activeIndex ? $"is-active {activeFxClass}" : "")" @(i == activeIndex ? "" : "aria-hidden=\"true\"")>
+                        <div class="hero__media">
+                            <picture>
+                                @if (!string.IsNullOrWhiteSpace(Slides[i].MobileImageUrl))
                                 {
-                                    <button type="button" class="hero__dot @(i == activeIndex ? "hero__dot--active" : "")" @onclick="() => GoTo(i)" role="tab" aria-selected="@(i == activeIndex ? "true" : "false")" aria-label="اسلاید @(i+1)">
-                                    </button>
+                                    <source media="(max-width: 899.98px)" srcset="@Slides[i].MobileImageUrl" />
                                 }
+                                <img class="hero__imgFg" src="@Slides[i].ImageUrl" alt="@Slides[i].Title" loading="@(i == activeIndex ? "eager" : "lazy")" decoding="async" />
+                            </picture>
+                        </div>
+
+                        <div class="hero__caption">
+                            <div class="hero__contentCard">
+                                <div class="hero__typed">
+                                    <h1 class="hero__typedTitle" data-text="@Slides[i].Title"></h1>
+                                    <div class="hero__typedSubtitle" data-text="@(string.IsNullOrWhiteSpace(Slides[i].Subtitle) ? Slides[i].Tagline : Slides[i].Subtitle)"></div>
+                                </div>
                             </div>
-                        }
+                        </div>
                     </div>
                 }
 
-                @if (ShowFeaturedSide && _sideProducts.Count > 0)
-                {
-                    <aside class="hero__side" aria-label="پیشنهاد ویژه فروشگاه">
-                        <div class="hero__sideHead">
-                            <span class="oi oi-star" aria-hidden="true"></span>
-                            <span>پیشنهاد ویژه فروشگاه</span>
-                        </div>
-                        <div class="hero__sideList">
-                            @foreach (var prod in _sideProducts)
-                            {
-                                <a href="@SeoUrl.Product(prod.Id, prod.Slug)" class="hero__sideCard @(prod.IsAvailable ? "" : "hero__sideCard--off")">
-                                    <span class="hero__sideImg">
-                                        @if (DiscountHelper.IsActive(prod))
-                                        {
-                                            <span class="hero__sideBadge">@DiscountHelper.CalculatePercent(prod)٪</span>
-                                        }
-                                        <img src="@(string.IsNullOrEmpty(prod.MainImageUrl) ? "/images/placeholder-product.svg" : prod.MainImageUrl)" loading="lazy" alt="@prod.Name" />
-                                    </span>
-                                    <span class="hero__sideInfo">
-                                        <span class="hero__sideName">@prod.Name</span>
-                                        <span class="hero__sidePrice">
-                                            @if (DiscountHelper.IsActive(prod))
-                                            {
-                                                <span class="hero__sideOld">@prod.Price.ToString("N0")</span>
-                                                <span class="hero__sideNew">@DiscountHelper.GetEffectivePrice(prod).ToString("N0") <small>تومان</small></span>
-                                            }
-                                            else
-                                            {
-                                                <span class="hero__sideNew">@prod.Price.ToString("N0") <small>تومان</small></span>
-                                            }
-                                        </span>
-                                    </span>
-                                </a>
-                            }
-                        </div>
-                        <a href="/products" class="hero__sideAll">مشاهده همه محصولات</a>
-                    </aside>
-                }
             </div>
+
+            @if (Slides.Count > 1)
+            {
+                <div class="hero__dots" role="tablist" aria-label="انتخاب اسلاید">
+                    @for (var i = 0; i < Slides.Count; i++)
+                    {
+                        <button type="button" class="hero__dot @(i == activeIndex ? "hero__dot--active" : "")" @onclick="() => GoTo(i)" role="tab" aria-selected="@(i == activeIndex ? "true" : "false")" aria-label="اسلاید @(i+1)">
+                        </button>
+                    }
+                </div>
+            }
         </div>
     </section>
 }
@@ -201,197 +158,6 @@ else if (Slides.Count > 0 || (ShowFeaturedSide && _sideProducts.Count > 0))
         }
     }
 
-    /* ── Hero Grid + Featured Side Column ── */
-    .hero__grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
-        gap: 14px;
-        max-width: 1320px;
-        margin: 0 auto;
-        padding: 0 8px;
-    }
-    .hero__grid--sideonly {
-        grid-template-columns: minmax(0, 1fr);
-    }
-    @@media (min-width: 900px) {
-        .hero__grid {
-            grid-template-columns: minmax(0, 1fr) 340px;
-            gap: 16px;
-            padding: 0 16px;
-        }
-    }
-    .hero__side {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        padding: 14px;
-        background: #fff;
-        border: 1px solid rgba(15, 23, 42, 0.06);
-        border-radius: 16px;
-        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
-    }
-    .hero__sideHead {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-weight: 800;
-        font-size: 0.95rem;
-        color: #0f172a;
-    }
-    .hero__sideHead .oi {
-        color: #eab308;
-    }
-    .hero__sideList {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-    .hero__sideCard {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 8px;
-        border-radius: 12px;
-        background: #f8fafc;
-        border: 1px solid rgba(15, 23, 42, 0.05);
-        text-decoration: none;
-        color: inherit;
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-    .hero__sideCard:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(30, 64, 175, 0.12);
-    }
-    .hero__sideImg {
-        position: relative;
-        flex: 0 0 64px;
-        width: 64px;
-        height: 64px;
-        border-radius: 10px;
-        overflow: hidden;
-        background: #e2e8f0;
-    }
-    .hero__sideImg img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-    .hero__sideBadge {
-        position: absolute;
-        top: 4px;
-        right: 4px;
-        z-index: 2;
-        background: #ef4444;
-        color: #fff;
-        font-size: 0.62rem;
-        font-weight: 800;
-        padding: 2px 6px;
-        border-radius: 999px;
-    }
-    .hero__sideInfo {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-    .hero__sideName {
-        font-size: 0.8rem;
-        font-weight: 700;
-        color: #0f172a;
-        line-height: 1.45;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
-    .hero__sidePrice {
-        display: flex;
-        align-items: baseline;
-        gap: 6px;
-        flex-wrap: wrap;
-    }
-    .hero__sideOld {
-        font-size: 0.7rem;
-        color: #94a3b8;
-        text-decoration: line-through;
-    }
-    .hero__sideNew {
-        font-size: 0.85rem;
-        font-weight: 800;
-        color: #1e40af;
-    }
-    .hero__sideNew small {
-        font-size: 0.62rem;
-        font-weight: 600;
-        color: #64748b;
-    }
-    .hero__sideCard--off {
-        opacity: 0.65;
-        filter: grayscale(0.4);
-    }
-    .hero__sideAll {
-        margin-top: auto;
-        padding: 7px;
-        text-align: center;
-        font-size: 0.78rem;
-        font-weight: 700;
-        color: #1e40af;
-        border: 1px dashed rgba(30, 64, 175, 0.35);
-        border-radius: 10px;
-        text-decoration: none;
-        transition: background 0.15s ease;
-    }
-    .hero__sideAll:hover {
-        background: rgba(30, 64, 175, 0.06);
-    }
-
-    /* side-only hero (no slides configured) */
-    .hero__grid--sideonly .hero__sideList {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-        gap: 12px;
-    }
-
-    /* mobile: side column becomes horizontal scroll strip */
-    @@media (max-width: 899.98px) {
-        .hero__side {
-            gap: 10px;
-            padding: 12px;
-        }
-        .hero__sideList {
-            flex-direction: row;
-            gap: 10px;
-            overflow-x: auto;
-            padding-bottom: 4px;
-            scroll-snap-type: x proximity;
-            -webkit-overflow-scrolling: touch;
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-        }
-        .hero__sideList::-webkit-scrollbar {
-            display: none;
-        }
-        .hero__sideCard {
-            flex: 0 0 240px;
-            scroll-snap-align: start;
-        }
-        .hero__grid--sideonly .hero__sideList {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px;
-            overflow: visible;
-        }
-        .hero__grid--sideonly .hero__sideCard {
-            flex: none;
-        }
-    }
-    @@media (max-width: 420px) {
-        .hero__grid--sideonly .hero__sideList {
-            grid-template-columns: minmax(0, 1fr);
-        }
-    }
-
     /* ── Slide Indicators (Dots) ── */
     .hero__dots {
         position: absolute;
@@ -450,12 +216,9 @@ else if (Slides.Count > 0 || (ShowFeaturedSide && _sideProducts.Count > 0))
     [Inject] private HttpClient Http { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
 
-    [Parameter] public bool ShowFeaturedSide { get; set; } = true;
-
     private bool _loading = true;
     private ElementReference _sliderElement;
     private readonly List<HeroSlide> Slides = new();
-    private List<ProductDto> _sideProducts = new();
     private object? _swipeHandler;
     private object? _visibilityHandler;
 
@@ -478,30 +241,13 @@ else if (Slides.Count > 0 || (ShowFeaturedSide && _sideProducts.Count > 0))
 
     protected override async Task OnInitializedAsync()
     {
-        await Task.WhenAll(LoadSlidesAsync(), LoadSideProductsAsync());
+        await LoadSlidesAsync();
 
         if (Slides.Count > 0)
         {
             cts = new CancellationTokenSource();
             timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
             _ = RunAutoAdvanceAsync(cts.Token);
-        }
-    }
-
-    private async Task LoadSideProductsAsync()
-    {
-        if (!ShowFeaturedSide) return;
-
-        try
-        {
-            var items = await Http.GetFromJsonAsync<List<ProductDto>>(
-                "api/products?featuredOnly=true&random=true&onlyAvailable=true&take=3");
-            if (items is not null)
-                _sideProducts = items;
-        }
-        catch
-        {
-            // خالی می‌ماند؛ هیرو مثل قبل تمام‌عرض نمایش داده می‌شود
         }
     }
 

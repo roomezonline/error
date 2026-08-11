@@ -154,6 +154,15 @@ public sealed class MonitoringDevicesController : ControllerBase
         entity.IsActive = req.IsActive;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
 
+        if (!req.IsActive)
+        {
+            var alerts = await _db.MonitoringAlerts
+                .Where(a => a.DeviceCode == trimmedDeviceNumber && a.State)
+                .ToListAsync();
+            foreach (var alert in alerts)
+                alert.State = false;
+        }
+
         await _db.SaveChangesAsync();
 
         return Ok(new MonitoringDeviceDto
@@ -175,6 +184,13 @@ public sealed class MonitoringDevicesController : ControllerBase
         if (entity == null) return NotFound();
 
         _db.MonitoringDevices.Remove(entity);
+
+        var orphanAlerts = await _db.MonitoringAlerts
+            .Where(a => a.DeviceCode == entity.DeviceNumber && a.State)
+            .ToListAsync();
+        foreach (var alert in orphanAlerts)
+            alert.State = false;
+
         await _db.SaveChangesAsync();
 
         return NoContent();
@@ -189,6 +205,15 @@ public sealed class MonitoringDevicesController : ControllerBase
 
         entity.IsActive = !entity.IsActive;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
+
+        if (!entity.IsActive)
+        {
+            var alerts = await _db.MonitoringAlerts
+                .Where(a => a.DeviceCode == entity.DeviceNumber && a.State)
+                .ToListAsync();
+            foreach (var alert in alerts)
+                alert.State = false;
+        }
 
         await _db.SaveChangesAsync();
         return Ok(entity.IsActive);

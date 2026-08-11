@@ -1,6 +1,8 @@
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
 using ErrorService.Server.Services;
+using ErrorService.Server.Services.ChatAi;
+using ErrorService.Server.Services.Messenger;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -12,17 +14,21 @@ namespace ErrorService.Server.Hubs;
 public sealed class ChatHub : Hub
 {
     private readonly ErrorServiceDbContext _db;
-    private readonly BaleBotService _baleBot;
+    private readonly MessengerRouter _router;
+    private readonly ChatAiCoordinator _ai;
     private readonly ILogger<ChatHub> _logger;
 
     private static readonly ConcurrentDictionary<string, int> OnlineAdmins = new();
     private static readonly ConcurrentDictionary<string, string> ConnectionVisitors = new();
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> TypingTimers = new();
+    private static readonly ConcurrentDictionary<int, byte> AiBlockedSessions = new();
+    private static readonly ConcurrentDictionary<int, SemaphoreSlim> AiLocks = new();
 
-    public ChatHub(ErrorServiceDbContext db, BaleBotService baleBot, ILogger<ChatHub> logger)
+    public ChatHub(ErrorServiceDbContext db, MessengerRouter router, ChatAiCoordinator ai, ILogger<ChatHub> logger)
     {
         _db = db;
-        _baleBot = baleBot;
+        _router = router;
+        _ai = ai;
         _logger = logger;
     }
 
@@ -48,6 +54,8 @@ public sealed class ChatHub : Hub
         }
 
         ConnectionVisitors[Context.ConnectionId] = visitorId;
+        await Groups.AddToGroupAsync(Context.ConnectionId, "presence");
+        await SendPresenceAsync();
         await base.OnConnectedAsync();
     }
 
@@ -63,10 +71,90 @@ public sealed class ChatHub : Hub
                 TypingTimers.TryRemove(kv.Key, out _);
             }
         }
+        await SendPresenceAsync();
         await base.OnDisconnectedAsync(exception);
     }
 
-    public async Task<StartChatResult> StartChat(string userName, string? userEmail)
+    public int GetPresence() => OnlineAdmins.Count;
+
+    public async Task RequestOperator(int sessionId)
+    {
+        var session = await _db.ChatSessions.FindAsync(sessionId);
+        if (session == null) return;
+
+        var visitorId = ConnectionVisitors.GetValueOrDefault(Context.ConnectionId) ?? Context.ConnectionId;
+        if (session.VisitorId != visitorId && !OnlineAdmins.ContainsKey(Context.ConnectionId)) return;
+
+        AiBlockedSessions[sessionId] = 1;
+
+        var msg = new ChatMessage
+        {
+            SessionId = sessionId,
+            SenderType = ChatSenderType.System,
+            SenderId = "system",
+            Content = "کاربر درخواست گفتگو با اپراتور انسانی داد.",
+            MessageType = ChatMessageType.System,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.ChatMessages.Add(msg);
+        await _db.SaveChangesAsync();
+
+        await Clients.Group($"session_{sessionId}").SendAsync("NewMessage", MapMessageDto(msg));
+        await Clients.Group("admins").SendAsync("OperatorRequested", sessionId);
+    }
+
+    private async Task TryRunAiAsync(int sessionId, string userMessage, string userName)
+    {
+        try
+        {
+            if (AiBlockedSessions.ContainsKey(sessionId)) return;
+            if (OnlineAdmins.Count > 0) return;
+
+            var settings = await _db.SiteSettings.FirstOrDefaultAsync();
+            if (settings?.ChatEnableAiAssistant != true) return;
+
+            if (userMessage.Length > 300) return;
+
+            var sem = AiLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+            if (!await sem.WaitAsync(0)) return;
+            try
+            {
+                var reply = await _ai.GetReplyAsync(userMessage);
+                if (string.IsNullOrWhiteSpace(reply)) return;
+
+                AiBlockedSessions[sessionId] = 1;
+
+                var aiMsg = new ChatMessage
+                {
+                    SessionId = sessionId,
+                    SenderType = ChatSenderType.Operator,
+                    SenderId = "پاسخ خودکار",
+                    Content = reply,
+                    MessageType = ChatMessageType.Text,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _db.ChatMessages.Add(aiMsg);
+                await _db.SaveChangesAsync();
+
+                await Clients.Group($"session_{sessionId}").SendAsync("NewMessage", MapMessageDto(aiMsg));
+            }
+            finally
+            {
+                sem.Release();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ChatHub: AI reply failed for session {SessionId}", sessionId);
+        }
+    }
+
+    private async Task SendPresenceAsync()
+    {
+        await Clients.Group("presence").SendAsync("PresenceChanged", OnlineAdmins.Count);
+    }
+
+    public async Task<StartChatResult> StartChat(string userName, string? userEmail, string? userPhone = null)
     {
         var visitorId = ConnectionVisitors.GetValueOrDefault(Context.ConnectionId) ?? Context.ConnectionId;
 
@@ -82,11 +170,22 @@ public sealed class ChatHub : Hub
             };
         }
 
+        var settings = await _db.SiteSettings.FirstOrDefaultAsync();
+        if (settings?.ChatPhoneRequired == true && string.IsNullOrWhiteSpace(userPhone))
+        {
+            return new StartChatResult
+            {
+                Success = false,
+                Message = "وارد کردن شماره تماس الزامی است."
+            };
+        }
+
         var session = new ChatSession
         {
             VisitorId = visitorId,
             UserName = userName,
             UserEmail = userEmail,
+            UserPhone = string.IsNullOrWhiteSpace(userPhone) ? null : userPhone.Trim(),
             Status = ChatSessionStatus.Active,
             CreatedAt = DateTime.UtcNow
         };
@@ -113,11 +212,64 @@ public sealed class ChatHub : Hub
 
         await Clients.Caller.SendAsync("NewMessage", MapMessageDto(sysMsg));
 
-        // Notify Bale group
-        if (await _baleBot.IsConfiguredAsync())
+        // Welcome message (operator-styled)
+        if (!string.IsNullOrWhiteSpace(settings?.ChatWelcomeMessage))
         {
-            await _baleBot.SendSystemMessageToGroup(session.Id,
+            var wMsg = new ChatMessage
+            {
+                SessionId = session.Id,
+                SenderType = ChatSenderType.Operator,
+                SenderId = "اپراتور",
+                Content = settings.ChatWelcomeMessage,
+                MessageType = ChatMessageType.Text,
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.ChatMessages.Add(wMsg);
+            await _db.SaveChangesAsync();
+            await Clients.Caller.SendAsync("NewMessage", MapMessageDto(wMsg));
+        }
+
+        // Auto (trigger) message if operator doesn't reply in time
+        if (settings?.ChatEnableAutoMessage == true && settings.ChatAutoMessageSeconds > 0 && !string.IsNullOrWhiteSpace(settings.ChatWelcomeMessage))
+        {
+            var sessionId = session.Id;
+            var delaySeconds = settings.ChatAutoMessageSeconds;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    var replied = await _db.ChatMessages.AnyAsync(m =>
+                        m.SessionId == sessionId &&
+                        m.CreatedAt > DateTime.UtcNow.AddSeconds(-delaySeconds) &&
+                        m.SenderType == ChatSenderType.Operator);
+                    if (replied) return;
+                    var aMsg = new ChatMessage
+                    {
+                        SessionId = sessionId,
+                        SenderType = ChatSenderType.Operator,
+                        SenderId = "اپراتور",
+                        Content = "یک لحظه، اپراتور به‌زودی پاسخ شما را می‌دهد 🙏",
+                        MessageType = ChatMessageType.Text,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _db.ChatMessages.Add(aMsg);
+                    await _db.SaveChangesAsync();
+                    await Clients.Group($"session_{sessionId}").SendAsync("NewMessage", MapMessageDto(aMsg));
+                }
+                catch { }
+            });
+        }
+
+        // Notify messenger group(s)
+        try
+        {
+            await _router.SendSystemToAllAsync(session.Id,
                 $"مکالمه جدید از {userName}\nبرای پاسخ به این پیام، روی همین پیام ریپلی کنید.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ChatHub: messenger notify failed for session {SessionId}", session.Id);
         }
 
         return new StartChatResult
@@ -128,12 +280,23 @@ public sealed class ChatHub : Hub
         };
     }
 
-    public async Task SendMessage(int sessionId, string? content, ChatMessageTypeDto messageType, string? mediaUrl)
+    public async Task SendMessage(int sessionId, string? content, ChatMessageTypeDto messageType, string? mediaUrl, int? replyToId = null)
     {
+        var isAdmin = OnlineAdmins.ContainsKey(Context.ConnectionId);
         var session = await _db.ChatSessions.FindAsync(sessionId);
         if (session == null || session.Status == ChatSessionStatus.Closed) return;
 
-        var isAdmin = OnlineAdmins.ContainsKey(Context.ConnectionId);
+        if (!isAdmin)
+        {
+            var sessionVisitorId = ConnectionVisitors.GetValueOrDefault(Context.ConnectionId) ?? Context.ConnectionId;
+            if (session.VisitorId != sessionVisitorId) return;
+
+            if (string.IsNullOrWhiteSpace(content) &&
+                (string.IsNullOrWhiteSpace(mediaUrl) || !mediaUrl.StartsWith("/uploads/chat/", StringComparison.OrdinalIgnoreCase)))
+                return;
+        }
+
+        if (content?.Length > 4000) return;
 
         ChatMessage msg;
         if (isAdmin)
@@ -150,6 +313,7 @@ public sealed class ChatHub : Hub
                 Content = content,
                 MessageType = (ChatMessageType)(int)messageType,
                 MediaUrl = mediaUrl,
+                ReplyToId = replyToId,
                 CreatedAt = DateTime.UtcNow
             };
         }
@@ -164,6 +328,7 @@ public sealed class ChatHub : Hub
                 Content = content,
                 MessageType = (ChatMessageType)(int)messageType,
                 MediaUrl = mediaUrl,
+                ReplyToId = replyToId,
                 CreatedAt = DateTime.UtcNow
             };
         }
@@ -176,47 +341,31 @@ public sealed class ChatHub : Hub
 
         if (!isAdmin)
         {
+            var userName = session.UserName ?? "کاربر";
             try
             {
-                if (await _baleBot.IsConfiguredAsync())
+                switch (messageType)
                 {
-                    var userName = session.UserName ?? "کاربر";
-                    switch (messageType)
-                    {
-                        case ChatMessageTypeDto.Text:
-                            await _baleBot.SendTextToGroup(sessionId, content ?? "", userName);
-                            break;
-                        case ChatMessageTypeDto.Image:
-                            var baseUrl = $"{Context.GetHttpContext()?.Request.Scheme}://{Context.GetHttpContext()?.Request.Host}";
-                            await _baleBot.SendPhotoToGroup(sessionId, $"{baseUrl}{mediaUrl}", content, userName);
-                            break;
-                        case ChatMessageTypeDto.Voice:
-                            var voiceBaseUrl = $"{Context.GetHttpContext()?.Request.Scheme}://{Context.GetHttpContext()?.Request.Host}";
-                            await _baleBot.SendVoiceToGroup(sessionId, $"{voiceBaseUrl}{mediaUrl}", userName);
-                            break;
-                    }
-                    _logger.LogInformation("BaleBot: message forwarded for session {SessionId}", sessionId);
+                    case ChatMessageTypeDto.Text:
+                        await _router.ForwardUserTextAsync(sessionId, content ?? "", userName);
+                        break;
+                    case ChatMessageTypeDto.Image:
+                        var baseUrl = $"{Context.GetHttpContext()?.Request.Scheme}://{Context.GetHttpContext()?.Request.Host}";
+                        await _router.ForwardUserPhotoAsync(sessionId, $"{baseUrl}{mediaUrl}", content, userName);
+                        break;
+                    case ChatMessageTypeDto.Voice:
+                        var voiceBaseUrl = $"{Context.GetHttpContext()?.Request.Scheme}://{Context.GetHttpContext()?.Request.Host}";
+                        await _router.ForwardUserVoiceAsync(sessionId, $"{voiceBaseUrl}{mediaUrl}", userName);
+                        break;
                 }
-                else
-                {
-                    var sysMsg = new ChatMessage
-                    {
-                        SessionId = sessionId,
-                        SenderType = ChatSenderType.System,
-                        SenderId = "system",
-                        Content = "پیام ذخیره شد اما سرویس بله پیکربندی نشده است.",
-                        MessageType = ChatMessageType.System,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    _db.ChatMessages.Add(sysMsg);
-                    await _db.SaveChangesAsync();
-                    await Clients.Group($"session_{sessionId}").SendAsync("NewMessage", MapMessageDto(sysMsg));
-                }
+                _logger.LogInformation("MessengerRouter: user message forwarded for session {SessionId}", sessionId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "BaleBot: failed to forward message for session {SessionId}", sessionId);
+                _logger.LogError(ex, "MessengerRouter: failed to forward message for session {SessionId}", sessionId);
             }
+
+            await TryRunAiAsync(sessionId, content ?? "", userName);
         }
     }
 
@@ -240,8 +389,22 @@ public sealed class ChatHub : Hub
 
     public async Task MarkAsRead(int sessionId, List<int> messageIds)
     {
+        var isAdmin = OnlineAdmins.ContainsKey(Context.ConnectionId);
+        var session = await _db.ChatSessions.FindAsync(sessionId);
+        if (session == null) return;
+
+        if (!isAdmin)
+        {
+            var visitorId = ConnectionVisitors.GetValueOrDefault(Context.ConnectionId) ?? Context.ConnectionId;
+            if (session.VisitorId != visitorId) return;
+        }
+
+        var isUser = !isAdmin;
         var messages = await _db.ChatMessages
             .Where(m => m.SessionId == sessionId && messageIds.Contains(m.Id))
+            .Where(m => isUser
+                ? m.SenderType == ChatSenderType.Operator
+                : m.SenderType == ChatSenderType.User)
             .ToListAsync();
         foreach (var m in messages)
         {
@@ -256,6 +419,15 @@ public sealed class ChatHub : Hub
     public async Task Typing(int sessionId, bool isTyping)
     {
         var isAdmin = OnlineAdmins.ContainsKey(Context.ConnectionId);
+
+        var session = await _db.ChatSessions.FindAsync(sessionId);
+        if (session == null) return;
+
+        if (!isAdmin)
+        {
+            var visitorId = ConnectionVisitors.GetValueOrDefault(Context.ConnectionId) ?? Context.ConnectionId;
+            if (session.VisitorId != visitorId) return;
+        }
 
         if (isTyping)
         {
@@ -289,6 +461,57 @@ public sealed class ChatHub : Hub
         }
     }
 
+    public async Task EditMessage(int messageId, string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return;
+        var msg = await _db.ChatMessages.FindAsync(messageId);
+        if (msg == null || msg.IsDeleted || msg.MessageType != ChatMessageType.Text) return;
+
+        var isAdmin = OnlineAdmins.ContainsKey(Context.ConnectionId);
+        if (isAdmin)
+        {
+            if (msg.SenderType != ChatSenderType.Operator) return;
+        }
+        else
+        {
+            var visitorId = ConnectionVisitors.GetValueOrDefault(Context.ConnectionId) ?? Context.ConnectionId;
+            if (msg.SenderType != ChatSenderType.User) return;
+            var session = await _db.ChatSessions.FindAsync(msg.SessionId);
+            if (session == null || session.VisitorId != visitorId) return;
+            if (msg.CreatedAt < DateTime.UtcNow.AddMinutes(-10)) return;
+        }
+        if (content.Length > 4000) return;
+
+        msg.Content = content;
+        msg.EditedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        await Clients.Group($"session_{msg.SessionId}").SendAsync("MessageEdited", MapMessageDto(msg));
+    }
+
+    public async Task DeleteMessage(int messageId)
+    {
+        var msg = await _db.ChatMessages.FindAsync(messageId);
+        if (msg == null || msg.IsDeleted) return;
+
+        var isAdmin = OnlineAdmins.ContainsKey(Context.ConnectionId);
+        if (isAdmin)
+        {
+            if (msg.SenderType != ChatSenderType.Operator) return;
+        }
+        else
+        {
+            var visitorId = ConnectionVisitors.GetValueOrDefault(Context.ConnectionId) ?? Context.ConnectionId;
+            if (msg.SenderType != ChatSenderType.User) return;
+            var session = await _db.ChatSessions.FindAsync(msg.SessionId);
+            if (session == null || session.VisitorId != visitorId) return;
+            if (msg.CreatedAt < DateTime.UtcNow.AddMinutes(-30)) return;
+        }
+
+        msg.IsDeleted = true;
+        await _db.SaveChangesAsync();
+        await Clients.Group($"session_{msg.SessionId}").SendAsync("MessageDeleted", msg.SessionId, messageId);
+    }
+
     public async Task CloseSession(int sessionId)
     {
         var session = await _db.ChatSessions.FindAsync(sessionId);
@@ -307,10 +530,14 @@ public sealed class ChatHub : Hub
         session.ClosedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        // Notify Bale
-        if (await _baleBot.IsConfiguredAsync())
+        // Notify messenger group(s)
+        try
         {
-            await _baleBot.SendSystemMessageToGroup(sessionId, "مکالمه توسط اپراتور بسته شد.");
+            await _router.SendSystemToAllAsync(sessionId, "مکالمه توسط اپراتور بسته شد.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ChatHub: messenger close notify failed for session {SessionId}", sessionId);
         }
 
         await Clients.Group($"session_{sessionId}").SendAsync("SessionClosed", sessionId);
@@ -324,6 +551,7 @@ public sealed class ChatHub : Hub
             VisitorId = s.VisitorId,
             UserName = s.UserName,
             UserEmail = s.UserEmail,
+            UserPhone = s.UserPhone,
             OperatorId = s.OperatorId,
             OperatorName = s.Operator?.FullName,
             Status = (ChatSessionStatusDto)(int)s.Status,
@@ -350,7 +578,10 @@ public sealed class ChatHub : Hub
             ContentType = m.ContentType,
             CreatedAt = m.CreatedAt,
             IsRead = m.IsRead,
-            Status = (ChatMessageStatusDto)(int)m.Status
+            Status = (ChatMessageStatusDto)(int)m.Status,
+            IsDeleted = m.IsDeleted,
+            EditedAt = m.EditedAt,
+            ReplyToId = m.ReplyToId
         };
     }
 }

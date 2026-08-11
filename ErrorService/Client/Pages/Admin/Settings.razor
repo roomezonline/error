@@ -49,16 +49,6 @@
                         </div>
                     }
 
-                    <div class="setting-item d-flex justify-content-between align-items-center mt-4 p-3 bg-primary-subtle rounded-3 border border-primary-subtle">
-                        <div>
-                            <h6 class="fw-bold mb-1 text-primary">نمایش «محصولات مهم» (کنترل کلان)</h6>
-                            <p class="small text-primary opacity-75 mb-0">با غیرفعال کردن، هم ستون «پیشنهاد ویژه» کنار اسلایدر و هم ماژول «محصولات مهم» از صفحه اصلی حذف می‌شوند.</p>
-                        </div>
-                        <div class="form-check form-switch fs-4">
-                            <input class="form-check-input" type="checkbox" @bind="settings.ShowFeaturedProducts">
-                        </div>
-                    </div>
-
                     <div class="setting-item d-flex justify-content-between align-items-center mt-4 p-3 bg-light rounded-3">
                         <div>
                             <h6 class="fw-bold mb-1">خرید بدون لاگین</h6>
@@ -214,7 +204,6 @@
                 new() { Key = SiteHomeModuleKey.SpecialOffers, IsEnabled = settings.ShowSpecialOffers, SortOrder = 10 },
                 new() { Key = SiteHomeModuleKey.LatestNews, IsEnabled = settings.ShowLatestNews, SortOrder = 20 },
                 new() { Key = SiteHomeModuleKey.LatestProducts, IsEnabled = settings.ShowLatestProducts, SortOrder = 30 },
-                new() { Key = SiteHomeModuleKey.FeaturedProducts, IsEnabled = settings.ShowFeaturedProducts, SortOrder = 12 },
                 new() { Key = SiteHomeModuleKey.LatestAcademy, IsEnabled = settings.ShowLatestAcademy, SortOrder = 40 },
                 new() { Key = SiteHomeModuleKey.TeamMembers, IsEnabled = settings.ShowTeamMembers, SortOrder = 50 },
                 new() { Key = SiteHomeModuleKey.HomeCategories, IsEnabled = settings.ShowHomeCategories, SortOrder = 5 },
@@ -277,7 +266,6 @@
             SiteHomeModuleKey.SpecialOffers => "پیشنهادات شگفت‌انگیز",
             SiteHomeModuleKey.LatestNews => "آخرین اخبار",
             SiteHomeModuleKey.LatestProducts => "آخرین محصولات",
-            SiteHomeModuleKey.FeaturedProducts => "محصولات مهم (منتخب)",
             SiteHomeModuleKey.LatestAcademy => "آکادمی (قدیمی)",
             SiteHomeModuleKey.LatestCourses => "جدیدترین دوره‌ها",
             SiteHomeModuleKey.LatestArticles => "جدیدترین آموزش‌ها (تکی)",
@@ -298,7 +286,6 @@
             SiteHomeModuleKey.SpecialOffers => "نمایش ردیف محصولات تخفیف‌دار و تایمردار",
             SiteHomeModuleKey.LatestNews => "نمایش بخش خبرها و اطلاعیه‌های جدید",
             SiteHomeModuleKey.LatestProducts => "نمایش جدیدترین ابزارها و قطعات",
-            SiteHomeModuleKey.FeaturedProducts => "نمایش ردیف محصولات مهم (منتخب) در صفحه اصلی",
             SiteHomeModuleKey.LatestAcademy => "نمایش جدیدترین مقالات و دوره‌های آموزشی (یکجا)",
             SiteHomeModuleKey.LatestCourses => "نمایش ردیف اختصاصی جدیدترین دوره‌های آموزشی",
             SiteHomeModuleKey.LatestArticles => "نمایش ردیف اختصاصی جدیدترین آموزش‌های تکی",

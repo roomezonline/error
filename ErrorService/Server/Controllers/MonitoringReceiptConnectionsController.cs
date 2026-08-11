@@ -165,7 +165,15 @@ public sealed class MonitoringReceiptConnectionsController : ControllerBase
             .ToListAsync();
 
         foreach (var p in prev)
+        {
             p.EndedAt = now;
+
+            var staleAlerts = await _db.MonitoringAlerts
+                .Where(a => a.MonitoringId == p.Id && a.State)
+                .ToListAsync();
+            foreach (var alert in staleAlerts)
+                alert.State = false;
+        }
 
         var entity = new MonitoringReceiptConnection
         {
@@ -259,10 +267,17 @@ public sealed class MonitoringReceiptConnectionsController : ControllerBase
             .Take(200)
             .ToListAsync();
 
-        var deviceCodes = raw.Select(x => x.MonitoringDevice.DeviceNumber).Where(d => !string.IsNullOrEmpty(d)).ToList();
-        var alertCounts = await _db.MonitoringAlerts
+        var activeConnectionIds = raw.Select(x => x.Id).ToList();
+        var legacyDeviceCodes = raw.Select(x => x.MonitoringDevice.DeviceNumber).Where(d => !string.IsNullOrEmpty(d)).ToList();
+        var alertCountsByMonitoring = await _db.MonitoringAlerts
             .AsNoTracking()
-            .Where(a => deviceCodes.Contains(a.DeviceCode) && a.State)
+            .Where(a => a.State && a.MonitoringId.HasValue && activeConnectionIds.Contains(a.MonitoringId.Value))
+            .GroupBy(a => a.MonitoringId!.Value)
+            .Select(g => new { MonitoringId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.MonitoringId, x => x.Count);
+        var alertCountsByDeviceCode = await _db.MonitoringAlerts
+            .AsNoTracking()
+            .Where(a => a.State && a.MonitoringId == null && legacyDeviceCodes.Contains(a.DeviceCode))
             .GroupBy(a => a.DeviceCode)
             .Select(g => new { DeviceCode = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.DeviceCode, x => x.Count);
@@ -290,7 +305,7 @@ public sealed class MonitoringReceiptConnectionsController : ControllerBase
             IsActive = x.EndedAt == null,
             EndReason = x.EndReason,
             IsPoweredOn = _monitoringCache.Get(x.MonitoringDevice.DeviceNumber)?.Priz?.Trim().ToLower() == "on",
-            AlertCount = alertCounts.GetValueOrDefault(x.MonitoringDevice.DeviceNumber, 0)
+            AlertCount = alertCountsByMonitoring.GetValueOrDefault(x.Id, alertCountsByDeviceCode.GetValueOrDefault(x.MonitoringDevice.DeviceNumber, 0))
         }).ToList();
 
         return Ok(result);
@@ -336,6 +351,13 @@ public sealed class MonitoringReceiptConnectionsController : ControllerBase
 
         entity.EndedAt = DateTimeOffset.UtcNow;
         entity.EndReason = request.EndReason?.Trim();
+
+        var activeAlerts = await _db.MonitoringAlerts
+            .Where(a => a.MonitoringId == id && a.State)
+            .ToListAsync();
+        foreach (var alert in activeAlerts)
+            alert.State = false;
+
         await _db.SaveChangesAsync();
 
         // Create archive

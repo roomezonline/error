@@ -32,23 +32,73 @@
                 @for (int i = 0; i < heroSlides.Count; i++)
                 {
                     var slide = heroSlides[i];
-                    <div class="sp-hero__slide @(currentSlide == i ? "is-active" : "")">
-                        <div class="sp-hero__slide-bg" style="background:linear-gradient(135deg,@slide.Color1 0%,@slide.Color2 50%,@slide.Color3 100%)"></div>
-                        <svg class="sp-hero__svg-deco sp-hero__svg-deco--1" viewBox="0 0 200 200" fill="none" stroke="white" stroke-width="1.5"><circle cx="100" cy="100" r="80"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="20"/><line x1="100" y1="20" x2="100" y2="180"/><line x1="20" y1="100" x2="180" y2="100"/></svg>
-                        <svg class="sp-hero__svg-deco sp-hero__svg-deco--2" viewBox="0 0 120 120" fill="none" stroke="white" stroke-width="1.5"><rect x="20" y="20" width="80" height="80" rx="8"/><rect x="35" y="35" width="50" height="50" rx="4"/><circle cx="60" cy="60" r="12"/></svg>
-                        <svg class="sp-hero__svg-deco sp-hero__svg-deco--3" viewBox="0 0 60 60" fill="none" stroke="white" stroke-width="1.5"><polygon points="30,5 55,20 55,50 30,55 5,50 5,20"/></svg>
-                        <div class="sp-hero__slide-content">
-                            <span class="sp-hero__badge">@((MarkupString)slide.Icon) @slide.Badge</span>
-                            <h1 class="sp-hero__title">@slide.Title</h1>
-                            <p class="sp-hero__sub">@slide.Sub</p>
-                            <div class="sp-hero__tags">
-                                @foreach (var tag in slide.Tags)
-                                {
-                                    <span class="sp-hero__tag">@((MarkupString)tag)</span>
-                                }
+                    if (slide.Product != null)
+                    {
+                        var prod = slide.Product;
+                        var heroDiscount = DiscountHelper.IsActive(prod);
+                        <div class="sp-hero__slide sp-hero__slide--product @(currentSlide == i ? "is-active" : "")">
+                            <div class="sp-hero__slide-bg" style="background:linear-gradient(135deg,@slide.Color1 0%,@slide.Color2 50%,@slide.Color3 100%)"></div>
+                            <svg class="sp-hero__svg-deco sp-hero__svg-deco--1" viewBox="0 0 200 200" fill="none" stroke="white" stroke-width="1.5"><circle cx="100" cy="100" r="80"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="20"/><line x1="100" y1="20" x2="100" y2="180"/><line x1="20" y1="100" x2="180" y2="100"/></svg>
+                            <svg class="sp-hero__svg-deco sp-hero__svg-deco--2" viewBox="0 0 120 120" fill="none" stroke="white" stroke-width="1.5"><rect x="20" y="20" width="80" height="80" rx="8"/><rect x="35" y="35" width="50" height="50" rx="4"/><circle cx="60" cy="60" r="12"/></svg>
+                            <svg class="sp-hero__svg-deco sp-hero__svg-deco--3" viewBox="0 0 60 60" fill="none" stroke="white" stroke-width="1.5"><polygon points="30,5 55,20 55,50 30,55 5,50 5,20"/></svg>
+                            <div class="sp-hero__slide-content">
+                                <span class="sp-hero__badge">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                                    @slide.Badge
+                                </span>
+                                <h1 class="sp-hero__title">@prod.Name</h1>
+                                <p class="sp-hero__sub">@prod.CategoryName@(!string.IsNullOrWhiteSpace(prod.Sku) ? $" — کد: {prod.Sku}" : "")</p>
+                                <div class="sp-hero__price">
+                                    @if (heroDiscount)
+                                    {
+                                        <span class="sp-hero__chip"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>@DiscountHelper.CalculatePercent(prod)٪ تخفیف</span>
+                                        <span class="sp-hero__price-old">@prod.Price.ToString("N0")</span>
+                                        <span class="sp-hero__price-new">@DiscountHelper.GetEffectivePrice(prod).ToString("N0") <small>تومان</small></span>
+                                    }
+                                    else
+                                    {
+                                        <span class="sp-hero__price-new">@prod.Price.ToString("N0") <small>تومان</small></span>
+                                    }
+                                </div>
+                                <div class="sp-hero__actions">
+                                    <a class="sp-hero__btn sp-hero__btn--primary" href="@SeoUrl.Product(prod.Id, prod.Slug)">
+                                        مشاهده محصول
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                                    </a>
+                                    @if (prod.IsAvailable)
+                                    {
+                                        <button type="button" class="sp-hero__btn sp-hero__btn--ghost" @onclick="() => AddToCart(prod)">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                                            افزودن به سبد
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                            <div class="sp-hero__product">
+                                <img class="sp-hero__product-img" src="@(string.IsNullOrEmpty(prod.MainImageUrl) ? "/images/placeholder-product.svg" : prod.MainImageUrl)" alt="@prod.Name" loading="lazy" />
                             </div>
                         </div>
-                    </div>
+                    }
+                    else
+                    {
+                        <div class="sp-hero__slide @(currentSlide == i ? "is-active" : "")">
+                            <div class="sp-hero__slide-bg" style="background:linear-gradient(135deg,@slide.Color1 0%,@slide.Color2 50%,@slide.Color3 100%)"></div>
+                            <svg class="sp-hero__svg-deco sp-hero__svg-deco--1" viewBox="0 0 200 200" fill="none" stroke="white" stroke-width="1.5"><circle cx="100" cy="100" r="80"/><circle cx="100" cy="100" r="50"/><circle cx="100" cy="100" r="20"/><line x1="100" y1="20" x2="100" y2="180"/><line x1="20" y1="100" x2="180" y2="100"/></svg>
+                            <svg class="sp-hero__svg-deco sp-hero__svg-deco--2" viewBox="0 0 120 120" fill="none" stroke="white" stroke-width="1.5"><rect x="20" y="20" width="80" height="80" rx="8"/><rect x="35" y="35" width="50" height="50" rx="4"/><circle cx="60" cy="60" r="12"/></svg>
+                            <svg class="sp-hero__svg-deco sp-hero__svg-deco--3" viewBox="0 0 60 60" fill="none" stroke="white" stroke-width="1.5"><polygon points="30,5 55,20 55,50 30,55 5,50 5,20"/></svg>
+                            <div class="sp-hero__slide-content">
+                                <span class="sp-hero__badge">@((MarkupString)slide.Icon) @slide.Badge</span>
+                                <h1 class="sp-hero__title">@slide.Title</h1>
+                                <p class="sp-hero__sub">@slide.Sub</p>
+                                <div class="sp-hero__tags">
+                                    @foreach (var tag in slide.Tags)
+                                    {
+                                        <span class="sp-hero__tag">@((MarkupString)tag)</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
                 }
             </div>
             <div class="sp-hero__dots">
@@ -68,6 +118,7 @@
 
         @if (categories != null && categories.Any())
         {
+            <div class="sp-subcats-wrap">
             <div class="sp-subcats">
                 @foreach (var cat in categories.Take(10))
                 {
@@ -87,6 +138,7 @@
                         <span class="sp-subcat__name">حذف فیلتر</span>
                     </a>
                 }
+            </div>
             </div>
         }
 
@@ -216,7 +268,7 @@
                                             {
                                                 <span class="sp-badge sp-badge--perm">
                                                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                                    تخفیف دائمی
+                                                    تخفیف ویژه
                                                 </span>
                                             }
                                             @if (isNew)
@@ -342,7 +394,44 @@
     .sp-hero__svg-deco--3{top:1rem;right:28rem;width:60px;height:60px;animation:sp-float 5s ease-in-out infinite 1s}
     @@keyframes sp-float{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-12px) rotate(5deg)}}
 
-    .sp-subcats{display:flex;gap:.5rem;overflow-x:auto;padding:.2rem 0 1rem;margin-bottom:.75rem;scrollbar-width:none}
+    .sp-hero__slide--product{overflow:hidden}
+    .sp-hero__slide--product .sp-hero__slide-content{max-width:48%;padding:2rem 3rem 1.7rem 2rem;z-index:3}
+    .sp-hero__product{position:absolute;top:0;bottom:0;left:0;width:55%;z-index:2;pointer-events:none;-webkit-mask-image:linear-gradient(to right,#000 40%,rgba(0,0,0,.7) 65%,transparent 92%);mask-image:linear-gradient(to right,#000 40%,rgba(0,0,0,.7) 65%,transparent 92%)}
+    .sp-hero__product-img{width:100%;height:100%;object-fit:cover;object-position:center;animation:sp-kenburns 10s ease-in-out infinite alternate}
+    @@keyframes sp-kenburns{from{transform:scale(1.05)}to{transform:scale(1.16) translateX(-2%)}}
+    .sp-hero__chip{display:inline-flex;align-items:center;gap:.3rem;background:#ef4444;color:#fff;border-radius:999px;padding:.18rem .6rem;font-size:.66rem;font-weight:900;box-shadow:0 4px 12px rgba(239,68,68,.4)}
+    .sp-hero__price{display:flex;align-items:baseline;gap:.7rem;flex-wrap:wrap;margin-bottom:.85rem}
+    .sp-hero__price-old{font-size:.85rem;color:rgba(255,255,255,.72);text-decoration:line-through;text-decoration-color:#fecaca;text-decoration-thickness:2px}
+    .sp-hero__price-new{font-size:1.7rem;font-weight:900;color:#fff}
+    .sp-hero__price-new small{font-size:.72rem;font-weight:700;opacity:.85}
+    .sp-hero__actions{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+    .sp-hero__btn{display:inline-flex;align-items:center;gap:.45rem;border-radius:999px;padding:.62rem 1.5rem;font-size:.85rem;font-weight:800;text-decoration:none;border:none;cursor:pointer;transition:all .2s;line-height:1}
+    .sp-hero__btn--primary{background:#fff;color:#1e3a8a;box-shadow:0 10px 24px rgba(0,0,0,.2)}
+    .sp-hero__btn--primary:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(0,0,0,.26)}
+    .sp-hero__btn--ghost{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;backdrop-filter:blur(4px)}
+    .sp-hero__btn--ghost:hover{background:rgba(255,255,255,.28)}
+    @@media(max-width:767.98px){
+        .sp-hero__slide--product{display:block}
+        .sp-hero__slide--product .sp-hero__slide-content{max-width:none;padding:1.2rem 1rem .6rem;z-index:3}
+        .sp-hero__product{width:auto;inset:0 42% 0 0}
+        .sp-hero__slide--product .sp-hero__title{font-size:1.05rem;-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:.25rem}
+        .sp-hero__slide--product .sp-hero__sub{display:none}
+        .sp-hero__price{margin-bottom:.45rem;gap:.5rem}
+        .sp-hero__chip{font-size:.6rem;padding:.15rem .5rem}
+        .sp-hero__price-new{font-size:1.15rem}
+        .sp-hero__price-old{font-size:.7rem}
+        .sp-hero__actions{gap:.45rem}
+        .sp-hero__btn{padding:.45rem .9rem;font-size:.72rem}
+        .sp-hero__slide--product .sp-hero__badge{font-size:.6rem;padding:.2rem .55rem;margin-bottom:.4rem}
+    }
+    @@media(max-width:575.98px){
+        .sp-hero__product{inset:0 38% 0 0}
+        .sp-hero__slide--product .sp-hero__slide-content{padding:1.1rem .6rem .5rem}
+        .sp-hero__btn--ghost{display:none}
+    }
+
+    .sp-subcats-wrap{display:flex;justify-content:center;margin-bottom:.75rem}
+    .sp-subcats{display:flex;gap:.5rem;overflow-x:auto;padding:.2rem 0 1rem;max-width:100%;min-width:0;scrollbar-width:none;scroll-padding-inline:1rem}
     .sp-subcats::-webkit-scrollbar{display:none}
     .sp-subcat{display:flex;flex-direction:column;align-items:center;gap:.4rem;text-decoration:none;color:var(--tx);background:var(--sf);border:1.5px solid var(--bd);border-radius:14px;padding:.7rem .6rem;min-width:80px;flex-shrink:0;transition:all .2s}
     .sp-subcat:hover{border-color:var(--pri);color:var(--pri);transform:translateY(-2px);box-shadow:0 4px 12px rgba(30,64,175,.1)}
@@ -520,8 +609,10 @@
     // Hero carousel
     private int currentSlide = 0;
     private System.Threading.Timer? slideTimer;
-    private record HeroSlide(string Icon, string Badge, string Title, string Sub, string[] Tags, string Color1, string Color2, string Color3);
-    private List<HeroSlide> heroSlides = new()
+    private List<ProductDto> _featuredHero = new();
+    private record HeroSlide(string Icon, string Badge, string Title, string Sub, string[] Tags, string Color1, string Color2, string Color3, ProductDto? Product = null);
+    private List<HeroSlide> heroSlides = new();
+    private static readonly List<HeroSlide> _defaultHeroSlides = new()
     {
         new("<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\"><path d=\"M13 2L3 14h9l-1 8 10-12h-9l1-8z\"/></svg>",
             "فروشگاه تخصصی",
@@ -563,7 +654,59 @@
         currentPage = 1;
         skip = 0;
         await LoadProducts();
+        await LoadFeaturedHeroAsync();
+        BuildHeroSlides();
+        currentSlide = 0;
         StartSlideTimer();
+    }
+
+    private async Task LoadFeaturedHeroAsync()
+    {
+        try
+        {
+            var items = await Http.GetFromJsonAsync<List<ProductDto>>(
+                "api/products?featuredOnly=true&onlyAvailable=true&take=6");
+            _featuredHero = items ?? new();
+        }
+        catch
+        {
+            _featuredHero = new();
+        }
+    }
+
+    private void BuildHeroSlides()
+    {
+        if (_featuredHero.Count == 0)
+        {
+            heroSlides = new List<HeroSlide>(_defaultHeroSlides);
+            return;
+        }
+
+        (string C1, string C2, string C3)[] palettes =
+        [
+            ("#1e3a8a", "#2563eb", "#60a5fa"),
+            ("#0f172a", "#1e293b", "#475569"),
+            ("#065f46", "#059669", "#34d399"),
+            ("#581c87", "#7c3aed", "#a78bfa"),
+            ("#b91c1c", "#dc2626", "#f87171")
+        ];
+
+        heroSlides = new List<HeroSlide>();
+        for (int i = 0; i < _featuredHero.Count; i++)
+        {
+            var prod = _featuredHero[i];
+            var palette = palettes[i % palettes.Length];
+            heroSlides.Add(new HeroSlide(
+                string.Empty,
+                "محصول مهم فروشگاه",
+                prod.Name,
+                prod.CategoryName ?? string.Empty,
+                Array.Empty<string>(),
+                palette.C1,
+                palette.C2,
+                palette.C3,
+                prod));
+        }
     }
 
     protected override async Task OnParametersSetAsync()
@@ -591,8 +734,12 @@
     private void StartSlideTimer()
     {
         slideTimer?.Dispose();
+        slideTimer = null;
+        if (heroSlides.Count <= 1) return;
+
         slideTimer = new System.Threading.Timer(_ =>
         {
+            if (heroSlides.Count == 0) return;
             currentSlide = (currentSlide + 1) % heroSlides.Count;
             InvokeAsync(StateHasChanged);
         }, null, 5000, 5000);
@@ -600,18 +747,21 @@
 
     private void GoToSlide(int idx)
     {
+        if (heroSlides.Count == 0) return;
         currentSlide = idx;
         StartSlideTimer();
     }
 
     private void PrevSlide()
     {
+        if (heroSlides.Count == 0) return;
         currentSlide = (currentSlide - 1 + heroSlides.Count) % heroSlides.Count;
         StartSlideTimer();
     }
 
     private void NextSlide()
     {
+        if (heroSlides.Count == 0) return;
         currentSlide = (currentSlide + 1) % heroSlides.Count;
         StartSlideTimer();
     }

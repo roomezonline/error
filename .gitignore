@@ -4,6 +4,9 @@ obj/
 publish/
 publish_test/
 
+# Runtime uploads (written by the server at runtime)
+ErrorService/Server/wwwroot/uploads/
+
 # Secrets - DO NOT COMMIT
 appsettings.json
 appsettings.Development.json

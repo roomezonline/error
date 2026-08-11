@@ -60,10 +60,10 @@ public sealed class SiteSettingsController : ControllerBase
             ShowHomeCategories = settings.ShowHomeCategories,
             ShowFeatureCards = settings.ShowFeatureCards,
             ShowStories = settings.ShowStories,
-            ShowFeaturedProducts = settings.ShowFeaturedProducts,
             AllowGuestCheckout = settings.AllowGuestCheckout,
             EnableOnlineChat = settings.EnableOnlineChat,
             AllowGuestChat = settings.AllowGuestChat,
+            EnableBaleChat = settings.EnableBaleChat,
             SeoTitle = settings.SeoTitle,
             SeoDescription = settings.SeoDescription,
             SeoKeywords = settings.SeoKeywords,
@@ -76,6 +76,22 @@ public sealed class SiteSettingsController : ControllerBase
             ChartBaseUrl = settings.ChartBaseUrl,
             BaleBotToken = settings.BaleBotToken,
             BaleBotGroupId = settings.BaleBotGroupId,
+            EnableTelegramChat = settings.EnableTelegramChat,
+            TelegramBotToken = settings.TelegramBotToken,
+            TelegramGroupId = settings.TelegramGroupId,
+            EnableEitaaChat = settings.EnableEitaaChat,
+            EitaaBotToken = settings.EitaaBotToken,
+            EitaaGroupId = settings.EitaaGroupId,
+            ChatWelcomeMessage = settings.ChatWelcomeMessage,
+            ChatEnableAutoMessage = settings.ChatEnableAutoMessage,
+            ChatAutoMessageSeconds = settings.ChatAutoMessageSeconds,
+            ChatPhoneRequired = settings.ChatPhoneRequired,
+            ChatEnableAiAssistant = settings.ChatEnableAiAssistant,
+            ChatAiProvider = settings.ChatAiProvider,
+            ChatAiApiUrl = settings.ChatAiApiUrl,
+            ChatAiModel = settings.ChatAiModel,
+            ChatAiApiKey = settings.ChatAiApiKey,
+            ChatAiSystemPrompt = settings.ChatAiSystemPrompt,
             HomeModules = homeModulesAvailable
                 ? settings.HomeModules
                     .OrderBy(x => x.SortOrder)
@@ -152,7 +168,6 @@ public sealed class SiteSettingsController : ControllerBase
             settings.ShowHomeCategories = dto.ShowHomeCategories;
             settings.ShowFeatureCards = dto.ShowFeatureCards;
             settings.ShowStories = dto.ShowStories;
-            settings.ShowFeaturedProducts = dto.ShowFeaturedProducts;
             if (homeModulesAvailable)
             {
                 SyncModulesFromLegacyFlags(settings);
@@ -166,6 +181,7 @@ public sealed class SiteSettingsController : ControllerBase
         settings.AllowGuestCheckout = dto.AllowGuestCheckout;
         settings.AllowGuestChat = dto.AllowGuestChat;
         settings.EnableOnlineChat = dto.EnableOnlineChat;
+        settings.EnableBaleChat = dto.EnableBaleChat;
         settings.SeoTitle = dto.SeoTitle;
         settings.SeoDescription = dto.SeoDescription;
         settings.SeoKeywords = dto.SeoKeywords;
@@ -178,6 +194,22 @@ public sealed class SiteSettingsController : ControllerBase
         settings.ChartBaseUrl = dto.ChartBaseUrl;
         settings.BaleBotToken = dto.BaleBotToken;
         settings.BaleBotGroupId = dto.BaleBotGroupId;
+        settings.EnableTelegramChat = dto.EnableTelegramChat;
+        settings.TelegramBotToken = dto.TelegramBotToken;
+        settings.TelegramGroupId = dto.TelegramGroupId;
+        settings.EnableEitaaChat = dto.EnableEitaaChat;
+        settings.EitaaBotToken = dto.EitaaBotToken;
+        settings.EitaaGroupId = dto.EitaaGroupId;
+        settings.ChatWelcomeMessage = dto.ChatWelcomeMessage;
+        settings.ChatEnableAutoMessage = dto.ChatEnableAutoMessage;
+        settings.ChatAutoMessageSeconds = dto.ChatAutoMessageSeconds;
+        settings.ChatPhoneRequired = dto.ChatPhoneRequired;
+        settings.ChatEnableAiAssistant = dto.ChatEnableAiAssistant;
+        settings.ChatAiProvider = dto.ChatAiProvider;
+        settings.ChatAiApiUrl = dto.ChatAiApiUrl;
+        settings.ChatAiModel = dto.ChatAiModel;
+        settings.ChatAiApiKey = dto.ChatAiApiKey;
+        settings.ChatAiSystemPrompt = dto.ChatAiSystemPrompt;
 
         await _db.SaveChangesAsync();
         return NoContent();
@@ -200,7 +232,6 @@ public sealed class SiteSettingsController : ControllerBase
         AddIfMissing(settings, SiteHomeModuleKey.LatestArticles, 42);
         AddIfMissing(settings, SiteHomeModuleKey.TeamMembers, 50);
         AddIfMissing(settings, SiteHomeModuleKey.Stories, 5);
-        AddIfMissing(settings, SiteHomeModuleKey.FeaturedProducts, 12);
     }
 
     private static void AddIfMissing(SiteSettings settings, SiteHomeModuleKey key, int sortOrder)
@@ -230,7 +261,6 @@ public sealed class SiteSettingsController : ControllerBase
             SiteHomeModuleKey.LatestArticles => settings.ShowLatestArticles,
             SiteHomeModuleKey.TeamMembers => settings.ShowTeamMembers,
             SiteHomeModuleKey.Stories => settings.ShowStories,
-            SiteHomeModuleKey.FeaturedProducts => settings.ShowFeaturedProducts,
             _ => true
         };
     }
@@ -247,7 +277,6 @@ public sealed class SiteSettingsController : ControllerBase
         settings.ShowLatestArticles = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.LatestArticles)?.IsEnabled ?? settings.ShowLatestArticles;
         settings.ShowTeamMembers = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.TeamMembers)?.IsEnabled ?? settings.ShowTeamMembers;
         settings.ShowStories = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.Stories)?.IsEnabled ?? settings.ShowStories;
-        settings.ShowFeaturedProducts = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.FeaturedProducts)?.IsEnabled ?? settings.ShowFeaturedProducts;
     }
 
     private static void SyncModulesFromLegacyFlags(SiteSettings settings)
@@ -266,7 +295,6 @@ public sealed class SiteSettingsController : ControllerBase
                 (int)SiteHomeModuleKey.LatestArticles => settings.ShowLatestArticles,
                 (int)SiteHomeModuleKey.TeamMembers => settings.ShowTeamMembers,
                 (int)SiteHomeModuleKey.Stories => settings.ShowStories,
-                (int)SiteHomeModuleKey.FeaturedProducts => settings.ShowFeaturedProducts,
                 _ => m.IsEnabled
             };
         }

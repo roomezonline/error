@@ -16,8 +16,7 @@ public enum SiteHomeModuleKey
     LatestArticles = 10,
     PopularBrands = 11,
     SomeCustomers = 12,
-    TechnicalGuide = 13,
-    FeaturedProducts = 14
+    TechnicalGuide = 13
 }
 
 public sealed class SiteHomeModuleDto
@@ -39,7 +38,6 @@ public sealed class SiteSettingsDto
     public bool ShowHomeCategories { get; set; } = true;
     public bool ShowFeatureCards { get; set; } = true;
     public bool ShowStories { get; set; } = true;
-    public bool ShowFeaturedProducts { get; set; } = true;
     public string? SeoTitle { get; set; }
     public string? SeoDescription { get; set; }
     public string? SeoKeywords { get; set; }
@@ -51,10 +49,27 @@ public sealed class SiteSettingsDto
     public bool AllowGuestCheckout { get; set; } = true;
     public bool EnableOnlineChat { get; set; } = true;
     public bool AllowGuestChat { get; set; } = true;
+    public bool EnableBaleChat { get; set; } = true;
     public int MaxImageUploadSizeKb { get; set; } = 200;
     public string? ChartBaseUrl { get; set; }
     public string? BaleBotToken { get; set; }
     public string? BaleBotGroupId { get; set; }
+    public bool EnableTelegramChat { get; set; }
+    public string? TelegramBotToken { get; set; }
+    public string? TelegramGroupId { get; set; }
+    public bool EnableEitaaChat { get; set; }
+    public string? EitaaBotToken { get; set; }
+    public string? EitaaGroupId { get; set; }
+    public string? ChatWelcomeMessage { get; set; }
+    public bool ChatEnableAutoMessage { get; set; }
+    public int ChatAutoMessageSeconds { get; set; } = 60;
+    public bool ChatPhoneRequired { get; set; }
+    public bool ChatEnableAiAssistant { get; set; }
+    public string? ChatAiProvider { get; set; }
+    public string? ChatAiApiUrl { get; set; }
+    public string? ChatAiModel { get; set; }
+    public string? ChatAiApiKey { get; set; }
+    public string? ChatAiSystemPrompt { get; set; }
 
     public List<SiteHomeModuleDto> HomeModules { get; set; } = new();
 }

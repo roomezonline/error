@@ -90,6 +90,14 @@ public sealed class BaleBotService
         await SendApiAsync(token, "sendMessage", new { chat_id = groupId, text = message });
     }
 
+    public async Task SendTextToChat(long chatId, string text)
+    {
+        var (token, _) = await GetSettingsAsync();
+        if (string.IsNullOrEmpty(token)) return;
+
+        await SendApiAsync(token, "sendMessage", new { chat_id = chatId.ToString(), text });
+    }
+
     public async Task<(bool success, string message)> SetWebhookAsync(string webhookUrl, string secret)
     {
         var (token, _) = await GetSettingsAsync();

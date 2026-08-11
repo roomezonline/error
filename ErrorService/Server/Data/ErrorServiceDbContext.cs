@@ -94,6 +94,8 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<ChatSession> ChatSessions { get; set; }
     public DbSet<ChatMessage> ChatMessages { get; set; }
     public DbSet<BannedVisitor> BannedVisitors { get; set; }
+    public DbSet<CannedResponse> CannedResponses { get; set; }
+    public DbSet<ChatFaqEntry> ChatFaqEntries { get; set; }
     public DbSet<NewsComment> NewsComments { get; set; }
 
     public DbSet<SmsSettings> SmsSettings { get; set; }
@@ -1011,6 +1013,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.VisitorId).IsRequired().HasMaxLength(100);
             entity.Property(x => x.UserName).HasMaxLength(200);
             entity.Property(x => x.UserEmail).HasMaxLength(200);
+            entity.Property(x => x.UserPhone).HasMaxLength(30);
             entity.HasIndex(x => x.VisitorId);
             entity.HasIndex(x => x.Status);
             entity.HasIndex(x => x.CreatedAt);
@@ -1036,6 +1039,24 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasIndex(x => x.SessionId);
             entity.HasIndex(x => x.CreatedAt);
             entity.HasIndex(x => new { x.SessionId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<CannedResponse>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Title).IsRequired().HasMaxLength(200);
+            entity.Property(x => x.Content).IsRequired().HasMaxLength(4000);
+            entity.Property(x => x.Category).HasMaxLength(100);
+            entity.HasIndex(x => x.IsShared);
+        });
+
+        modelBuilder.Entity<ChatFaqEntry>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Question).IsRequired().HasMaxLength(300);
+            entity.Property(x => x.Answer).IsRequired().HasMaxLength(4000);
+            entity.Property(x => x.Keywords).HasMaxLength(500);
+            entity.HasIndex(x => x.IsEnabled);
         });
 
         modelBuilder.Entity<SmsSettings>(entity =>

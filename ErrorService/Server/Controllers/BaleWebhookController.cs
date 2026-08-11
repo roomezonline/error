@@ -2,6 +2,7 @@ using ErrorService.Server.Data;
 using ErrorService.Server.Models;
 using ErrorService.Server.Services;
 using ErrorService.Shared;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -310,6 +311,7 @@ public class BaleWebhookController : ControllerBase
     }
 
     [HttpGet("log")]
+    [Authorize(Policy = "perm:admin.chat.manage")]
     public IActionResult GetLog()
     {
         var logPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "bale-debug", "webhook.log");

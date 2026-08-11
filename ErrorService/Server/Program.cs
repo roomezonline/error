@@ -1,8 +1,11 @@
 using ErrorService.Server.Infrastructure;
 using ErrorService.Server.Data;
 using ErrorService.Server.Data.Seed;
+using ErrorService.Server.Hubs;
 using ErrorService.Server.Models;
 using ErrorService.Server.Services;
+using ErrorService.Server.Services.ChatAi;
+using ErrorService.Server.Services.Messenger;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -70,6 +73,13 @@ builder.Services.AddCors(options =>
     });
 });
 builder.Services.AddScoped<BaleBotService>();
+builder.Services.AddScoped<IChatMessengerChannel, BaleMessengerChannel>();
+builder.Services.AddScoped<IChatMessengerChannel, TelegramMessengerChannel>();
+builder.Services.AddScoped<IChatMessengerChannel, EitaaMessengerChannel>();
+builder.Services.AddScoped<MessengerRouter>();
+builder.Services.AddScoped<IChatAiService, FaqChatService>();
+builder.Services.AddScoped<IChatAiService, OpenAiCompatibleChatService>();
+builder.Services.AddScoped<ChatAiCoordinator>();
 
 var jwtKey = builder.Configuration["Auth:JwtKey"];
 if (string.IsNullOrWhiteSpace(jwtKey))

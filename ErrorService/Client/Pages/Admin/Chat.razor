@@ -31,7 +31,7 @@
         <div class="settings-backdrop" @onclick="() => _showSettings = false"></div>
         <div class="settings-modal">
             <div class="settings-head">
-                <h6 class="m-0 fw-bold">تنظیمات بله</h6>
+                <h6 class="m-0 fw-bold">تنظیمات چت</h6>
                 <button class="btn-close-sm" @onclick="() => _showSettings = false"></button>
             </div>
             <div class="settings-body">
@@ -97,6 +97,106 @@
                         </div>
                     }
                 </div>
+
+                @* --- General chat settings --- *@
+                <div class="border-top pt-3 mt-3">
+                    <div class="fw-bold small mb-2">پیام‌ها</div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">پیام خوش‌آمدگویی</label>
+                        <textarea class="form-control form-control-sm" rows="2" @bind="_siteWelcomeMessage" placeholder="مثلاً: سلام! چطور می‌توانم کمکتان کنم؟"></textarea>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="chkAutoMsg" @bind="_siteEnableAutoMessage" />
+                        <label class="form-check-label small" for="chkAutoMsg">اگر اپراتور پاسخ نداد، پس از چند ثانیه پیام یادآور ارسال شود</label>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">مدت انتظار (ثانیه)</label>
+                        <input type="number" class="form-control form-control-sm" @bind="_siteAutoMessageSeconds" />
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="chkPhoneReq" @bind="_sitePhoneRequired" />
+                        <label class="form-check-label small" for="chkPhoneReq">الزامی بودن شماره تماس کاربر برای شروع گفتگو</label>
+                    </div>
+                </div>
+
+                <div class="border-top pt-3 mt-3">
+                    <div class="fw-bold small mb-2">پیام‌رسان‌ها</div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="chkBale" @bind="_siteEnableBale" />
+                        <label class="form-check-label small" for="chkBale">فعال بودن چت بله (شامل ورود پیام‌های بله)</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="chkTelegram" @bind="_siteEnableTelegram" />
+                        <label class="form-check-label small" for="chkTelegram">فعال بودن چت تلگرام</label>
+                    </div>
+                    @if (_siteEnableTelegram)
+                    {
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">توکن ربات تلگرام</label>
+                            <input type="password" class="form-control form-control-sm" @bind="_siteTelegramToken" placeholder="123456:ABC..."/>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">شناسه گروه تلگرام</label>
+                            <input type="text" class="form-control form-control-sm" @bind="_siteTelegramGroupId" placeholder="-100123456789"/>
+                        </div>
+                    }
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="chkEitaa" @bind="_siteEnableEitaa" />
+                        <label class="form-check-label small" for="chkEitaa">فعال بودن چت ایتا</label>
+                    </div>
+                    @if (_siteEnableEitaa)
+                    {
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">توکن ربات ایتا</label>
+                            <input type="password" class="form-control form-control-sm" @bind="_siteEitaaToken" placeholder="تکت ربات ایتا"/>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">شناسه گروه ایتا</label>
+                            <input type="text" class="form-control form-control-sm" @bind="_siteEitaaGroupId" placeholder="-123456789"/>
+                        </div>
+                    }
+                    @if (_settingsLoading)
+                    {
+                        <div class="text-muted small">در حال بارگذاری تنظیمات...</div>
+                    }
+                    <button class="btn btn-success btn-sm w-100" @onclick="SaveChatSiteSettings" disabled="@_settingsLoading">
+                        @if (_savingSiteSettings) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        ذخیره تنظیمات چت
+                    </button>
+                    @if (!string.IsNullOrEmpty(_siteSettingsMessage))
+                    {
+                        <div class="alert @(_siteSettingsSuccess ? "alert-success" : "alert-danger") py-2 small mt-2">@_siteSettingsMessage</div>
+                    }
+                </div>
+
+                <div class="border-top pt-3 mt-3">
+                    <div class="fw-bold small mb-2">دستیار هوشمند (پاسخ خودکار)</div>
+                    <p class="text-muted small mb-2">اگر اپراتور آنلاین نباشد، سامانه به سوالات کاربر پاسخ می‌دهد. بدون تنظیم URL و کلید، سامانه به سوالات پرتکرار (FAQ) پاسخ می‌دهد.</p>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="chkAi" @bind="_siteEnableAi" />
+                        <label class="form-check-label small" for="chkAi">فعال بودن دستیار هوشمند</label>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">ارائه‌دهنده</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_siteAiProvider" placeholder="مثلاً: openai / groq / سرویس ایرانی" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">آدرس API (پایان: /chat/completions/)</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_siteAiApiUrl" placeholder="https://api.example.com/v1" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">مدل</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_siteAiModel" placeholder="gpt-4o-mini / llama-3.1-8b / ..." />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">کلید API</label>
+                        <input type="password" class="form-control form-control-sm" @bind="_siteAiApiKey" placeholder="sk-..." />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">دستور سیستم (Prompt)</label>
+                        <textarea class="form-control form-control-sm" rows="2" @bind="_siteAiSystemPrompt" placeholder="شما پشتیبان فروشگاه هستید..."></textarea>
+                    </div>
+                </div>
             </div>
         </div>
     }
@@ -141,6 +241,14 @@
                             <span class="s-badge @(session.Status == ChatSessionStatusDto.Active ? "badge-active" : "badge-closed")">
                                 @(session.Status == ChatSessionStatusDto.Active ? "فعال" : "پایان")
                             </span>
+                            @if (session.Rating is > 0)
+                            {
+                                <span class="s-rating" title="@(session.RatingComment ?? "")">★@session.Rating</span>
+                            }
+                            @if (!string.IsNullOrEmpty(session.UserPhone))
+                            {
+                                <span class="s-phone">📞</span>
+                            }
                             <span class="s-time">@FormatTime(session.CreatedAt)</span>
                         </div>
                     </div>
@@ -178,11 +286,17 @@
                     {
                         <div class="topbar-detail">@_selectedSession.UserEmail</div>
                     }
+                    @if (!string.IsNullOrEmpty(_selectedSession.UserPhone))
+                    {
+                        <div class="topbar-detail" dir="ltr">📞 @_selectedSession.UserPhone</div>
+                    }
                     <div class="topbar-detail">@(_selectedSession.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm"))</div>
                 </div>
                 <div class="topbar-actions">
+                    <button class="act-btn sound-btn" @onclick="ToggleSound" title="صدا"><span class="oi @(_soundEnabled ? "oi-volume-high" : "oi-volume-off")"></span></button>
                     @if (_selectedSession.Status == ChatSessionStatusDto.Active)
                     {
+                        <button class="act-btn transfer-btn" @onclick="OpenTransfer" title="انتقال"><span class="oi oi-transfer"></span></button>
                         <button class="act-btn end-btn" @onclick="CloseSession" title="پایان مکالمه"><span class="oi oi-circle-x"></span></button>
                     }
                     <button class="act-btn delete-btn" @onclick="AskDelete" title="حذف مکالمه"><span class="oi oi-trash"></span></button>
@@ -203,38 +317,89 @@
         {
             @* --- Messages --- *@
             <div class="messages-area" @ref="_messagesContainer">
-                @foreach (var msg in _messages)
+                <div class="msg-search-row">
+                    <input class="msg-search" @bind="_searchText"
+                           placeholder="جستجو در پیام‌های این مکالمه..." />
+                    @if (!string.IsNullOrEmpty(_searchText))
+                    {
+                        <button class="msg-search-clear" @onclick='() => _searchText = ""'>✕</button>
+                    }
+                </div>
+                @foreach (var msg in FilteredMessages)
                 {
+                    if (ShouldShowDateSeparator(msg))
+                    {
+                        <div class="msg-date-sep">@DateSeparatorText(msg.CreatedAt)</div>
+                    }
+                    if (msg.IsDeleted)
+                    {
+                        <div class="msg @(msg.SenderType == ChatSenderTypeDto.Operator ? "msg-op" : "msg-user")">
+                            <div class="msg-bubble msg-deleted">این پیام حذف شده است</div>
+                        </div>
+                        continue;
+                    }
                     <div class="msg @(msg.SenderType == ChatSenderTypeDto.Operator ? "msg-op" : "msg-user")">
-                        @if (msg.MessageType == ChatMessageTypeDto.Text)
+                        @if (_editingMessageId == msg.Id)
                         {
-                            <div class="msg-bubble msg-text">@msg.Content</div>
-                        }
-                        else if (msg.MessageType == ChatMessageTypeDto.Image)
-                        {
-                            <div class="msg-bubble msg-image-wrapper">
-                                <img src="@msg.MediaUrl" class="msg-img" @onclick="() => OpenLightbox(msg.MediaUrl)" />
-                                @if (!string.IsNullOrEmpty(msg.Content)) { <div class="mt-1 small">@msg.Content</div> }
+                            <div class="msg-bubble msg-edit-box">
+                                <textarea class="msg-edit-input" @bind="_editingText" rows="2"></textarea>
+                                <div class="msg-edit-actions">
+                                    <button class="btn btn-sm btn-primary" @onclick="() => SaveEdit(msg.Id)" disabled="@string.IsNullOrWhiteSpace(_editingText)">ذخیره</button>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">لغو</button>
+                                </div>
                             </div>
                         }
-                        else if (msg.MessageType == ChatMessageTypeDto.Voice)
+                        else
                         {
-                            <div class="msg-bubble msg-voice-wrapper">
-                                <audio src="@msg.MediaUrl" controls class="msg-audio" preload="none"></audio>
-                            </div>
-                        }
-                        else if (msg.MessageType == ChatMessageTypeDto.File)
-                        {
-                            <div class="msg-bubble msg-file-wrapper">
-                                <a href="@msg.MediaUrl" target="_blank" class="file-link" download>
-                                    <span class="oi oi-file"></span>
-                                    @(!string.IsNullOrEmpty(msg.Content) ? msg.Content : "فایل")
-                                </a>
-                            </div>
-                        }
-                        else if (msg.MessageType == ChatMessageTypeDto.System)
-                        {
-                            <div class="msg-system">@msg.Content</div>
+                            @if (msg.ReplyToId != null)
+                            {
+                                var reply = _messages.FirstOrDefault(m => m.Id == msg.ReplyToId);
+                                <div class="msg-reply-quote">
+                                    <div class="reply-quote-sender">@(reply?.SenderType == ChatSenderTypeDto.Operator ? "اپراتور" : "کاربر")</div>
+                                    <div class="reply-quote-text">@(string.IsNullOrWhiteSpace(reply?.Content) ? (reply?.MessageType == ChatMessageTypeDto.Image ? "تصویر" : reply?.MessageType == ChatMessageTypeDto.Voice ? "پیام صوتی" : reply?.MessageType == ChatMessageTypeDto.File ? "فایل" : "پیام") : reply!.Content)</div>
+                                </div>
+                            }
+                            @if (msg.MessageType == ChatMessageTypeDto.Text)
+                            {
+                                <div class="msg-bubble msg-text">@msg.Content</div>
+                            }
+                            else if (msg.MessageType == ChatMessageTypeDto.Image)
+                            {
+                                <div class="msg-bubble msg-image-wrapper">
+                                    <img src="@msg.MediaUrl" class="msg-img" @onclick="() => OpenLightbox(msg.MediaUrl)" />
+                                    @if (!string.IsNullOrEmpty(msg.Content)) { <div class="mt-1 small">@msg.Content</div> }
+                                </div>
+                            }
+                            else if (msg.MessageType == ChatMessageTypeDto.Voice)
+                            {
+                                <div class="msg-bubble msg-voice-wrapper">
+                                    <audio src="@msg.MediaUrl" controls class="msg-audio" preload="none"></audio>
+                                </div>
+                            }
+                            else if (msg.MessageType == ChatMessageTypeDto.File)
+                            {
+                                <div class="msg-bubble msg-file-wrapper">
+                                    <a href="@msg.MediaUrl" target="_blank" class="file-link" download>
+                                        <span class="oi oi-file"></span>
+                                        @(!string.IsNullOrEmpty(msg.Content) ? msg.Content : "فایل")
+                                    </a>
+                                </div>
+                            }
+                            else if (msg.MessageType == ChatMessageTypeDto.System)
+                            {
+                                <div class="msg-system">@msg.Content</div>
+                            }
+                            if (msg.SenderType == ChatSenderTypeDto.Operator && msg.SenderId != "system" && _selectedSession?.Status != ChatSessionStatusDto.Closed)
+                            {
+                                <div class="msg-actions">
+                                    <button class="msg-act" @onclick="() => StartReply(msg.Id)" title="پاسخ"><span class="oi oi-action-undo"></span></button>
+                                    @if (msg.MessageType == ChatMessageTypeDto.Text)
+                                    {
+                                        <button class="msg-act" @onclick="() => StartEdit(msg)" title="ویرایش"><span class="oi oi-pencil"></span></button>
+                                    }
+                                    <button class="msg-act danger" @onclick="() => DeleteMsg(msg.Id)" title="حذف"><span class="oi oi-trash"></span></button>
+                                </div>
+                            }
                         }
                         <div class="msg-time">
                             @if (msg.SenderType == ChatSenderTypeDto.Operator && msg.SenderId != "system")
@@ -242,6 +407,7 @@
                                 <span>@msg.SenderId • </span>
                             }
                             @msg.CreatedAt.ToLocalTime().ToString("HH:mm")
+                            @if (msg.EditedAt != null) { <span class="msg-edited">(ویرایش‌شده)</span> }
                             @if (msg.SenderType == ChatSenderTypeDto.Operator)
                             {
                                 @if (msg.Status == ChatMessageStatusDto.Sending)
@@ -271,20 +437,191 @@
             @* --- Input --- *@
             @if (_selectedSession?.Status != ChatSessionStatusDto.Closed)
             {
-                <div class="chat-input-bar">
-                    <button class="input-btn" @onclick="PickImage" title="ارسال تصویر"><span class="oi oi-image"></span></button>
-                    <input class="input-field" @bind="_inputText" @bind:event="oninput"
-                           @onkeydown="HandleKeyDown"
-                           @onkeyup="HandleTyping"
-                           placeholder="پیام خود را بنویسید..." />
-                    <button class="send-btn" @onclick="SendMessage" disabled="@string.IsNullOrWhiteSpace(_inputText)">
-                        <span class="oi oi-arrow-left"></span>
-                    </button>
+                <div class="chat-input-area">
+                    @if (_replyToMessage != null)
+                    {
+                        <div class="reply-bar">
+                            <div class="reply-bar-info">
+                                <span class="reply-bar-title">در حال پاسخ به: @(_replyToMessage.SenderType == ChatSenderTypeDto.Operator ? "اپراتور" : "کاربر")</span>
+                                <span class="reply-bar-text">@(string.IsNullOrWhiteSpace(_replyToMessage.Content) ? "..." : _replyToMessage.Content)</span>
+                            </div>
+                            <button class="reply-bar-close" @onclick="CancelReply">✕</button>
+                        </div>
+                    }
+                    <div class="chat-input-bar">
+                        <button class="input-btn" @onclick="PickImage" title="ارسال تصویر"><span class="oi oi-image"></span></button>
+                        <button class="input-btn" @onclick="PickFile" title="ارسال فایل"><span class="oi oi-paperclip"></span></button>
+                        <button class="input-btn @(_isRecording ? "rec-on" : "")" @onclick="ToggleVoice" title="@(_isRecording ? "توقف ضبط" : "ضبط صدا")"><span class="oi oi-microphone"></span></button>
+                        <button class="input-btn" @onclick="ToggleCannedPanel" title="پاسخ‌های آماده"><span class="oi oi-list-rich"></span></button>
+                        <input class="input-field" value="_inputText"
+                               @oninput="OnInputChanged"
+                               @onkeydown="HandleKeyDown"
+                               placeholder="پیام خود را بنویسید..." />
+                        <button class="send-btn" @onclick="SendMessage" disabled="@string.IsNullOrWhiteSpace(_inputText)">
+                            <span class="oi oi-arrow-left"></span>
+                        </button>
+                    </div>
+                    @if (_cannedOpen)
+                    {
+                        <div class="canned-panel">
+                            <div class="canned-panel-head">
+                                <span class="fw-bold small">پاسخ‌های آماده</span>
+                                <div>
+                                    <button class="btn-close-sm" @onclick="OpenFaqManage" title="پرسش‌های پرتکرار (FAQ)">؟</button>
+                                    <button class="btn-close-sm" @onclick="LoadCannedResponses" title="ویرایش لیست">⚙</button>
+                                </div>
+                            </div>
+                            <div class="canned-list">
+                                @if (!_cannedResponses.Any())
+                                {
+                                    <div class="canned-empty">پاسخی ذخیره نشده است</div>
+                                }
+                                @foreach (var cr in _cannedResponses)
+                                {
+                                    <button class="canned-item" @onclick="() => UseCanned(cr)">
+                                        <span class="canned-title">@cr.Title</span>
+                                        <span class="canned-content">@cr.Content</span>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
                 </div>
             }
         }
     </div>
 </div>
+
+@* --- Transfer modal --- *@
+@if (_showTransfer)
+{
+    <div class="settings-backdrop" @onclick="() => _showTransfer = false"></div>
+    <div class="settings-modal">
+        <div class="settings-head">
+            <h6 class="m-0 fw-bold">انتقال مکالمه</h6>
+            <button class="btn-close-sm" @onclick="() => _showTransfer = false"></button>
+        </div>
+        <div class="settings-body">
+            <p class="small text-muted mb-3">این مکالمه را به کدام اپراتور منتقل می‌کنید؟</p>
+            @if (_operators.Count == 0)
+            {
+                <div class="text-muted small">اپراتوری یافت نشد.</div>
+            }
+            @foreach (var op in _operators)
+            {
+                <button class="op-row @(_selectedSession?.OperatorId == op.Id ? "sel" : "")" @onclick="() => DoTransfer(op.Id)">
+                    <span class="s-avatar">@(op.FullName?.FirstOrDefault() ?? '?')</span>
+                    <span class="op-name">@op.FullName</span>
+                    @if (_selectedSession?.OperatorId == op.Id) { <span class="op-cur">فعلی</span> }
+                </button>
+            }
+        </div>
+    </div>
+}
+
+@* --- Canned responses manage modal --- *@
+@if (_showCannedManage)
+{
+    <div class="settings-backdrop" @onclick="() => CloseCannedManage()"></div>
+    <div class="settings-modal">
+        <div class="settings-head">
+            <h6 class="m-0 fw-bold">پاسخ‌های آماده</h6>
+            <button class="btn-close-sm" @onclick="CloseCannedManage"></button>
+        </div>
+        <div class="settings-body">
+            <div class="mb-3">
+                <label class="form-label small fw-bold">عنوان</label>
+                <input class="form-control form-control-sm" @bind="_cannedFormTitle" placeholder="مثلاً: سلام و خوش‌آمدگویی" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label small fw-bold">متن پاسخ</label>
+                <textarea class="form-control form-control-sm" rows="3" @bind="_cannedFormContent" placeholder="متن پاسخ آماده..."></textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small fw-bold">دسته‌بندی (اختیاری)</label>
+                <input class="form-control form-control-sm" @bind="_cannedFormCategory" placeholder="مثلاً: عمومی، محصولات، ارسال" />
+            </div>
+            <button class="btn btn-primary btn-sm w-100" @onclick="SaveCannedForm" disabled="@(string.IsNullOrWhiteSpace(_cannedFormTitle) || string.IsNullOrWhiteSpace(_cannedFormContent))">
+                @(_cannedEditingId > 0 ? "به‌روزرسانی" : "افزودن")
+            </button>
+            <hr />
+            <div class="canned-manage-list">
+                @foreach (var cr in _cannedResponses)
+                {
+                    <div class="canned-manage-row">
+                        <div class="canned-manage-info">
+                            <div class="canned-manage-title">@cr.Title</div>
+                            <div class="canned-manage-content">@cr.Content</div>
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => EditCanned(cr)" title="ویرایش"><span class="oi oi-pencil"></span></button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveCanned(cr.Id)" title="حذف"><span class="oi oi-trash"></span></button>
+                        </div>
+                    </div>
+                }
+                @if (_cannedResponses.Count == 0)
+                {
+                    <div class="text-muted small text-center py-3">پاسخی ثبت نشده است.</div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* --- FAQ manage modal --- *@
+@if (_showFaqManage)
+{
+    <div class="settings-backdrop" @onclick="() => CloseFaqManage()"></div>
+    <div class="settings-modal">
+        <div class="settings-head">
+            <h6 class="m-0 fw-bold">پرسش‌های پرتکرار (FAQ)</h6>
+            <button class="btn-close-sm" @onclick="CloseFaqManage"></button>
+        </div>
+        <div class="settings-body">
+            <p class="text-muted small mb-3">دستیار هوشمند وقتی AI پیکربندی نشده باشد به این‌ها پاسخ می‌دهد.</p>
+            <div class="mb-3">
+                <label class="form-label small fw-bold">سوال</label>
+                <input class="form-control form-control-sm" @bind="_faqFormQuestion" placeholder="مثلاً: هزینه ارسال چقدر است؟" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label small fw-bold">پاسخ</label>
+                <textarea class="form-control form-control-sm" rows="3" @bind="_faqFormAnswer" placeholder="متن پاسخ..."></textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small fw-bold">کلمات کلیدی (اختیاری، با ویرگول)</label>
+                <input class="form-control form-control-sm" @bind="_faqFormKeywords" placeholder="ارسال، هزینه ارسال، پست" />
+            </div>
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="chkFaqEnabled" @bind="_faqFormEnabled" />
+                <label class="form-check-label small" for="chkFaqEnabled">فعال</label>
+            </div>
+            <button class="btn btn-primary btn-sm w-100" @onclick="SaveFaqForm" disabled="@(string.IsNullOrWhiteSpace(_faqFormQuestion) || string.IsNullOrWhiteSpace(_faqFormAnswer))">
+                @(_faqEditingId > 0 ? "به‌روزرسانی" : "افزودن")
+            </button>
+            <hr />
+            <div class="canned-manage-list">
+                @foreach (var f in _faqEntries)
+                {
+                    <div class="canned-manage-row">
+                        <div class="canned-manage-info">
+                            <div class="canned-manage-title">@f.Question</div>
+                            <div class="canned-manage-content">@f.Answer</div>
+                        </div>
+                        <span class="badge @(f.IsEnabled ? "bg-success" : "bg-secondary")">@(f.IsEnabled ? "فعال" : "غیرفعال")</span>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => EditFaq(f)" title="ویرایش"><span class="oi oi-pencil"></span></button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveFaq(f.Id)" title="حذف"><span class="oi oi-trash"></span></button>
+                        </div>
+                    </div>
+                }
+                @if (_faqEntries.Count == 0)
+                {
+                    <div class="text-muted small text-center py-3">پرسشی ثبت نشده است.</div>
+                }
+            </div>
+        </div>
+    </div>
+}
 
 @* --- Lightbox --- *@
 @if (!string.IsNullOrEmpty(_lightboxUrl))
@@ -323,6 +660,8 @@
     .s-badge { font-size:.58rem; padding:1px 6px; border-radius:10px; font-weight:600; }
     .badge-active { background:#dcfce7; color:#16a34a; }
     .badge-closed { background:#f3f4f6; color:#6b7280; }
+    .s-rating { font-size:.62rem; color:#f59e0b; font-weight:700; background:#fffbeb; padding:1px 7px; border-radius:10px; }
+    .s-phone { font-size:.6rem; }
     .s-time { font-size:.62rem; color:#9ca3af; }
     .s-unread { width:8px; height:8px; border-radius:50%; background:#ef4444; flex-shrink:0; }
     .empty-list { display:flex; flex-direction:column; align-items:center; gap:8px; padding:60px 20px; color:#9ca3af; font-size:.85rem; }
@@ -364,6 +703,55 @@
 
     /* ── Messages ── */
     .messages-area { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:10px; background:#fcfcfc; scrollbar-width:thin; }
+    .msg-search-row { position:sticky; top:0; z-index:5; margin-bottom:4px; display:flex; align-items:center; gap:6px; background:#fcfcfc; padding:4px 0 8px; }
+    .msg-search { flex:1; border:1.5px solid #e5e7eb; border-radius:20px; padding:6px 14px; font-size:.78rem; outline:none; background:#fff; transition:border-color .2s; }
+    .msg-search:focus { border-color:#4f46e5; }
+    .msg-search-clear { width:24px; height:24px; border:none; background:#f0f0f0; border-radius:50%; cursor:pointer; color:#6b7280; font-size:.7rem; display:flex; align-items:center; justify-content:center; }
+    .msg-date-sep { align-self:center; background:#e5e7eb; color:#6b7280; font-size:.62rem; padding:2px 12px; border-radius:12px; margin:6px 0; }
+    .msg-deleted { background:#f0f0f0 !important; color:#9ca3af !important; font-style:italic; font-size:.75rem; }
+    .msg-edited { color:#9ca3af; font-size:.6rem; margin-left:3px; }
+    .msg-reply-quote { background:rgba(255,255,255,.18); border-right:3px solid rgba(255,255,255,.7); padding:4px 10px; border-radius:8px; margin-bottom:4px; direction:rtl; }
+    .msg-user .msg-reply-quote { background:#e9e9e9; border-right-color:#9ca3af; }
+    .reply-quote-sender { font-size:.6rem; font-weight:700; opacity:.85; }
+    .reply-quote-text { font-size:.68rem; opacity:.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px; }
+    .msg-actions { display:flex; gap:4px; padding:2px 4px; opacity:0; transition:opacity .15s; }
+    .msg:hover .msg-actions { opacity:1; }
+    .msg-act { width:24px; height:24px; border:none; background:#f0f0f0; border-radius:6px; cursor:pointer; font-size:.65rem; color:#6b7280; display:flex; align-items:center; justify-content:center; transition:.15s; }
+    .msg-act:hover { background:#e5e7eb; color:#1f2937; }
+    .msg-act.danger:hover { background:#fee2e2; color:#ef4444; }
+    .msg-edit-box { background:#fffdf5 !important; color:#1f2937 !important; border:1.5px solid #f5a623; width:320px; max-width:100%; }
+    .msg-edit-input { width:100%; border:1px solid #e5e7eb; border-radius:8px; padding:6px 10px; font-size:.82rem; resize:vertical; outline:none; background:#fff; }
+    .msg-edit-actions { display:flex; gap:6px; margin-top:6px; justify-content:flex-end; }
+    .chat-input-area { border-top:1px solid #f0f0f0; background:#fff; }
+    .reply-bar { display:flex; align-items:center; gap:8px; padding:8px 16px 0; }
+    .reply-bar-info { flex:1; min-width:0; background:#f0f0f0; border-radius:10px; padding:6px 12px; }
+    .reply-bar-title { display:block; font-size:.65rem; font-weight:700; color:#4f46e5; }
+    .reply-bar-text { display:block; font-size:.72rem; color:#6b7280; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .reply-bar-close { width:26px; height:26px; border:none; background:#f0f0f0; border-radius:50%; cursor:pointer; color:#6b7280; font-size:.75rem; flex-shrink:0; }
+    .rec-on { background:#dc3545 !important; color:#fff !important; animation:pulse 1s infinite; }
+    @@keyframes pulse { 0%,100% { box-shadow:0 0 0 0 rgba(220,53,69,.4); } 50% { box-shadow:0 0 0 8px rgba(220,53,69,0); } }
+    .canned-panel { border-top:1px solid #f0f0f0; max-height:220px; overflow-y:auto; padding:8px 12px; background:#fff; }
+    .canned-panel-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+    .canned-list { display:flex; flex-direction:column; gap:6px; }
+    .canned-item { display:flex; flex-direction:column; align-items:flex-start; gap:2px; border:1px solid #e5e7eb; background:#fafafa; border-radius:10px; padding:8px 12px; cursor:pointer; transition:.15s; text-align:right; }
+    .canned-item:hover { border-color:#4f46e5; background:#eef2ff; }
+    .canned-title { font-size:.72rem; font-weight:700; color:#1f2937; }
+    .canned-content { font-size:.7rem; color:#6b7280; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+    .canned-empty { text-align:center; color:#9ca3af; font-size:.75rem; padding:10px; }
+    .canned-manage-list { display:flex; flex-direction:column; gap:8px; }
+    .canned-manage-row { display:flex; align-items:center; gap:8px; border:1px solid #f0f0f0; border-radius:10px; padding:8px 12px; background:#fafafa; }
+    .canned-manage-info { flex:1; min-width:0; }
+    .canned-manage-title { font-size:.75rem; font-weight:700; }
+    .canned-manage-content { font-size:.68rem; color:#6b7280; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .op-row { display:flex; align-items:center; gap:10px; width:100%; border:1px solid #f0f0f0; background:#fafafa; border-radius:12px; padding:10px 14px; cursor:pointer; transition:.15s; margin-bottom:8px; }
+    .op-row:hover { border-color:#4f46e5; background:#eef2ff; }
+    .op-row.sel { border-color:#22c55e; background:#f0fdf4; }
+    .op-name { flex:1; text-align:right; font-size:.82rem; font-weight:600; color:#1f2937; }
+    .op-cur { font-size:.6rem; color:#16a34a; font-weight:700; }
+    .transfer-btn { background:#eef2ff; color:#4f46e5; }
+    .transfer-btn:hover { background:#e0e7ff; }
+    .sound-btn { background:#f0fdf4; color:#16a34a; }
+    .sound-btn:hover { background:#dcfce7; }
     .msg { max-width:78%; display:flex; flex-direction:column; gap:2px; animation:msgIn .2s ease; }
     @@keyframes msgIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
     .msg-op { align-self:flex-start; }
@@ -459,6 +847,71 @@
     private int _nextTempId = -1;
     private Queue<int> _pendingTempIds = new();
     private int _newSessionCount;
+    private string _searchText = "";
+    private ChatMessageDto? _replyToMessage;
+    private int? _editingMessageId;
+    private string _editingText = "";
+    private int? _editingCannedId;
+    private bool _showTransfer;
+    private List<ChatOperatorDto> _operators = new();
+    private bool _cannedOpen;
+    private bool _showCannedManage;
+    private List<CannedResponseDto> _cannedResponses = new();
+    private string _cannedFormTitle = "";
+    private string _cannedFormContent = "";
+    private string _cannedFormCategory = "";
+    private int _cannedEditingId;
+    private bool _showFaqManage;
+    private List<ChatFaqEntryDto> _faqEntries = new();
+    private string _faqFormQuestion = "";
+    private string _faqFormAnswer = "";
+    private string _faqFormKeywords = "";
+    private bool _faqFormEnabled = true;
+    private int _faqEditingId;
+    private bool _isRecording;
+    private bool _soundEnabled = true;
+
+    private string _siteWelcomeMessage = "";
+    private bool _siteEnableAutoMessage;
+    private int _siteAutoMessageSeconds = 60;
+    private bool _sitePhoneRequired;
+    private bool _siteEnableBale;
+    private bool _siteEnableTelegram;
+    private string _siteTelegramToken = "";
+    private string _siteTelegramGroupId = "";
+    private bool _siteEnableEitaa;
+    private string _siteEitaaToken = "";
+    private string _siteEitaaGroupId = "";
+    private bool _siteEnableAi;
+    private string _siteAiProvider = "";
+    private string _siteAiApiUrl = "";
+    private string _siteAiModel = "";
+    private string _siteAiApiKey = "";
+    private string _siteAiSystemPrompt = "";
+    private bool _settingsLoading;
+    private bool _savingSiteSettings;
+    private string? _siteSettingsMessage;
+    private bool _siteSettingsSuccess;
+
+    private List<ChatMessageDto> FilteredMessages =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _messages
+            : _messages.Where(m => !string.IsNullOrEmpty(m.Content) && m.Content.Contains(_searchText, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private bool ShouldShowDateSeparator(ChatMessageDto msg)
+    {
+        var idx = FilteredMessages.IndexOf(msg);
+        if (idx <= 0) return true;
+        return FilteredMessages[idx - 1].CreatedAt.ToLocalTime().Date != msg.CreatedAt.ToLocalTime().Date;
+    }
+
+    private static string DateSeparatorText(DateTime dt)
+    {
+        var local = dt.ToLocalTime();
+        if (local.Date == DateTime.Today) return "امروز";
+        if (local.Date == DateTime.Today.AddDays(-1)) return "دیروز";
+        return local.ToString("yyyy/MM/dd");
+    }
 
     private List<ChatSessionDto> FilteredSessions => _activeFilter switch
     {
@@ -472,6 +925,9 @@
         await ConnectHub();
         await LoadSessions();
         await LoadBaleSettings();
+        await LoadSiteChatSettings();
+        try { _soundEnabled = (await JS.InvokeAsync<string>("localStorage.getItem", "chat_sound")) != "off"; }
+        catch { }
     }
 
     private async Task ConnectHub()
@@ -505,7 +961,14 @@
             }
             var session = _allSessions.FirstOrDefault(s => s.Id == msg.SessionId);
             if (session != null && msg.SenderType == ChatSenderTypeDto.User && _selectedSessionId != msg.SessionId)
+            {
                 session.HasUnread = true;
+                _ = PlayNotifyAsync("مکالمه جدید", $"کاربر {session.UserName ?? ""}: {msg.Content ?? ""}");
+            }
+            else if (session != null && msg.SenderType == ChatSenderTypeDto.User && _selectedSessionId == msg.SessionId)
+            {
+                _ = PlayNotifyAsync("پیام جدید", msg.Content ?? "");
+            }
             InvokeAsync(StateHasChanged);
         });
 
@@ -515,7 +978,50 @@
             _allSessions.Insert(0, session);
             _newSessionCount++;
             if (_selectedSessionId == 0 || _selectedSessionId != session.Id)
-                _ = JS.InvokeVoidAsync("__chatPlayNotification");
+            {
+                _ = PlayNotifyAsync("مکالمه جدید", $"کاربر {session.UserName ?? ""} گفتگو را شروع کرد");
+            }
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<ChatSessionDto>("SessionUpdated", session =>
+        {
+            var s = _allSessions.FirstOrDefault(x => x.Id == session.Id);
+            if (s != null)
+            {
+                s.OperatorId = session.OperatorId;
+                s.OperatorName = session.OperatorName;
+            }
+            if (_selectedSessionId == session.Id && _selectedSession != null)
+            {
+                _selectedSession.OperatorId = session.OperatorId;
+                _selectedSession.OperatorName = session.OperatorName;
+            }
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<int>("OperatorRequested", sessionId =>
+        {
+            _ = PlayNotifyAsync("درخواست اپراتور", "کاربر درخواست گفتگو با اپراتور انسانی دارد");
+            _ = LoadSessions();
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<ChatMessageDto>("MessageEdited", msg =>
+        {
+            var existing = _messages.FirstOrDefault(m => m.Id == msg.Id);
+            if (existing != null)
+            {
+                existing.Content = msg.Content;
+                existing.EditedAt = msg.EditedAt;
+            }
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<int, int>("MessageDeleted", (sessionId, messageId) =>
+        {
+            var existing = _messages.FirstOrDefault(m => m.Id == messageId);
+            if (existing != null) existing.IsDeleted = true;
             InvokeAsync(StateHasChanged);
         });
 
@@ -568,6 +1074,20 @@
         };
 
         await _hub.StartAsync();
+    }
+
+    private async Task PlayNotifyAsync(string title, string body)
+    {
+        try
+        {
+            var soundEnabled = true;
+            try { soundEnabled = (await JS.InvokeAsync<string>("localStorage.getItem", "chat_sound")) != "off"; }
+            catch { }
+            if (soundEnabled) await JS.InvokeVoidAsync("__chatPlayNotification");
+            await JS.InvokeVoidAsync("__chatNotify", title, body);
+            await JS.InvokeVoidAsync("__chatFlashTitle", "💬 پیام جدید");
+        }
+        catch { }
     }
 
     private async Task LoadSessions()
@@ -691,6 +1211,9 @@
         if (_selectedSession != null) _selectedSession.HasUnread = false;
         _newSessionCount = 0;
         _messages.Clear();
+        _searchText = "";
+        _replyToMessage = null;
+        CancelEdit();
         _showMobileSidebar = false;
 
         if (_hub != null)
@@ -742,18 +1265,351 @@
             Content = text,
             MessageType = ChatMessageTypeDto.Text,
             CreatedAt = DateTime.UtcNow,
-            Status = ChatMessageStatusDto.Sending
+            Status = ChatMessageStatusDto.Sending,
+            ReplyToId = _replyToMessage?.Id
         });
         ScrollToBottom();
         StateHasChanged();
 
-        try { await _hub.InvokeAsync("SendMessage", _selectedSessionId, text, ChatMessageTypeDto.Text, null); }
+        var replyToId = _replyToMessage?.Id;
+        CancelReply();
+        try { await _hub.InvokeAsync("SendMessage", _selectedSessionId, text, ChatMessageTypeDto.Text, null, replyToId); }
         catch (Exception ex)
         {
             _messages.RemoveAll(m => m.Id == tempId);
             _ = JS.InvokeVoidAsync("console.error", "SendMessage failed:", ex.Message, ex.ToString());
             StateHasChanged();
         }
+    }
+
+    private void StartReply(int messageId)
+    {
+        _replyToMessage = _messages.FirstOrDefault(m => m.Id == messageId);
+        _ = JS.InvokeVoidAsync("__chatFocusInput", ".input-field");
+    }
+
+    private void CancelReply() => _replyToMessage = null;
+
+    private void StartEdit(ChatMessageDto msg)
+    {
+        _editingMessageId = msg.Id;
+        _editingText = msg.Content ?? "";
+    }
+
+    private void CancelEdit()
+    {
+        _editingMessageId = null;
+        _editingText = "";
+    }
+
+    private async Task SaveEdit(int messageId)
+    {
+        var text = _editingText.Trim();
+        if (string.IsNullOrWhiteSpace(text) || _hub?.State != HubConnectionState.Connected) return;
+        try { await _hub.InvokeAsync("EditMessage", messageId, text); }
+        catch { }
+        CancelEdit();
+    }
+
+    private async Task DeleteMsg(int messageId)
+    {
+        if (_hub?.State != HubConnectionState.Connected) return;
+        try { await _hub.InvokeAsync("DeleteMessage", messageId); }
+        catch { }
+    }
+
+    private void OnInputChanged(ChangeEventArgs e)
+    {
+        _inputText = e.Value?.ToString() ?? "";
+        HandleTyping();
+    }
+
+    private async Task ToggleVoice()
+    {
+        try
+        {
+            if (_isRecording)
+            {
+                await JS.InvokeVoidAsync("__chatVoiceRecorder.stop");
+                _isRecording = false;
+            }
+            else
+            {
+                var ok = await JS.InvokeAsync<bool>("__chatVoiceRecorder.start");
+                if (ok) _isRecording = true;
+            }
+        }
+        catch { }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnVoiceRecorded(string url)
+    {
+        _isRecording = false;
+        if (string.IsNullOrEmpty(url)) { StateHasChanged(); return; }
+        if (_hub?.State != HubConnectionState.Connected) { StateHasChanged(); return; }
+        var tempId = _nextTempId--;
+        _pendingTempIds.Enqueue(tempId);
+        _messages.Add(new ChatMessageDto
+        {
+            Id = tempId,
+            SessionId = _selectedSessionId,
+            SenderType = ChatSenderTypeDto.Operator,
+            MessageType = ChatMessageTypeDto.Voice,
+            MediaUrl = url,
+            CreatedAt = DateTime.UtcNow
+        });
+        ScrollToBottom();
+        StateHasChanged();
+        try { await _hub.InvokeAsync("SendMessage", _selectedSessionId, "", ChatMessageTypeDto.Voice, url); }
+        catch { _messages.RemoveAll(m => m.Id == tempId); StateHasChanged(); }
+    }
+
+    private async Task PickFile()
+    {
+        await JS.InvokeVoidAsync("__chatPickFile", DotNetObjectReference.Create(this));
+    }
+
+    [JSInvokable]
+    public async Task OnFilePicked(string payload)
+    {
+        if (string.IsNullOrEmpty(payload)) { StateHasChanged(); return; }
+        if (_hub?.State != HubConnectionState.Connected) return;
+        var fileInfo = System.Text.Json.JsonSerializer.Deserialize<JsonElement>(payload);
+        var url = fileInfo.GetProperty("url").GetString() ?? "";
+        var fileName = fileInfo.GetProperty("fileName").GetString() ?? "فایل";
+        var tempId = _nextTempId--;
+        _pendingTempIds.Enqueue(tempId);
+        _messages.Add(new ChatMessageDto
+        {
+            Id = tempId,
+            SessionId = _selectedSessionId,
+            SenderType = ChatSenderTypeDto.Operator,
+            Content = fileName,
+            MessageType = ChatMessageTypeDto.File,
+            MediaUrl = url,
+            CreatedAt = DateTime.UtcNow
+        });
+        ScrollToBottom();
+        StateHasChanged();
+        try { await _hub.InvokeAsync("SendMessage", _selectedSessionId, fileName, ChatMessageTypeDto.File, url); }
+        catch { _messages.RemoveAll(m => m.Id == tempId); StateHasChanged(); }
+    }
+
+    private async Task ToggleCannedPanel()
+    {
+        _cannedOpen = !_cannedOpen;
+        if (_cannedOpen && _cannedResponses.Count == 0)
+            await LoadCannedResponses();
+        StateHasChanged();
+    }
+
+    private async Task LoadCannedResponses()
+    {
+        try { _cannedResponses = await Http.GetFromJsonAsync<List<CannedResponseDto>>("api/chat/canned-responses") ?? new(); }
+        catch { }
+        StateHasChanged();
+    }
+
+    private void UseCanned(CannedResponseDto cr)
+    {
+        _inputText = _inputText.Length > 0 ? _inputText + "\n" + cr.Content : cr.Content;
+        _cannedOpen = false;
+        StateHasChanged();
+    }
+
+    private void EditCanned(CannedResponseDto cr)
+    {
+        _cannedEditingId = cr.Id;
+        _cannedFormTitle = cr.Title;
+        _cannedFormContent = cr.Content;
+        _cannedFormCategory = cr.Category ?? "";
+    }
+
+    private async Task SaveCannedForm()
+    {
+        if (string.IsNullOrWhiteSpace(_cannedFormTitle) || string.IsNullOrWhiteSpace(_cannedFormContent)) return;
+        var payload = new { title = _cannedFormTitle.Trim(), content = _cannedFormContent.Trim(), category = _cannedFormCategory?.Trim(), isShared = true };
+        try
+        {
+            if (_cannedEditingId > 0)
+                await Http.PutAsJsonAsync($"api/chat/canned-responses/{_cannedEditingId}", payload);
+            else
+                await Http.PostAsJsonAsync("api/chat/canned-responses", payload);
+            _cannedFormTitle = "";
+            _cannedFormContent = "";
+            _cannedFormCategory = "";
+            _cannedEditingId = 0;
+            await LoadCannedResponses();
+        }
+        catch { }
+    }
+
+    private async Task RemoveCanned(int id)
+    {
+        try { await Http.DeleteAsync($"api/chat/canned-responses/{id}"); await LoadCannedResponses(); }
+        catch { }
+    }
+
+    private void CloseCannedManage()
+    {
+        _showCannedManage = false;
+        _cannedFormTitle = "";
+        _cannedFormContent = "";
+        _cannedFormCategory = "";
+        _cannedEditingId = 0;
+    }
+
+    private async Task OpenFaqManage()
+    {
+        _showFaqManage = true;
+        _cannedOpen = false;
+        try { _faqEntries = await Http.GetFromJsonAsync<List<ChatFaqEntryDto>>("api/chat/faq") ?? new(); }
+        catch { }
+        StateHasChanged();
+    }
+
+    private void CloseFaqManage()
+    {
+        _showFaqManage = false;
+        _faqFormQuestion = "";
+        _faqFormAnswer = "";
+        _faqFormKeywords = "";
+        _faqFormEnabled = true;
+        _faqEditingId = 0;
+    }
+
+    private void EditFaq(ChatFaqEntryDto f)
+    {
+        _faqEditingId = f.Id;
+        _faqFormQuestion = f.Question;
+        _faqFormAnswer = f.Answer;
+        _faqFormKeywords = f.Keywords ?? "";
+        _faqFormEnabled = f.IsEnabled;
+    }
+
+    private async Task SaveFaqForm()
+    {
+        if (string.IsNullOrWhiteSpace(_faqFormQuestion) || string.IsNullOrWhiteSpace(_faqFormAnswer)) return;
+        var payload = new { question = _faqFormQuestion.Trim(), answer = _faqFormAnswer.Trim(), keywords = _faqFormKeywords?.Trim(), isEnabled = _faqFormEnabled };
+        try
+        {
+            if (_faqEditingId > 0)
+                await Http.PutAsJsonAsync($"api/chat/faq/{_faqEditingId}", payload);
+            else
+                await Http.PostAsJsonAsync("api/chat/faq", payload);
+            _faqFormQuestion = "";
+            _faqFormAnswer = "";
+            _faqFormKeywords = "";
+            _faqFormEnabled = true;
+            _faqEditingId = 0;
+            await OpenFaqManage();
+            await LoadFaqEntries();
+        }
+        catch { }
+    }
+
+    private async Task RemoveFaq(int id)
+    {
+        try { await Http.DeleteAsync($"api/chat/faq/{id}"); await LoadFaqEntries(); }
+        catch { }
+    }
+
+    private async Task LoadFaqEntries()
+    {
+        try { _faqEntries = await Http.GetFromJsonAsync<List<ChatFaqEntryDto>>("api/chat/faq") ?? new(); }
+        catch { }
+    }
+
+    private async Task OpenTransfer()
+    {
+        _showTransfer = true;
+        try { _operators = await Http.GetFromJsonAsync<List<ChatOperatorDto>>("api/chat/operators") ?? new(); }
+        catch { }
+        StateHasChanged();
+    }
+
+    private async Task DoTransfer(int operatorId)
+    {
+        if (_selectedSessionId == 0) return;
+        try { await Http.PostAsJsonAsync($"api/chat/sessions/{_selectedSessionId}/transfer", new { operatorId }); }
+        catch { }
+        _showTransfer = false;
+        StateHasChanged();
+    }
+
+    private void ToggleSound()
+    {
+        _soundEnabled = !_soundEnabled;
+        _ = JS.InvokeVoidAsync("localStorage.setItem", "chat_sound", _soundEnabled ? "on" : "off");
+    }
+
+    private async Task LoadSiteChatSettings()
+    {
+        _settingsLoading = true;
+        try
+        {
+            var s = await Http.GetFromJsonAsync<JsonElement>("api/chat/site-settings");
+            _siteEnableBale = s.TryGetProperty("enableBaleChat", out var eb) && eb.GetBoolean();
+            _siteEnableTelegram = s.TryGetProperty("enableTelegramChat", out var et) && et.GetBoolean();
+            _siteTelegramToken = s.TryGetProperty("telegramBotToken", out var tt) ? tt.GetString() ?? "" : "";
+            _siteTelegramGroupId = s.TryGetProperty("telegramGroupId", out var tg) ? tg.GetString() ?? "" : "";
+            _siteEnableEitaa = s.TryGetProperty("enableEitaaChat", out var ee) && ee.GetBoolean();
+            _siteEitaaToken = s.TryGetProperty("eitaaBotToken", out var etk) ? etk.GetString() ?? "" : "";
+            _siteEitaaGroupId = s.TryGetProperty("eitaaGroupId", out var eg) ? eg.GetString() ?? "" : "";
+            _siteWelcomeMessage = s.TryGetProperty("welcomeMessage", out var wm) ? wm.GetString() ?? "" : "";
+            _siteEnableAutoMessage = s.TryGetProperty("enableAutoMessage", out var am) && am.GetBoolean();
+            _siteAutoMessageSeconds = s.TryGetProperty("autoMessageSeconds", out var aSec) ? aSec.GetInt32() : 60;
+            _sitePhoneRequired = s.TryGetProperty("phoneRequired", out var pr) && pr.GetBoolean();
+            _siteEnableAi = s.TryGetProperty("enableAiAssistant", out var ai) && ai.GetBoolean();
+            _siteAiProvider = s.TryGetProperty("aiProvider", out var aip) ? aip.GetString() ?? "" : "";
+            _siteAiApiUrl = s.TryGetProperty("aiApiUrl", out var aiu) ? aiu.GetString() ?? "" : "";
+            _siteAiModel = s.TryGetProperty("aiModel", out var aim) ? aim.GetString() ?? "" : "";
+            _siteAiApiKey = s.TryGetProperty("aiApiKey", out var aik) ? aik.GetString() ?? "" : "";
+            _siteAiSystemPrompt = s.TryGetProperty("aiSystemPrompt", out var asp) ? asp.GetString() ?? "" : "";
+        }
+        catch { }
+        _settingsLoading = false;
+    }
+
+    private async Task SaveChatSiteSettings()
+    {
+        _savingSiteSettings = true;
+        _siteSettingsMessage = null;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync("api/chat/site-settings", new
+            {
+                enableBaleChat = _siteEnableBale,
+                baleBotToken = _baleToken,
+                baleBotGroupId = _baleGroupId,
+                enableTelegramChat = _siteEnableTelegram,
+                telegramBotToken = _siteTelegramToken,
+                telegramGroupId = _siteTelegramGroupId,
+                enableEitaaChat = _siteEnableEitaa,
+                eitaaBotToken = _siteEitaaToken,
+                eitaaGroupId = _siteEitaaGroupId,
+                welcomeMessage = _siteWelcomeMessage,
+                enableAutoMessage = _siteEnableAutoMessage,
+                autoMessageSeconds = _siteAutoMessageSeconds,
+                phoneRequired = _sitePhoneRequired,
+                enableAiAssistant = _siteEnableAi,
+                aiProvider = _siteAiProvider,
+                aiApiUrl = _siteAiApiUrl,
+                aiModel = _siteAiModel,
+                aiApiKey = _siteAiApiKey,
+                aiSystemPrompt = _siteAiSystemPrompt
+            });
+            _siteSettingsSuccess = resp.IsSuccessStatusCode;
+            _siteSettingsMessage = _siteSettingsSuccess ? "تنظیمات چت ذخیره شد." : "خطا در ذخیره تنظیمات.";
+        }
+        catch
+        {
+            _siteSettingsSuccess = false;
+            _siteSettingsMessage = "خطا در ارتباط با سرور.";
+        }
+        _savingSiteSettings = false;
     }
 
     private async Task PickImage()

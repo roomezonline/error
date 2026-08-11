@@ -3,6 +3,15 @@ window.__chatScrollToBottom = function (selector) {
     if (el) { el.scrollTop = el.scrollHeight; }
 };
 
+window.__chatFocusInput = function (selector) {
+    var el = document.querySelector(selector);
+    if (el) { el.focus(); }
+};
+
+window.__chatWidgetVisitorId = function () {
+    try { return localStorage.getItem('chat_visitor_id') || ''; } catch (e) { return ''; }
+};
+
 window.__chatPlayNotification = function () {
     try {
         var ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -14,6 +23,40 @@ window.__chatPlayNotification = function () {
         gain.gain.value = 0.3;
         osc.start();
         osc.stop(ctx.currentTime + 0.15);
+    } catch (e) {}
+};
+
+window.__chatRequestNotifyPermission = function () {
+    try {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    } catch (e) {}
+};
+
+window.__chatNotify = function (title, body) {
+    try {
+        if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+            new Notification(title, { body: body, icon: '/favicon.ico' });
+        }
+    } catch (e) {}
+};
+
+window.__chatFlashTitle = function (text) {
+    try {
+        var orig = document.title;
+        if (window.__chatFlashTimer) clearInterval(window.__chatFlashTimer);
+        var on = false;
+        var start = Date.now();
+        window.__chatFlashTimer = setInterval(function () {
+            on = !on;
+            document.title = on ? text : orig;
+            if (Date.now() - start > 7000) {
+                clearInterval(window.__chatFlashTimer);
+                window.__chatFlashTimer = null;
+                document.title = orig;
+            }
+        }, 900);
     } catch (e) {}
 };
 
@@ -39,6 +82,7 @@ window.__chatVoiceRecorder = {
 
     start: function () {
         var self = this;
+        self.visitorId = window.__chatWidgetVisitorId();
         return navigator.mediaDevices.getUserMedia({ audio: true })
             .then(function (stream) {
                 self.stream = stream;
@@ -80,7 +124,7 @@ window.__chatVoiceRecorder = {
     uploadRecording: function (blob) {
         var formData = new FormData();
         formData.append('file', blob, 'voice.' + this.fileExt);
-        fetch('/api/chat/upload', { method: 'POST', body: formData })
+        fetch('/api/chat/upload?visitorId=' + encodeURIComponent(this.visitorId || ''), { method: 'POST', body: formData })
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 if (window.__chatWidgetDotNetRef) {
@@ -93,6 +137,8 @@ window.__chatVoiceRecorder = {
                 }
             });
     },
+
+    visitorId: '',
 
     isSupported: function () {
         return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
@@ -108,7 +154,7 @@ window.__chatPickImage = function (dotNetRef) {
         if (!file) return;
         var formData = new FormData();
         formData.append('file', file);
-        fetch('/api/chat/upload', { method: 'POST', body: formData })
+        fetch('/api/chat/upload?visitorId=' + encodeURIComponent(window.__chatWidgetVisitorId()), { method: 'POST', body: formData })
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 dotNetRef.invokeMethodAsync('OnImagePicked', d && d.url ? d.url : '');
@@ -118,4 +164,38 @@ window.__chatPickImage = function (dotNetRef) {
             });
     };
     input.click();
+};
+
+window.__chatPickFile = function (dotNetRef) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.onchange = function () {
+        var file = input.files[0];
+        if (!file) return;
+        var formData = new FormData();
+        formData.append('file', file);
+        fetch('/api/chat/upload?visitorId=' + encodeURIComponent(window.__chatWidgetVisitorId()), { method: 'POST', body: formData })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var payload = d && d.url ? JSON.stringify({
+                    url: d.url,
+                    fileName: d.fileName || '',
+                    fileSize: d.fileSize || 0,
+                    contentType: d.contentType || ''
+                }) : '';
+                dotNetRef.invokeMethodAsync('OnFilePicked', payload);
+            })
+            .catch(function () {
+                dotNetRef.invokeMethodAsync('OnFilePicked', '');
+            });
+    };
+    input.click();
+};
+
+window.__chatLoadPending = function () {
+    try { return JSON.parse(localStorage.getItem('chat_pending') || '[]'); } catch (e) { return []; }
+};
+
+window.__chatSavePending = function (list) {
+    try { localStorage.setItem('chat_pending', JSON.stringify(list)); } catch (e) {}
 };

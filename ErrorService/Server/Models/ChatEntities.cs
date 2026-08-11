@@ -47,6 +47,9 @@ public sealed class ChatSession
     [MaxLength(200)]
     public string? UserEmail { get; set; }
 
+    [MaxLength(30)]
+    public string? UserPhone { get; set; }
+
     public int? OperatorId { get; set; }
 
     public ChatSessionStatus Status { get; set; } = ChatSessionStatus.Waiting;
@@ -102,7 +105,51 @@ public sealed class ChatMessage
 
     public ChatMessageStatus Status { get; set; } = ChatMessageStatus.Sent;
 
+    public bool IsDeleted { get; set; }
+
+    public DateTime? EditedAt { get; set; }
+
+    public int? ReplyToId { get; set; }
+
     public ChatSession Session { get; set; } = null!;
+}
+
+public sealed class CannedResponse
+{
+    [Key]
+    public int Id { get; set; }
+
+    [MaxLength(200)]
+    public string Title { get; set; } = string.Empty;
+
+    [MaxLength(4000)]
+    public string Content { get; set; } = string.Empty;
+
+    [MaxLength(100)]
+    public string? Category { get; set; }
+
+    public bool IsShared { get; set; } = true;
+
+    public int CreatedByUserId { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class ChatFaqEntry
+{
+    [Key]
+    public int Id { get; set; }
+
+    [MaxLength(300)]
+    public string Question { get; set; } = string.Empty;
+
+    [MaxLength(4000)]
+    public string Answer { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string? Keywords { get; set; }
+
+    public bool IsEnabled { get; set; } = true;
 }
 
 public sealed class BannedVisitor
