@@ -89,11 +89,14 @@
                             }
                         </div>
 
-                        @if (product.DiscountExpiryDate.HasValue && product.DiscountExpiryDate > DateTimeOffset.Now)
+                        @if (IsDiscountActive(product))
                         {
                             <div class="pd-discount-ribbon">
-                                <span class="pd-discount-label">پیشنهاد ویژه</span>
-                                <span class="pd-discount-timer">@countdownText</span>
+                                <span class="pd-discount-label">@(IsTimedActive(product) ? "پیشنهاد ویژه" : "تخفیف دائمی")</span>
+                                @if (IsTimedActive(product))
+                                {
+                                    <span class="pd-discount-timer">@countdownText</span>
+                                }
                             </div>
                         }
 
@@ -180,7 +183,7 @@
                         {
                             <div class="pd-price-row">
                                 <span class="pd-price-old">@product.Price.ToString("N0") تومان</span>
-                                <span class="pd-price-badge">تخفیف ویژه</span>
+                                <span class="pd-price-badge">@(IsTimedActive(product) ? "تخفیف ویژه" : "تخفیف دائمی")</span>
                             </div>
                             <div class="pd-price-current">
                                 <span class="pd-price-num">@product.DiscountPrice!.Value.ToString("N0")</span>
@@ -341,7 +344,7 @@
                                         @if (IsDiscountActive(rp))
                                         {
                                             <span class="pd-related-old">@rp.Price.ToString("N0")</span>
-                                            <span class="pd-related-current">@rp.DiscountPrice!.Value.ToString("N0")</span>
+                                            <span class="pd-related-current">@DiscountHelper.GetEffectivePrice(rp).ToString("N0")</span>
                                         }
                                         else
                                         {
@@ -379,10 +382,10 @@
                                 <div class="pd-related-body">
                                     <span class="pd-related-name">@ri.Name</span>
                                     <div class="pd-related-price">
-                                        @if (ri.DiscountPrice.HasValue)
+                                        @if (IsDiscountActive(ri))
                                         {
                                             <span class="pd-related-old">@ri.Price.ToString("N0")</span>
-                                            <span class="pd-related-current">@ri.DiscountPrice.Value.ToString("N0")</span>
+                                            <span class="pd-related-current">@DiscountHelper.GetEffectivePrice(ri).ToString("N0")</span>
                                         }
                                         else
                                         {
@@ -1001,17 +1004,20 @@
 
     private bool isInWishlist;
 
-    private static bool IsDiscountActive(ProductDto p)
-        => p.DiscountPrice.HasValue && p.DiscountExpiryDate.HasValue && p.DiscountExpiryDate.Value > DateTimeOffset.Now;
+    private static bool IsDiscountActive(IDiscountInfo p)
+        => DiscountHelper.IsActive(p);
+
+    private static bool IsTimedActive(IDiscountInfo p)
+        => DiscountHelper.IsTimedActive(p);
 
     private decimal EffectivePrice => product != null
-        ? (IsDiscountActive(product) ? product.DiscountPrice!.Value : product.Price)
+        ? DiscountHelper.GetEffectivePrice(product)
         : 0m;
 
     private async Task ToggleWishlist()
     {
         if (product == null) return;
-        await Ws.ToggleAsync(product.Id, product.Name, product.MainImageUrl, product.Price, IsDiscountActive(product) ? product.DiscountPrice : null);
+        await Ws.ToggleAsync(product.Id, product.Name, product.MainImageUrl, product.Price, IsDiscountActive(product) ? product.DiscountPrice : null, product.DiscountStartDate, product.DiscountExpiryDate);
         isInWishlist = !isInWishlist;
     }
 
@@ -1272,7 +1278,9 @@
             Name = p.Name,
             ImageUrl = p.MainImageUrl,
             Price = p.Price,
-            DiscountPrice = IsDiscountActive(p) ? p.DiscountPrice : null
+            DiscountPrice = IsDiscountActive(p) ? p.DiscountPrice : null,
+            DiscountStartDate = p.DiscountStartDate,
+            DiscountExpiryDate = p.DiscountExpiryDate
         });
         _recentItems = await RecentSvc.GetItemsAsync();
         StateHasChanged();
@@ -1342,7 +1350,7 @@
 
     private string BuildProductJsonLd(ProductDto product)
     {
-        var price = IsDiscountActive(product) ? product.DiscountPrice!.Value : product.Price;
+        var price = DiscountHelper.GetEffectivePrice(product);
         var images = GetAllImages();
         var baseUrl = Nav.BaseUri.TrimEnd('/');
 
@@ -1372,6 +1380,8 @@
         {
             var offers = productSchema["offers"] as Dictionary<string, object?>;
             offers!["priceValidUntil"] = product.DiscountExpiryDate.Value.ToString("yyyy-MM-dd");
+            if (product.DiscountStartDate.HasValue)
+                offers!["priceValidFrom"] = product.DiscountStartDate.Value.ToString("yyyy-MM-dd");
         }
 
         var breadcrumb = new Dictionary<string, object?>

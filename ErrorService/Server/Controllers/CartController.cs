@@ -67,7 +67,7 @@ public class CartController : ControllerBase
                         ProductId = clientItem.ProductId,
                         ProductName = product.Name,
                         ImageUrl = product.MainImageUrl,
-                        Price = product.DiscountPrice ?? product.Price,
+                        Price = DiscountHelper.IsActive(product) ? product.DiscountPrice!.Value : product.Price,
                         Quantity = clientItem.Quantity
                     });
                 }
@@ -102,7 +102,7 @@ public class CartController : ControllerBase
                 ProductId = item.ProductId,
                 ProductName = product.Name,
                 ImageUrl = product.MainImageUrl,
-                Price = product.DiscountPrice ?? product.Price,
+                Price = DiscountHelper.IsActive(product) ? product.DiscountPrice!.Value : product.Price,
                 Quantity = item.Quantity
             });
         }

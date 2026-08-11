@@ -60,17 +60,49 @@
                                 <ValidationMessage For="@(() => model.Price)" class="text-danger small" />
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label fw-bold">قیمت با تخفیف (اختیاری)</label>
-                                <input type="text" class="form-control rounded-3 price-input-ltr" id="discount-price-input"
-                                       value="@(model.DiscountPrice.HasValue ? model.DiscountPrice.Value.ToString("N0") : "")" />
+                                <label class="form-label fw-bold">نوع تخفیف</label>
+                                <div class="d-flex gap-3 flex-wrap align-items-center pt-1">
+                                    <label class="form-check form-check-inline m-0">
+                                        <input type="radio" class="form-check-input" name="discountType" value="" checked="@(discountTypeInput == DiscountTypeNone)" @onchange="() => SetDiscountType(DiscountTypeNone)" />
+                                        <span class="form-check-label small fw-bold">بدون تخفیف</span>
+                                    </label>
+                                    <label class="form-check form-check-inline m-0">
+                                        <input type="radio" class="form-check-input" name="discountType" value="permanent" checked="@(discountTypeInput == DiscountTypePermanent)" @onchange="() => SetDiscountType(DiscountTypePermanent)" />
+                                        <span class="form-check-label small fw-bold">دائمی</span>
+                                    </label>
+                                    <label class="form-check form-check-inline m-0">
+                                        <input type="radio" class="form-check-input" name="discountType" value="timed" checked="@(discountTypeInput == DiscountTypeTimed)" @onchange="() => SetDiscountType(DiscountTypeTimed)" />
+                                        <span class="form-check-label small fw-bold">زمان‌دار</span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
-                        <div class="row g-3 mt-2">
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">تاریخ پایان تخفیف (اختیاری)</label>
-                                <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="discountExpiryInput" />
-                                <div class="text-muted small mt-1">در صورت خالی بودن، تخفیف بدون تاریخ پایان خواهد بود.</div>
+                        @if (discountTypeInput == "permanent" || discountTypeInput == "timed")
+                        {
+                            <div class="row g-3 mt-2">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">قیمت با تخفیف</label>
+                                    <input type="text" class="form-control rounded-3 price-input-ltr" id="discount-price-input"
+                                           value="@(model.DiscountPrice.HasValue ? model.DiscountPrice.Value.ToString("N0") : "")" />
+                                </div>
                             </div>
+                        }
+                        @if (discountTypeInput == "timed")
+                        {
+                            <div class="row g-3 mt-2">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">تاریخ شروع تخفیف</label>
+                                    <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="discountStartInput" />
+                                    <div class="text-muted small mt-1">در صورت خالی بودن، از همین حالا فعال است.</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">تاریخ پایان تخفیف <span class="text-danger">*</span></label>
+                                    <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="discountExpiryInput" />
+                                    <div class="text-muted small mt-1">پس از این تاریخ، قیمت اصلی نمایش داده می‌شود.</div>
+                                </div>
+                            </div>
+                        }
+                        <div class="row g-3 mt-2">
                             <div class="col-md-6">
                                 <label class="form-label fw-bold">تاریخ و ساعت ایجاد محصول</label>
                                 <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="createdAtInput" />
@@ -248,14 +280,39 @@
                         <div class="product-card__row">
                             <span class="product-card__label">قیمت</span>
                             <span class="product-card__value">
-                                @if (prod.DiscountPrice.HasValue)
+                                @if (DiscountHelper.IsActive(prod))
                                 {
                                     <span class="text-decoration-line-through text-muted ms-2" style="font-size:0.75rem;">@prod.Price.ToString("N0")</span>
-                                    <span class="fw-bold text-success">@prod.DiscountPrice.Value.ToString("N0") <small>تومان</small></span>
+                                    <span class="fw-bold text-success">@DiscountHelper.GetEffectivePrice(prod).ToString("N0") <small>تومان</small></span>
                                 }
                                 else
                                 {
                                     <span class="fw-bold">@prod.Price.ToString("N0") <small>تومان</small></span>
+                                }
+                            </span>
+                        </div>
+                        <div class="product-card__row">
+                            <span class="product-card__label">تخفیف</span>
+                            <span class="product-card__value">
+                                @if (DiscountHelper.IsTimedActive(prod))
+                                {
+                                    <span class="badge bg-primary rounded-pill">زمان‌دار تا @prod.DiscountExpiryDate!.Value.ToString("yyyy/MM/dd HH:mm")</span>
+                                }
+                                else if (DiscountHelper.IsPermanentActive(prod))
+                                {
+                                    <span class="badge bg-info text-dark rounded-pill">دائمی</span>
+                                }
+                                else if (DiscountHelper.IsExpired(prod))
+                                {
+                                    <span class="badge bg-danger rounded-pill">منقضی</span>
+                                }
+                                else if (DiscountHelper.IsScheduled(prod))
+                                {
+                                    <span class="badge bg-secondary rounded-pill">شروع نشده</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted small">—</span>
                                 }
                             </span>
                         </div>
@@ -544,7 +601,12 @@
     private bool isSaving = false;
     private bool isUploading = false;
     private string createdAtInput = string.Empty;
+    private string discountStartInput = string.Empty;
     private string discountExpiryInput = string.Empty;
+    private string discountTypeInput = "";
+    private const string DiscountTypeNone = "";
+    private const string DiscountTypePermanent = "permanent";
+    private const string DiscountTypeTimed = "timed";
     private DotNetObjectReference<Products>? objRef;
     private bool _tinyInitialized;
 
@@ -677,6 +739,8 @@
         editingId = 0;
         model = new ProductUpsertRequest { IsAvailable = true, StockQuantity = 0 };
         createdAtInput = PersianDate.ToJalaliDateTime(DateTimeOffset.Now);
+        discountTypeInput = "";
+        discountStartInput = string.Empty;
         discountExpiryInput = string.Empty;
         showEditor = true;
     }
@@ -691,6 +755,7 @@
             Description = prod.Description,
             Price = prod.Price,
             DiscountPrice = prod.DiscountPrice,
+            DiscountStartDate = prod.DiscountStartDate,
             DiscountExpiryDate = prod.DiscountExpiryDate,
             MainImageUrl = prod.MainImageUrl,
             ImageUrl2 = prod.ImageUrl2,
@@ -705,12 +770,16 @@
             RelatedProductIds = prod.RelatedProductIds
         };
         createdAtInput = PersianDate.ToJalaliDateTime(prod.CreatedAt);
+        discountTypeInput = prod.DiscountExpiryDate.HasValue ? "timed" : (prod.DiscountPrice.HasValue ? "permanent" : "");
+        discountStartInput = prod.DiscountStartDate.HasValue ? PersianDate.ToJalaliDateTime(prod.DiscountStartDate.Value) : string.Empty;
         discountExpiryInput = prod.DiscountExpiryDate.HasValue ? PersianDate.ToJalaliDateTime(prod.DiscountExpiryDate.Value) : string.Empty;
         showEditor = true;
         showTechnical = true;
     }
 
     private void CloseEditor() => showEditor = false;
+
+    private void SetDiscountType(string type) => discountTypeInput = type;
 
     private async Task SaveProduct()
     {
@@ -719,19 +788,63 @@
         {
             var priceRaw = await JS.InvokeAsync<string>("getPriceRawValue", "price-input");
             if (int.TryParse(priceRaw, out var priceVal)) model.Price = priceVal;
-            var discountRaw = await JS.InvokeAsync<string>("getPriceRawValue", "discount-price-input");
-            if (int.TryParse(discountRaw, out var discountVal)) model.DiscountPrice = discountVal;
-            else model.DiscountPrice = null;
+
+            if (discountTypeInput == "permanent" || discountTypeInput == "timed")
+            {
+                var discountRaw = await JS.InvokeAsync<string>("getPriceRawValue", "discount-price-input");
+                if (int.TryParse(discountRaw, out var discountVal))
+                {
+                    model.DiscountPrice = discountVal;
+                    if (discountVal >= model.Price && model.Price > 0)
+                    {
+                        ToastService.ShowError("قیمت با تخفیف باید کمتر از قیمت اصلی باشد");
+                        return;
+                    }
+                }
+                else
+                {
+                    ToastService.ShowError("برای تخفیف، قیمت با تخفیف الزامی است");
+                    return;
+                }
+            }
+            else
+            {
+                model.DiscountPrice = null;
+                model.DiscountStartDate = null;
+                model.DiscountExpiryDate = null;
+            }
+
+            if (discountTypeInput == "timed")
+            {
+                if (PersianDate.TryParseJalaliDateTime(discountExpiryInput, out var discountExpiry))
+                    model.DiscountExpiryDate = discountExpiry;
+                else
+                {
+                    ToastService.ShowError("برای تخفیف زمان‌دار، تاریخ پایان الزامی است");
+                    return;
+                }
+
+                if (PersianDate.TryParseJalaliDateTime(discountStartInput, out var discountStart))
+                    model.DiscountStartDate = discountStart;
+                else
+                    model.DiscountStartDate = null;
+
+                if (model.DiscountStartDate.HasValue && model.DiscountExpiryDate.Value <= model.DiscountStartDate.Value)
+                {
+                    ToastService.ShowError("تاریخ پایان باید بعد از تاریخ شروع باشد");
+                    return;
+                }
+            }
+            else if (discountTypeInput == "permanent")
+            {
+                model.DiscountStartDate = null;
+                model.DiscountExpiryDate = null;
+            }
 
             if (PersianDate.TryParseJalaliDateTime(createdAtInput, out var createdAt))
                 model.CreatedAt = createdAt;
             else
                 model.CreatedAt = null;
-
-            if (PersianDate.TryParseJalaliDateTime(discountExpiryInput, out var discountExpiry))
-                model.DiscountExpiryDate = discountExpiry;
-            else
-                model.DiscountExpiryDate = null;
 
             model.Description = await JS.InvokeAsync<string>("getTinyContent", "#tiny-editor-product");
 

@@ -2,6 +2,51 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ErrorService.Shared;
 
+public interface IDiscountInfo
+{
+    decimal Price { get; }
+    decimal? DiscountPrice { get; }
+    DateTimeOffset? DiscountStartDate { get; }
+    DateTimeOffset? DiscountExpiryDate { get; }
+}
+
+public static class DiscountHelper
+{
+    public static bool IsActive(IDiscountInfo p)
+    {
+        if (p.DiscountPrice == null) return false;
+        var now = DateTimeOffset.Now;
+        if (p.DiscountStartDate.HasValue && p.DiscountStartDate.Value > now) return false;
+        if (p.DiscountExpiryDate.HasValue && p.DiscountExpiryDate.Value <= now) return false;
+        return true;
+    }
+
+    public static bool IsTimedActive(IDiscountInfo p)
+        => IsActive(p) && p.DiscountExpiryDate.HasValue;
+
+    public static bool IsPermanentActive(IDiscountInfo p)
+        => IsActive(p) && !p.DiscountExpiryDate.HasValue;
+
+    public static bool IsExpired(IDiscountInfo p)
+        => p.DiscountPrice != null && p.DiscountExpiryDate.HasValue && p.DiscountExpiryDate.Value <= DateTimeOffset.Now;
+
+    public static bool IsScheduled(IDiscountInfo p)
+        => p.DiscountPrice != null && p.DiscountStartDate.HasValue && p.DiscountStartDate.Value > DateTimeOffset.Now;
+
+    public static decimal GetEffectivePrice(IDiscountInfo p)
+        => IsActive(p) && p.DiscountPrice.HasValue ? p.DiscountPrice.Value : p.Price;
+
+    public static TimeSpan? GetRemaining(IDiscountInfo p)
+        => IsTimedActive(p) ? p.DiscountExpiryDate!.Value - DateTimeOffset.Now : null;
+
+    public static int CalculatePercent(IDiscountInfo p)
+    {
+        if (!IsActive(p) || p.Price <= 0) return 0;
+        var percent = (int)Math.Round((p.Price - p.DiscountPrice!.Value) / p.Price * 100);
+        return percent < 0 ? 0 : percent;
+    }
+}
+
 public class CategoryDto
 {
     public int Id { get; set; }
@@ -10,7 +55,7 @@ public class CategoryDto
     public int SortOrder { get; set; }
 }
 
-public class ProductDto
+public class ProductDto : IDiscountInfo
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
@@ -19,6 +64,7 @@ public class ProductDto
     public string? Description { get; set; }
     public decimal Price { get; set; }
     public decimal? DiscountPrice { get; set; }
+    public DateTimeOffset? DiscountStartDate { get; set; }
     public DateTimeOffset? DiscountExpiryDate { get; set; }
     public string? MainImageUrl { get; set; }
     public string? ImageUrl2 { get; set; }
@@ -50,6 +96,7 @@ public class ProductUpsertRequest
     public decimal Price { get; set; }
 
     public decimal? DiscountPrice { get; set; }
+    public DateTimeOffset? DiscountStartDate { get; set; }
     public DateTimeOffset? DiscountExpiryDate { get; set; }
     public string? MainImageUrl { get; set; }
     public string? ImageUrl2 { get; set; }

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using ErrorService.Shared;
 
 namespace ErrorService.Server.Models;
 
@@ -19,7 +20,7 @@ public class Category
     public ICollection<Product> Products { get; set; } = new List<Product>();
 }
 
-public class Product
+public class Product : IDiscountInfo
 {
     public int Id { get; set; }
 
@@ -41,6 +42,8 @@ public class Product
 
     [Column(TypeName = "decimal(18,2)")]
     public decimal? DiscountPrice { get; set; }
+
+    public DateTimeOffset? DiscountStartDate { get; set; }
 
     public DateTimeOffset? DiscountExpiryDate { get; set; }
 

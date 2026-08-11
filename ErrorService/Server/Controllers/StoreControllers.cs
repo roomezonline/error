@@ -242,6 +242,7 @@ public class ProductsController : ControllerBase
         int? categoryId = null,
         bool onlyAvailable = false,
         bool onlyDiscounted = false,
+        bool timedOnly = false,
         string? search = null,
         decimal? minPrice = null,
         decimal? maxPrice = null,
@@ -250,6 +251,7 @@ public class ProductsController : ControllerBase
         int take = 10)
     {
         var query = _context.Products.Include(p => p.Category).AsQueryable();
+        var now = DateTimeOffset.UtcNow;
 
         if (categoryId.HasValue)
             query = query.Where(p => p.CategoryId == categoryId.Value);
@@ -259,8 +261,16 @@ public class ProductsController : ControllerBase
 
         if (onlyDiscounted)
         {
-            var now = DateTimeOffset.Now;
-            query = query.Where(p => p.DiscountPrice != null && p.DiscountExpiryDate != null && p.DiscountExpiryDate > now);
+            query = query.Where(p => p.DiscountPrice != null
+                && (!p.DiscountStartDate.HasValue || p.DiscountStartDate.Value <= now)
+                && (!p.DiscountExpiryDate.HasValue || p.DiscountExpiryDate.Value > now));
+        }
+
+        if (timedOnly)
+        {
+            query = query.Where(p => p.DiscountPrice != null
+                && p.DiscountExpiryDate.HasValue && p.DiscountExpiryDate.Value > now
+                && (!p.DiscountStartDate.HasValue || p.DiscountStartDate.Value <= now));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -269,14 +279,13 @@ public class ProductsController : ControllerBase
             query = query.Where(p => p.Name.Contains(s) || (p.Description != null && p.Description.Contains(s)));
         }
 
-        if (minPrice.HasValue)
+        if (minPrice.HasValue || maxPrice.HasValue)
         {
-            query = query.Where(p => (p.DiscountPrice ?? p.Price) >= minPrice.Value);
-        }
-
-        if (maxPrice.HasValue)
-        {
-            query = query.Where(p => (p.DiscountPrice ?? p.Price) <= maxPrice.Value);
+            query = query.Where(p => p.DiscountPrice != null
+                && (!p.DiscountStartDate.HasValue || p.DiscountStartDate.Value <= now)
+                && (!p.DiscountExpiryDate.HasValue || p.DiscountExpiryDate.Value > now)
+                    ? (p.DiscountPrice.Value >= (minPrice ?? 0) && (maxPrice == null || p.DiscountPrice.Value <= maxPrice))
+                    : (p.Price >= (minPrice ?? 0) && (maxPrice == null || p.Price <= maxPrice)));
         }
 
         var totalCount = await query.CountAsync();
@@ -284,10 +293,19 @@ public class ProductsController : ControllerBase
 
         query = sort?.ToLowerInvariant() switch
         {
-            "price_asc" => query.OrderBy(p => p.DiscountPrice ?? p.Price).ThenByDescending(p => p.CreatedAt),
-            "price_desc" => query.OrderByDescending(p => p.DiscountPrice ?? p.Price).ThenByDescending(p => p.CreatedAt),
+            "price_asc" => query.OrderBy(p => p.DiscountPrice != null
+                && (!p.DiscountStartDate.HasValue || p.DiscountStartDate.Value <= now)
+                && (!p.DiscountExpiryDate.HasValue || p.DiscountExpiryDate.Value > now)
+                    ? p.DiscountPrice.Value : p.Price).ThenByDescending(p => p.CreatedAt),
+            "price_desc" => query.OrderByDescending(p => p.DiscountPrice != null
+                && (!p.DiscountStartDate.HasValue || p.DiscountStartDate.Value <= now)
+                && (!p.DiscountExpiryDate.HasValue || p.DiscountExpiryDate.Value > now)
+                    ? p.DiscountPrice.Value : p.Price).ThenByDescending(p => p.CreatedAt),
             "discount_desc" => query
-                .OrderByDescending(p => p.DiscountPrice != null ? (p.Price - p.DiscountPrice.Value) : 0)
+                .OrderByDescending(p => p.DiscountPrice != null
+                    && (!p.DiscountStartDate.HasValue || p.DiscountStartDate.Value <= now)
+                    && (!p.DiscountExpiryDate.HasValue || p.DiscountExpiryDate.Value > now)
+                        ? (p.Price - p.DiscountPrice.Value) : 0)
                 .ThenByDescending(p => p.CreatedAt),
             _ => query.OrderByDescending(p => p.CreatedAt)
         };
@@ -304,6 +322,7 @@ public class ProductsController : ControllerBase
                 Description = p.Description,
                 Price = p.Price,
                 DiscountPrice = p.DiscountPrice,
+                DiscountStartDate = p.DiscountStartDate,
                 DiscountExpiryDate = p.DiscountExpiryDate,
                 MainImageUrl = p.MainImageUrl,
                 ImageUrl2 = p.ImageUrl2,
@@ -338,6 +357,7 @@ public class ProductsController : ControllerBase
                 Description = p.Description,
                 Price = p.Price,
                 DiscountPrice = p.DiscountPrice,
+                DiscountStartDate = p.DiscountStartDate,
                 DiscountExpiryDate = p.DiscountExpiryDate,
                 MainImageUrl = p.MainImageUrl,
                 ImageUrl2 = p.ImageUrl2,
@@ -378,6 +398,7 @@ public class ProductsController : ControllerBase
                 Description = p.Description,
                 Price = p.Price,
                 DiscountPrice = p.DiscountPrice,
+                DiscountStartDate = p.DiscountStartDate,
                 DiscountExpiryDate = p.DiscountExpiryDate,
                 MainImageUrl = p.MainImageUrl,
                 ImageUrl2 = p.ImageUrl2,
@@ -417,6 +438,7 @@ public class ProductsController : ControllerBase
             Description = request.Description,
             Price = request.Price,
             DiscountPrice = request.DiscountPrice,
+            DiscountStartDate = request.DiscountStartDate,
             DiscountExpiryDate = request.DiscountExpiryDate,
             MainImageUrl = request.MainImageUrl,
             ImageUrl2 = request.ImageUrl2,
@@ -457,6 +479,7 @@ public class ProductsController : ControllerBase
         product.Description = request.Description;
         product.Price = request.Price;
         product.DiscountPrice = request.DiscountPrice;
+        product.DiscountStartDate = request.DiscountStartDate;
         product.DiscountExpiryDate = request.DiscountExpiryDate;
         product.Slug = await SlugService.ResolveForUpdateAsync(
             _context.Products.Where(p => p.Slug != null && p.Id != id).Select(p => p.Slug!),

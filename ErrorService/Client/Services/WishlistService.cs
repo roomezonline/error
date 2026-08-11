@@ -1,14 +1,17 @@
+using ErrorService.Shared;
 using Microsoft.JSInterop;
 
 namespace ErrorService.Client.Services;
 
-public sealed class WishlistItem
+public sealed class WishlistItem : IDiscountInfo
 {
     public int ProductId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? ImageUrl { get; set; }
     public decimal Price { get; set; }
     public decimal? DiscountPrice { get; set; }
+    public DateTimeOffset? DiscountStartDate { get; set; }
+    public DateTimeOffset? DiscountExpiryDate { get; set; }
 }
 
 public sealed class WishlistService
@@ -50,7 +53,8 @@ public sealed class WishlistService
         return items.Count;
     }
 
-    public async Task ToggleAsync(int productId, string name, string? imageUrl, decimal price, decimal? discountPrice)
+    public async Task ToggleAsync(int productId, string name, string? imageUrl, decimal price, decimal? discountPrice,
+        DateTimeOffset? discountStartDate = null, DateTimeOffset? discountExpiryDate = null)
     {
         var items = await GetItemsAsync();
         var existing = items.FirstOrDefault(x => x.ProductId == productId);
@@ -66,7 +70,9 @@ public sealed class WishlistService
                 Name = name,
                 ImageUrl = imageUrl,
                 Price = price,
-                DiscountPrice = discountPrice
+                DiscountPrice = discountPrice,
+                DiscountStartDate = discountStartDate,
+                DiscountExpiryDate = discountExpiryDate
             });
         }
         await PersistAsync(items);

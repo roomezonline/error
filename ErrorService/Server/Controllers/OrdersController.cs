@@ -142,7 +142,6 @@ public sealed class OrdersController : ControllerBase
         var now = DateTimeOffset.UtcNow;
         var orderItems = new List<OrderItem>();
         decimal totalAmount = 0;
-
         string? provinceName = null;
         string? cityName = null;
         if (request.ProvinceId.HasValue)
@@ -160,8 +159,8 @@ public sealed class OrdersController : ControllerBase
             if (!product.IsAvailable || product.StockQuantity < item.Quantity)
                 return BadRequest($"موجودی «{product.Name}» کافی نیست. موجودی فعلی: {product.StockQuantity}");
 
-            var effectivePrice = product.DiscountPrice.HasValue && product.DiscountExpiryDate.HasValue && product.DiscountExpiryDate > now
-                ? product.DiscountPrice.Value
+            var effectivePrice = DiscountHelper.IsActive(product)
+                ? product.DiscountPrice!.Value
                 : product.Price;
 
             totalAmount += effectivePrice * item.Quantity;

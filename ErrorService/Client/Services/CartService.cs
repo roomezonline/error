@@ -111,7 +111,7 @@ public class CartService
                 ProductId = product.Id,
                 Name = product.Name,
                 ImageUrl = product.MainImageUrl,
-                Price = product.DiscountPrice ?? product.Price,
+                Price = DiscountHelper.GetEffectivePrice(product),
                 Quantity = quantity
             });
         }

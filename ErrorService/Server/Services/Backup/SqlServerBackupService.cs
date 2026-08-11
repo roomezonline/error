@@ -10,11 +10,13 @@ public sealed class SqlServerBackupService : IBackupService
 {
     private readonly IServiceProvider _services;
     private readonly ILogger<SqlServerBackupService> _logger;
+    private readonly IWebHostEnvironment _env;
 
-    public SqlServerBackupService(IServiceProvider services, ILogger<SqlServerBackupService> logger)
+    public SqlServerBackupService(IServiceProvider services, ILogger<SqlServerBackupService> logger, IWebHostEnvironment env)
     {
         _services = services;
         _logger = logger;
+        _env = env;
     }
 
     public string GetBackupDirectory()
@@ -25,8 +27,11 @@ public sealed class SqlServerBackupService : IBackupService
         var path = settings?.BackupPath ?? "backups";
         if (!Path.IsPathRooted(path))
         {
-            var baseDir = AppContext.BaseDirectory;
-            path = Path.Combine(baseDir, path);
+            var webRoot = _env.WebRootPath;
+            if (!string.IsNullOrEmpty(webRoot))
+                path = Path.Combine(webRoot, path);
+            else
+                path = Path.Combine(AppContext.BaseDirectory, path);
         }
         Directory.CreateDirectory(path);
         return path;

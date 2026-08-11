@@ -4,16 +4,19 @@ using ErrorService.Server.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace ErrorService.Server.Data.Migrations
+namespace ErrorService.Server.Migrations
 {
     [DbContext(typeof(ErrorServiceDbContext))]
-    partial class ErrorServiceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260811182054_AddDiscountStartDate")]
+    partial class AddDiscountStartDate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

@@ -1,5 +1,6 @@
 using Microsoft.JSInterop;
 using System.Text.Json;
+using ErrorService.Shared;
 
 namespace ErrorService.Client.Services;
 
@@ -55,7 +56,7 @@ public sealed class RecentlyViewedService
     }
 }
 
-public sealed class RecentlyViewedItem
+public sealed class RecentlyViewedItem : IDiscountInfo
 {
     public int Id { get; set; }
     public string? Slug { get; set; }
@@ -63,4 +64,6 @@ public sealed class RecentlyViewedItem
     public string? ImageUrl { get; set; }
     public decimal Price { get; set; }
     public decimal? DiscountPrice { get; set; }
+    public DateTimeOffset? DiscountStartDate { get; set; }
+    public DateTimeOffset? DiscountExpiryDate { get; set; }
 }
