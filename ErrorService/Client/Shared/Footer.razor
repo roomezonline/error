@@ -1,17 +1,46 @@
 @using ErrorService.Shared.Models
 @using System.Net.Http.Json
+@using Microsoft.JSInterop
 @inject HttpClient Http
 @inject NavigationManager Nav
+@inject IJSRuntime JSRuntime
 
 @if (footer != null)
 {
     <footer class="site-footer" dir="rtl">
-        <!-- Main Footer -->
+        <!-- Newsletter band -->
+        <div class="footer-newsletter">
+            <div class="container-fluid px-3 px-md-4">
+                <div class="nl-row">
+                    <div class="nl-info">
+                        <span class="nl-icon">📬</span>
+                        <div>
+                            <h4 class="nl-title">از تخفیف‌ها و محصولات جدید باخبر شوید</h4>
+                            <p class="nl-sub">با عضویت در خبرنامه ارورسرویس، اولین نفری باشید که از پیشنهادهای ویژه مطلع می‌شوید.</p>
+                        </div>
+                    </div>
+                    <div class="nl-form-wrap">
+                        <div class="nl-input-group">
+                            <input type="email" class="nl-input" placeholder="ایمیل خود را وارد کنید..." @bind="newsletterEmail" @bind:event="oninput" />
+                            <button class="nl-btn" @onclick="SubscribeNewsletter" disabled="@newsletterBusy">
+                                @if (newsletterBusy) { <span class="spinner-border spinner-border-sm"></span> }
+                                else { <span>عضویت</span> }
+                            </button>
+                        </div>
+                        @if (!string.IsNullOrEmpty(newsletterMsg))
+                        {
+                            <div class="nl-msg mt-2 @(newsletterIsError ? "text-danger" : "text-success")">@newsletterMsg</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main columns -->
         <div class="footer-main">
             <div class="container-fluid px-3 px-md-4">
-                <div class="row g-4">
-                    <!-- Company Info Column -->
-                    <div class="col-lg-4 col-md-6">
+                <div class="footer-grid">
+                    <div class="footer-brand-col">
                         <div class="footer-brand">
                             @if (!string.IsNullOrEmpty(footer.LogoUrl))
                             {
@@ -29,73 +58,83 @@
                                 <p class="footer-desc">@footer.CompanyDescription</p>
                             }
                         </div>
-                        
-                        <!-- Contact Info -->
-                        <div class="footer-contact">
-                            @if (!string.IsNullOrEmpty(footer.PhoneNumber1))
-                            {
-                                <a href="tel:@footer.PhoneNumber1" class="contact-item">
-                                    <span class="contact-icon"><span class="oi oi-phone"></span></span>
-                                    <span>@footer.PhoneNumber1</span>
-                                </a>
-                            }
-                            @if (!string.IsNullOrEmpty(footer.WhatsAppNumber))
-                            {
-                                <a href="https://wa.me/@(footer.WhatsAppNumber.TrimStart('+', '0'))" target="_blank" class="contact-item">
-                                    <span class="contact-icon whatsapp"><span class="oi oi-comment-square"></span></span>
-                                    <span>واتساپ: @footer.WhatsAppNumber</span>
-                                </a>
-                            }
-                            @if (!string.IsNullOrEmpty(footer.Email))
-                            {
-                                <a href="mailto:@footer.Email" class="contact-item">
-                                    <span class="contact-icon"><span class="oi oi-envelope-closed"></span></span>
-                                    <span>@footer.Email</span>
-                                </a>
-                            }
-                            @if (!string.IsNullOrEmpty(footer.Address))
-                            {
-                                <div class="contact-item">
-                                    <span class="contact-icon"><span class="oi oi-map-marker"></span></span>
-                                    <span>@footer.Address</span>
+
+                        @if (HasSocial)
+                        {
+                            <div class="footer-social">
+                                <span class="social-label">ما را دنبال کنید</span>
+                                <div class="social-links">
+                                    @if (!string.IsNullOrEmpty(footer.InstagramUrl))
+                                    {
+                                        <a href="@footer.InstagramUrl" target="_blank" rel="noopener" class="social-link instagram" title="اینستاگرام">
+                                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163-4.947.072C2.695 2.272.273 4.69.073 9.052.014 10.333 0 10.741 0 12s.014 1.668.073 2.948c.2 4.36 2.618 6.78 6.98 6.98 1.28.058 1.688.072 4.947.072s3.668-.014 4.948-.072c4.355-.2 6.78-2.618 6.979-6.98.059-1.28.073-1.688.073-4.948s-.014-3.667-.073-4.947c-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
+                                        </a>
+                                    }
+                                    @if (!string.IsNullOrEmpty(footer.TelegramUrl))
+                                    {
+                                        <a href="@footer.TelegramUrl" target="_blank" rel="noopener" class="social-link telegram" title="تلگرام">
+                                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                                        </a>
+                                    }
+                                    @if (!string.IsNullOrEmpty(footer.YouTubeUrl))
+                                    {
+                                        <a href="@footer.YouTubeUrl" target="_blank" rel="noopener" class="social-link youtube" title="یوتیوب">
+                                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                                        </a>
+                                    }
+                                    @if (!string.IsNullOrEmpty(footer.LinkedInUrl))
+                                    {
+                                        <a href="@footer.LinkedInUrl" target="_blank" rel="noopener" class="social-link linkedin" title="لینکدین">
+                                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                                        </a>
+                                    }
+                                    @if (!string.IsNullOrEmpty(footer.WhatsAppNumber))
+                                    {
+                                        <a href="https://wa.me/@(footer.WhatsAppNumber.TrimStart('+', '0'))" target="_blank" rel="noopener" class="social-link whatsapp" title="واتساپ">
+                                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c.297.149 1.758.867 2.03.967.273.099.471.148.67.15.197-.297.767-.966.94-1.164.173-.199.347-.223.644-.075.297.15 1.255.463 2.39 1.475.883.788 1.48 1.761 1.653 2.059.173.297.018.458-.13.606-.134.133-.298.347-.446.52-.149.174-.198.298-.298.497-.099.198-.05.371.025.52.075.149.669-1.612.916-2.207.242.579.487.5.669.51.173.008.371.01.57.01.198 0 .52-.074.792-.372.272-.297 1.04-1.016 1.04-2.479 0-1.462-1.065 2.875-1.213 3.074-.149.198-2.096 3.2-5.077 4.487l-.169-.074 1.169 4.178-.361-.214a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>
+                                        </a>
+                                    }
                                 </div>
-                            }
-                        </div>
+                            </div>
+                        }
+
                     </div>
 
                     <!-- Link Groups -->
                     @foreach (var group in footer.LinkGroups.OrderBy(g => g.SortOrder).Take(3))
                     {
-                        <div class="col-lg-2 col-md-6 col-6">
+                        var groupOpen = IsOpen(group.Id);
+                        <div class="footer-links-col @(groupOpen ? "open" : "")">
                             <div class="footer-links">
-                                <h5 class="footer-title">@group.Title</h5>
-                                <ul class="footer-list">
-                                    @foreach (var link in group.Links.OrderBy(l => l.SortOrder))
-                                    {
-                                        <li>
-                                            @if (link.IsExternal)
-                                            {
-                                                <a href="@link.Url" target="_blank" rel="noopener">
-                                                    @if (!string.IsNullOrEmpty(link.Icon))
-                                                    {
-                                                        <span class="oi @link.Icon me-1"></span>
-                                                    }
-                                                    @link.Title
-                                                </a>
-                                            }
-                                            else
-                                            {
-                                                <a href="@link.Url">
-                                                    @if (!string.IsNullOrEmpty(link.Icon))
-                                                    {
-                                                        <span class="oi @link.Icon me-1"></span>
-                                                    }
-                                                    @link.Title
-                                                </a>
-                                            }
-                                        </li>
-                                    }
-                                </ul>
+                                <button type="button" class="footer-title" @onclick="() => ToggleGroup(group.Id)" aria-expanded="@groupOpen">
+                                    <span>@group.Title</span>
+                                    <span class="title-chev"><span class="oi oi-chevron-bottom"></span></span>
+                                </button>
+                                <div class="footer-list-wrap">
+                                    <ul class="footer-list">
+                                        @foreach (var link in group.Links.OrderBy(l => l.SortOrder))
+                                        {
+                                            <li>
+                                                @if (link.IsExternal)
+                                                {
+                                                    <a href="@link.Url" target="_blank" rel="noopener">
+                                                        @if (!string.IsNullOrEmpty(link.Icon)) { <span class="oi @link.Icon"></span> }
+                                                        @link.Title
+                                                        <span class="link-chev">‹</span>
+                                                    </a>
+                                                }
+                                                else
+                                                {
+                                                    <a href="@link.Url">
+                                                        @if (!string.IsNullOrEmpty(link.Icon)) { <span class="oi @link.Icon"></span> }
+                                                        @link.Title
+                                                        <span class="link-chev">‹</span>
+                                                    </a>
+                                                }
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     }
@@ -103,112 +142,109 @@
             </div>
         </div>
 
-        <!-- Newsletter -->
-        <div class="footer-newsletter py-4" style="background:rgba(0,0,0,0.02);">
-            <div class="container-fluid px-3 px-md-4">
-                <div class="row justify-content-center">
-                    <div class="col-md-6 text-center">
-                        <h5 class="fw-bold mb-2">عضویت در خبرنامه</h5>
-                        <p class="small text-muted mb-3">با عضویت در خبرنامه، از جدیدترین محصولات و تخفیف‌ها باخبر شوید.</p>
-                        <div class="input-group mx-auto" style="max-width:450px;">
-                            <input type="email" class="form-control rounded-start-3" placeholder="ایمیل خود را وارد کنید..." @bind="newsletterEmail" />
-                            <button class="btn btn-primary rounded-end-3" @onclick="SubscribeNewsletter" disabled="@newsletterBusy">
-                                @if (newsletterBusy) { <span class="spinner-border spinner-border-sm"></span> }
-                                else { <span>عضویت</span> }
-                            </button>
-                        </div>
-                        @if (!string.IsNullOrEmpty(newsletterMsg))
+        <!-- Quick contact cards -->
+        @if (HasContact)
+        {
+            <div class="footer-contact-strip">
+                <div class="container-fluid px-3 px-md-4">
+                    <div class="contact-cards">
+                        @if (!string.IsNullOrEmpty(footer.PhoneNumber1))
                         {
-                            <div class="small mt-2 @(newsletterIsError ? "text-danger" : "text-success")">@newsletterMsg</div>
+                            <a href="tel:@footer.PhoneNumber1" class="contact-card">
+                                <span class="cc-icon phone"><span class="oi oi-phone"></span></span>
+                                <span class="cc-body">
+                                    <small>تلفن تماس</small>
+                                    <b dir="ltr">@footer.PhoneNumber1</b>
+                                </span>
+                                <span class="oi oi-chevron-left cc-arrow"></span>
+                            </a>
+                        }
+                        @if (!string.IsNullOrEmpty(footer.WhatsAppNumber))
+                        {
+                            <a href="https://wa.me/@(footer.WhatsAppNumber.TrimStart('+', '0'))" target="_blank" rel="noopener" class="contact-card">
+                                <span class="cc-icon whatsapp"><span class="oi oi-comment-square"></span></span>
+                                <span class="cc-body">
+                                    <small>پشتیبانی واتساپ</small>
+                                    <b dir="ltr">@footer.WhatsAppNumber</b>
+                                </span>
+                                <span class="oi oi-chevron-left cc-arrow"></span>
+                            </a>
+                        }
+                        @if (!string.IsNullOrEmpty(footer.Email))
+                        {
+                            <a href="mailto:@footer.Email" class="contact-card">
+                                <span class="cc-icon mail"><span class="oi oi-envelope-closed"></span></span>
+                                <span class="cc-body">
+                                    <small>ایمیل</small>
+                                    <b>@footer.Email</b>
+                                </span>
+                                <span class="oi oi-chevron-left cc-arrow"></span>
+                            </a>
+                        }
+                        @if (!string.IsNullOrEmpty(footer.Address))
+                        {
+                            <div class="contact-card">
+                                <span class="cc-icon pin"><span class="oi oi-map-marker"></span></span>
+                                <span class="cc-body">
+                                    <small>آدرس فروشگاه</small>
+                                    <b>@footer.Address</b>
+                                </span>
+                            </div>
                         }
                     </div>
                 </div>
             </div>
-        </div>
+        }
 
-        <!-- Trust Badges & Social -->
-        <div class="footer-trust">
-            <div class="container-fluid px-3 px-md-4">
-                <div class="row align-items-center">
-                    <div class="col-md-6">
-                        <!-- Social Links -->
-                        <div class="footer-social">
-                            <span class="social-label">ما را دنبال کنید:</span>
-                            <div class="social-links">
-                                @if (!string.IsNullOrEmpty(footer.InstagramUrl))
-                                {
-                                    <a href="@footer.InstagramUrl" target="_blank" rel="noopener" class="social-link instagram" title="اینستاگرام">
-                                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
-                                    </a>
-                                }
-                                @if (!string.IsNullOrEmpty(footer.TelegramUrl))
-                                {
-                                    <a href="@footer.TelegramUrl" target="_blank" rel="noopener" class="social-link telegram" title="تلگرام">
-                                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
-                                    </a>
-                                }
-                                @if (!string.IsNullOrEmpty(footer.YouTubeUrl))
-                                {
-                                    <a href="@footer.YouTubeUrl" target="_blank" rel="noopener" class="social-link youtube" title="یوتیوب">
-                                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-                                    </a>
-                                }
-                                @if (!string.IsNullOrEmpty(footer.LinkedInUrl))
-                                {
-                                    <a href="@footer.LinkedInUrl" target="_blank" rel="noopener" class="social-link linkedin" title="لینکدین">
-                                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-                                    </a>
-                                }
+        @if (HasAnyBadge)
+        {
+            <div class="footer-trust">
+                <div class="container-fluid px-3 px-md-4">
+                    <div class="trust-badges">
+                        @if (!string.IsNullOrEmpty(footer.EnamadCode))
+                        {
+                            <div class="trust-badge">
+                                <img src="https://trustseal.enamad.ir/logo.aspx?id=@footer.EnamadCode&Code=@footer.EnamadCode"
+                                     alt="نماد اعتماد الکترونیک" loading="lazy" />
                             </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <!-- Trust Badges -->
-                        <div class="trust-badges">
-                            @if (!string.IsNullOrEmpty(footer.EnamadCode))
-                            {
-                                <div class="trust-badge">
-                                    <img src="https://trustseal.enamad.ir/logo.aspx?id=@footer.EnamadCode&Code=@footer.EnamadCode" 
-                                         alt="نماد اعتماد الکترونیک" loading="lazy" />
-                                </div>
-                            }
-                            @if (!string.IsNullOrEmpty(footer.SamandehiCode))
-                            {
-                                <div class="trust-badge">
-                                    <img src="https://logo.samandehi.ir/logo.aspx?id=@footer.SamandehiCode&Code=@footer.SamandehiCode" 
-                                         alt="ساماندهی" loading="lazy" />
-                                </div>
-                            }
-                            @if (!string.IsNullOrEmpty(footer.EtaCode))
-                            {
-                                <div class="trust-badge eta-badge">
-                                    <span class="badge-icon">کسب‌وکار اینترنتی</span>
-                                    <span class="badge-code">@footer.EtaCode</span>
-                                </div>
-                            }
-                        </div>
+                        }
+                        @if (!string.IsNullOrEmpty(footer.SamandehiCode))
+                        {
+                            <div class="trust-badge">
+                                <img src="https://logo.samandehi.ir/logo.aspx?id=@footer.SamandehiCode&Code=@footer.SamandehiCode"
+                                     alt="ساماندهی" loading="lazy" />
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(footer.EtaCode))
+                        {
+                            <div class="trust-badge eta-badge">
+                                <span class="badge-icon">کسب‌وکار اینترنتی</span>
+                                <span class="badge-code">@footer.EtaCode</span>
+                            </div>
+                        }
                     </div>
                 </div>
             </div>
-        </div>
+        }
 
-        <!-- Copyright -->
-        <div class="footer-copyright">
+        <!-- Bottom bar -->
+        <div class="footer-bottom">
             <div class="container-fluid px-3 px-md-4">
-                <div class="row align-items-center">
-                    <div class="col-md-6">
-                        <p class="copyright-text">@footer.CopyrightText</p>
-                    </div>
-                    <div class="col-md-6">
+                <div class="bottom-bar">
+                    <p class="copyright-text">@footer.CopyrightText</p>
+                    <div class="bottom-actions">
                         <div class="copyright-links">
                             <a href="/privacy">حریم خصوصی</a>
-                            <span class="separator">|</span>
+                            <span class="separator">•</span>
                             <a href="/terms">شرایط استفاده</a>
-                            <span class="separator">|</span>
+                            <span class="separator">•</span>
                             <a href="/about">درباره ما</a>
-                            <span class="separator">|</span>
+                            <span class="separator">•</span>
                             <a href="/commitment">تعهدنامه</a>
                         </div>
+                        <button class="back-top" @onclick="ScrollTop" title="بازگشت به بالا" aria-label="بازگشت به بالا">
+                            <span class="oi oi-chevron-top"></span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -218,166 +254,221 @@
 
 <style>
     .site-footer {
-        background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-        color: #f1f5f9;
+        position: relative;
+        background: #0b1220;
+        color: #e2e8f0;
         margin-top: auto;
-        overflow-x: hidden;
+        overflow: hidden;
         width: 100%;
+        font-size: 0.92rem;
     }
 
+    .site-footer::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #3b82f6, #22d3ee, #10b981);
+    }
+
+    .site-footer::after {
+        content: "";
+        position: absolute;
+        top: -140px;
+        right: -140px;
+        width: 420px;
+        height: 420px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(59,130,246,0.14), transparent 70%);
+        pointer-events: none;
+    }
+
+    /* Newsletter band */
+    .footer-newsletter {
+        padding: 30px 0;
+        background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(16,185,129,0.08));
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .nl-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        flex-wrap: wrap;
+    }
+
+    .nl-info {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 260px;
+    }
+
+    .nl-icon {
+        font-size: 2rem;
+        line-height: 1;
+    }
+
+    .nl-title {
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: #f8fafc;
+        margin: 0 0 4px;
+    }
+
+    .nl-sub {
+        color: #94a3b8;
+        font-size: 0.85rem;
+        margin: 0;
+    }
+
+    .nl-form-wrap {
+        flex: 1 1 320px;
+        max-width: 460px;
+        min-width: 260px;
+    }
+
+    .nl-input-group {
+        display: flex;
+        background: #0f172a;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 50px;
+        padding: 5px;
+        transition: border-color .2s ease, box-shadow .2s ease;
+    }
+
+    .nl-input-group:focus-within {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+    }
+
+    .nl-input {
+        flex: 1;
+        background: transparent;
+        border: 0;
+        outline: 0;
+        padding: 8px 18px;
+        color: #f8fafc;
+        min-width: 0;
+    }
+
+    .nl-input::placeholder {
+        color: #64748b;
+    }
+
+    .nl-btn {
+        border: 0;
+        border-radius: 50px;
+        padding: 8px 26px;
+        background: linear-gradient(90deg, #3b82f6, #22d3ee);
+        color: #fff;
+        font-weight: 700;
+        white-space: nowrap;
+        transition: filter .2s ease, transform .2s ease;
+    }
+
+    .nl-btn:hover:not(:disabled) {
+        filter: brightness(1.1);
+        transform: translateY(-1px);
+    }
+
+    .nl-btn:disabled {
+        opacity: .7;
+    }
+
+    .nl-msg {
+        font-size: 0.82rem;
+    }
+
+    /* Main columns */
     .footer-main {
-        padding: 60px 0 40px;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
+        position: relative;
+        padding: 56px 0 44px;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .footer-grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 1.5fr) repeat(3, 1fr);
+        gap: 44px 36px;
+        align-items: start;
     }
 
     .footer-brand {
-        margin-bottom: 24px;
+        margin-bottom: 22px;
     }
 
     .footer-logo {
-        height: 50px;
-        margin-bottom: 16px;
+        height: 48px;
+        margin-bottom: 14px;
         filter: brightness(0) invert(1);
     }
 
     .footer-logo-text {
-        font-size: 1.75rem;
+        font-size: 1.7rem;
         font-weight: 800;
         color: #fff;
-        margin-bottom: 16px;
-        display: flex;
+        margin-bottom: 14px;
+        display: inline-flex;
         align-items: center;
+        gap: 8px;
     }
 
     .footer-desc {
         color: #94a3b8;
-        font-size: 0.95rem;
-        line-height: 1.8;
-        max-width: 300px;
-    }
-
-    .footer-contact {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-    }
-
-    .contact-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        color: #cbd5e1;
-        text-decoration: none;
-        font-size: 0.9rem;
-        transition: all 0.2s ease;
-    }
-
-    .contact-item:hover {
-        color: #60a5fa;
-    }
-
-    .contact-icon {
-        width: 36px;
-        height: 36px;
-        border-radius: 10px;
-        background: rgba(255,255,255,0.1);
-        display: grid;
-        place-items: center;
-        color: #60a5fa;
-        font-size: 0.85rem;
-        flex-shrink: 0;
-    }
-
-    .contact-icon.whatsapp {
-        background: rgba(37, 211, 102, 0.15);
-        color: #25d366;
-    }
-
-    .footer-title {
-        font-size: 1rem;
-        font-weight: 700;
-        color: #fff;
-        margin-bottom: 20px;
-        position: relative;
-        padding-bottom: 10px;
-    }
-
-    .footer-title::after {
-        content: '';
-        position: absolute;
-        bottom: 0;
-        right: 0;
-        width: 30px;
-        height: 2px;
-        background: linear-gradient(90deg, #3b82f6, #10b981);
-        border-radius: 2px;
-    }
-
-    .footer-list {
-        list-style: none;
-        padding: 0;
+        line-height: 1.9;
+        max-width: 320px;
         margin: 0;
     }
 
-    .footer-list li {
-        margin-bottom: 10px;
-    }
-
-    .footer-list a {
-        color: #94a3b8;
-        text-decoration: none;
-        font-size: 0.9rem;
-        transition: all 0.2s ease;
-        display: inline-flex;
-        align-items: center;
-    }
-
-    .footer-list a:hover {
-        color: #60a5fa;
-        padding-right: 5px;
-    }
-
-    /* Trust & Social Section */
-    .footer-trust {
-        padding: 30px 0;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-
+    /* Social links */
     .footer-social {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        flex-wrap: wrap;
+        margin-top: 26px;
+        padding-top: 20px;
+        border-top: 1px dashed rgba(255,255,255,0.12);
     }
 
     .social-label {
+        display: block;
         color: #94a3b8;
-        font-size: 0.9rem;
+        font-size: 0.82rem;
+        margin-bottom: 12px;
     }
 
     .social-links {
         display: flex;
-        gap: 12px;
+        gap: 10px;
+        flex-wrap: wrap;
     }
 
     .social-link {
-        width: 40px;
-        height: 40px;
-        border-radius: 12px;
-        background: rgba(255,255,255,0.1);
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
         display: grid;
         place-items: center;
-        color: #fff;
-        transition: all 0.3s ease;
+        color: #cbd5e1;
+        text-decoration: none;
+        transition: all .25s ease;
+        position: relative;
+        overflow: hidden;
     }
 
     .social-link svg {
-        width: 20px;
-        height: 20px;
+        width: 19px;
+        height: 19px;
     }
 
     .social-link:hover {
-        transform: translateY(-3px);
+        transform: translateY(-4px) scale(1.06);
+        color: #fff;
+        border-color: transparent;
+        box-shadow: 0 10px 22px rgba(0,0,0,0.4);
     }
 
     .social-link.instagram:hover {
@@ -396,25 +487,202 @@
         background: #0077b5;
     }
 
+    .social-link.whatsapp:hover {
+        background: #25d366;
+    }
+
+    /* Link groups */
+    .footer-links-col {
+        min-width: 0;
+    }
+
+    .footer-title {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        padding: 0 0 12px;
+        margin-bottom: 20px;
+        background: none;
+        border: 0;
+        text-align: right;
+        font-family: inherit;
+        font-size: 1rem;
+        font-weight: 700;
+        color: #fff;
+        cursor: default;
+    }
+
+    .footer-title::after {
+        content: "";
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 34px;
+        height: 3px;
+        border-radius: 3px;
+        background: linear-gradient(90deg, #3b82f6, #22d3ee);
+    }
+
+    .title-chev {
+        display: none;
+        font-size: 0.7rem;
+        color: #94a3b8;
+        transition: transform .3s ease;
+    }
+
+    .footer-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .footer-list li {
+        margin-bottom: 12px;
+    }
+
+    .footer-list a {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: #94a3b8;
+        text-decoration: none;
+        font-size: 0.9rem;
+        transition: all .2s ease;
+    }
+
+    .footer-list a:hover {
+        color: #60a5fa;
+        padding-right: 6px;
+    }
+
+    .footer-list a:hover .link-chev {
+        opacity: 1;
+        transform: translateX(-2px);
+    }
+
+    .link-chev {
+        font-size: 1rem;
+        opacity: 0;
+        transform: translateX(2px);
+        transition: all .2s ease;
+        color: #22d3ee;
+    }
+
+    /* Quick contact cards */
+    .footer-contact-strip {
+        padding: 34px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        background: linear-gradient(180deg, rgba(59,130,246,0.05), transparent);
+    }
+
+    .contact-cards {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+    }
+
+    .contact-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.09);
+        border-radius: 16px;
+        color: #e2e8f0;
+        text-decoration: none;
+        min-width: 0;
+        transition: all .25s ease;
+    }
+
+    .contact-card:hover {
+        transform: translateY(-3px);
+        background: rgba(59,130,246,0.09);
+        border-color: rgba(59,130,246,0.4);
+        box-shadow: 0 12px 26px rgba(0,0,0,0.35);
+    }
+
+    .cc-icon {
+        width: 42px;
+        height: 42px;
+        flex-shrink: 0;
+        border-radius: 13px;
+        display: grid;
+        place-items: center;
+        font-size: 1rem;
+    }
+
+    .cc-icon.phone { background: rgba(59,130,246,0.18); color: #60a5fa; }
+    .cc-icon.whatsapp { background: rgba(37,211,102,0.15); color: #4ade80; }
+    .cc-icon.mail { background: rgba(251,146,60,0.16); color: #fb923c; }
+    .cc-icon.pin { background: rgba(236,72,153,0.16); color: #f472b6; }
+
+    .cc-body {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+    }
+
+    .cc-body small {
+        color: #94a3b8;
+        font-size: 0.72rem;
+    }
+
+    .cc-body b {
+        color: #f1f5f9;
+        font-size: 0.85rem;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+    }
+
+    .cc-arrow {
+        margin-right: auto;
+        font-size: 0.7rem;
+        color: #64748b;
+        opacity: 0;
+        transition: all .2s ease;
+    }
+
+    .contact-card:hover .cc-arrow {
+        opacity: 1;
+        color: #60a5fa;
+    }
+
+    /* Trust badges */
+    .footer-trust {
+        padding: 30px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
     .trust-badges {
         display: flex;
         gap: 16px;
-        justify-content: flex-end;
+        justify-content: center;
         flex-wrap: wrap;
     }
 
     .trust-badge {
-        height: 70px;
-        padding: 8px 16px;
-        background: #fff;
-        border-radius: 12px;
+        height: 76px;
+        padding: 6px 18px;
+        background: #f8fafc;
+        border-radius: 16px;
         display: flex;
         align-items: center;
         justify-content: center;
+        box-shadow: 0 8px 22px rgba(0,0,0,0.25);
+        transition: transform .2s ease;
+    }
+
+    .trust-badge:hover {
+        transform: translateY(-3px);
     }
 
     .trust-badge img {
-        height: 50px;
+        height: 54px;
         width: auto;
     }
 
@@ -423,7 +691,7 @@
         gap: 4px;
         background: linear-gradient(135deg, #3b82f6, #1d4ed8);
         color: #fff;
-        min-width: 120px;
+        min-width: 130px;
     }
 
     .badge-icon {
@@ -437,31 +705,46 @@
         font-family: monospace;
     }
 
-    /* Copyright Section */
-    .footer-copyright {
-        padding: 20px 0;
-        background: rgba(0,0,0,0.2);
+    /* Bottom bar */
+    .footer-bottom {
+        padding: 22px 0;
+        background: rgba(2,6,23,0.6);
+        border-top: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .bottom-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
     }
 
     .copyright-text {
         color: #64748b;
-        font-size: 0.85rem;
+        font-size: 0.84rem;
         margin: 0;
+    }
+
+    .bottom-actions {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        flex-wrap: wrap;
     }
 
     .copyright-links {
         display: flex;
-        gap: 12px;
-        justify-content: flex-end;
         align-items: center;
+        gap: 10px;
         flex-wrap: wrap;
     }
 
     .copyright-links a {
         color: #94a3b8;
         text-decoration: none;
-        font-size: 0.85rem;
-        transition: color 0.2s ease;
+        font-size: 0.84rem;
+        transition: color .2s ease;
     }
 
     .copyright-links a:hover {
@@ -470,40 +753,179 @@
 
     .separator {
         color: #475569;
+        font-size: .6rem;
     }
 
-    /* Dark Mode Support */
+    .back-top {
+        width: 40px;
+        height: 40px;
+        border: 0;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #3b82f6, #22d3ee);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        box-shadow: 0 6px 16px rgba(59,130,246,0.35);
+        transition: all .2s ease;
+    }
+
+    .back-top:hover {
+        transform: translateY(-3px);
+        filter: brightness(1.1);
+    }
+
+    /* Dark mode */
     [data-theme="dark"] .site-footer {
-        background: linear-gradient(180deg, #0f172a 0%, #020617 100%);
+        background: #020617;
     }
 
     [data-theme="dark"] .trust-badge {
-        background: #1e293b;
+        background: rgba(255,255,255,0.08);
     }
 
-    /* Mobile Responsive */
-    @@media (max-width: 768px) {
+    /* Responsive */
+    @@media (max-width: 1199px) {
+        .footer-grid {
+            grid-template-columns: 1.3fr repeat(2, 1fr);
+        }
+
+        .contact-cards {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @@media (max-width: 991px) {
+        .footer-grid {
+            grid-template-columns: 1fr 1fr;
+            gap: 36px 24px;
+        }
+    }
+
+    @@media (max-width: 767px) {
         .footer-main {
-            padding: 40px 0 30px;
+            padding: 36px 0 30px;
         }
 
-        .trust-badges {
+        .nl-row {
             justify-content: center;
+            text-align: center;
+        }
+
+        .nl-info {
+            justify-content: center;
+            text-align: right;
+        }
+
+        .nl-form-wrap {
+            max-width: 100%;
+            flex-basis: 100%;
+        }
+
+        .footer-grid {
+            grid-template-columns: 1fr;
+            gap: 4px;
+        }
+
+        .footer-brand-col {
+            margin-bottom: 26px;
+        }
+
+        .footer-social {
             margin-top: 20px;
+            padding-top: 16px;
         }
 
-        .copyright-links {
-            justify-content: center;
-            margin-top: 10px;
+        .social-links {
+            gap: 12px;
+        }
+
+        .social-link {
+            width: 46px;
+            height: 46px;
+        }
+
+        /* Accordion link groups */
+        .footer-links-col {
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .footer-links-col:last-child {
+            border-bottom: 0;
+        }
+
+        .footer-title {
+            margin: 0;
+            padding: 16px 0;
+            cursor: pointer;
         }
 
         .footer-title::after {
-            right: 50%;
-            transform: translateX(50%);
+            display: none;
         }
 
-        .footer-links {
+        .title-chev {
+            display: inline-block;
+        }
+
+        .footer-links-col.open .title-chev {
+            transform: rotate(180deg);
+        }
+
+        .footer-list-wrap {
+            display: none;
+            padding-bottom: 16px;
+        }
+
+        .footer-links-col.open .footer-list-wrap {
+            display: block;
+            animation: footFade .25s ease;
+        }
+
+        @@keyframes footFade {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Contact cards */
+        .footer-contact-strip {
+            padding: 26px 0;
+        }
+
+        .contact-cards {
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .contact-card {
+            padding: 13px;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .cc-arrow {
+            display: none;
+        }
+
+        /* Trust */
+        .trust-badges {
+            gap: 12px;
+        }
+
+        .trust-badge {
+            flex: 1 1 40%;
+            max-width: 180px;
+        }
+
+        /* Bottom */
+        .bottom-bar {
+            justify-content: center;
             text-align: center;
+        }
+
+        .bottom-actions {
+            justify-content: center;
         }
     }
 </style>
@@ -515,6 +937,33 @@
     private bool newsletterIsError;
     private bool newsletterBusy;
 
+    private bool HasSocial =>
+        footer != null && (!string.IsNullOrEmpty(footer.InstagramUrl) ||
+                           !string.IsNullOrEmpty(footer.TelegramUrl) ||
+                           !string.IsNullOrEmpty(footer.YouTubeUrl) ||
+                           !string.IsNullOrEmpty(footer.LinkedInUrl) ||
+                           !string.IsNullOrEmpty(footer.WhatsAppNumber));
+
+    private bool HasAnyBadge =>
+        footer != null && (!string.IsNullOrEmpty(footer.EnamadCode) ||
+                           !string.IsNullOrEmpty(footer.SamandehiCode) ||
+                           !string.IsNullOrEmpty(footer.EtaCode));
+
+    private bool HasContact =>
+        footer != null && (!string.IsNullOrEmpty(footer.PhoneNumber1) ||
+                           !string.IsNullOrEmpty(footer.WhatsAppNumber) ||
+                           !string.IsNullOrEmpty(footer.Email) ||
+                           !string.IsNullOrEmpty(footer.Address));
+
+    private readonly HashSet<int> _closedGroups = new();
+
+    private bool IsOpen(int id) => !_closedGroups.Contains(id);
+
+    private void ToggleGroup(int id)
+    {
+        if (!_closedGroups.Remove(id)) _closedGroups.Add(id);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -525,6 +974,11 @@
         {
             footer = GetDefaultFooter();
         }
+    }
+
+    private async Task ScrollTop()
+    {
+        await JSRuntime.InvokeVoidAsync("window.scrollTo", new { top = 0, behavior = "smooth" });
     }
 
     private async Task SubscribeNewsletter()

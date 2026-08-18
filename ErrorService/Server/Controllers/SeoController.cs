@@ -50,11 +50,11 @@ public sealed class SeoController : ControllerBase
         
         var root = new XElement(ns + "urlset");
 
-        // 1. Static Pages
-        var staticPages = new[] { "", "/products", "/academy", "/technical/error-codes", "/contact", "/about", "/faq", "/privacy", "/terms", "/news", "/technical/sensor-finder", "/technical/calculators", "/trust/portfolio", "/admission/repair", "/admission/expertise", "/technical/consultation" };
+        // 1. Static Pages (no lastmod - no reliable change date available; omit rather than lie)
+        var staticPages = new[] { "/", "/products", "/academy", "/technical/error-codes", "/contact", "/about", "/faq", "/privacy", "/terms", "/news", "/technical/sensor-finder", "/technical/calculators", "/trust/portfolio", "/admission/repair", "/admission/expertise", "/technical/consultation" };
         foreach (var page in staticPages)
         {
-            root.Add(CreateUrlElement(ns, baseUrl + page, DateTime.UtcNow, "daily", 0.9));
+            root.Add(CreateUrlElement(ns, baseUrl + page, null, "daily", 0.9));
         }
 
         // 2. Products
@@ -100,7 +100,9 @@ public sealed class SeoController : ControllerBase
             root.Add(CreateUrlElement(ns, $"{baseUrl}/academy/{l.CourseId}/{l.Id}", lastMod, "weekly", 0.7));
         }
 
-        // 7. Error Codes - individual pages
+        // 7. Error Codes - individual pages (no lastmod - ErrorCode has no reliable change date)
+        //    Code is lowercased here to exactly match the canonical URL produced by the SEO middleware,
+        //    avoiding duplicate "/F1" vs "/f1" variants.
         var errorCodes = await _db.ErrorCodes
             .Select(e => new { e.Id, e.Brand, e.DeviceType, e.Code })
             .ToListAsync();
@@ -108,8 +110,8 @@ public sealed class SeoController : ControllerBase
         {
             var brand = Uri.EscapeDataString(e.Brand.Trim());
             var device = Uri.EscapeDataString(e.DeviceType.Trim());
-            var code = Uri.EscapeDataString(e.Code.Trim());
-            root.Add(CreateUrlElement(ns, $"{baseUrl}/technical/error-codes/{brand}/{device}/{code}", DateTime.UtcNow, "monthly", 0.7));
+            var code = Uri.EscapeDataString(e.Code.Trim().ToLowerInvariant());
+            root.Add(CreateUrlElement(ns, $"{baseUrl}/technical/error-codes/{brand}/{device}/{code}", null, "monthly", 0.7));
         }
 
         // 8. Sensor Finder - individual pages
@@ -167,13 +169,21 @@ public sealed class SeoController : ControllerBase
         return Content(doc.ToString(), "application/xml", Encoding.UTF8);
     }
 
-    private XElement CreateUrlElement(XNamespace ns, string loc, DateTime lastMod, string changefreq, double priority)
+    private XElement CreateUrlElement(XNamespace ns, string loc, DateTime? lastMod, string changefreq, double priority)
     {
-        return new XElement(ns + "url",
-            new XElement(ns + "loc", loc),
-            new XElement(ns + "lastmod", lastMod.ToString("yyyy-MM-dd")),
+        var url = new XElement(ns + "url",
+            new XElement(ns + "loc", loc));
+
+        if (lastMod.HasValue)
+        {
+            url.Add(new XElement(ns + "lastmod", lastMod.Value.ToString("yyyy-MM-dd")));
+        }
+
+        url.Add(
             new XElement(ns + "changefreq", changefreq),
             new XElement(ns + "priority", priority.ToString("F1"))
         );
+
+        return url;
     }
 }

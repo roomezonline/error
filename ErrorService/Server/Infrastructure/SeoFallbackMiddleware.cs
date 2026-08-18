@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using ErrorService.Server.Data;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +17,11 @@ public sealed class SeoFallbackMiddleware
     private string? _indexHtmlTemplate;
     private readonly ConcurrentDictionary<string, (string html, int statusCode, DateTime cachedAt)> _cache = new();
     private readonly string _baseUrl;
+    private readonly IConfiguration _config;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
+
+    private sealed record SeoContactData(string? Phone1, string? Phone2, string? Email, string? Address,
+        string? Instagram, string? Telegram, string? Youtube);
 
     private readonly Dictionary<string, (string title, string description, string keywords, string jsonLdType)> StaticPages = new()
     {
@@ -90,6 +96,7 @@ public sealed class SeoFallbackMiddleware
         _next = next;
         _env = env;
         _logger = logger;
+        _config = configuration;
         _baseUrl = configuration.GetValue<string>("Site:_baseUrl") ?? "https://errorservice.ir";
     }
 
@@ -123,7 +130,7 @@ public sealed class SeoFallbackMiddleware
             return;
         }
 
-        var (html, statusCode) = await GetSeoHtml(path, db);
+        var (html, statusCode) = await GetSeoHtml(path, db, IsCrawler(context));
         if (html != null)
         {
             context.Response.ContentType = "text/html; charset=utf-8";
@@ -146,9 +153,30 @@ public sealed class SeoFallbackMiddleware
                path.StartsWith("/_content");
     }
 
-    private async Task<(string? html, int statusCode)> GetSeoHtml(string path, ErrorServiceDbContext db)
+    private static bool IsCrawler(HttpContext context)
     {
-        var cacheKey = path.ToLowerInvariant();
+        var ua = context.Request.Headers.UserAgent.ToString();
+        if (string.IsNullOrWhiteSpace(ua)) return false;
+        return ua.Contains("Googlebot", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("bingbot", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("Baiduspider", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("YandexBot", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("DuckDuckBot", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("Slurp", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("facebookexternalhit", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("Twitterbot", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("LinkedInBot", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("TelegramBot", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("WhatsApp", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("PetalBot", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("AhrefsBot", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("MJ12bot", StringComparison.OrdinalIgnoreCase) ||
+               ua.Contains("SemrushBot", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<(string? html, int statusCode)> GetSeoHtml(string path, ErrorServiceDbContext db, bool isCrawler)
+    {
+        var cacheKey = path.ToLowerInvariant() + (isCrawler ? "|crawler" : "|min");
 
         if (_cache.TryGetValue(cacheKey, out var cached) && (DateTime.UtcNow - cached.cachedAt) < CacheDuration)
             return (cached.html, cached.statusCode);
@@ -168,8 +196,9 @@ public sealed class SeoFallbackMiddleware
         string title, description, keywords, jsonLd;
         string ogImage = "";
         var statusCode = 200;
+        var entity = await TryGetEntityData(cleanPath, db);
 
-        if (TryGetDynamicMeta(cleanPath, await TryGetEntityData(cleanPath, db), out var dynMeta, out var entityFound))
+        if (TryGetDynamicMeta(cleanPath, entity, out var dynMeta, out var entityFound))
         {
             (title, description, keywords, jsonLd, ogImage) = dynMeta;
             if (!entityFound)
@@ -187,7 +216,9 @@ public sealed class SeoFallbackMiddleware
             if (StaticPages.TryGetValue(staticKey, out var staticMeta))
             {
                 (title, description, keywords, _) = staticMeta;
-                jsonLd = BuildStaticJsonLd(staticMeta.jsonLdType, canonical, title, description);
+                jsonLd = staticMeta.jsonLdType == "Organization"
+                    ? BuildOrganizationJsonLd(canonical, title, description, await LoadContactDataAsync(db))
+                    : BuildStaticJsonLd(staticMeta.jsonLdType, canonical, title, description);
             }
             else
             {
@@ -199,12 +230,209 @@ public sealed class SeoFallbackMiddleware
             }
         }
 
+        var crawlerContent = "";
+        var isPublicPage = statusCode == 200 && !cleanPath.StartsWith("admin");
+        if (isPublicPage)
+        {
+            if (isCrawler && entityFound && entity != null)
+            {
+                crawlerContent = BuildPrerenderBody(cleanPath, entity);
+            }
+
+            if (string.IsNullOrEmpty(crawlerContent))
+            {
+                crawlerContent = $"<h1 class=\"seo-prerender\">{EscapeHtml(title)}</h1>\n" +
+                                 $"<p class=\"seo-prerender-desc\">{EscapeHtml(description)}</p>";
+            }
+        }
+
         var result = ApplyMetaTags(template, title, description, keywords, canonical, jsonLd, ogImage,
-            noindex: statusCode == 404 || cleanPath.StartsWith("admin"));
+            noindex: !isPublicPage, crawlerContent: crawlerContent);
 
         _cache[cacheKey] = (result, statusCode, DateTime.UtcNow);
         return (result, statusCode);
     }
+
+    private string BuildPrerenderBody(string cleanPath, object entity)
+    {
+        var node = JsonSerializer.SerializeToNode(entity);
+        if (node == null) return "";
+
+        var sb = new StringBuilder();
+
+        if (cleanPath.StartsWith("products/"))
+        {
+            var name = J(node, "Name") ?? "محصول";
+            var desc = J(node, "Description") ?? "";
+            var price = node["Price"]?.GetValue<decimal>() ?? 0;
+            var compat = J(node, "CompatibilityInfo") ?? "";
+            var symptoms = J(node, "FailureSymptoms") ?? "";
+            sb.Append($"<h1 class=\"seo-prerender\">{EscapeHtml(name)}</h1>\n");
+            if (!string.IsNullOrEmpty(desc))
+                sb.Append(TextToParagraphs(desc, "seo-prerender-desc"));
+            sb.Append("<h2 class=\"seo-prerender-h2\">قیمت و مشخصات</h2>\n<ul class=\"seo-prerender-list\">");
+            sb.Append($"<li>قیمت: {price:N0} ریال</li>");
+            if (!string.IsNullOrEmpty(compat)) sb.Append($"<li>سازگاری: {EscapeHtml(compat)}</li>");
+            sb.Append("</ul>\n");
+            if (!string.IsNullOrEmpty(symptoms))
+            {
+                sb.Append("<h2 class=\"seo-prerender-h2\">علائم خرابی این قطعه</h2>\n");
+                sb.Append(TextToParagraphs(symptoms, "seo-prerender-desc"));
+            }
+            return sb.ToString();
+        }
+
+        if (cleanPath.StartsWith("news/"))
+        {
+            var newsTitle = J(node, "Title") ?? "خبر";
+            var summary = J(node, "Summary") ?? "";
+            var content = J(node, "Content") ?? "";
+            sb.Append($"<h1 class=\"seo-prerender\">{EscapeHtml(newsTitle)}</h1>\n");
+            if (!string.IsNullOrEmpty(summary))
+                sb.Append(TextToParagraphs(summary, "seo-prerender-desc"));
+            if (!string.IsNullOrEmpty(content))
+                sb.Append(SanitizeHtml(content, "seo-prerender-article"));
+            return sb.ToString();
+        }
+
+        if (cleanPath.StartsWith("academy/articles/"))
+        {
+            var artTitle = J(node, "Title") ?? "مقاله آموزشی";
+            var artSummary = J(node, "Summary") ?? "";
+            sb.Append($"<h1 class=\"seo-prerender\">{EscapeHtml(artTitle)}</h1>\n");
+            if (!string.IsNullOrEmpty(artSummary))
+                sb.Append(TextToParagraphs(artSummary, "seo-prerender-desc"));
+            sb.Append(AppendBlocks(node, "seo-prerender-article"));
+            return sb.ToString();
+        }
+
+        if (cleanPath.StartsWith("academy/"))
+        {
+            var academyParts = cleanPath.Replace("academy/", "").Split('/');
+            if (academyParts.Length > 1)
+            {
+                var lessonTitle = J(node, "Title") ?? "قسمت آموزشی";
+                var courseTitle = J(node, "CourseTitle") ?? "";
+                var lessonSummary = J(node, "LessonSummary") ?? "";
+                sb.Append($"<h1 class=\"seo-prerender\">{EscapeHtml(lessonTitle)}</h1>\n");
+                if (!string.IsNullOrEmpty(courseTitle))
+                    sb.Append($"<p class=\"seo-prerender-desc\">دوره: {EscapeHtml(courseTitle)}</p>\n");
+                if (!string.IsNullOrEmpty(lessonSummary))
+                    sb.Append(TextToParagraphs(lessonSummary, "seo-prerender-desc"));
+                sb.Append(AppendBlocks(node, "seo-prerender-article"));
+                return sb.ToString();
+            }
+
+            var courseName = J(node, "Title") ?? "دوره آموزشی";
+            var courseSummary = J(node, "Summary") ?? "";
+            sb.Append($"<h1 class=\"seo-prerender\">{EscapeHtml(courseName)}</h1>\n");
+            if (!string.IsNullOrEmpty(courseSummary))
+                sb.Append(TextToParagraphs(courseSummary, "seo-prerender-desc"));
+            return sb.ToString();
+        }
+
+        if (cleanPath.StartsWith("technical/error-codes/"))
+        {
+            var brand = J(node, "Brand") ?? "";
+            var device = J(node, "DeviceType") ?? "";
+            var code = J(node, "Code") ?? "";
+            var description = J(node, "Description") ?? "";
+            var solution = J(node, "Solution") ?? "";
+            var technicalNotes = J(node, "TechnicalNotes") ?? "";
+            var models = J(node, "ModelNames") ?? "";
+            sb.Append($"<h1 class=\"seo-prerender\">کد خطای {EscapeHtml(code)} {EscapeHtml(brand)} {EscapeHtml(device)}</h1>\n");
+            if (!string.IsNullOrEmpty(description))
+                sb.Append(TextToParagraphs(description, "seo-prerender-desc"));
+            if (!string.IsNullOrEmpty(solution))
+            {
+                sb.Append("<h2 class=\"seo-prerender-h2\">راه‌حل تعمیر</h2>\n");
+                sb.Append(TextToParagraphs(solution, "seo-prerender-desc"));
+            }
+            if (!string.IsNullOrEmpty(technicalNotes))
+            {
+                sb.Append("<h2 class=\"seo-prerender-h2\">نکات فنی</h2>\n");
+                sb.Append(TextToParagraphs(technicalNotes, "seo-prerender-desc"));
+            }
+            if (!string.IsNullOrEmpty(models))
+                sb.Append($"<p class=\"seo-prerender-desc\">مناسب برای مدل‌ها: {EscapeHtml(models)}</p>\n");
+            return sb.ToString();
+        }
+
+        if (cleanPath.StartsWith("technical/sensor-finder/"))
+        {
+            var sensorName = J(node, "SensorName") ?? "سنسور";
+            var sensorType = J(node, "SensorType") ?? "";
+            var size = J(node, "SizeText") ?? "";
+            var notes = J(node, "Notes") ?? "";
+            sb.Append($"<h1 class=\"seo-prerender\">سنسور {EscapeHtml(sensorName)}</h1>\n");
+            sb.Append("<ul class=\"seo-prerender-list\">");
+            if (!string.IsNullOrEmpty(sensorType)) sb.Append($"<li>نوع: {EscapeHtml(sensorType)}</li>");
+            if (!string.IsNullOrEmpty(size)) sb.Append($"<li>سایز: {EscapeHtml(size)}</li>");
+            sb.Append("</ul>\n");
+            if (!string.IsNullOrEmpty(notes))
+                sb.Append(TextToParagraphs(notes, "seo-prerender-desc"));
+            return sb.ToString();
+        }
+
+        return "";
+    }
+
+    private string AppendBlocks(JsonNode node, string wrapperClass)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"<div class=\"{wrapperClass}\">\n");
+        foreach (var block in node["Blocks"]?.AsArray() ?? new JsonArray())
+        {
+            var blockTitle = J(block, "Title") ?? "";
+            var blockContent = J(block, "Content") ?? "";
+            var blockType = block?["BlockType"]?.GetValue<int>() ?? 0;
+            var thumbnail = J(block, "ThumbnailUrl") ?? "";
+
+            if (blockType == 2 && !string.IsNullOrEmpty(thumbnail))
+            {
+                sb.Append($"<img class=\"seo-prerender-img\" src=\"{EscapeHtml(thumbnail)}\" alt=\"{EscapeHtml(blockTitle)}\" />\n");
+                continue;
+            }
+
+            if (blockType != 1) continue;
+
+            if (!string.IsNullOrEmpty(blockTitle))
+                sb.Append($"<h2 class=\"seo-prerender-h2\">{EscapeHtml(blockTitle)}</h2>\n");
+            if (!string.IsNullOrEmpty(blockContent))
+                sb.Append(TextToParagraphs(blockContent, "seo-prerender-desc"));
+        }
+        sb.Append("</div>\n");
+        return sb.ToString();
+    }
+
+    private static string TextToParagraphs(string text, string className)
+    {
+        text = text.Replace("\r\n", "\n").Replace("\r", "\n").Trim();
+        if (string.IsNullOrEmpty(text)) return "";
+        var paragraphs = Regex.Split(text, @"\n\s*\n")
+            .SelectMany(p => p.Split('\n'))
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => $"<p class=\"{className}\">{EscapeHtml(p.Trim())}</p>");
+        return string.Join("\n", paragraphs) + "\n";
+    }
+
+    private static string SanitizeHtml(string html, string wrapperClass)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return "";
+        html = Regex.Replace(html, @"<script[\s\S]*?</script>", "", RegexOptions.IgnoreCase);
+        html = Regex.Replace(html, @"<style[\s\S]*?</style>", "", RegexOptions.IgnoreCase);
+        html = Regex.Replace(html, @"<iframe[\s\S]*?</iframe>", "", RegexOptions.IgnoreCase);
+        html = Regex.Replace(html, @"<object[\s\S]*?</object>", "", RegexOptions.IgnoreCase);
+        html = Regex.Replace(html, @"\son\w+\s*=\s*""[^""]*""", "", RegexOptions.IgnoreCase);
+        html = Regex.Replace(html, @"\son\w+\s*=\s*'[^']*'", "", RegexOptions.IgnoreCase);
+        html = Regex.Replace(html, @"(href|src)\s*=\s*""\s*javascript:[^""]*""", "$1=\"#\"", RegexOptions.IgnoreCase);
+        html = Regex.Replace(html, @"(href|src)\s*=\s*'[^']*javascript:[^']*'", "$1='#'", RegexOptions.IgnoreCase);
+        html = Regex.Replace(html, @"<([a-zA-Z][a-zA-Z0-9]*)[^>]*>", "<$1>");
+        return $"<div class=\"{wrapperClass}\">\n{html}\n</div>\n";
+    }
+
+    private static string? J(JsonNode? node, string prop) =>
+        node?[prop]?.GetValue<string>();
 
     private async Task<string?> TryResolveRedirect(string cleanPath, ErrorServiceDbContext db)
     {
@@ -281,27 +509,27 @@ public sealed class SeoFallbackMiddleware
             {
                 var seg = cleanPath["products/".Length..].Split('/')[0];
                 if (int.TryParse(seg, out var pid))
-                    return await db.Products.Where(p => p.Id == pid && p.IsAvailable).Select(p => new { p.Id, p.Name, p.Description, p.Price, p.MainImageUrl, p.UpdatedAt }).FirstOrDefaultAsync();
+                    return await db.Products.Where(p => p.Id == pid && p.IsAvailable).Select(p => new { p.Id, p.Name, p.Description, p.Price, p.MainImageUrl, p.CompatibilityInfo, p.FailureSymptoms, p.UpdatedAt }).FirstOrDefaultAsync();
 
-                return await db.Products.Where(p => p.Slug == seg && p.IsAvailable).Select(p => new { p.Id, p.Name, p.Description, p.Price, p.MainImageUrl, p.UpdatedAt }).FirstOrDefaultAsync();
+                return await db.Products.Where(p => p.Slug == seg && p.IsAvailable).Select(p => new { p.Id, p.Name, p.Description, p.Price, p.MainImageUrl, p.CompatibilityInfo, p.FailureSymptoms, p.UpdatedAt }).FirstOrDefaultAsync();
             }
 
             if (cleanPath.StartsWith("news/"))
             {
                 var seg = cleanPath["news/".Length..].Split('/')[0];
                 if (int.TryParse(seg, out var nid))
-                    return await db.News.Where(n => n.Id == nid && n.IsPublished).Select(n => new { n.Id, n.Title, n.Summary, n.ImageUrl, n.CreatedAt, n.UpdatedAt }).FirstOrDefaultAsync();
+                    return await db.News.Where(n => n.Id == nid && n.IsPublished).Select(n => new { n.Id, n.Title, n.Summary, n.Content, n.ImageUrl, n.CreatedAt, n.UpdatedAt }).FirstOrDefaultAsync();
 
-                return await db.News.Where(n => n.Slug == seg && n.IsPublished).Select(n => new { n.Id, n.Title, n.Summary, n.ImageUrl, n.CreatedAt, n.UpdatedAt }).FirstOrDefaultAsync();
+                return await db.News.Where(n => n.Slug == seg && n.IsPublished).Select(n => new { n.Id, n.Title, n.Summary, n.Content, n.ImageUrl, n.CreatedAt, n.UpdatedAt }).FirstOrDefaultAsync();
             }
 
             if (cleanPath.StartsWith("academy/articles/"))
             {
                 var seg = cleanPath["academy/articles/".Length..].Split('/')[0];
                 if (int.TryParse(seg, out var aid))
-                    return await db.TrainingArticles.Where(a => a.Id == aid && a.IsPublished).Select(a => new { a.Id, a.Title, a.Summary, a.CoverImageUrl, a.UpdatedAt }).FirstOrDefaultAsync();
+                    return await db.TrainingArticles.Where(a => a.Id == aid && a.IsPublished).Select(a => new { a.Id, a.Title, a.Summary, a.CoverImageUrl, a.UpdatedAt, Blocks = a.Blocks.OrderBy(b => b.SortOrder).Select(b => new { b.Title, b.Content, b.BlockType, b.ThumbnailUrl }).ToList() }).FirstOrDefaultAsync();
 
-                return await db.TrainingArticles.Where(a => a.Slug == seg && a.IsPublished).Select(a => new { a.Id, a.Title, a.Summary, a.CoverImageUrl, a.UpdatedAt }).FirstOrDefaultAsync();
+                return await db.TrainingArticles.Where(a => a.Slug == seg && a.IsPublished).Select(a => new { a.Id, a.Title, a.Summary, a.CoverImageUrl, a.UpdatedAt, Blocks = a.Blocks.OrderBy(b => b.SortOrder).Select(b => new { b.Title, b.Content, b.BlockType, b.ThumbnailUrl }).ToList() }).FirstOrDefaultAsync();
             }
 
             if (cleanPath.StartsWith("academy/"))
@@ -322,7 +550,7 @@ public sealed class SeoFallbackMiddleware
                     return await db.TrainingLessons
                         .Where(l => l.Id == lessonId && l.IsPublished &&
                                     (isNumericCourse ? l.CourseId == numericCourseId : l.Course.Slug == segments[0]))
-                        .Select(l => new { l.Id, l.Title, l.CourseId, CourseTitle = l.Course.Title, l.UpdatedAt })
+                        .Select(l => new { l.Id, l.Title, l.CourseId, CourseTitle = l.Course.Title, LessonSummary = l.Summary, l.UpdatedAt, Blocks = l.Blocks.OrderBy(b => b.SortOrder).Select(b => new { b.Title, b.Content, b.BlockType, b.ThumbnailUrl }).ToList() })
                         .FirstOrDefaultAsync();
                 }
             }
@@ -336,7 +564,7 @@ public sealed class SeoFallbackMiddleware
                     var device = Uri.UnescapeDataString(parts[1].Trim());
                     var code = Uri.UnescapeDataString(parts[2].Trim());
                     return await db.ErrorCodes.Where(e => e.Brand == brand && e.DeviceType == device && e.Code == code)
-                        .Select(e => new { e.Id, e.Brand, e.DeviceType, e.Code, e.Description, e.Solution, e.ImageUrl }).FirstOrDefaultAsync();
+                        .Select(e => new { e.Id, e.Brand, e.DeviceType, e.Code, e.Description, e.Solution, e.TechnicalNotes, e.ModelNames, e.ImageUrl }).FirstOrDefaultAsync();
                 }
             }
 
@@ -479,11 +707,6 @@ public sealed class SeoFallbackMiddleware
 
     private string BuildStaticJsonLd(string type, string canonical, string title, string description)
     {
-        if (type == "Organization")
-        {
-            return $@"[{{""@context"":""https://schema.org"",""@type"":""Organization"",""name"":""ارورسرویس"",""url"":""{_baseUrl}"",""logo"":""{_baseUrl}/images/branding/logo.svg"",""contactPoint"":{{""@type"":""ContactPoint"",""telephone"":""+98-21-12345678"",""contactType"":""customer service"",""areaServed"":""IR""}}}},{{""@context"":""https://schema.org"",""@type"":""WebSite"",""name"":""ارورسرویس"",""url"":""{_baseUrl}"",""potentialAction"":{{""@type"":""SearchAction"",""target"":""{_baseUrl}/search?q={{search_term_string}}"",""query-input"":""required name=search_term_string""}}}}]";
-        }
-
         if (type == "FAQPage")
         {
             return $@"{{""@context"":""https://schema.org"",""@type"":""FAQPage"",""mainEntity"":[],""url"":""{canonical}""}}";
@@ -492,12 +715,113 @@ public sealed class SeoFallbackMiddleware
         return $@"{{""@context"":""https://schema.org"",""@type"":""{type}"",""name"":""{EscapeJson(title)}"",""description"":""{EscapeJson(description)}"",""url"":""{canonical}""}}";
     }
 
+    private async Task<SeoContactData> LoadContactDataAsync(ErrorServiceDbContext db)
+    {
+        try
+        {
+            var f = await db.FooterSettings.FirstOrDefaultAsync(s => s.IsActive);
+            if (f != null)
+            {
+                return new SeoContactData(f.PhoneNumber1, f.PhoneNumber2, f.Email, f.Address,
+                    f.InstagramUrl, f.TelegramUrl, f.YouTubeUrl);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SEO middleware: failed to load footer contact data");
+        }
+        return new SeoContactData(null, null, null, null, null, null, null);
+    }
+
+    private string BuildOrganizationJsonLd(string canonical, string title, string description, SeoContactData c)
+    {
+        var mapsUrl = _config.GetValue<string>("Site:GoogleMapsUrl") ?? "";
+        var openingHours = _config.GetValue<string>("Site:OpeningHours") ?? "";
+
+        var parts = new List<string>
+        {
+            $@"""@context"":""https://schema.org""",
+            $@"""@type"":""ElectronicsStore""",
+            $@"""@id"":""{_baseUrl}/#organization""",
+            $@"""name"":""ارورسرویس""",
+            $@"""url"":""{_baseUrl}""",
+            $@"""description"":""{EscapeJson(description)}""",
+            $@"""logo"":""{_baseUrl}/images/branding/logo.svg"""
+        };
+
+        var phone1 = NormalizePhone(c.Phone1);
+        var phone2 = NormalizePhone(c.Phone2);
+        if (!string.IsNullOrEmpty(phone1))
+        {
+            parts.Add($@"""telephone"":""{phone1}""");
+            parts.Add($@"""contactPoint"":{{""@type"":""ContactPoint"",""telephone"":""{phone1}"",""contactType"":""customer service"",""areaServed"":""IR""}}");
+        }
+        if (!string.IsNullOrEmpty(c.Email)) parts.Add($@"""email"":""{EscapeJson(c.Email)}""");
+        if (!string.IsNullOrEmpty(c.Address))
+        {
+            parts.Add($@"""address"":{{""@type"":""PostalAddress"",""streetAddress"":""{EscapeJson(c.Address)}"",""addressCountry"":""IR""}}");
+        }
+
+        if (double.TryParse(_config.GetValue<string>("Site:Latitude"), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var lat) &&
+            double.TryParse(_config.GetValue<string>("Site:Longitude"), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var lng))
+        {
+            parts.Add($@"""geo"":{{""@type"":""GeoCoordinates"",""latitude"":{lat.ToString(System.Globalization.CultureInfo.InvariantCulture)},""longitude"":{lng.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}");
+        }
+
+        if (!string.IsNullOrEmpty(mapsUrl)) parts.Add($@"""hasMap"":""{EscapeJson(mapsUrl)}""");
+
+        if (TryParseOpeningHours(openingHours, out var open, out var close))
+        {
+            parts.Add($@"""openingHoursSpecification"":[{{""@type"":""OpeningHoursSpecification"",""dayOfWeek"":[""Monday"",""Tuesday"",""Wednesday"",""Thursday"",""Friday"",""Saturday"",""Sunday""],""opens"":""{open}"",""closes"":""{close}""}}]");
+        }
+
+        var sameAs = new List<string>();
+        if (!string.IsNullOrEmpty(mapsUrl)) sameAs.Add(mapsUrl);
+        if (!string.IsNullOrEmpty(c.Instagram)) sameAs.Add(c.Instagram);
+        if (!string.IsNullOrEmpty(c.Telegram)) sameAs.Add(c.Telegram);
+        if (!string.IsNullOrEmpty(c.Youtube)) sameAs.Add(c.Youtube);
+        if (sameAs.Count > 0)
+        {
+            parts.Add($@"""sameAs"":[{string.Join(",", sameAs.Select(s => $@"""{EscapeJson(s)}"""))}]");
+        }
+
+        var business = $"{{{string.Join(",", parts)}}}";
+
+        var webSite = $@"{{""@context"":""https://schema.org"",""@type"":""WebSite"",""name"":""ارورسرویس"",""url"":""{_baseUrl}"",""potentialAction"":{{""@type"":""SearchAction"",""target"":""{_baseUrl}/search?q={{search_term_string}}"",""query-input"":""required name=search_term_string""}}}}";
+
+        return $"[{business},{webSite}]";
+    }
+
+    private static string? NormalizePhone(string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return null;
+        var digits = new string(phone.Where(char.IsDigit).ToArray());
+        if (digits.Length == 0) return null;
+        if (digits.StartsWith("+")) return digits;
+        if (digits.StartsWith("00")) return "+" + digits[2..];
+        if (digits.StartsWith("0") && digits.Length > 3) return "+98" + digits[1..];
+        return digits;
+    }
+
+    private static bool TryParseOpeningHours(string raw, out string open, out string close)
+    {
+        open = close = "";
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var sep = raw.IndexOf('-');
+        if (sep <= 0) return false;
+        open = raw[..sep].Trim();
+        close = raw[(sep + 1)..].Trim();
+        return TimeOnly.TryParse(open, out _) && TimeOnly.TryParse(close, out _);
+    }
+
     private string BuildWebPageJsonLd(string canonical, string title, string description)
     {
         return $@"{{""@context"":""https://schema.org"",""@type"":""WebPage"",""name"":""{EscapeJson(title)}"",""description"":""{EscapeJson(description)}"",""url"":""{canonical}""}}";
     }
 
-    private static string ApplyMetaTags(string template, string title, string description, string keywords, string canonical, string jsonLd, string ogImage = "", bool noindex = false)
+    private static string ApplyMetaTags(string template, string title, string description, string keywords, string canonical, string jsonLd, string ogImage = "", bool noindex = false, string? crawlerContent = null)
     {
         var result = template;
 
@@ -555,6 +879,14 @@ public sealed class SeoFallbackMiddleware
             result = Regex.Replace(result,
                 @"<meta name=""robots"" content=""[^""]*"" />",
                 "<meta name=\"robots\" content=\"noindex, nofollow\" />");
+        }
+
+        if (!string.IsNullOrEmpty(crawlerContent))
+        {
+            result = Regex.Replace(result,
+                @"<div id=""app""></div>",
+                $"<div id=\"app\">{crawlerContent}</div>",
+                RegexOptions.Singleline);
         }
 
         result = Regex.Replace(result,

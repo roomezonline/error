@@ -2,7 +2,7 @@
 @inject IJSRuntime JSRuntime
 @inject HttpClient Http
 
-@if (isUpdateAvailable || (isInstallAvailable && !isUpdateAvailable) || isWhatsNew)
+@if (isUpdateAvailable || isWhatsNew)
 {
     <div class="pwa-dialog-wrapper">
         <div class="pwa-glass-card shadow-2xl animate-pop">
@@ -85,34 +85,6 @@
                     </div>
                 </div>
             }
-            else if (isInstallAvailable)
-            {
-                <div class="pwa-header-gradient pwa-header-gradient--install">
-                    <div class="d-flex align-items-center gap-3">
-                        <div class="pwa-icon-glow">
-                            <span class="oi oi-plus"></span>
-                        </div>
-                        <div class="flex-grow-1">
-                            <h6 class="pwa-title mb-0">نصب اپلیکیشن هوشمند</h6>
-                            <div class="pwa-subtitle">تجربه سریع و حرفه‌ای</div>
-                        </div>
-                        <button class="pwa-close-btn" @onclick="() => isInstallAvailable = false">
-                            <span class="oi oi-x"></span>
-                        </button>
-                    </div>
-                </div>
-                <div class="pwa-body">
-                    <p class="pwa-description text-center">
-                        برای دسترسی سریع‌تر، کاهش مصرف اینترنت و تجربه محیطی بدون مرورگر، نسخه اپلیکیشن را نصب کنید.
-                    </p>
-                    <div class="pwa-actions">
-                        <button class="pwa-btn pwa-btn--dark btn-pwa-install" @onclick="InstallApp">
-                            <span class="oi oi-monitor me-2"></span> نصب روی دستگاه
-                        </button>
-                        <button class="pwa-btn-link" @onclick="() => isInstallAvailable = false">بعداً یادآوری کن</button>
-                    </div>
-                </div>
-            }
         </div>
     </div>
 }
@@ -150,10 +122,6 @@
 
     .pwa-header-gradient--update {
         background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
-    }
-
-    .pwa-header-gradient--install {
-        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
     }
 
     .pwa-header-gradient--whatsnew {
@@ -324,7 +292,6 @@
 
 @code {
     private bool isUpdateAvailable = false;
-    private bool isInstallAvailable = false;
     private bool isWhatsNew = false;
     private string latestVersion = "";
     private ReleaseNote latestRelease;
@@ -364,9 +331,6 @@
                 // JS interop must run after first render (avoids prerender/initial-load crashes)
                 await JSRuntime.InvokeVoidAsync("initPwaHandlers", objRef);
 
-                // Check initial install status
-                isInstallAvailable = await JSRuntime.InvokeAsync<bool>("getPwaInstallStatus");
-
                 // Auto-show What's New if version changed (store the last seen version in localStorage)
                 if (releaseInfoLoaded && !string.IsNullOrWhiteSpace(latestVersion))
                 {
@@ -401,8 +365,6 @@
     [JSInvokable]
     public void NotifyInstallAvailable()
     {
-        isInstallAvailable = true;
-        StateHasChanged();
     }
 
     private async Task UpdateApp()
@@ -418,16 +380,6 @@
         isWhatsNew = false;
         await JSRuntime.InvokeVoidAsync("localStorage.setItem", "pwa_last_seen_version", latestVersion);
         StateHasChanged();
-    }
-
-    private async Task InstallApp()
-    {
-        var result = await JSRuntime.InvokeAsync<bool>("installPWA");
-        if (result)
-        {
-            isInstallAvailable = false;
-            StateHasChanged();
-        }
     }
 
     public void Dispose()

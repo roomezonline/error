@@ -384,12 +384,30 @@
             return !!deferredPrompt;
         };
 
+        window.pwaGetDismissedAt = () => {
+            return localStorage.getItem('pwaInstallDismissAt');
+        };
+
+        window.pwaSetDismissedAt = (ts) => {
+            localStorage.setItem('pwaInstallDismissAt', ts);
+        };
+
+        window.pwaClearDismissedAt = () => {
+            localStorage.removeItem('pwaInstallDismissAt');
+        };
+
         window.initPwaHandlers = (dotNetHelper) => {
             window.addEventListener('PwaUpdateAvailable', () => {
                 dotNetHelper.invokeMethodAsync('NotifyUpdateAvailable');
             });
             window.addEventListener('PwaInstallAvailable', () => {
                 dotNetHelper.invokeMethodAsync('NotifyInstallAvailable');
+            });
+        };
+
+        window.initDashboardInstallHandler = (dotNetHelper) => {
+            window.addEventListener('PwaInstallAvailable', () => {
+                dotNetHelper.invokeMethodAsync('NotifyDashboardInstallAvailable');
             });
         };
     </script>

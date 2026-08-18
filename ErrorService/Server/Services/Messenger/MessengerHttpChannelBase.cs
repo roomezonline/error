@@ -67,6 +67,39 @@ public abstract class MessengerHttpChannelBase : IChatMessengerChannel
         await SendApiAsync(token, "sendVoice", new { chat_id = groupId, voice = voiceUrl, caption = text });
     }
 
+    public async Task SendOperatorTextToGroupAsync(int sessionId, string text, string? operatorName)
+    {
+        var settings = await LoadSettingsAsync();
+        var token = GetToken(settings);
+        var groupId = GetGroupId(settings);
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(groupId)) return;
+
+        var message = $"{MessengerHelper.SessionPrefix}{sessionId}]\n👨‍💼 {operatorName ?? "اپراتور"}:\n{text}";
+        await SendApiAsync(token, "sendMessage", new { chat_id = groupId, text = message });
+    }
+
+    public async Task SendOperatorPhotoToGroupAsync(int sessionId, string photoUrl, string? caption, string? operatorName)
+    {
+        var settings = await LoadSettingsAsync();
+        var token = GetToken(settings);
+        var groupId = GetGroupId(settings);
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(groupId)) return;
+
+        var text = $"{MessengerHelper.SessionPrefix}{sessionId}]\n👨‍💼 {operatorName ?? "اپراتور"}:\n{caption ?? ""}";
+        await SendApiAsync(token, "sendPhoto", new { chat_id = groupId, photo = photoUrl, caption = text });
+    }
+
+    public async Task SendOperatorVoiceToGroupAsync(int sessionId, string voiceUrl, string? operatorName)
+    {
+        var settings = await LoadSettingsAsync();
+        var token = GetToken(settings);
+        var groupId = GetGroupId(settings);
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(groupId)) return;
+
+        var text = $"{MessengerHelper.SessionPrefix}{sessionId}]\n🎤 {operatorName ?? "اپراتور"}";
+        await SendApiAsync(token, "sendVoice", new { chat_id = groupId, voice = voiceUrl, caption = text });
+    }
+
     public async Task SendSystemMessageToGroupAsync(int sessionId, string text)
     {
         var settings = await LoadSettingsAsync();
@@ -146,6 +179,41 @@ public abstract class MessengerHttpChannelBase : IChatMessengerChannel
         catch
         {
             return false;
+        }
+    }
+
+    public async Task<(bool success, string message)> SetWebhookAsync(string webhookUrl, string secret)
+    {
+        var settings = await LoadSettingsAsync();
+        var token = GetToken(settings);
+        if (string.IsNullOrEmpty(token))
+            return (false, $"توکن {DisplayName} تنظیم نشده است.");
+
+        try
+        {
+            var url = $"{webhookUrl.TrimEnd('/')}/api/chat/messenger-webhook/{Key}";
+            if (!string.IsNullOrEmpty(secret))
+                url += $"?secret={secret}";
+
+            var client = _httpClientFactory.CreateClient();
+            var payload = new
+            {
+                url,
+                allowed_updates = new[] { "message", "edited_message" }
+            };
+            var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            var response = await client.PostAsync(BotUrl(token, "setWebhook"), content);
+            var body = await response.Content.ReadAsStringAsync();
+
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("ok", out var ok) && ok.GetBoolean())
+                return (true, $"✅ وب‌هوک {DisplayName} با موفقیت ثبت شد.\nآدرس: {url}");
+            var desc = doc.RootElement.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "";
+            return (false, $"⚠️ خطا در ثبت وب‌هوک {DisplayName}: {desc}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"خطا: {ex.Message}");
         }
     }
 

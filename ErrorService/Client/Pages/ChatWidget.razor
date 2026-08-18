@@ -16,8 +16,14 @@
     @if (!_isOpen)
     {
         <button class="chat-fab" @onclick="ToggleOpen" title="پشتیبانی آنلاین">
-            <svg class="chat-fab-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2Z"/><circle cx="9" cy="13" r="1" fill="currentColor"/><circle cx="15" cy="13" r="1" fill="currentColor"/><path d="M12 7.5V3"/><path d="M10 3h4"/></svg>
-            <svg class="chat-fab-ring" width="64" height="64" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="29" stroke="currentColor" stroke-width="2" opacity=".3"/></svg>
+            <svg class="chat-fab-icon" width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <path d="M4 13a5.5 5.5 0 0 1 5.5-5.5h5A5.5 5.5 0 0 1 20 13v1.7a2.6 2.6 0 0 1-2.6 2.6H9.4l-3.64 2.43A.9.9 0 0 1 4 19V13Z" fill="#fff"/>
+                <circle class="chat-dot1" cx="9.2" cy="11.6" r="1.15" fill="#4361ee"/>
+                <circle class="chat-dot2" cx="12" cy="11.6" r="1.15" fill="#4361ee"/>
+                <circle class="chat-dot3" cx="14.8" cy="11.6" r="1.15" fill="#4361ee"/>
+                <path d="M12.6 2v2M11.4 3h2.4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <svg class="chat-fab-ring" width="64" height="64" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="29" stroke="currentColor" stroke-width="2" opacity=".35"/></svg>
             @if (_unreadCount > 0)
             {
                 <span class="chat-badge">@_unreadCount</span>
@@ -107,17 +113,17 @@
                         }
                         if (msg.IsDeleted)
                         {
-                            <div class="chat-msg @(msg.SenderType == ChatSenderTypeDto.Operator || msg.SenderType == ChatSenderTypeDto.System ? "chat-msg-op" : "chat-msg-user")">
+                            <div class="chat-msg @(IsOpLike(msg) ? "chat-msg-op" : "chat-msg-user")">
                                 <div class="chat-bubble chat-bubble-deleted">این پیام حذف شده است</div>
                             </div>
                             continue;
                         }
-                        <div class="chat-msg @(msg.SenderType == ChatSenderTypeDto.Operator || msg.SenderType == ChatSenderTypeDto.System ? "chat-msg-op" : "chat-msg-user")">
+                        <div class="chat-msg @(IsOpLike(msg) ? "chat-msg-op" : "chat-msg-user")">
                             @if (msg.ReplyToId != null)
                             {
                                 var reply = _messages.FirstOrDefault(m => m.Id == msg.ReplyToId);
                                 <div class="chat-reply-quote">
-                                    <span>@(reply?.SenderType == ChatSenderTypeDto.Operator ? "اپراتور" : "کاربر"):</span>
+                                    <span>@(reply != null && IsOpLike(reply) ? "اپراتور" : "کاربر"):</span>
                                     <span>@(string.IsNullOrWhiteSpace(reply?.Content) ? "..." : reply!.Content)</span>
                                 </div>
                             }
@@ -138,7 +144,7 @@
                             else if (msg.MessageType == ChatMessageTypeDto.Voice)
                             {
                                 <div class="chat-bubble">
-                                    <audio src="@msg.MediaUrl" controls class="chat-audio" preload="none"></audio>
+                                    <audio src="@msg.MediaUrl" controls class="chat-audio" preload="metadata"></audio>
                                 </div>
                             }
                             else if (msg.MessageType == ChatMessageTypeDto.File)
@@ -155,7 +161,7 @@
                                 <div class="chat-bubble chat-bubble-system">@msg.Content</div>
                             }
                             <div class="chat-time">
-                            @if (msg.SenderType == ChatSenderTypeDto.User)
+                            @if (IsUserLike(msg))
                             {
                                 @if (msg.Status == ChatMessageStatusDto.Sending)
                                 {
@@ -204,26 +210,77 @@
                             }
                         </div>
                     }
+                    @if (_recState == RecOrder.Recording)
+                    {
+                        <div class="chat-rec-timer">
+                            <span class="chat-rec-dot"></span>
+                            <span class="oi oi-microphone"></span>
+                            <span class="chat-rec-time">@FormatDuration(_recSeconds)</span>
+                            <span class="chat-rec-hint">در حال ضبط…</span>
+                            <button class="chat-rec-stop" @onclick="ToggleVoice" title="توقف و بررسی"><span class="oi oi-media-stop"></span></button>
+                        </div>
+                    }
+                    @if (_recState == RecOrder.Preview)
+                    {
+                        <div class="chat-rec-bar">
+                            <audio src="@_pendingVoiceUrl" controls preload="metadata" class="chat-rec-audio"></audio>
+                            <span class="chat-rec-info"><span class="oi oi-microphone"></span> @FormatDuration(_recSeconds)</span>
+                            <div class="chat-rec-actions">
+                                <button class="chat-rec-btn send" @onclick="SendPendingVoice" title="ارسال"><span class="oi oi-arrow-left"></span></button>
+                                <button class="chat-rec-btn redo" @onclick="ReRecordVoice" title="ضبط مجدد"><span class="oi oi-action-redo"></span></button>
+                                <button class="chat-rec-btn del" @onclick="DiscardPendingVoice" title="حذف"><span class="oi oi-x"></span></button>
+                            </div>
+                        </div>
+                    }
                     <div class="chat-input-row">
-                        <input class="chat-input" value="_inputText" @oninput="OnInputChanged"
+                        <input class="chat-input" value="@_inputText" @oninput="OnInputChanged"
                                placeholder="پیام خود را بنویسید..."
                                @onkeydown="HandleKeyDown"
                                @ref="_inputRef"
                                disabled="@(_status != ChatWidgetStatus.Active)" />
-                        <button class="chat-btn" @onclick="ToggleEmoji" title="ایموجی" disabled="@(_status != ChatWidgetStatus.Active)">
-                            <span>😊</span>
+                        <button class="chat-btn chat-attach-btn @(_attachOpen ? "chat-attach-active" : "")" @onclick="ToggleAttach" title="افزودن فایل، تصویر یا ایموجی" disabled="@(_status != ChatWidgetStatus.Active)">
+                            <span class="oi oi-plus"></span>
                         </button>
-                        <button class="chat-btn" @onclick="SendImage" title="ارسال تصویر" disabled="@(_status != ChatWidgetStatus.Active)">
-                            <span class="oi oi-image"></span>
-                        </button>
-                        <button class="chat-btn" @onclick="SendFile" title="ارسال فایل" disabled="@(_status != ChatWidgetStatus.Active)">
-                            <span class="oi oi-paperclip"></span>
-                        </button>
-                        @if (_voiceSupported)
+                        @if (_attachOpen)
                         {
-                            <button class="chat-btn @(_isRecording ? "chat-btn-rec" : "")" @onclick="ToggleVoice" title="@(_isRecording ? "توقف ضبط" : "ضبط صدا")" disabled="@(_status != ChatWidgetStatus.Active)">
-                                <span class="oi oi-microphone"></span>
-                            </button>
+                            <div class="chat-attach-overlay" @onclick="CloseAttach"></div>
+                            <div class="chat-attach-menu">
+                                <button class="chat-attach-item" @onclick="PickImageMenu">
+                                    <span class="chat-attach-ico img"><span class="oi oi-image"></span></span>
+                                    <span class="chat-attach-label">
+                                        <span class="chat-attach-name">ارسال تصویر</span>
+                                        <span class="chat-attach-desc">عکس یا اسکرین‌شات</span>
+                                    </span>
+                                    <span class="oi oi-chevron-left chat-attach-arrow"></span>
+                                </button>
+                                <button class="chat-attach-item" @onclick="PickFileMenu">
+                                    <span class="chat-attach-ico file"><span class="oi oi-paperclip"></span></span>
+                                    <span class="chat-attach-label">
+                                        <span class="chat-attach-name">ارسال فایل</span>
+                                        <span class="chat-attach-desc">PDF، سند و سایر فایل‌ها</span>
+                                    </span>
+                                    <span class="oi oi-chevron-left chat-attach-arrow"></span>
+                                </button>
+                                @if (_voiceSupported)
+                                {
+                                    <button class="chat-attach-item" @onclick="PickVoiceMenu">
+                                        <span class="chat-attach-ico voice"><span class="oi oi-microphone"></span></span>
+                                        <span class="chat-attach-label">
+                                            <span class="chat-attach-name">ضبط صدا</span>
+                                            <span class="chat-attach-desc">ارسال پیام صوتی</span>
+                                        </span>
+                                        <span class="oi oi-chevron-left chat-attach-arrow"></span>
+                                    </button>
+                                }
+                                <button class="chat-attach-item" @onclick="PickEmojiMenu">
+                                    <span class="chat-attach-ico emoji"><span class="oi oi-smiley"></span></span>
+                                    <span class="chat-attach-label">
+                                        <span class="chat-attach-name">ایموجی</span>
+                                        <span class="chat-attach-desc">شکلک و ایموجی</span>
+                                    </span>
+                                    <span class="oi oi-chevron-left chat-attach-arrow"></span>
+                                </button>
+                            </div>
                         }
                         <button class="chat-btn chat-btn-send" @onclick="SendText" title="ارسال" disabled="@(string.IsNullOrWhiteSpace(_inputText) || _status != ChatWidgetStatus.Active)">
                             <span class="oi oi-arrow-left"></span>
@@ -245,15 +302,24 @@
 <style>
     /* ── Root ── */
     .chat-widget { position: fixed; bottom: 24px; left: 20px; z-index: 9999; direction: rtl; }
-    .chat-fab { width: 60px; height: 60px; border-radius: 50%; border: none; background: linear-gradient(135deg,#0d6efd,#4361ee); color: #fff; cursor: pointer; box-shadow: 0 4px 20px rgba(13,110,253,.4); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; transition: transform .25s cubic-bezier(.34,1.56,.64,1),box-shadow .25s; }
-    .chat-fab:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(13,110,253,.55); }
-    .chat-fab:active { transform: scale(.95); }
-    .chat-fab-icon { position:relative;z-index:2; }
-    .chat-fab-ring { position:absolute;inset:0;width:100%;height:100%;color:rgba(255,255,255,.25);animation:chat-ring 2.5s ease-in-out infinite; }
-    @@keyframes chat-ring { 0%,100%{opacity:.3;transform:scale(1)} 50%{opacity:0;transform:scale(1.15)} }
-    .chat-fab::after { content:'';position:absolute;inset:0;border-radius:50%;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.3) 45%,transparent 60%);animation:chat-shine 3s ease-in-out infinite;pointer-events:none; }
-    @@keyframes chat-shine { 0%{transform:translateX(-100%)rotate(25deg)} 20%{transform:translateX(100%)rotate(25deg)} 100%{transform:translateX(100%)rotate(25deg)} }
-    .chat-badge { position: absolute; top: -2px; right: -2px; background: #dc3545; color: #fff; border-radius: 50%; width: 22px; height: 22px; font-size: .7rem; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; z-index:3; }
+    .chat-fab { width: 64px; height: 64px; border-radius: 50%; border: none; cursor: pointer; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; color: #fff; background: radial-gradient(120% 120% at 22% 14%, rgba(255,255,255,.38) 0%, rgba(255,255,255,0) 42%), linear-gradient(135deg,#0d6efd 0%,#4361ee 55%,#7c3aed 100%); box-shadow: 0 6px 24px rgba(67,97,238,.5), 0 14px 44px rgba(13,110,253,.3), inset 0 1px 0 rgba(255,255,255,.4); animation: chat-fab-in .55s cubic-bezier(.34,1.56,.64,1); transition: transform .25s cubic-bezier(.34,1.56,.64,1), box-shadow .25s; }
+    .chat-fab::before { content: ''; position: absolute; top: 5%; left: 13%; width: 46%; height: 30%; border-radius: 50%; background: rgba(255,255,255,.4); filter: blur(2.5px); transform: rotate(-14deg); pointer-events: none; z-index: 1; }
+    .chat-fab::after { content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent); transform: skewX(-20deg); pointer-events: none; z-index: 1; animation: chat-shine 3.2s ease-in-out infinite; }
+    .chat-fab:hover { transform: translateY(-3px) scale(1.08); box-shadow: 0 10px 34px rgba(67,97,238,.6), 0 20px 56px rgba(13,110,253,.4), inset 0 1px 0 rgba(255,255,255,.5); }
+    .chat-fab:hover .chat-fab-icon { transform: scale(1.08); }
+    .chat-fab:active { transform: scale(.92); box-shadow: 0 4px 14px rgba(67,97,238,.5); }
+    .chat-fab-icon { position: relative; z-index: 2; transition: transform .25s; animation: chat-fab-float 3.2s ease-in-out infinite; }
+    .chat-fab-ring { position: absolute; inset: 0; width: 100%; height: 100%; color: rgba(255,255,255,.4); animation: chat-ring 2.8s ease-in-out infinite; filter: drop-shadow(0 0 5px rgba(255,255,255,.55)); }
+    .chat-dot1, .chat-dot2, .chat-dot3 { animation: chat-dot 1.6s ease-in-out infinite; }
+    .chat-dot2 { animation-delay: .2s; }
+    .chat-dot3 { animation-delay: .4s; }
+    @@keyframes chat-fab-in { 0% { opacity: 0; transform: scale(.3) translateY(26px); } 60% { opacity: 1; transform: scale(1.12) translateY(-4px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+    @@keyframes chat-shine { 0% { left: -60%; } 60%, 100% { left: 130%; } }
+    @@keyframes chat-fab-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+    @@keyframes chat-dot { 0%, 60%, 100% { opacity: .2; } 30% { opacity: 1; } }
+    @@keyframes chat-badge-pop { from { transform: scale(0); } to { transform: scale(1); } }
+    .chat-badge { position: absolute; top: -4px; right: -4px; background: #dc3545; color: #fff; border-radius: 50%; width: 24px; height: 24px; font-size: .72rem; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; z-index: 4; box-shadow: 0 3px 10px rgba(220,53,69,.45); animation: chat-badge-pop .4s cubic-bezier(.34,1.56,.64,1); }
+    @@keyframes chat-ring { 0%,100% { opacity: .45; transform: scale(1); } 50% { opacity: 0; transform: scale(1.18); } }
     .chat-panel { width: 340px; height: 520px; max-height: calc(100vh - 100px); background: #fff; border-radius: 16px; box-shadow: 0 8px 40px rgba(0,0,0,.15); display: flex; flex-direction: column; overflow: hidden; animation: chat-in .25s ease; }
     @@keyframes chat-in { from { opacity:0; transform:translateY(16px) scale(.95); } to { opacity:1; transform:translateY(0) scale(1); } }
     .chat-header { background: #0d6efd; color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
@@ -283,7 +349,7 @@
     .chat-status.read { color: #0d6efd; }
     .chat-status.read::before { content: ""; }
     .chat-media-img { max-width: 200px; max-height: 180px; border-radius: 10px; cursor: pointer; }
-    .chat-audio { width: 100%; height: 36px; }
+    .chat-audio { width: 100%; min-width: 180px; height: 40px; }
     .chat-file-link { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 6px; }
     .chat-typing { display: flex; gap: 4px; padding: 12px 16px; }
     .chat-typing span { width: 7px; height: 7px; border-radius: 50%; background: #6c757d; animation: chat-bounce 1.4s infinite; }
@@ -296,15 +362,49 @@
     .chat-emoji-btn:hover { background: #e9ecef; }
     .chat-offline .chat-fab { filter: grayscale(.85); animation: none; }
     .chat-offline .chat-fab-ring { display: none; }
-    .chat-input-row { display: flex; gap: 4px; align-items: center; }
-    .chat-input { flex: 1; border: 1.5px solid #e9ecef; border-radius: 24px; padding: 10px 16px; font-size: .85rem; outline: none; transition: border-color .2s; }
-    .chat-input:focus { border-color: #0d6efd; }
+    .chat-input-row { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; position: relative; }
+    .chat-input { flex: 1; min-width: 0; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 12px 16px; font-size: .92rem; outline: none; transition: border-color .2s, box-shadow .2s; min-height: 48px; }
+    .chat-input:focus { border-color: #0d6efd; box-shadow: 0 0 0 3px rgba(13,110,253,.12); }
+    .chat-attach-active { background: #e7f0ff !important; color: #0d6efd !important; }
+    .chat-attach-overlay { position: fixed; inset: 0; z-index: 95; }
+    .chat-attach-menu { position: absolute; bottom: calc(100% + 10px); right: 0; z-index: 96; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 12px 32px rgba(15,23,42,.16); padding: 6px; width: 240px; animation: msgIn .18s ease; }
+    .chat-attach-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent; border-radius: 10px; padding: 9px 10px; cursor: pointer; text-align: right; transition: background .15s; }
+    .chat-attach-item:hover { background: #f1f5f9; }
+    .chat-attach-item:active { background: #e2e8f0; }
+    .chat-attach-ico { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: .95rem; flex-shrink: 0; }
+    .chat-attach-ico.img { background: #ecfdf5; color: #059669; }
+    .chat-attach-ico.file { background: #eff6ff; color: #2563eb; }
+    .chat-attach-ico.voice { background: #fef3c7; color: #d97706; }
+    .chat-attach-ico.emoji { background: #fdf2f8; color: #db2777; }
+    .chat-attach-label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .chat-attach-name { font-size: .8rem; font-weight: 700; color: #1e293b; }
+    .chat-attach-desc { font-size: .66rem; color: #94a3b8; }
+    .chat-attach-arrow { color: #cbd5e1; font-size: .62rem; }
     .chat-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: #f1f3f5; color: #495057; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; flex-shrink: 0; font-size: .9rem; }
     .chat-btn:hover { background: #e9ecef; }
     .chat-btn:disabled { opacity: .4; cursor: default; }
-    .chat-btn-send { background: #0d6efd; color: #fff; }
-    .chat-btn-send:hover { background: #0b5ed7; }
+    .chat-btn-send { background: linear-gradient(135deg,#0d6efd,#4361ee); color: #fff; width: 44px; height: 44px; box-shadow: 0 3px 12px rgba(13,110,253,.35); }
+    .chat-btn-send:hover { background: #0b5ed7; transform: scale(1.06); }
+    .chat-btn-send:active { transform: scale(.95); }
+    .chat-btn-send:disabled { box-shadow: none; transform: none; background: #adb5bd; }
     .chat-btn-rec { background: #dc3545; color: #fff; animation: chat-pulse .8s infinite; }
+    .chat-rec-timer { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 12px; margin-bottom: 8px; font-size: .72rem; color: #be123c; }
+    .chat-rec-dot { width: 9px; height: 9px; border-radius: 50%; background: #ef4444; animation: chat-pulse .8s infinite; flex-shrink: 0; }
+    .chat-rec-time { font-weight: 800; font-variant-numeric: tabular-nums; direction: ltr; }
+    .chat-rec-hint { color: #9f1239; opacity: .8; font-size: .66rem; }
+    .chat-rec-stop { border: none; background: #dc3545; color: #fff; width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: .66rem; transition: .15s; margin-right: auto; flex-shrink: 0; }
+    .chat-rec-stop:hover { background: #b91c1c; }
+    .chat-rec-bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 12px; margin-bottom: 8px; }
+    .chat-rec-audio { flex: 1; height: 34px; min-width: 0; }
+    .chat-rec-info { display: flex; align-items: center; gap: 5px; font-size: .7rem; font-weight: 700; color: #475569; white-space: nowrap; }
+    .chat-rec-actions { display: flex; gap: 5px; flex-shrink: 0; }
+    .chat-rec-btn { width: 32px; height: 32px; border: none; border-radius: 9px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: .72rem; transition: .15s; }
+    .chat-rec-btn.send { background: #0d6efd; color: #fff; }
+    .chat-rec-btn.send:hover { background: #0b5ed7; }
+    .chat-rec-btn.redo { background: #e2e8f0; color: #475569; }
+    .chat-rec-btn.redo:hover { background: #cbd5e1; }
+    .chat-rec-btn.del { background: #fee2e2; color: #dc2626; }
+    .chat-rec-btn.del:hover { background: #fecaca; }
     @@keyframes chat-pulse { 0%,100% { box-shadow:0 0 0 0 rgba(220,53,69,.4); } 50% { box-shadow:0 0 0 8px rgba(220,53,69,0); } }
     .chat-lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px; cursor: pointer; }
     .chat-lightbox-img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
@@ -325,6 +425,11 @@
         .chat-input:focus { border-color: #0d6efd; }
         .chat-btn { background: #2d3b4f; color: #c9d4e2; }
         .chat-btn:hover { background: #36475e; }
+        .chat-attach-menu { background: #1e2836; border-color: #2d3b4f; box-shadow: 0 12px 32px rgba(0,0,0,.5); }
+        .chat-attach-item:hover { background: #2d3b4f; }
+        .chat-attach-name { color: #e9ecef; }
+        .chat-attach-desc { color: #7d8ea3; }
+        .chat-attach-arrow { color: #4a5a72; }
         .chat-time { color: #6b7d95; }
         .chat-badge { border-color: #1e2836; }
     }
@@ -337,8 +442,9 @@
         .chat-body { padding-bottom: env(safe-area-inset-bottom, 8px); }
         .chat-footer { padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px)); }
         .chat-msg { max-width: 88%; }
-        .chat-input { padding: 12px 16px; font-size: 1rem; }
-        .chat-btn { width: 44px; height: 44px; }
+        .chat-input { padding: 13px 16px; font-size: 1.05rem; min-height: 52px; }
+        .chat-btn { width: 46px; height: 46px; }
+        .chat-btn-send { width: 50px; height: 50px; }
         .chat-media-img { max-width: 180px; max-height: 160px; }
     }
 </style>
@@ -354,8 +460,11 @@
     private int _unreadCount;
     private string? _statusMessage;
     private bool _isOpen;
-    private bool _isRecording;
     private bool _voiceSupported;
+    private RecOrder _recState = RecOrder.Idle;
+    private int _recSeconds;
+    private string _pendingVoiceUrl = "";
+    private enum RecOrder { Idle, Recording, Preview }
     private string? _lightboxUrl;
     private ElementReference _messagesContainer;
     private SiteSettingsDto _settings = new();
@@ -442,6 +551,23 @@
     }
 
     [JSInvokable]
+    public Task OnRecordingTick(int seconds)
+    {
+        _recSeconds = seconds;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnVoiceStopped(int seconds)
+    {
+        _recSeconds = seconds;
+        _recState = RecOrder.Preview;
+        try { _pendingVoiceUrl = await JS.InvokeAsync<string>("__chatVoiceRecorder.getPendingUrl") ?? ""; }
+        catch { }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
     public async Task OnVoiceRecorded(string url)
     {
         if (string.IsNullOrEmpty(url))
@@ -469,10 +595,16 @@
             StateHasChanged();
             if (_hub?.State != HubConnectionState.Connected)
             {
-                await QueueOffline(_sessionId, "", ChatMessageTypeDto.Voice, url);
+                if (!await SendViaRestAsync(_sessionId, "", ChatMessageTypeDto.Voice, url))
+                    await QueueOffline(_sessionId, "", ChatMessageTypeDto.Voice, url);
                 return;
             }
-            await _hub.InvokeAsync("SendMessage", _sessionId, "", ChatMessageTypeDto.Voice, url);
+            try { await _hub.InvokeAsync("SendMessage", _sessionId, "", ChatMessageTypeDto.Voice, url); }
+            catch
+            {
+                if (!await SendViaRestAsync(_sessionId, "", ChatMessageTypeDto.Voice, url))
+                    await QueueOffline(_sessionId, "", ChatMessageTypeDto.Voice, url);
+            }
         }
     }
 
@@ -493,6 +625,7 @@
 
         _hub.On<ChatMessageDto>("NewMessage", msg =>
         {
+            if (_messages.Any(m => m.Id == msg.Id)) return;
             if (_pendingTempIds.TryDequeue(out var tempId))
                 _messages.RemoveAll(m => m.Id == tempId);
             _messages.Add(msg);
@@ -572,19 +705,42 @@
             }
         });
 
-        _hub.Reconnecting += _ => { _pendingTempIds.Clear(); _status = ChatWidgetStatus.Loading; InvokeAsync(StateHasChanged); return Task.CompletedTask; };
+        _hub.Reconnecting += _ => { _status = ChatWidgetStatus.Loading; InvokeAsync(StateHasChanged); return Task.CompletedTask; };
         _hub.Reconnected += async _ =>
         {
             _pendingTempIds.Clear();
             _messages.RemoveAll(m => m.Id < 0);
-            _onlineAdminsCount = await _hub.InvokeAsync<int>("GetPresence");
             if (_sessionId > 0)
             {
-                await _hub.InvokeAsync("JoinSession", _sessionId);
-                await LoadMessages();
-                await FlushPending();
+                _status = ChatWidgetStatus.Active;
+                _statusMessage = null;
+            }
+            if (_hub != null)
+            {
+                try { _onlineAdminsCount = await _hub.InvokeAsync<int>("GetPresence"); } catch { }
+            }
+            if (_sessionId > 0)
+            {
+                try
+                {
+                    await _hub!.InvokeAsync("JoinSession", _sessionId);
+                    await LoadMessages();
+                    await FlushPending();
+                }
+                catch { }
             }
             InvokeAsync(StateHasChanged);
+        };
+        _hub.Closed += _ =>
+        {
+            _pendingTempIds.Clear();
+            if (_sessionId > 0)
+            {
+                _status = ChatWidgetStatus.Active;
+                _statusMessage = null;
+            }
+            InvokeAsync(StateHasChanged);
+            return Task.CompletedTask;
         };
 
         await _hub.StartAsync();
@@ -601,16 +757,36 @@
             _ = JS.InvokeVoidAsync("__chatRequestNotifyPermission");
             if (!_hasConnectedOnce)
             {
-                await ConnectHub();
-                await CheckExistingSession();
-                await FlushPending();
+                try
+                {
+                    await ConnectHub();
+                    await CheckExistingSession();
+                    await FlushPending();
+                }
+                catch
+                {
+                    _status = ChatWidgetStatus.Active;
+                    _statusMessage = "اتصال برقرار نشد. دوباره تلاش کنید.";
+                }
             }
-            else if (_sessionId > 0)
+            else
             {
-                await _hub!.InvokeAsync("JoinSession", _sessionId);
-                await LoadMessages();
-                await FlushPending();
-                await ScrollToBottom();
+                if (_hub == null || _hub.State != HubConnectionState.Connected)
+                {
+                    try { await ConnectHub(); } catch { }
+                }
+                if (_sessionId > 0)
+                {
+                    try { await _hub!.InvokeAsync("JoinSession", _sessionId); } catch { }
+                    await LoadMessages();
+                    await FlushPending();
+                    await ScrollToBottom();
+                }
+                else
+                {
+                    await CheckExistingSession();
+                    await FlushPending();
+                }
             }
             StateHasChanged();
         }
@@ -631,6 +807,13 @@
         {
             await ConnectHub();
             var result = await _hub!.InvokeAsync<StartChatResult>("StartChat", _userName, _userEmail, _userPhone);
+            if (!result.Success || result.SessionId == 0)
+            {
+                _status = ChatWidgetStatus.Closed;
+                _statusMessage = result.Message ?? "شروع مکالمه ممکن نشد. لطفاً دوباره تلاش کنید.";
+                StateHasChanged();
+                return;
+            }
             _sessionId = result.SessionId;
             _status = ChatWidgetStatus.Active;
             _statusMessage = null;
@@ -701,12 +884,45 @@
         }
         if (_hub?.State != HubConnectionState.Connected)
         {
+            if (await SendViaRestAsync(_sessionId, text, ChatMessageTypeDto.Text, null)) return;
             await QueueOffline(_sessionId, text, ChatMessageTypeDto.Text, null);
             return;
         }
 
         try { await _hub.InvokeAsync("SendMessage", _sessionId, text, ChatMessageTypeDto.Text, null); }
-        catch { await QueueOffline(_sessionId, text, ChatMessageTypeDto.Text, null); }
+        catch
+        {
+            if (!await SendViaRestAsync(_sessionId, text, ChatMessageTypeDto.Text, null))
+                await QueueOffline(_sessionId, text, ChatMessageTypeDto.Text, null);
+        }
+    }
+
+    private async Task<bool> SendViaRestAsync(int sessionId, string content, ChatMessageTypeDto type, string? mediaUrl)
+    {
+        try
+        {
+            var visitorId = await GetVisitorId();
+            var resp = await Http.PostAsJsonAsync("api/chat/send", new
+            {
+                sessionId,
+                content,
+                messageType = type,
+                mediaUrl,
+                visitorId
+            });
+            if (!resp.IsSuccessStatusCode) return false;
+            var dto = await resp.Content.ReadFromJsonAsync<ChatMessageDto>();
+            if (dto == null) return false;
+            if (_messages.Any(m => m.Id == dto.Id)) return true;
+            if (_pendingTempIds.TryDequeue(out var tempId))
+                _messages.RemoveAll(m => m.Id == tempId);
+            _messages.Add(dto);
+            _messages.Sort((a, b) => a.CreatedAt.CompareTo(b.CreatedAt));
+            await ScrollToBottom();
+            StateHasChanged();
+            return true;
+        }
+        catch { return false; }
     }
 
     private async Task QueueOffline(int sessionId, string content, ChatMessageTypeDto type, string? mediaUrl)
@@ -772,6 +988,48 @@
         await JS.InvokeVoidAsync("__chatPickFile", DotNetObjectReference.Create(this));
     }
 
+    private bool _attachOpen;
+
+    private void ToggleAttach() => _attachOpen = !_attachOpen;
+
+    private void CloseAttach() => _attachOpen = false;
+
+    private async Task PickImageMenu()
+    {
+        CloseAttach();
+        StateHasChanged();
+        await SendImage();
+    }
+
+    private async Task PickFileMenu()
+    {
+        CloseAttach();
+        StateHasChanged();
+        await SendFile();
+    }
+
+    private async Task PickVoiceMenu()
+    {
+        CloseAttach();
+        StateHasChanged();
+        if (_recState != RecOrder.Idle) return;
+        try
+        {
+            var ok = await JS.InvokeAsync<bool>("__chatVoiceRecorder.start");
+            _recState = ok ? RecOrder.Recording : RecOrder.Idle;
+            if (ok) _recSeconds = 0;
+        }
+        catch { _recState = RecOrder.Idle; }
+        StateHasChanged();
+    }
+
+    private void PickEmojiMenu()
+    {
+        CloseAttach();
+        _emojiOpen = !_emojiOpen;
+        StateHasChanged();
+    }
+
     [JSInvokable]
     public async Task OnFilePicked(string payload)
     {
@@ -804,10 +1062,16 @@
             StateHasChanged();
             if (_hub?.State != HubConnectionState.Connected)
             {
-                await QueueOffline(_sessionId, fileName, ChatMessageTypeDto.File, url);
+                if (!await SendViaRestAsync(_sessionId, fileName, ChatMessageTypeDto.File, url))
+                    await QueueOffline(_sessionId, fileName, ChatMessageTypeDto.File, url);
                 return;
             }
-            await _hub.InvokeAsync("SendMessage", _sessionId, fileName, ChatMessageTypeDto.File, url);
+            try { await _hub.InvokeAsync("SendMessage", _sessionId, fileName, ChatMessageTypeDto.File, url); }
+            catch
+            {
+                if (!await SendViaRestAsync(_sessionId, fileName, ChatMessageTypeDto.File, url))
+                    await QueueOffline(_sessionId, fileName, ChatMessageTypeDto.File, url);
+            }
         }
     }
 
@@ -853,30 +1117,76 @@
             StateHasChanged();
             if (_hub?.State != HubConnectionState.Connected)
             {
-                await QueueOffline(_sessionId, "", ChatMessageTypeDto.Image, url);
+                if (!await SendViaRestAsync(_sessionId, "", ChatMessageTypeDto.Image, url))
+                    await QueueOffline(_sessionId, "", ChatMessageTypeDto.Image, url);
                 return;
             }
-            await _hub.InvokeAsync("SendMessage", _sessionId, "", ChatMessageTypeDto.Image, url);
+            try { await _hub.InvokeAsync("SendMessage", _sessionId, "", ChatMessageTypeDto.Image, url); }
+            catch
+            {
+                if (!await SendViaRestAsync(_sessionId, "", ChatMessageTypeDto.Image, url))
+                    await QueueOffline(_sessionId, "", ChatMessageTypeDto.Image, url);
+            }
         }
     }
 
     private async Task ToggleVoice()
     {
-        if (_isRecording)
+        if (_recState == RecOrder.Recording)
         {
             try { await JS.InvokeVoidAsync("__chatVoiceRecorder.stop"); } catch { }
-            _isRecording = false;
+            return;
         }
-        else
+        if (_recState == RecOrder.Preview) return;
+        try
         {
-            try
-            {
-                var ok = await JS.InvokeAsync<bool>("__chatVoiceRecorder.start");
-                if (ok) _isRecording = true;
-            }
-            catch { }
+            var ok = await JS.InvokeAsync<bool>("__chatVoiceRecorder.start");
+            _recState = ok ? RecOrder.Recording : RecOrder.Idle;
+            if (ok) _recSeconds = 0;
         }
+        catch { _recState = RecOrder.Idle; }
         StateHasChanged();
+    }
+
+    private async Task SendPendingVoice()
+    {
+        _recState = RecOrder.Idle;
+        _pendingVoiceUrl = "";
+        var ok = false;
+        try { ok = await JS.InvokeAsync<bool>("__chatVoiceRecorder.uploadPending"); }
+        catch { }
+        if (!ok) _recSeconds = 0;
+        StateHasChanged();
+    }
+
+    private async Task ReRecordVoice()
+    {
+        try { await JS.InvokeVoidAsync("__chatVoiceRecorder.clearPending"); } catch { }
+        _pendingVoiceUrl = "";
+        _recSeconds = 0;
+        try
+        {
+            var ok = await JS.InvokeAsync<bool>("__chatVoiceRecorder.start");
+            _recState = ok ? RecOrder.Recording : RecOrder.Idle;
+            if (ok) _recSeconds = 0;
+        }
+        catch { _recState = RecOrder.Idle; }
+        StateHasChanged();
+    }
+
+    private async Task DiscardPendingVoice()
+    {
+        try { await JS.InvokeVoidAsync("__chatVoiceRecorder.clearPending"); } catch { }
+        _pendingVoiceUrl = "";
+        _recSeconds = 0;
+        _recState = RecOrder.Idle;
+        StateHasChanged();
+    }
+
+    private static string FormatDuration(int sec)
+    {
+        sec = Math.Max(0, sec);
+        return $"{sec / 60}:{sec % 60:00}";
     }
 
     private void HandleTyping()
@@ -924,6 +1234,14 @@
         if (local.Date == DateTime.Today.AddDays(-1)) return "دیروز";
         return local.ToString("yyyy/MM/dd");
     }
+
+    private static bool IsOpLike(ChatMessageDto m) =>
+        m.SenderType == ChatSenderTypeDto.System ||
+        (m.SenderType == ChatSenderTypeDto.Operator && m.SenderId != null && !m.SenderId.StartsWith("اپراتور ("));
+
+    private static bool IsUserLike(ChatMessageDto m) =>
+        m.SenderType == ChatSenderTypeDto.User ||
+        (m.SenderType == ChatSenderTypeDto.Operator && m.SenderId != null && m.SenderId.StartsWith("اپراتور ("));
 
     private static string LinkifyContent(string? content)
     {

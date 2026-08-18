@@ -64,6 +64,14 @@ window.__chatSetDotNetRef = function (ref) {
     window.__chatWidgetDotNetRef = ref;
 };
 
+window.__chatUploadFetch = function (url, formData) {
+    var token = '';
+    try { token = localStorage.getItem('auth_token') || ''; } catch (e) {}
+    var opts = { method: 'POST', body: formData };
+    if (token) opts.headers = { 'Authorization': 'Bearer ' + token };
+    return fetch(url, opts);
+};
+
 window.__chatVoiceRecorder = {
     mediaRecorder: null,
     audioChunks: [],
@@ -71,6 +79,12 @@ window.__chatVoiceRecorder = {
     isRecording: false,
     mimeType: '',
     fileExt: 'webm',
+    startTime: 0,
+    tickTimer: null,
+    pendingBlob: null,
+    pendingUrl: null,
+    visitorId: '',
+    autoSend: false,
 
     _bestMimeType: function () {
         var types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/aac', 'audio/ogg;codecs=opus'];
@@ -80,8 +94,24 @@ window.__chatVoiceRecorder = {
         return '';
     },
 
+    _tick: function () {
+        var self = this;
+        if (self.tickTimer) return;
+        self.tickTimer = setInterval(function () {
+            var sec = Math.max(1, Math.round((Date.now() - self.startTime) / 1000));
+            if (window.__chatWidgetDotNetRef) {
+                window.__chatWidgetDotNetRef.invokeMethodAsync('OnRecordingTick', sec);
+            }
+        }, 1000);
+    },
+
+    _stopTick: function () {
+        if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null; }
+    },
+
     start: function () {
         var self = this;
+        if (self.isRecording) return Promise.resolve(false);
         self.visitorId = window.__chatWidgetVisitorId();
         return navigator.mediaDevices.getUserMedia({ audio: true })
             .then(function (stream) {
@@ -97,11 +127,25 @@ window.__chatVoiceRecorder = {
                 self.mediaRecorder.onstop = function () {
                     var type = self.mimeType || 'audio/webm';
                     var blob = new Blob(self.audioChunks, { type: type });
-                    self.uploadRecording(blob);
+                    var sec = Math.max(1, Math.round((Date.now() - self.startTime) / 1000));
+                    self.isRecording = false;
+                    self._stopTick();
                     self.stopStream();
+                    if (self.autoSend) {
+                        self._upload(blob);
+                    } else {
+                        self.pendingBlob = blob;
+                        if (self.pendingUrl) URL.revokeObjectURL(self.pendingUrl);
+                        self.pendingUrl = URL.createObjectURL(blob);
+                        if (window.__chatWidgetDotNetRef) {
+                            window.__chatWidgetDotNetRef.invokeMethodAsync('OnVoiceStopped', sec);
+                        }
+                    }
                 };
+                self.startTime = Date.now();
                 self.mediaRecorder.start();
                 self.isRecording = true;
+                self._tick();
                 return true;
             })
             .catch(function () { return false; });
@@ -110,8 +154,9 @@ window.__chatVoiceRecorder = {
     stop: function () {
         if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
             this.mediaRecorder.stop();
-            this.isRecording = false;
         }
+        this._stopTick();
+        this.isRecording = false;
     },
 
     stopStream: function () {
@@ -121,24 +166,40 @@ window.__chatVoiceRecorder = {
         }
     },
 
-    uploadRecording: function (blob) {
+    _upload: function (blob) {
+        var self = this;
         var formData = new FormData();
-        formData.append('file', blob, 'voice.' + this.fileExt);
-        fetch('/api/chat/upload?visitorId=' + encodeURIComponent(this.visitorId || ''), { method: 'POST', body: formData })
-            .then(function (r) { return r.json(); })
+        formData.append('file', blob, 'voice.' + self.fileExt);
+        window.__chatUploadFetch('/api/chat/upload?visitorId=' + encodeURIComponent(self.visitorId || ''), formData)
+            .then(function (r) { return r.json(); }).catch(function () { return { url: '' }; })
             .then(function (d) {
+                var url = d && d.url ? d.url : '';
                 if (window.__chatWidgetDotNetRef) {
-                    window.__chatWidgetDotNetRef.invokeMethodAsync('OnVoiceRecorded', d && d.url ? d.url : '');
-                }
-            })
-            .catch(function () {
-                if (window.__chatWidgetDotNetRef) {
-                    window.__chatWidgetDotNetRef.invokeMethodAsync('OnVoiceRecorded', '');
+                    window.__chatWidgetDotNetRef.invokeMethodAsync('OnVoiceRecorded', url);
                 }
             });
     },
 
-    visitorId: '',
+    clearPending: function () {
+        this.pendingBlob = null;
+        if (this.pendingUrl) { URL.revokeObjectURL(this.pendingUrl); this.pendingUrl = null; }
+    },
+
+    setAutoSend: function (flag) {
+        this.autoSend = !!flag;
+    },
+
+    getPendingUrl: function () {
+        return this.pendingUrl || '';
+    },
+
+    uploadPending: function () {
+        var self = this;
+        if (!self.pendingBlob) return Promise.resolve(false);
+        self._upload(self.pendingBlob);
+        self.clearPending();
+        return Promise.resolve(true);
+    },
 
     isSupported: function () {
         return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
@@ -154,13 +215,10 @@ window.__chatPickImage = function (dotNetRef) {
         if (!file) return;
         var formData = new FormData();
         formData.append('file', file);
-        fetch('/api/chat/upload?visitorId=' + encodeURIComponent(window.__chatWidgetVisitorId()), { method: 'POST', body: formData })
-            .then(function (r) { return r.json(); })
+        window.__chatUploadFetch('/api/chat/upload?visitorId=' + encodeURIComponent(window.__chatWidgetVisitorId()), formData)
+            .then(function (r) { return r.json(); }).catch(function () { return { url: '' }; })
             .then(function (d) {
                 dotNetRef.invokeMethodAsync('OnImagePicked', d && d.url ? d.url : '');
-            })
-            .catch(function () {
-                dotNetRef.invokeMethodAsync('OnImagePicked', '');
             });
     };
     input.click();
@@ -174,8 +232,8 @@ window.__chatPickFile = function (dotNetRef) {
         if (!file) return;
         var formData = new FormData();
         formData.append('file', file);
-        fetch('/api/chat/upload?visitorId=' + encodeURIComponent(window.__chatWidgetVisitorId()), { method: 'POST', body: formData })
-            .then(function (r) { return r.json(); })
+        window.__chatUploadFetch('/api/chat/upload?visitorId=' + encodeURIComponent(window.__chatWidgetVisitorId()), formData)
+            .then(function (r) { return r.json(); }).catch(function () { return { url: '' }; })
             .then(function (d) {
                 var payload = d && d.url ? JSON.stringify({
                     url: d.url,
@@ -184,9 +242,6 @@ window.__chatPickFile = function (dotNetRef) {
                     contentType: d.contentType || ''
                 }) : '';
                 dotNetRef.invokeMethodAsync('OnFilePicked', payload);
-            })
-            .catch(function () {
-                dotNetRef.invokeMethodAsync('OnFilePicked', '');
             });
     };
     input.click();
@@ -198,4 +253,26 @@ window.__chatLoadPending = function () {
 
 window.__chatSavePending = function (list) {
     try { localStorage.setItem('chat_pending', JSON.stringify(list)); } catch (e) {}
+};
+
+window.__chatKeyboardWatch = function () {
+    var app = document.querySelector('.chat-app');
+    if (!app) return;
+    function update() {
+        var kb = 0;
+        if (window.visualViewport) {
+            var vv = window.visualViewport;
+            kb = Math.max(0, (window.innerHeight || vv.height) - vv.height - (vv.offsetTop || 0));
+        }
+        app.style.setProperty('--chat-kb', kb + 'px');
+    }
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', update);
+        window.visualViewport.addEventListener('scroll', update);
+    }
+    window.addEventListener('resize', update);
+    ['focusin', 'focusout'].forEach(function (evt) {
+        window.addEventListener(evt, function () { setTimeout(update, 120); });
+    });
+    update();
 };

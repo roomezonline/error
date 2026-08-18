@@ -1,5 +1,6 @@
 using ErrorService.Server.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 
@@ -18,6 +19,14 @@ public sealed class BaleBotService
         _db = db;
         _logger = logger;
     }
+
+    /// <summary>آخرین سشنِ به‌کاررفته برای هر چت (chatId) — برای وصل‌کردن ریپلای بدون reply_to_message</summary>
+    public static readonly ConcurrentDictionary<long, int> LastSessionByChat = new();
+
+    /// <summary>نگاشت message_id ارسال‌شده به گروه → sessionId؛ کلید: "{chatId}:{messageId}"</summary>
+    public static readonly ConcurrentDictionary<string, int> MessageSessionIndex = new();
+
+    private static long? TryParseChatId(string? s) => long.TryParse(s, out var id) ? id : null;
 
     public async Task<bool> IsConfiguredAsync()
     {
@@ -58,36 +67,70 @@ public sealed class BaleBotService
     {
         var (token, groupId) = await GetSettingsAsync();
         if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(groupId)) return;
+        var chatId = TryParseChatId(groupId);
 
         var message = $"{SessionPrefix}{sessionId}]\n👤 {userName ?? "کاربر"}:\n{text}";
-        await SendApiAsync(token, "sendMessage", new { chat_id = groupId, text = message });
+        await SendApiAsync(token, "sendMessage", new { chat_id = groupId, text = message }, sessionId, chatId);
     }
 
     public async Task SendPhotoToGroup(int sessionId, string photoUrl, string? caption, string? userName)
     {
         var (token, groupId) = await GetSettingsAsync();
         if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(groupId)) return;
+        var chatId = TryParseChatId(groupId);
 
         var text = $"{SessionPrefix}{sessionId}]\n👤 {userName ?? "کاربر"}:\n{caption ?? ""}";
-        await SendApiAsync(token, "sendPhoto", new { chat_id = groupId, photo = photoUrl, caption = text });
+        await SendApiAsync(token, "sendPhoto", new { chat_id = groupId, photo = photoUrl, caption = text }, sessionId, chatId);
     }
 
     public async Task SendVoiceToGroup(int sessionId, string voiceUrl, string? userName)
     {
         var (token, groupId) = await GetSettingsAsync();
         if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(groupId)) return;
+        var chatId = TryParseChatId(groupId);
 
         var text = $"{SessionPrefix}{sessionId}]\n🎤 {userName ?? "کاربر"}";
-        await SendApiAsync(token, "sendVoice", new { chat_id = groupId, voice = voiceUrl, caption = text });
+        await SendApiAsync(token, "sendVoice", new { chat_id = groupId, voice = voiceUrl, caption = text }, sessionId, chatId);
     }
 
     public async Task SendSystemMessageToGroup(int sessionId, string text)
     {
         var (token, groupId) = await GetSettingsAsync();
         if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(groupId)) return;
+        var chatId = TryParseChatId(groupId);
 
         var message = $"{SessionPrefix}{sessionId}]\nℹ️ {text}";
-        await SendApiAsync(token, "sendMessage", new { chat_id = groupId, text = message });
+        await SendApiAsync(token, "sendMessage", new { chat_id = groupId, text = message }, sessionId, chatId);
+    }
+
+    public async Task SendOperatorTextToGroup(int sessionId, string text, string? operatorName)
+    {
+        var (token, groupId) = await GetSettingsAsync();
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(groupId)) return;
+        var chatId = TryParseChatId(groupId);
+
+        var message = $"{SessionPrefix}{sessionId}]\n👨‍💼 {operatorName ?? "اپراتور"}:\n{text}";
+        await SendApiAsync(token, "sendMessage", new { chat_id = groupId, text = message }, sessionId, chatId);
+    }
+
+    public async Task SendOperatorPhotoToGroup(int sessionId, string photoUrl, string? caption, string? operatorName)
+    {
+        var (token, groupId) = await GetSettingsAsync();
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(groupId)) return;
+        var chatId = TryParseChatId(groupId);
+
+        var text = $"{SessionPrefix}{sessionId}]\n👨‍💼 {operatorName ?? "اپراتور"}:\n{caption ?? ""}";
+        await SendApiAsync(token, "sendPhoto", new { chat_id = groupId, photo = photoUrl, caption = text }, sessionId, chatId);
+    }
+
+    public async Task SendOperatorVoiceToGroup(int sessionId, string voiceUrl, string? operatorName)
+    {
+        var (token, groupId) = await GetSettingsAsync();
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(groupId)) return;
+        var chatId = TryParseChatId(groupId);
+
+        var text = $"{SessionPrefix}{sessionId}]\n🎤 {operatorName ?? "اپراتور"}";
+        await SendApiAsync(token, "sendVoice", new { chat_id = groupId, voice = voiceUrl, caption = text }, sessionId, chatId);
     }
 
     public async Task SendTextToChat(long chatId, string text)
@@ -224,7 +267,7 @@ public sealed class BaleBotService
         }
     }
 
-    private async Task SendApiAsync(string token, string method, object payload)
+    private async Task SendApiAsync(string token, string method, object payload, int? sessionId = null, long? chatId = null)
     {
         try
         {
@@ -238,6 +281,7 @@ public sealed class BaleBotService
             if (response.IsSuccessStatusCode)
             {
                 _logger.LogInformation("BaleBot: {Method} success: {Body}", method, body);
+                IndexSentMessage(body, sessionId, chatId);
             }
             else
             {
@@ -248,5 +292,22 @@ public sealed class BaleBotService
         {
             _logger.LogError(ex, "BaleBot: exception sending {Method}", method);
         }
+    }
+
+    private static void IndexSentMessage(string body, int? sessionId, long? chatId)
+    {
+        if (!sessionId.HasValue || !chatId.HasValue) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("ok", out var ok) || !ok.GetBoolean()) return;
+            if (!root.TryGetProperty("result", out var res) || !res.TryGetProperty("message_id", out var mid)) return;
+
+            var key = $"{chatId.Value}:{mid.GetInt64()}";
+            MessageSessionIndex[key] = sessionId.Value;
+            LastSessionByChat[chatId.Value] = sessionId.Value;
+        }
+        catch { }
     }
 }

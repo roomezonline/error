@@ -141,28 +141,28 @@
                             <label class="form-label">اینستاگرام</label>
                             <div class="input-group">
                                 <span class="input-group-text text-muted">instagram.com/</span>
-                                <input type="text" class="form-control" @bind="instagramUsername" placeholder="username" @onblur="UpdateInstagramUrl" />
+                                <input type="text" class="form-control" value="@instagramUsername" @oninput="OnInstagramInput" placeholder="username" />
                             </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">تلگرام</label>
                             <div class="input-group">
                                 <span class="input-group-text text-muted">t.me/</span>
-                                <input type="text" class="form-control" @bind="telegramUsername" placeholder="username" @onblur="UpdateTelegramUrl" />
+                                <input type="text" class="form-control" value="@telegramUsername" @oninput="OnTelegramInput" placeholder="username" />
                             </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">یوتیوب</label>
                             <div class="input-group">
                                 <span class="input-group-text text-muted">youtube.com/@@</span>
-                                <input type="text" class="form-control" @bind="youtubeUsername" placeholder="username" @onblur="UpdateYouTubeUrl" />
+                                <input type="text" class="form-control" value="@youtubeUsername" @oninput="OnYouTubeInput" placeholder="username" />
                             </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">لینکدین</label>
                             <div class="input-group">
                                 <span class="input-group-text text-muted">linkedin.com/in/</span>
-                                <input type="text" class="form-control" @bind="linkedinUsername" placeholder="username" @onblur="UpdateLinkedInUrl" />
+                                <input type="text" class="form-control" value="@linkedinUsername" @oninput="OnLinkedInInput" placeholder="username" />
                             </div>
                         </div>
                     </div>
@@ -485,25 +485,38 @@
     {
         if (model != null && !string.IsNullOrWhiteSpace(instagramUsername))
             model.InstagramUrl = $"https://instagram.com/{instagramUsername.Trim()}";
+        else if (model != null)
+            model.InstagramUrl = null;
     }
 
     private void UpdateTelegramUrl()
     {
         if (model != null && !string.IsNullOrWhiteSpace(telegramUsername))
             model.TelegramUrl = $"https://t.me/{telegramUsername.Trim()}";
+        else if (model != null)
+            model.TelegramUrl = null;
     }
 
     private void UpdateYouTubeUrl()
     {
         if (model != null && !string.IsNullOrWhiteSpace(youtubeUsername))
             model.YouTubeUrl = $"https://youtube.com/@{youtubeUsername.Trim()}";
+        else if (model != null)
+            model.YouTubeUrl = null;
     }
 
     private void UpdateLinkedInUrl()
     {
         if (model != null && !string.IsNullOrWhiteSpace(linkedinUsername))
             model.LinkedInUrl = $"https://linkedin.com/in/{linkedinUsername.Trim()}";
+        else if (model != null)
+            model.LinkedInUrl = null;
     }
+
+    private void OnInstagramInput(ChangeEventArgs e) { instagramUsername = e.Value?.ToString() ?? ""; UpdateInstagramUrl(); }
+    private void OnTelegramInput(ChangeEventArgs e) { telegramUsername = e.Value?.ToString() ?? ""; UpdateTelegramUrl(); }
+    private void OnYouTubeInput(ChangeEventArgs e) { youtubeUsername = e.Value?.ToString() ?? ""; UpdateYouTubeUrl(); }
+    private void OnLinkedInInput(ChangeEventArgs e) { linkedinUsername = e.Value?.ToString() ?? ""; UpdateLinkedInUrl(); }
 
     private async Task SaveSettings()
     {

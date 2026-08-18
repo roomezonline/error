@@ -102,6 +102,19 @@ public class MessengerWebhookController : ControllerBase
         if (sessionId == null)
         {
             _logger.LogWarning("{Channel} webhook: could not extract sessionId", channel);
+            // راهنمای اپراتور در گروه تا مکالمه را با ریپلی ادامه دهد
+            if (!string.IsNullOrEmpty(groupId) && actualChatId == groupId && payload.Message.Chat != null)
+            {
+                try
+                {
+                    await channelService.SendTextToChatAsync(payload.Message.Chat.Id,
+                        "👨‍💻 برای پاسخ به کاربر، روی پیام مربوطه ریپلی بزنید.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "{Channel} webhook: failed to send help message", channel);
+                }
+            }
             return Ok();
         }
 
@@ -128,8 +141,8 @@ public class MessengerWebhookController : ControllerBase
         var msg = new ChatMessage
         {
             SessionId = sessionId.Value,
-            SenderType = ChatSenderType.Operator,
-            SenderId = $"اپراتور ({channelService.DisplayName})",
+            SenderType = ChatSenderType.User,
+            SenderId = $"کاربر ({channelService.DisplayName})",
             Content = text,
             MessageType = messageType,
             MediaUrl = mediaUrl,
@@ -143,7 +156,7 @@ public class MessengerWebhookController : ControllerBase
         {
             Id = msg.Id,
             SessionId = msg.SessionId,
-            SenderType = ChatSenderTypeDto.Operator,
+            SenderType = ChatSenderTypeDto.User,
             SenderId = msg.SenderId,
             Content = msg.Content,
             MessageType = (ChatMessageTypeDto)(int)messageType,
@@ -159,6 +172,8 @@ public class MessengerWebhookController : ControllerBase
         _logger.LogInformation("{Channel} webhook: broadcasting message {MsgId} ({Type}) to session_{SessionId}",
             channel, msg.Id, messageType, sessionId);
         await _hub.Clients.Group($"session_{sessionId}").SendAsync("NewMessage", dto);
+        // اطلاع‌رسانی به پنل ادمین در لحظه، حتی اگر مکالمه باز نباشد
+        await _hub.Clients.Group("admins").SendAsync("NewMessage", dto);
         return Ok();
     }
 

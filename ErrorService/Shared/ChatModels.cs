@@ -104,6 +104,8 @@ public sealed class BaleMessage
 {
     [JsonPropertyName("message_id")]
     public long MessageId { get; set; }
+    [JsonPropertyName("from")]
+    public BaleUser? From { get; set; }
     [JsonPropertyName("chat")]
     public BaleChat? Chat { get; set; }
     [JsonPropertyName("text")]
@@ -116,6 +118,18 @@ public sealed class BaleMessage
     public BaleVoice? Voice { get; set; }
     [JsonPropertyName("reply_to_message")]
     public BaleMessage? ReplyToMessage { get; set; }
+}
+
+public sealed class BaleUser
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+    [JsonPropertyName("first_name")]
+    public string? FirstName { get; set; }
+    [JsonPropertyName("last_name")]
+    public string? LastName { get; set; }
+    [JsonPropertyName("username")]
+    public string? Username { get; set; }
 }
 
 public sealed class BaleChat

@@ -16,6 +16,7 @@ public sealed class ChatHub : Hub
     private readonly ErrorServiceDbContext _db;
     private readonly MessengerRouter _router;
     private readonly ChatAiCoordinator _ai;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ChatHub> _logger;
 
     private static readonly ConcurrentDictionary<string, int> OnlineAdmins = new();
@@ -24,11 +25,13 @@ public sealed class ChatHub : Hub
     private static readonly ConcurrentDictionary<int, byte> AiBlockedSessions = new();
     private static readonly ConcurrentDictionary<int, SemaphoreSlim> AiLocks = new();
 
-    public ChatHub(ErrorServiceDbContext db, MessengerRouter router, ChatAiCoordinator ai, ILogger<ChatHub> logger)
+    public ChatHub(ErrorServiceDbContext db, MessengerRouter router, ChatAiCoordinator ai,
+        IServiceScopeFactory scopeFactory, ILogger<ChatHub> logger)
     {
         _db = db;
         _router = router;
         _ai = ai;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -41,7 +44,8 @@ public sealed class ChatHub : Hub
 
         if (isAuth)
         {
-            var hasPerm = http.User.HasClaim("perm", "admin.chat.manage");
+            var hasPerm = http.User.HasClaim("perm", "admin.chat.manage")
+                          || http.User.IsInRole("super_admin");
             if (hasPerm)
             {
                 var userId = http.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -239,7 +243,10 @@ public sealed class ChatHub : Hub
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
-                    var replied = await _db.ChatMessages.AnyAsync(m =>
+                    using var scope = _scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<ErrorServiceDbContext>();
+                    var hub = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
+                    var replied = await db.ChatMessages.AnyAsync(m =>
                         m.SessionId == sessionId &&
                         m.CreatedAt > DateTime.UtcNow.AddSeconds(-delaySeconds) &&
                         m.SenderType == ChatSenderType.Operator);
@@ -253,11 +260,14 @@ public sealed class ChatHub : Hub
                         MessageType = ChatMessageType.Text,
                         CreatedAt = DateTime.UtcNow
                     };
-                    _db.ChatMessages.Add(aMsg);
-                    await _db.SaveChangesAsync();
-                    await Clients.Group($"session_{sessionId}").SendAsync("NewMessage", MapMessageDto(aMsg));
+                    db.ChatMessages.Add(aMsg);
+                    await db.SaveChangesAsync();
+                    await hub.Clients.Group($"session_{sessionId}").SendAsync("NewMessage", MapMessageDto(aMsg));
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "ChatHub: auto message failed for session {SessionId}", sessionId);
+                }
             });
         }
 
@@ -280,36 +290,38 @@ public sealed class ChatHub : Hub
         };
     }
 
-    public async Task SendMessage(int sessionId, string? content, ChatMessageTypeDto messageType, string? mediaUrl, int? replyToId = null)
+    public async Task<bool> SendMessage(int sessionId, string? content, ChatMessageTypeDto messageType, string? mediaUrl, int? replyToId = null)
     {
         var isAdmin = OnlineAdmins.ContainsKey(Context.ConnectionId);
         var session = await _db.ChatSessions.FindAsync(sessionId);
-        if (session == null || session.Status == ChatSessionStatus.Closed) return;
+        if (session == null || session.Status == ChatSessionStatus.Closed) return false;
 
         if (!isAdmin)
         {
             var sessionVisitorId = ConnectionVisitors.GetValueOrDefault(Context.ConnectionId) ?? Context.ConnectionId;
-            if (session.VisitorId != sessionVisitorId) return;
+            if (session.VisitorId != sessionVisitorId) return false;
 
             if (string.IsNullOrWhiteSpace(content) &&
                 (string.IsNullOrWhiteSpace(mediaUrl) || !mediaUrl.StartsWith("/uploads/chat/", StringComparison.OrdinalIgnoreCase)))
-                return;
+                return false;
         }
 
-        if (content?.Length > 4000) return;
+        if (content?.Length > 4000) return false;
 
         ChatMessage msg;
+        string? operatorName = null;
         if (isAdmin)
         {
             var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var adminUser = userId != null && int.TryParse(userId, out var uid)
                 ? await _db.Users.FindAsync(uid)
                 : null;
+            operatorName = adminUser?.FullName ?? "اپراتور";
             msg = new ChatMessage
             {
                 SessionId = sessionId,
                 SenderType = ChatSenderType.Operator,
-                SenderId = adminUser?.FullName ?? "اپراتور",
+                SenderId = operatorName,
                 Content = content,
                 MessageType = (ChatMessageType)(int)messageType,
                 MediaUrl = mediaUrl,
@@ -365,8 +377,38 @@ public sealed class ChatHub : Hub
                 _logger.LogError(ex, "MessengerRouter: failed to forward message for session {SessionId}", sessionId);
             }
 
+            // Keep admin panel in sync in real-time even when the session is not open
+            await Clients.Group("admins").SendAsync("NewMessage", dto);
+
             await TryRunAiAsync(sessionId, content ?? "", userName);
         }
+        else
+        {
+            try
+            {
+                switch (messageType)
+                {
+                    case ChatMessageTypeDto.Text:
+                        await _router.ForwardOperatorTextAsync(sessionId, content ?? "", operatorName);
+                        break;
+                    case ChatMessageTypeDto.Image:
+                        var baseUrl = $"{Context.GetHttpContext()?.Request.Scheme}://{Context.GetHttpContext()?.Request.Host}";
+                        await _router.ForwardOperatorPhotoAsync(sessionId, $"{baseUrl}{mediaUrl}", content, operatorName);
+                        break;
+                    case ChatMessageTypeDto.Voice:
+                        var voiceBaseUrl = $"{Context.GetHttpContext()?.Request.Scheme}://{Context.GetHttpContext()?.Request.Host}";
+                        await _router.ForwardOperatorVoiceAsync(sessionId, $"{voiceBaseUrl}{mediaUrl}", operatorName);
+                        break;
+                }
+                _logger.LogInformation("MessengerRouter: operator reply forwarded for session {SessionId}", sessionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "MessengerRouter: failed to forward operator reply for session {SessionId}", sessionId);
+            }
+        }
+
+        return true;
     }
 
     public async Task JoinSession(int sessionId)
@@ -562,14 +604,21 @@ public sealed class ChatHub : Hub
         };
     }
 
-    private static ChatMessageDto MapMessageDto(ChatMessage m)
+    public static ChatMessageDto MapMessageDto(ChatMessage m)
     {
+        var senderType = (ChatSenderTypeDto)(int)m.SenderType;
+        var senderId = m.SenderId;
+        if (m.SenderType == ChatSenderType.Operator && m.SenderId != null && m.SenderId.StartsWith("اپراتور ("))
+        {
+            senderType = ChatSenderTypeDto.User;
+            senderId = "کاربر (" + m.SenderId.Substring("اپراتور (".Length);
+        }
         return new ChatMessageDto
         {
             Id = m.Id,
             SessionId = m.SessionId,
-            SenderType = (ChatSenderTypeDto)(int)m.SenderType,
-            SenderId = m.SenderId,
+            SenderType = senderType,
+            SenderId = senderId,
             Content = m.Content,
             MessageType = (ChatMessageTypeDto)(int)m.MessageType,
             MediaUrl = m.MediaUrl,

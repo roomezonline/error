@@ -2,6 +2,7 @@ using ErrorService.Server.Data;
 using ErrorService.Server.Hubs;
 using ErrorService.Server.Models;
 using ErrorService.Server.Services;
+using ErrorService.Server.Services.Messenger;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,14 +22,19 @@ public class ChatController : ControllerBase
     private readonly BaleBotService _baleBot;
     private readonly IConfiguration _config;
     private readonly IHubContext<ChatHub> _chatHub;
+    private readonly MessengerRouter _router;
+    private readonly ILogger<ChatController> _logger;
 
-    public ChatController(ErrorServiceDbContext db, IHttpClientFactory httpClientFactory, BaleBotService baleBot, IConfiguration config, IHubContext<ChatHub> chatHub)
+    public ChatController(ErrorServiceDbContext db, IHttpClientFactory httpClientFactory, BaleBotService baleBot,
+        IConfiguration config, IHubContext<ChatHub> chatHub, MessengerRouter router, ILogger<ChatController> logger)
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
         _baleBot = baleBot;
         _config = config;
         _chatHub = chatHub;
+        _router = router;
+        _logger = logger;
     }
 
     [HttpGet("settings")]
@@ -116,8 +122,33 @@ public class ChatController : ControllerBase
     {
         var webhookUrl = $"{Request.Scheme}://{Request.Host}";
         var secret = _config["BaleBot:WebhookSecret"] ?? "";
-        var result = await _baleBot.SetWebhookAsync(webhookUrl, secret);
-        return Ok(result);
+        var results = new List<string>();
+        var allOk = true;
+
+        foreach (var ch in await _router.GetActiveChannelsAsync())
+        {
+            try
+            {
+                var (success, message) = await ch.SetWebhookAsync(webhookUrl, secret);
+                results.Add(message);
+                if (!success) allOk = false;
+            }
+            catch (Exception ex)
+            {
+                allOk = false;
+                results.Add($"⚠️ خطا در ثبت وب‌هوک {ch.DisplayName}: {ex.Message}");
+            }
+        }
+
+        // حتی اگر کانالی فعال نبود، بله را جداگانه بررسی کن (سازگاری با قبل)
+        if (results.Count == 0)
+        {
+            var (success, message) = await _baleBot.SetWebhookAsync(webhookUrl, secret);
+            allOk = success;
+            results.Add(message);
+        }
+
+        return Ok(new { success = allOk, message = string.Join("\n", results) });
     }
 
     [HttpGet("webhook-status")]
@@ -196,6 +227,120 @@ public class ChatController : ControllerBase
         return Ok(new { items = dtos, total });
     }
 
+    [HttpPost("send")]
+    public async Task<ActionResult<ChatMessageDto>> SendMessage([FromBody] SendChatMessageRequest req)
+    {
+        var isAdmin = User.Identity?.IsAuthenticated == true &&
+                      (User.HasClaim("perm", "admin.chat.manage") || User.IsInRole("super_admin"));
+
+        var session = await _db.ChatSessions.FindAsync(req.SessionId);
+        if (session == null || session.Status == ChatSessionStatus.Closed)
+            return NotFound(new { message = "مکالمه یافت نشد یا بسته شده است." });
+
+        if (!isAdmin)
+        {
+            if (string.IsNullOrWhiteSpace(req.VisitorId) || session.VisitorId != req.VisitorId)
+                return Unauthorized(new { message = "دسترسی غیرمجاز است." });
+
+            if (string.IsNullOrWhiteSpace(req.Content) &&
+                (string.IsNullOrWhiteSpace(req.MediaUrl) || !req.MediaUrl.StartsWith("/uploads/chat/", StringComparison.OrdinalIgnoreCase)))
+                return BadRequest(new { message = "پیام خالی است." });
+        }
+
+        if (req.Content?.Length > 4000)
+            return BadRequest(new { message = "پیام بیش از حد طولانی است." });
+
+        ChatMessage msg;
+        if (isAdmin)
+        {
+            var adminUser = User.FindFirst(ClaimTypes.NameIdentifier) != null && int.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value, out var uid)
+                ? await _db.Users.FindAsync(uid)
+                : null;
+            msg = new ChatMessage
+            {
+                SessionId = session.Id,
+                SenderType = ChatSenderType.Operator,
+                SenderId = adminUser?.FullName ?? "اپراتور",
+                Content = req.Content,
+                MessageType = (ChatMessageType)(int)req.MessageType,
+                MediaUrl = req.MediaUrl,
+                ReplyToId = req.ReplyToId,
+                CreatedAt = DateTime.UtcNow
+            };
+        }
+        else
+        {
+            msg = new ChatMessage
+            {
+                SessionId = session.Id,
+                SenderType = ChatSenderType.User,
+                SenderId = req.VisitorId,
+                Content = req.Content,
+                MessageType = (ChatMessageType)(int)req.MessageType,
+                MediaUrl = req.MediaUrl,
+                ReplyToId = req.ReplyToId,
+                CreatedAt = DateTime.UtcNow
+            };
+        }
+
+        _db.ChatMessages.Add(msg);
+        await _db.SaveChangesAsync();
+
+        var dto = Hubs.ChatHub.MapMessageDto(msg);
+        await _chatHub.Clients.Group($"session_{session.Id}").SendAsync("NewMessage", dto);
+        await _chatHub.Clients.Group("admins").SendAsync("NewMessage", dto);
+
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        if (!isAdmin)
+        {
+            var userName = session.UserName ?? "کاربر";
+            try
+            {
+                switch (req.MessageType)
+                {
+                    case ChatMessageTypeDto.Text:
+                        await _router.ForwardUserTextAsync(session.Id, req.Content ?? "", userName);
+                        break;
+                    case ChatMessageTypeDto.Image:
+                        await _router.ForwardUserPhotoAsync(session.Id, $"{baseUrl}{req.MediaUrl}", req.Content, userName);
+                        break;
+                    case ChatMessageTypeDto.Voice:
+                        await _router.ForwardUserVoiceAsync(session.Id, $"{baseUrl}{req.MediaUrl}", userName);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ChatController: messenger forward failed for session {SessionId}", session.Id);
+            }
+        }
+        else
+        {
+            var operatorName = msg.SenderId ?? "اپراتور";
+            try
+            {
+                switch (req.MessageType)
+                {
+                    case ChatMessageTypeDto.Text:
+                        await _router.ForwardOperatorTextAsync(session.Id, req.Content ?? "", operatorName);
+                        break;
+                    case ChatMessageTypeDto.Image:
+                        await _router.ForwardOperatorPhotoAsync(session.Id, $"{baseUrl}{req.MediaUrl}", req.Content, operatorName);
+                        break;
+                    case ChatMessageTypeDto.Voice:
+                        await _router.ForwardOperatorVoiceAsync(session.Id, $"{baseUrl}{req.MediaUrl}", operatorName);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ChatController: operator forward failed for session {SessionId}", session.Id);
+            }
+        }
+
+        return Ok(dto);
+    }
+
     [HttpGet("sessions/{id}/messages")]
     public async Task<ActionResult<object>> GetMessages(int id, [FromQuery] string? visitorId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
@@ -225,21 +370,31 @@ public class ChatController : ControllerBase
             if (unread.Any()) await _db.SaveChangesAsync();
         }
 
-        var items = messages.Select(m => new ChatMessageDto
+        var items = messages.Select(m =>
         {
-            Id = m.Id,
-            SessionId = m.SessionId,
-            SenderType = (ChatSenderTypeDto)(int)m.SenderType,
-            SenderId = m.SenderId,
-            Content = m.Content,
-            MessageType = (ChatMessageTypeDto)(int)m.MessageType,
-            MediaUrl = m.MediaUrl,
-            FileName = m.FileName,
-            FileSize = m.FileSize,
-            ContentType = m.ContentType,
-            CreatedAt = m.CreatedAt,
-            IsRead = m.IsRead,
-            Status = (ChatMessageStatusDto)(int)m.Status
+            var senderType = (ChatSenderTypeDto)(int)m.SenderType;
+            var senderId = m.SenderId;
+            if (m.SenderType == ChatSenderType.Operator && m.SenderId != null && m.SenderId.StartsWith("اپراتور ("))
+            {
+                senderType = ChatSenderTypeDto.User;
+                senderId = "کاربر (" + m.SenderId.Substring("اپراتور (".Length);
+            }
+            return new ChatMessageDto
+            {
+                Id = m.Id,
+                SessionId = m.SessionId,
+                SenderType = senderType,
+                SenderId = senderId,
+                Content = m.Content,
+                MessageType = (ChatMessageTypeDto)(int)m.MessageType,
+                MediaUrl = m.MediaUrl,
+                FileName = m.FileName,
+                FileSize = m.FileSize,
+                ContentType = m.ContentType,
+                CreatedAt = m.CreatedAt,
+                IsRead = m.IsRead,
+                Status = (ChatMessageStatusDto)(int)m.Status
+            };
         }).ToList();
 
         return Ok(new { items, total });
@@ -648,7 +803,7 @@ public class ChatController : ControllerBase
             return BadRequest(new { message = "حجم فایل نباید بیشتر از ۱۰ مگابایت باشد." });
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp3", ".ogg", ".wav", ".mp4", ".pdf", ".doc", ".docx" };
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp3", ".ogg", ".wav", ".mp4", ".webm", ".m4a", ".aac", ".oga", ".pdf", ".doc", ".docx" };
         if (!allowedExtensions.Contains(ext))
             return BadRequest(new { message = "فرمت فایل مجاز نیست." });
 
@@ -671,6 +826,16 @@ public class ChatController : ControllerBase
             contentType = file.ContentType
         });
     }
+}
+
+public class SendChatMessageRequest
+{
+    public int SessionId { get; set; }
+    public string? Content { get; set; }
+    public ChatMessageTypeDto MessageType { get; set; } = ChatMessageTypeDto.Text;
+    public string? MediaUrl { get; set; }
+    public string? VisitorId { get; set; }
+    public int? ReplyToId { get; set; }
 }
 
 public class BaleSettingsRequest

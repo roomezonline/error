@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 using ErrorService.Server.Data;
 using ErrorService.Shared.Models;
@@ -12,16 +13,19 @@ namespace ErrorService.Server.Controllers
     {
         private readonly ErrorServiceDbContext _context;
         private readonly ILogger<FooterController> _logger;
+        private readonly IOutputCacheStore _cacheStore;
 
-        public FooterController(ErrorServiceDbContext context, ILogger<FooterController> logger)
+        public FooterController(ErrorServiceDbContext context, ILogger<FooterController> logger,
+            IOutputCacheStore cacheStore)
         {
             _context = context;
             _logger = logger;
+            _cacheStore = cacheStore;
         }
 
         [HttpGet]
         [AllowAnonymous]
-        [OutputCache(Duration = 3600)]
+        [OutputCache(Duration = 3600, Tags = new[] { "footer" })]
         public async Task<ActionResult<FooterSettingsDto>> GetFooter()
         {
             try
@@ -132,6 +136,10 @@ namespace ErrorService.Server.Controllers
                 }
 
                 await _context.SaveChangesAsync();
+
+                try { await _cacheStore.EvictByTagAsync("footer", CancellationToken.None); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Error evicting footer cache"); }
+
                 return Ok(new { message = "Footer settings saved successfully" });
             }
             catch (Exception ex)

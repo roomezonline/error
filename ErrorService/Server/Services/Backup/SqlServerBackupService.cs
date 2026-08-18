@@ -63,7 +63,7 @@ public sealed class SqlServerBackupService : IBackupService
             var backupQuery = $@"
                 BACKUP DATABASE [{dbName}]
                 TO DISK = @path
-                WITH COMPRESSION, INIT, NAME = 'ErrorService Backup {timestamp}'";
+                WITH INIT, NAME = 'ErrorService Backup {timestamp}'";
 
             using var command = new Microsoft.Data.SqlClient.SqlCommand(backupQuery, connection);
             command.Parameters.AddWithValue("@path", filePath);

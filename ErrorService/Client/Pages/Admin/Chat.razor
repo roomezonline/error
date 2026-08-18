@@ -212,6 +212,10 @@
                 <span class="bale-dot @(_baleConfigured ? "on" : "off")"></span>
                 <small class="text-muted">@(_baleConfigured ? "متصل به بله" : "بله پیکربندی نشده")</small>
             </div>
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="conn-dot @(_hubStatus == "متصل" ? "on" : "")"></span>
+                <small class="text-muted">اتصال سرور: @_hubStatus</small>
+            </div>
             <div class="filter-row">
                 <button class="filter-btn @(_activeFilter == "all" ? "act" : "")" @onclick='() => SetFilter("all")'>
                     همه @_allSessions.Count
@@ -333,12 +337,12 @@
                     }
                     if (msg.IsDeleted)
                     {
-                        <div class="msg @(msg.SenderType == ChatSenderTypeDto.Operator ? "msg-op" : "msg-user")">
+                        <div class="msg @MsgClass(msg)">
                             <div class="msg-bubble msg-deleted">این پیام حذف شده است</div>
                         </div>
                         continue;
                     }
-                    <div class="msg @(msg.SenderType == ChatSenderTypeDto.Operator ? "msg-op" : "msg-user")">
+                    <div class="msg @MsgClass(msg)">
                         @if (_editingMessageId == msg.Id)
                         {
                             <div class="msg-bubble msg-edit-box">
@@ -351,13 +355,43 @@
                         }
                         else
                         {
+                            @if (IsUserLike(msg))
+                            {
+                                <div class="msg-head msg-user-head">
+                                    <span class="msg-avatar"><span class="oi oi-person"></span></span>
+                                    <div class="msg-head-info">
+                                        <span class="msg-name">کاربر</span>
+                                        @if (!string.IsNullOrEmpty(msg.SenderId))
+                                        {
+                                            <span class="msg-channel">@UserChannelLabel(msg.SenderId)</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            else if (IsOperatorLike(msg) && msg.SenderId != "system")
+                            {
+                                <div class="msg-head msg-op-head">
+                                    <span class="msg-avatar op"><span class="oi oi-headphones"></span></span>
+                                    <div class="msg-head-info">
+                                        <span class="msg-name">اپراتور</span>
+                                        @if (!string.IsNullOrEmpty(msg.SenderId) && msg.SenderId != "اپراتور")
+                                        {
+                                            <span class="msg-chan-extra">@msg.SenderId</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
                             @if (msg.ReplyToId != null)
                             {
                                 var reply = _messages.FirstOrDefault(m => m.Id == msg.ReplyToId);
                                 <div class="msg-reply-quote">
-                                    <div class="reply-quote-sender">@(reply?.SenderType == ChatSenderTypeDto.Operator ? "اپراتور" : "کاربر")</div>
+                                    <div class="reply-quote-sender">@(reply != null && IsOperatorLike(reply) ? "اپراتور" : "کاربر")</div>
                                     <div class="reply-quote-text">@(string.IsNullOrWhiteSpace(reply?.Content) ? (reply?.MessageType == ChatMessageTypeDto.Image ? "تصویر" : reply?.MessageType == ChatMessageTypeDto.Voice ? "پیام صوتی" : reply?.MessageType == ChatMessageTypeDto.File ? "فایل" : "پیام") : reply!.Content)</div>
                                 </div>
+                            }
+                            @if (msg.MessageType != ChatMessageTypeDto.System)
+                            {
+                                <span class="bubble-role @(IsOperatorLike(msg) ? "role-op" : "role-user")">@(IsOperatorLike(msg) ? "اپراتور" : "کاربر")</span>
                             }
                             @if (msg.MessageType == ChatMessageTypeDto.Text)
                             {
@@ -373,7 +407,7 @@
                             else if (msg.MessageType == ChatMessageTypeDto.Voice)
                             {
                                 <div class="msg-bubble msg-voice-wrapper">
-                                    <audio src="@msg.MediaUrl" controls class="msg-audio" preload="none"></audio>
+                                    <audio src="@msg.MediaUrl" controls class="msg-audio" preload="metadata"></audio>
                                 </div>
                             }
                             else if (msg.MessageType == ChatMessageTypeDto.File)
@@ -402,10 +436,6 @@
                             }
                         }
                         <div class="msg-time">
-                            @if (msg.SenderType == ChatSenderTypeDto.Operator && msg.SenderId != "system")
-                            {
-                                <span>@msg.SenderId • </span>
-                            }
                             @msg.CreatedAt.ToLocalTime().ToString("HH:mm")
                             @if (msg.EditedAt != null) { <span class="msg-edited">(ویرایش‌شده)</span> }
                             @if (msg.SenderType == ChatSenderTypeDto.Operator)
@@ -438,6 +468,10 @@
             @if (_selectedSession?.Status != ChatSessionStatusDto.Closed)
             {
                 <div class="chat-input-area">
+                    @if (!string.IsNullOrEmpty(_chatError))
+                    {
+                        <div class="chat-error">@_chatError</div>
+                    }
                     @if (_replyToMessage != null)
                     {
                         <div class="reply-bar">
@@ -453,7 +487,7 @@
                         <button class="input-btn" @onclick="PickFile" title="ارسال فایل"><span class="oi oi-paperclip"></span></button>
                         <button class="input-btn @(_isRecording ? "rec-on" : "")" @onclick="ToggleVoice" title="@(_isRecording ? "توقف ضبط" : "ضبط صدا")"><span class="oi oi-microphone"></span></button>
                         <button class="input-btn" @onclick="ToggleCannedPanel" title="پاسخ‌های آماده"><span class="oi oi-list-rich"></span></button>
-                        <input class="input-field" value="_inputText"
+                        <input class="input-field" value="@_inputText"
                                @oninput="OnInputChanged"
                                @onkeydown="HandleKeyDown"
                                placeholder="پیام خود را بنویسید..." />
@@ -464,25 +498,70 @@
                     @if (_cannedOpen)
                     {
                         <div class="canned-panel">
-                            <div class="canned-panel-head">
-                                <span class="fw-bold small">پاسخ‌های آماده</span>
-                                <div>
-                                    <button class="btn-close-sm" @onclick="OpenFaqManage" title="پرسش‌های پرتکرار (FAQ)">؟</button>
-                                    <button class="btn-close-sm" @onclick="LoadCannedResponses" title="ویرایش لیست">⚙</button>
+                            <div class="canned-head">
+                                <div class="canned-head-title">
+                                    <span class="canned-head-ico"><span class="oi oi-list-rich"></span></span>
+                                    <div>
+                                        <div class="canned-head-name">پاسخ‌های آماده</div>
+                                        <div class="canned-head-sub">@_cannedResponses.Count پاسخ ذخیره شده</div>
+                                    </div>
+                                </div>
+                                <div class="canned-head-actions">
+                                    <button class="canned-icon-btn" @onclick="OpenFaqManage" title="پرسش‌های پرتکرار (FAQ)"><span class="oi oi-question-mark"></span></button>
+                                    <button class="canned-icon-btn" @onclick="OpenCannedManage" title="مدیریت پاسخ‌ها"><span class="oi oi-pencil"></span></button>
+                                    <button class="canned-icon-btn" @onclick='() => _cannedOpen = false' title="بستن"><span class="oi oi-x"></span></button>
                                 </div>
                             </div>
-                            <div class="canned-list">
-                                @if (!_cannedResponses.Any())
+                            <div class="canned-search-row">
+                                <span class="oi oi-magnifying-glass canned-search-ico"></span>
+                                <input class="canned-search" @bind="_cannedSearch" placeholder="جستجو در عنوان، متن یا دسته..." />
+                                @if (!string.IsNullOrEmpty(_cannedSearch))
                                 {
-                                    <div class="canned-empty">پاسخی ذخیره نشده است</div>
+                                    <button class="canned-search-clear" @onclick='() => _cannedSearch = ""'>✕</button>
                                 }
-                                @foreach (var cr in _cannedResponses)
+                            </div>
+                            <div class="canned-body">
+                                @if (FilteredCannedResponses.Count == 0)
                                 {
-                                    <button class="canned-item" @onclick="() => UseCanned(cr)">
-                                        <span class="canned-title">@cr.Title</span>
-                                        <span class="canned-content">@cr.Content</span>
-                                    </button>
+                                    <div class="canned-empty">
+                                        <span class="canned-empty-ico">💬</span>
+                                        <div class="canned-empty-text">
+                                            @(string.IsNullOrWhiteSpace(_cannedSearch) ? "هنوز پاسخی ذخیره نشده است" : "نتیجه‌ای برای جستجوی شما یافت نشد")
+                                        </div>
+                                        @if (string.IsNullOrWhiteSpace(_cannedSearch))
+                                        {
+                                            <button class="canned-add-first" @onclick="OpenCannedManage">+ افزودن اولین پاسخ</button>
+                                        }
+                                    </div>
                                 }
+                                else
+                                {
+                                    @foreach (var g in GroupedCanned)
+                                    {
+                                        <div class="canned-group">
+                                            <div class="canned-group-head">
+                                                <span class="canned-group-dot"></span>
+                                                <span class="canned-group-name">@g.Category</span>
+                                                <span class="canned-group-count">@g.Items.Count</span>
+                                            </div>
+                                            <div class="canned-group-items">
+                                                @foreach (var cr in g.Items)
+                                                {
+                                                    <button class="canned-item" @onclick="() => UseCanned(cr)">
+                                                        <span class="canned-item-top">
+                                                            <span class="canned-item-title">@cr.Title</span>
+                                                            <span class="canned-item-use">ارسال <span class="oi oi-arrow-left"></span></span>
+                                                        </span>
+                                                        <span class="canned-item-text">@cr.Content</span>
+                                                    </button>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                            <div class="canned-foot">
+                                <button class="canned-foot-btn" @onclick="OpenCannedManage"><span class="oi oi-plus"></span> افزودن پاسخ جدید</button>
                             </div>
                         </div>
                     }
@@ -633,7 +712,7 @@
 
 <style>
     /* ── Root ── */
-    .chat-app { display:flex; height:calc(100vh - 80px); background:#fff; border-radius:18px; overflow:hidden; box-shadow:0 2px 24px rgba(0,0,0,.07); position:relative; }
+    .chat-app { display:flex; height:calc(100vh - 80px); background:#fff; border-radius:18px; overflow:hidden; box-shadow:0 2px 24px rgba(0,0,0,.07); position:relative; --chat-kb:0px; }
     .chat-overlay { display:none; }
 
     /* ── Sidebar ── */
@@ -642,6 +721,9 @@
     .bale-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
     .bale-dot.on { background:#22c55e; box-shadow:0 0 6px rgba(34,197,94,.4); }
     .bale-dot.off { background:#ef4444; box-shadow:0 0 6px rgba(239,68,68,.4); }
+    .conn-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; background:#ef4444; }
+    .conn-dot.on { background:#22c55e; box-shadow:0 0 6px rgba(34,197,94,.4); }
+    .chat-error { background:#fef2f2; color:#dc2626; font-size:.72rem; padding:8px 14px; }
     .filter-row { display:flex; gap:4px; }
     .filter-btn { flex:1; border:none; background:#f0f0f0; padding:5px 0; border-radius:8px; font-size:.72rem; font-weight:600; cursor:pointer; transition:.15s; color:#6b7280; position:relative; }
     .filter-btn.act { background:#4f46e5; color:#fff; }
@@ -711,7 +793,7 @@
     .msg-deleted { background:#f0f0f0 !important; color:#9ca3af !important; font-style:italic; font-size:.75rem; }
     .msg-edited { color:#9ca3af; font-size:.6rem; margin-left:3px; }
     .msg-reply-quote { background:rgba(255,255,255,.18); border-right:3px solid rgba(255,255,255,.7); padding:4px 10px; border-radius:8px; margin-bottom:4px; direction:rtl; }
-    .msg-user .msg-reply-quote { background:#e9e9e9; border-right-color:#9ca3af; }
+    .msg-user .msg-reply-quote { background:#f5f5f7; border-right-color:#d1d5db; color:#4b5563; }
     .reply-quote-sender { font-size:.6rem; font-weight:700; opacity:.85; }
     .reply-quote-text { font-size:.68rem; opacity:.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px; }
     .msg-actions { display:flex; gap:4px; padding:2px 4px; opacity:0; transition:opacity .15s; }
@@ -730,14 +812,44 @@
     .reply-bar-close { width:26px; height:26px; border:none; background:#f0f0f0; border-radius:50%; cursor:pointer; color:#6b7280; font-size:.75rem; flex-shrink:0; }
     .rec-on { background:#dc3545 !important; color:#fff !important; animation:pulse 1s infinite; }
     @@keyframes pulse { 0%,100% { box-shadow:0 0 0 0 rgba(220,53,69,.4); } 50% { box-shadow:0 0 0 8px rgba(220,53,69,0); } }
-    .canned-panel { border-top:1px solid #f0f0f0; max-height:220px; overflow-y:auto; padding:8px 12px; background:#fff; }
-    .canned-panel-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
-    .canned-list { display:flex; flex-direction:column; gap:6px; }
-    .canned-item { display:flex; flex-direction:column; align-items:flex-start; gap:2px; border:1px solid #e5e7eb; background:#fafafa; border-radius:10px; padding:8px 12px; cursor:pointer; transition:.15s; text-align:right; }
-    .canned-item:hover { border-color:#4f46e5; background:#eef2ff; }
-    .canned-title { font-size:.72rem; font-weight:700; color:#1f2937; }
-    .canned-content { font-size:.7rem; color:#6b7280; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
-    .canned-empty { text-align:center; color:#9ca3af; font-size:.75rem; padding:10px; }
+    .canned-panel { border-top:1px solid #f0f0f0; background:#fff; display:flex; flex-direction:column; max-height:340px; }
+    .canned-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px 8px; border-bottom:1px solid #f3f4f6; }
+    .canned-head-title { display:flex; align-items:center; gap:9px; }
+    .canned-head-ico { width:34px; height:34px; border-radius:10px; background:#eef2ff; color:#4f46e5; display:flex; align-items:center; justify-content:center; font-size:.95rem; }
+    .canned-head-name { font-size:.8rem; font-weight:800; color:#111827; }
+    .canned-head-sub { font-size:.66rem; color:#9ca3af; margin-top:1px; }
+    .canned-head-actions { display:flex; gap:6px; }
+    .canned-icon-btn { width:30px; height:30px; border-radius:8px; border:1px solid #eee; background:#fafafa; color:#6b7280; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:.15s; font-size:.7rem; }
+    .canned-icon-btn:hover { background:#eef2ff; border-color:#c7d2fe; color:#4f46e5; }
+    .canned-search-row { display:flex; align-items:center; gap:8px; margin:10px 14px 4px; padding:2px 10px; border:1px solid #e5e7eb; border-radius:10px; background:#f9fafb; }
+    .canned-search-row:focus-within { border-color:#a5b4fc; background:#fff; box-shadow:0 0 0 3px rgba(79,70,229,.08); }
+    .canned-search-ico { color:#9ca3af; font-size:.62rem; }
+    .canned-search { flex:1; border:none; outline:none; background:transparent; font-size:.74rem; padding:7px 0; color:#1f2937; }
+    .canned-search::placeholder { color:#9ca3af; }
+    .canned-search-clear { border:none; background:transparent; color:#9ca3af; cursor:pointer; font-size:.7rem; padding:2px 4px; }
+    .canned-search-clear:hover { color:#ef4444; }
+    .canned-body { overflow-y:auto; padding:6px 14px 10px; display:flex; flex-direction:column; gap:10px; }
+    .canned-group { }
+    .canned-group-head { display:flex; align-items:center; gap:6px; margin:6px 2px 5px; }
+    .canned-group-dot { width:6px; height:6px; border-radius:50%; background:#4f46e5; }
+    .canned-group-name { font-size:.68rem; font-weight:700; color:#374151; }
+    .canned-group-count { font-size:.6rem; color:#9ca3af; background:#f3f4f6; border-radius:999px; padding:1px 7px; }
+    .canned-group-items { display:flex; flex-direction:column; gap:5px; }
+    .canned-item { display:flex; flex-direction:column; align-items:flex-start; gap:3px; border:1px solid #e5e7eb; background:#fafafa; border-radius:10px; padding:8px 11px; cursor:pointer; transition:.15s; text-align:right; width:100%; }
+    .canned-item:hover { border-color:#c7d2fe; background:#eef2ff; transform:translateY(-1px); box-shadow:0 2px 6px rgba(79,70,229,.08); }
+    .canned-item-top { display:flex; align-items:center; justify-content:space-between; width:100%; }
+    .canned-item-title { font-size:.72rem; font-weight:700; color:#111827; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .canned-item-use { font-size:.62rem; font-weight:700; color:#4f46e5; display:flex; align-items:center; gap:3px; opacity:0; transition:.15s; }
+    .canned-item:hover .canned-item-use { opacity:1; }
+    .canned-item-text { font-size:.68rem; color:#6b7280; line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    .canned-empty { text-align:center; color:#9ca3af; padding:22px 10px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+    .canned-empty-ico { font-size:1.7rem; opacity:.6; }
+    .canned-empty-text { font-size:.74rem; color:#6b7280; }
+    .canned-add-first { border:none; border-radius:10px; background:#4f46e5; color:#fff; font-size:.7rem; font-weight:700; padding:7px 16px; cursor:pointer; transition:.15s; }
+    .canned-add-first:hover { background:#4338ca; }
+    .canned-foot { border-top:1px solid #f3f4f6; padding:8px 14px; }
+    .canned-foot-btn { width:100%; border:1px dashed #c7d2fe; background:#fafbff; color:#4f46e5; border-radius:10px; font-size:.7rem; font-weight:700; padding:7px 0; cursor:pointer; transition:.15s; display:flex; align-items:center; justify-content:center; gap:6px; }
+    .canned-foot-btn:hover { background:#eef2ff; border-style:solid; }
     .canned-manage-list { display:flex; flex-direction:column; gap:8px; }
     .canned-manage-row { display:flex; align-items:center; gap:8px; border:1px solid #f0f0f0; border-radius:10px; padding:8px 12px; background:#fafafa; }
     .canned-manage-info { flex:1; min-width:0; }
@@ -754,19 +866,32 @@
     .sound-btn:hover { background:#dcfce7; }
     .msg { max-width:78%; display:flex; flex-direction:column; gap:2px; animation:msgIn .2s ease; }
     @@keyframes msgIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-    .msg-op { align-self:flex-start; }
-    .msg-user { align-self:flex-end; }
-    .msg-bubble { padding:10px 15px; border-radius:16px; font-size:.85rem; line-height:1.6; word-break:break-word; }
-    .msg-op .msg-bubble { background:#4f46e5; color:#fff; border-bottom-left-radius:4px; }
-    .msg-user .msg-bubble { background:#f0f0f0; color:#1f2937; border-bottom-right-radius:4px; }
+    .msg-op { align-self:flex-start; align-items:flex-start; }
+    .msg-user { align-self:flex-end; align-items:flex-end; }
+    .msg-sys { align-self:center; max-width:100%; }
+    .msg-bubble { padding:9px 14px; border-radius:15px; font-size:.85rem; line-height:1.6; word-break:break-word; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+    .msg-op .msg-bubble { background:linear-gradient(135deg,#6366f1,#4f46e5); color:#fff; border-bottom-right-radius:4px; }
+    .msg-user .msg-bubble { background:#fff; color:#1f2937; border:1px solid #e5e7eb; border-bottom-left-radius:4px; }
+    .bubble-role { display:inline-block; align-self:flex-start; font-size:.58rem; font-weight:800; padding:2px 9px; border-radius:999px; margin-bottom:3px; }
+    .msg-user .bubble-role { align-self:flex-end; }
+    .bubble-role.role-op { background:#e0e7ff; color:#4f46e5; }
+    .bubble-role.role-user { background:#e2e8f0; color:#475569; }
+    .msg-head { display:flex; align-items:center; gap:7px; margin-bottom:3px; }
+    .msg-user-head { flex-direction:row-reverse; }
+    .msg-avatar { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:.58rem; color:#fff; background:#d1d5db; flex-shrink:0; }
+    .msg-avatar.op { background:linear-gradient(135deg,#6366f1,#4f46e5); }
+    .msg-head-info { display:flex; align-items:center; gap:6px; min-width:0; }
+    .msg-name { font-size:.64rem; font-weight:800; color:#374151; }
+    .msg-channel { font-size:.58rem; color:#9ca3af; background:#f3f4f6; border:1px solid #eef0f3; border-radius:8px; padding:1px 7px; }
+    .msg-chan-extra { font-size:.6rem; color:#6b7280; max-width:150px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .msg-system { font-size:.72rem; color:#9ca3af; text-align:center; padding:8px 0; }
     .msg-time { font-size:.62rem; color:#adb5bd; padding:0 4px; }
     .msg-status { font-size:.58rem; margin-left:3px; color:#adb5bd; }
     .msg-status.read { color:#53bdeb; }
     .msg-img { max-width:220px; max-height:200px; border-radius:10px; cursor:pointer; display:block; }
-    .msg-audio { width:100%; height:36px; }
-    .msg-image-wrapper { padding:6px; background:#4f46e5; border-bottom-left-radius:4px; }
-    .msg-user .msg-image-wrapper { background:#f0f0f0; border-bottom-right-radius:4px; }
+    .msg-audio { width:100%; min-width:200px; height:40px; }
+    .msg-image-wrapper { padding:6px; background:linear-gradient(135deg,#6366f1,#4f46e5); border-bottom-right-radius:4px; }
+    .msg-user .msg-image-wrapper { background:#fff; border:1px solid #e5e7eb; border-bottom-left-radius:4px; }
     .msg-voice-wrapper { padding:6px 10px; }
     .msg-file-wrapper { padding:10px 15px; }
     .file-link { color:inherit; text-decoration:none; display:flex; align-items:center; gap:6px; }
@@ -795,24 +920,65 @@
 
     /* ── Responsive ── */
     @@media(max-width:900px) {
-        .chat-app { height:calc(100vh - 60px); border-radius:0; }
-        .chat-sidebar { position:fixed; top:0; right:-100%; width:84%; max-width:360px; height:100vh; z-index:1500; transition:right .3s cubic-bezier(.4,0,.2,1); border-radius:0; box-shadow:4px 0 20px rgba(0,0,0,.1); }
+        .chat-app { position:fixed; top:0; right:0; left:0; bottom:var(--chat-kb,0px); height:auto; border-radius:0; box-shadow:none; z-index:1600; }
+        .chat-sidebar { position:fixed; top:0; right:-100%; width:86%; max-width:360px; height:auto; bottom:0; z-index:1700; transition:right .3s cubic-bezier(.4,0,.2,1); border-radius:0; box-shadow:4px 0 24px rgba(0,0,0,.12); }
         .chat-sidebar.show { right:0; }
-        .chat-overlay { display:block; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1499; }
+        .chat-overlay { display:block; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1699; }
         .chat-main { height:100%; }
-        .messages-area { padding:12px 14px; }
-        .msg { max-width:88%; }
-        .msg-img { max-width:180px; max-height:160px; }
-        .chat-input-bar { padding:10px 12px; }
-        .topbar-actions .act-btn { width:30px; height:30px; font-size:.8rem; }
+        .sidebar-head { padding:16px 14px 12px; }
+        .filter-row { gap:6px; }
+        .filter-btn { padding:7px 0; font-size:.74rem; border-radius:10px; }
+        .session-row { padding:12px 14px; gap:10px; }
+        .s-avatar { width:44px; height:44px; font-size:.95rem; }
+        .s-name { font-size:.9rem; }
+        .s-meta { gap:6px; }
+        .sidebar-foot { padding:12px 14px; padding-bottom:max(12px, env(safe-area-inset-bottom)); }
+        .settings-trigger { padding:12px; border-radius:14px; font-size:.85rem; }
+
+        .chat-topbar { padding:10px 12px; padding-top:max(10px, env(safe-area-inset-top)); min-height:54px; }
+        .btn-back { width:40px; height:40px; font-size:1rem; }
+        .topbar-name { font-size:.95rem; }
+        .topbar-actions { gap:4px; }
+        .topbar-actions .act-btn { width:38px; height:38px; font-size:.9rem; }
+
+        .messages-area { padding:12px 12px; gap:8px; }
+        .msg { max-width:86%; }
+        .msg-img { max-width:170px; max-height:150px; }
+        .msg-head { gap:6px; }
+        .msg-avatar { width:30px; height:30px; font-size:.62rem; }
+        .msg-name { font-size:.68rem; }
+        .msg-time { font-size:.64rem; }
+        .msg-act { width:34px; height:34px; font-size:.78rem; border-radius:9px; background:#f3f4f6; }
+
+        .chat-input-area { padding-bottom: env(safe-area-inset-bottom); }
+        .chat-input-bar { padding:10px 10px; gap:6px; }
+        .input-btn { width:42px; height:42px; font-size:.95rem; }
+        .input-field { padding:11px 14px; font-size:.92rem; }
+        .send-btn { width:44px; height:44px; font-size:1rem; }
+        .reply-bar { padding:8px 12px 0; }
+        .canned-panel { max-height:42vh; }
+        .canned-body { padding:6px 10px 10px; }
+        .msg-edit-box { width:100%; }
+        .msg-search-row { padding:2px 0 6px; }
+
         .settings-modal { width:96vw; max-height:90vh; border-radius:14px; }
+        .settings-body { padding:16px; }
+        .settings-head { padding:14px 16px; }
+        .op-row { padding:12px; font-size:.9rem; }
     }
 
     @@media(max-width:480px) {
-        .msg { max-width:92%; }
-        .msg-img { max-width:150px; max-height:140px; }
+        .msg { max-width:88%; }
+        .msg-img { max-width:140px; max-height:130px; }
+        .topbar-actions .act-btn { width:36px; height:36px; }
         .session-row { padding:10px 12px; }
-        .sidebar-head { padding:14px 12px 10px; }
+        .sidebar-head { padding:12px 10px 10px; }
+    }
+
+    /* Touch devices: message actions / canned uses stay visible & tappable */
+    @@media (hover: none) {
+        .msg-actions { opacity:1; }
+        .canned-item-use { opacity:1; }
     }
 </style>
 
@@ -870,6 +1036,9 @@
     private int _faqEditingId;
     private bool _isRecording;
     private bool _soundEnabled = true;
+    private string _hubStatus = "در حال اتصال...";
+    private string? _chatError;
+    private bool _disposed;
 
     private string _siteWelcomeMessage = "";
     private bool _siteEnableAutoMessage;
@@ -928,6 +1097,25 @@
         await LoadSiteChatSettings();
         try { _soundEnabled = (await JS.InvokeAsync<string>("localStorage.getItem", "chat_sound")) != "off"; }
         catch { }
+        _ = RunSessionPoller();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { await JS.InvokeVoidAsync("__chatVoiceRecorder.setAutoSend", true); } catch { }
+            try { await JS.InvokeVoidAsync("__chatKeyboardWatch"); } catch { }
+        }
+    }
+
+    private async Task RunSessionPoller()
+    {
+        while (!_disposed)
+        {
+            await Task.Delay(30000);
+            try { await LoadSessions(); } catch { }
+        }
     }
 
     private async Task ConnectHub()
@@ -947,7 +1135,7 @@
 
         _hub.On<ChatMessageDto>("NewMessage", msg =>
         {
-            if (_selectedSessionId == msg.SessionId)
+            if (_selectedSessionId == msg.SessionId && !_messages.Any(m => m.Id == msg.Id))
             {
                 if (_pendingTempIds.TryDequeue(out var tempId))
                     _messages.RemoveAll(m => m.Id == tempId);
@@ -960,10 +1148,15 @@
                     _ = _hub.InvokeAsync("MarkAsRead", msg.SessionId, new List<int> { msg.Id });
             }
             var session = _allSessions.FirstOrDefault(s => s.Id == msg.SessionId);
-            if (session != null && msg.SenderType == ChatSenderTypeDto.User && _selectedSessionId != msg.SessionId)
+            if (session != null && _selectedSessionId != msg.SessionId)
             {
-                session.HasUnread = true;
-                _ = PlayNotifyAsync("مکالمه جدید", $"کاربر {session.UserName ?? ""}: {msg.Content ?? ""}");
+                if (msg.SenderType == ChatSenderTypeDto.User || msg.SenderId?.Contains('(') == true)
+                {
+                    session.HasUnread = true;
+                    var isMessenger = msg.SenderType == ChatSenderTypeDto.Operator;
+                    _ = PlayNotifyAsync(isMessenger ? "پیام از پیام‌رسان" : "مکالمه جدید",
+                        $"{session.UserName ?? ""}: {msg.Content ?? ""}");
+                }
             }
             else if (session != null && msg.SenderType == ChatSenderTypeDto.User && _selectedSessionId == msg.SessionId)
             {
@@ -1058,6 +1251,7 @@
 
         _hub.Reconnecting += _ =>
         {
+            _hubStatus = "در حال اتصال مجدد...";
             _pendingTempIds.Clear();
             _messages.RemoveAll(m => m.Id < 0);
             InvokeAsync(StateHasChanged);
@@ -1065,6 +1259,7 @@
         };
         _hub.Reconnected += async _ =>
         {
+            _hubStatus = "متصل";
             _pendingTempIds.Clear();
             _messages.RemoveAll(m => m.Id < 0);
             await LoadSessions();
@@ -1072,8 +1267,25 @@
                 await _hub.InvokeAsync("JoinSession", _selectedSessionId);
             InvokeAsync(StateHasChanged);
         };
+        _hub.Closed += async _ =>
+        {
+            _hubStatus = "قطع";
+            InvokeAsync(StateHasChanged);
+            await Task.Delay(5000);
+            try
+            {
+                if (!_disposed && _hub?.State != HubConnectionState.Connected)
+                {
+                    await _hub.StartAsync();
+                    _hubStatus = "متصل";
+                    InvokeAsync(StateHasChanged);
+                }
+            }
+            catch { }
+        };
 
         await _hub.StartAsync();
+        _hubStatus = _hub.State == HubConnectionState.Connected ? "متصل" : "قطع";
     }
 
     private async Task PlayNotifyAsync(string title, string body)
@@ -1273,10 +1485,20 @@
 
         var replyToId = _replyToMessage?.Id;
         CancelReply();
-        try { await _hub.InvokeAsync("SendMessage", _selectedSessionId, text, ChatMessageTypeDto.Text, null, replyToId); }
+        try
+        {
+            var ok = await _hub.InvokeAsync<bool>("SendMessage", _selectedSessionId, text, ChatMessageTypeDto.Text, null, replyToId);
+            if (!ok)
+            {
+                _messages.RemoveAll(m => m.Id == tempId);
+                _chatError = "پیام ارسال نشد. شاید مکالمه بسته شده یا دسترسی ندارید.";
+                StateHasChanged();
+            }
+        }
         catch (Exception ex)
         {
             _messages.RemoveAll(m => m.Id == tempId);
+            _chatError = "ارسال ناموفق بود. اتصال را بررسی کنید.";
             _ = JS.InvokeVoidAsync("console.error", "SendMessage failed:", ex.Message, ex.ToString());
             StateHasChanged();
         }
@@ -1362,8 +1584,12 @@
         });
         ScrollToBottom();
         StateHasChanged();
-        try { await _hub.InvokeAsync("SendMessage", _selectedSessionId, "", ChatMessageTypeDto.Voice, url); }
-        catch { _messages.RemoveAll(m => m.Id == tempId); StateHasChanged(); }
+        try
+        {
+            var ok = await _hub.InvokeAsync<bool>("SendMessage", _selectedSessionId, "", ChatMessageTypeDto.Voice, url);
+            if (!ok) { _messages.RemoveAll(m => m.Id == tempId); _chatError = "ارسال پیام صوتی ناموفق بود."; StateHasChanged(); }
+        }
+        catch { _messages.RemoveAll(m => m.Id == tempId); _chatError = "ارسال پیام صوتی ناموفق بود."; StateHasChanged(); }
     }
 
     private async Task PickFile()
@@ -1393,8 +1619,12 @@
         });
         ScrollToBottom();
         StateHasChanged();
-        try { await _hub.InvokeAsync("SendMessage", _selectedSessionId, fileName, ChatMessageTypeDto.File, url); }
-        catch { _messages.RemoveAll(m => m.Id == tempId); StateHasChanged(); }
+        try
+        {
+            var ok = await _hub.InvokeAsync<bool>("SendMessage", _selectedSessionId, fileName, ChatMessageTypeDto.File, url);
+            if (!ok) { _messages.RemoveAll(m => m.Id == tempId); _chatError = "ارسال فایل ناموفق بود."; StateHasChanged(); }
+        }
+        catch { _messages.RemoveAll(m => m.Id == tempId); _chatError = "ارسال فایل ناموفق بود."; StateHasChanged(); }
     }
 
     private async Task ToggleCannedPanel()
@@ -1417,6 +1647,53 @@
         _inputText = _inputText.Length > 0 ? _inputText + "\n" + cr.Content : cr.Content;
         _cannedOpen = false;
         StateHasChanged();
+    }
+
+    private static bool IsUserLike(ChatMessageDto m) =>
+        m.SenderType == ChatSenderTypeDto.User ||
+        (m.SenderType == ChatSenderTypeDto.Operator && m.SenderId != null && m.SenderId.StartsWith("اپراتور ("));
+
+    private static bool IsOperatorLike(ChatMessageDto m) =>
+        m.SenderType == ChatSenderTypeDto.Operator && !IsUserLike(m);
+
+    private static string MsgClass(ChatMessageDto m)
+    {
+        if (IsUserLike(m)) return "msg-user";
+        if (IsOperatorLike(m)) return "msg-op";
+        return "msg-sys";
+    }
+
+    private static string UserChannelLabel(string senderId)
+    {
+        if (string.IsNullOrWhiteSpace(senderId)) return "";
+        var i = senderId.IndexOf('(');
+        return i >= 0 && senderId.EndsWith(")") ? senderId.Substring(i) : "";
+    }
+
+    private string _cannedSearch = "";
+
+    private List<CannedResponseDto> FilteredCannedResponses => string.IsNullOrWhiteSpace(_cannedSearch)
+        ? _cannedResponses
+        : _cannedResponses.Where(c =>
+            c.Title?.Contains(_cannedSearch, StringComparison.OrdinalIgnoreCase) == true ||
+            c.Content?.Contains(_cannedSearch, StringComparison.OrdinalIgnoreCase) == true ||
+            c.Category?.Contains(_cannedSearch, StringComparison.OrdinalIgnoreCase) == true).ToList();
+
+    private IReadOnlyList<CannedGroup> GroupedCanned => FilteredCannedResponses
+        .GroupBy(c => string.IsNullOrWhiteSpace(c.Category) ? "سایر" : c.Category.Trim())
+        .Select(g => new CannedGroup { Category = g.Key, Items = g.OrderBy(x => x.Title).ToList() })
+        .ToList();
+
+    private sealed class CannedGroup
+    {
+        public string Category { get; init; } = "";
+        public List<CannedResponseDto> Items { get; init; } = new();
+    }
+
+    private void OpenCannedManage()
+    {
+        _showCannedManage = true;
+        _cannedOpen = false;
     }
 
     private void EditCanned(CannedResponseDto cr)
@@ -1643,10 +1920,15 @@
             });
             ScrollToBottom();
             StateHasChanged();
-            try { await _hub.InvokeAsync("SendMessage", _selectedSessionId, "", ChatMessageTypeDto.Image, url); }
+            try
+            {
+                var ok = await _hub.InvokeAsync<bool>("SendMessage", _selectedSessionId, "", ChatMessageTypeDto.Image, url);
+                if (!ok) { _messages.RemoveAll(m => m.Id == tempId); _chatError = "ارسال تصویر ناموفق بود."; StateHasChanged(); }
+            }
             catch
             {
                 _messages.RemoveAll(m => m.Id == tempId);
+                _chatError = "ارسال تصویر ناموفق بود.";
                 StateHasChanged();
             }
         }
@@ -1739,6 +2021,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
         if (_hub != null) await _hub.DisposeAsync();
     }
 }

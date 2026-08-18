@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ErrorService.Server.Hubs;
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace ErrorService.Server.Controllers;
@@ -21,6 +22,8 @@ public class BaleWebhookController : ControllerBase
     private readonly ILogger<BaleWebhookController> _logger;
     private readonly BaleBotService _baleBot;
     private readonly IHttpClientFactory _httpClientFactory;
+
+    private static readonly ConcurrentDictionary<long, DateTime> LastHelpSent = new();
 
     public BaleWebhookController(ErrorServiceDbContext db, IHubContext<ChatHub> hub,
         IConfiguration config, ILogger<BaleWebhookController> logger, BaleBotService baleBot,
@@ -224,6 +227,7 @@ public class BaleWebhookController : ControllerBase
             payload.Message.Chat?.Id, payload.Message.Text);
 
         var replyTo = payload.Message.ReplyToMessage;
+        long chatIdVal = actualChatId != null && long.TryParse(actualChatId, out var parsedChat) ? parsedChat : 0;
         int? sessionId = null;
 
         if (replyTo != null)
@@ -232,15 +236,54 @@ public class BaleWebhookController : ControllerBase
             sessionId = BaleBotService.ExtractSessionId(replyText);
             _logger.LogInformation("Bale webhook: reply to message, extracted sessionId={SessionId} from '{ReplyText}'", sessionId, replyText);
         }
-        else
+
+        // متن خود پیام هم ممکن است حامل نشانگر سشن باشد
+        sessionId ??= BaleBotService.ExtractSessionId(payload.Message.Text ?? payload.Message.Caption);
+
+        // بله ممکن است محتوای reply_to_message را کامل نفرستد؛ از message_idِ پیامِ پاسخ‌داده‌شده استفاده کن
+        if (sessionId == null && replyTo != null && chatIdVal > 0)
         {
-            sessionId = BaleBotService.ExtractSessionId(payload.Message.Text);
-            _logger.LogInformation("Bale webhook: direct message, extracted sessionId={SessionId} from '{Text}'", sessionId, payload.Message.Text);
+            var indexKey = $"{chatIdVal}:{replyTo.MessageId}";
+            if (BaleBotService.MessageSessionIndex.TryGetValue(indexKey, out var indexedSession))
+            {
+                sessionId = indexedSession;
+                _logger.LogInformation("Bale webhook: resolved sessionId={SessionId} via message index {Key}", indexedSession, indexKey);
+            }
+        }
+
+        // فال‌بک نهایی: آخرین سشن همان چت (ریپلای بدون reply_to_message)
+        if (sessionId == null && replyTo != null && chatIdVal > 0 &&
+            BaleBotService.LastSessionByChat.TryGetValue(chatIdVal, out var lastSession) && lastSession > 0)
+        {
+            sessionId = lastSession;
+            _logger.LogInformation("Bale webhook: resolved sessionId={SessionId} via last-session fallback", lastSession);
         }
 
         if (sessionId == null)
         {
-            _logger.LogWarning("Bale webhook: could not extract sessionId from message");
+            _logger.LogWarning("Bale webhook: could not resolve sessionId (hasReplyTo={HasReply}, text='{Text}')",
+                replyTo != null, payload.Message.Text);
+            // راهنمای اپراتور در گروه — همراه با تروتل تا مزاحم تکرار نشود
+            if (!string.IsNullOrEmpty(expectedGroupId) && actualChatId == expectedGroupId && payload.Message.Chat != null)
+            {
+                var nowUtc = DateTime.UtcNow;
+                var throttleKey = payload.Message.Chat.Id;
+                if (nowUtc - LastHelpSent.GetValueOrDefault(throttleKey) > TimeSpan.FromMinutes(2))
+                {
+                    LastHelpSent[throttleKey] = nowUtc;
+                    try
+                    {
+                        await _baleBot.SendTextToChat(payload.Message.Chat.Id,
+                            replyTo != null
+                                ? "👨‍💻 سشن این پیام یافت نشد. لطفاً روی پیامِ آغازشده با «[Session:…]» ریپلای بزنید."
+                                : "👨‍💻 برای پاسخ به کاربر، روی پیام مربوطه ریپلای بزنید.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Bale webhook: failed to send help message");
+                    }
+                }
+            }
             return Ok();
         }
 
@@ -257,9 +300,27 @@ public class BaleWebhookController : ControllerBase
             return Ok();
         }
 
+        // آخرین سشنِ این چت را به‌روز نگه‌دار تا فال‌بکِ ریپلای‌های بعدی به‌درستی کار کند
+        if (chatIdVal > 0) BaleBotService.LastSessionByChat[chatIdVal] = sessionId.Value;
+
         var text = payload.Message.Text ?? payload.Message.Caption ?? "";
         var messageType = ChatMessageType.Text;
         string? mediaUrl = null;
+
+        // ریپلای در گروه = پاسخ اپراتور به پیامِ فورواردشده؛ نه پیام کاربر
+        var isOperatorReply = replyTo != null;
+        string? operatorName = null;
+        if (isOperatorReply)
+        {
+            var from = payload.Message.From;
+            if (from != null)
+            {
+                var name = string.IsNullOrWhiteSpace(from.FirstName) ? "" : from.FirstName.Trim();
+                if (!string.IsNullOrWhiteSpace(from.LastName)) name = $"{name} {from.LastName.Trim()}".Trim();
+                if (string.IsNullOrWhiteSpace(name)) name = from.Username ?? "";
+                operatorName = string.IsNullOrWhiteSpace(name) ? null : name;
+            }
+        }
 
         if (payload.Message.Photo is { Count: > 0 })
         {
@@ -276,8 +337,8 @@ public class BaleWebhookController : ControllerBase
         var msg = new ChatMessage
         {
             SessionId = sessionId.Value,
-            SenderType = ChatSenderType.Operator,
-            SenderId = "اپراتور (بله)",
+            SenderType = isOperatorReply ? ChatSenderType.Operator : ChatSenderType.User,
+            SenderId = isOperatorReply ? (operatorName ?? "اپراتور") : "کاربر (بله)",
             Content = text,
             MessageType = messageType,
             MediaUrl = mediaUrl,
@@ -291,7 +352,7 @@ public class BaleWebhookController : ControllerBase
         {
             Id = msg.Id,
             SessionId = msg.SessionId,
-            SenderType = ChatSenderTypeDto.Operator,
+            SenderType = isOperatorReply ? ChatSenderTypeDto.Operator : ChatSenderTypeDto.User,
             SenderId = msg.SenderId,
             Content = msg.Content,
             MessageType = (ChatMessageTypeDto)(int)messageType,
@@ -307,6 +368,8 @@ public class BaleWebhookController : ControllerBase
         _logger.LogInformation("Bale webhook: broadcasting message {MsgId} ({Type}) to session_{SessionId}",
             msg.Id, messageType, sessionId);
         await _hub.Clients.Group($"session_{sessionId}").SendAsync("NewMessage", dto);
+        // اطلاع‌رسانی به پنل ادمین در لحظه، حتی اگر مکالمه باز نباشد
+        await _hub.Clients.Group("admins").SendAsync("NewMessage", dto);
         return Ok();
     }
 

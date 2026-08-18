@@ -65,6 +65,33 @@ public sealed class MessengerRouter
         }
     }
 
+    public async Task ForwardOperatorTextAsync(int sessionId, string text, string? operatorName)
+    {
+        foreach (var ch in await GetActiveChannelsAsync())
+        {
+            try { await ch.SendOperatorTextToGroupAsync(sessionId, text, operatorName); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Channel {Key}: forward operator text failed", ch.Key); }
+        }
+    }
+
+    public async Task ForwardOperatorPhotoAsync(int sessionId, string photoUrl, string? caption, string? operatorName)
+    {
+        foreach (var ch in await GetActiveChannelsAsync())
+        {
+            try { await ch.SendOperatorPhotoToGroupAsync(sessionId, photoUrl, caption, operatorName); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Channel {Key}: forward operator photo failed", ch.Key); }
+        }
+    }
+
+    public async Task ForwardOperatorVoiceAsync(int sessionId, string voiceUrl, string? operatorName)
+    {
+        foreach (var ch in await GetActiveChannelsAsync())
+        {
+            try { await ch.SendOperatorVoiceToGroupAsync(sessionId, voiceUrl, operatorName); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Channel {Key}: forward operator voice failed", ch.Key); }
+        }
+    }
+
     public async Task SendSystemToAllAsync(int sessionId, string text)
     {
         foreach (var ch in await GetActiveChannelsAsync())

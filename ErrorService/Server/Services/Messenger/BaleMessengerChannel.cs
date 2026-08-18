@@ -29,6 +29,15 @@ public sealed class BaleMessengerChannel : IChatMessengerChannel
     public Task SendVoiceToGroupAsync(int sessionId, string voiceUrl, string? userName)
         => _baleBot.SendVoiceToGroup(sessionId, voiceUrl, userName);
 
+    public Task SendOperatorTextToGroupAsync(int sessionId, string text, string? operatorName)
+        => _baleBot.SendOperatorTextToGroup(sessionId, text, operatorName);
+
+    public Task SendOperatorPhotoToGroupAsync(int sessionId, string photoUrl, string? caption, string? operatorName)
+        => _baleBot.SendOperatorPhotoToGroup(sessionId, photoUrl, caption, operatorName);
+
+    public Task SendOperatorVoiceToGroupAsync(int sessionId, string voiceUrl, string? operatorName)
+        => _baleBot.SendOperatorVoiceToGroup(sessionId, voiceUrl, operatorName);
+
     public Task SendSystemMessageToGroupAsync(int sessionId, string text)
         => _baleBot.SendSystemMessageToGroup(sessionId, text);
 
@@ -37,4 +46,7 @@ public sealed class BaleMessengerChannel : IChatMessengerChannel
 
     public Task<string?> DownloadFileAsync(string fileId)
         => _baleBot.DownloadFileAsync(fileId);
+
+    public Task<(bool success, string message)> SetWebhookAsync(string webhookUrl, string secret)
+        => _baleBot.SetWebhookAsync(webhookUrl, secret);
 }

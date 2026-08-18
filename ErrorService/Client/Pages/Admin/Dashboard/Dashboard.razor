@@ -1,5 +1,6 @@
 @page "/admin"
 @layout AdminLayout
+@implements IDisposable
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = "perm:admin.dashboard.view")]
 @using ErrorService.Shared
@@ -7,6 +8,7 @@
 @using System.Net.Http.Json
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
 @inject ErrorService.Client.Services.AdminWorkshopSelectionService AdminWorkshopSelection
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
@@ -1140,6 +1142,53 @@
     </div>
     }
 
+    <!-- PWA Install Card -->
+    @if (_pwaInstallable)
+    {
+        <section class="pwa-install-card" dir="rtl">
+            <div class="pwa-install-card__art" aria-hidden="true">
+                <div class="pwa-art-phone">
+                    <div class="pwa-art-phone__camera"></div>
+                    <div class="pwa-art-phone__screen">
+                        <div class="pwa-art-phone__logo">
+                            <span class="oi oi-shield"></span>
+                        </div>
+                        <div class="pwa-art-phone__line" style="width:78%"></div>
+                        <div class="pwa-art-phone__line" style="width:52%"></div>
+                        <div class="pwa-art-phone__line" style="width:64%"></div>
+                    </div>
+                    <div class="pwa-art-phone__home"></div>
+                </div>
+            </div>
+
+            <div class="pwa-install-card__body">
+                <span class="pwa-install-card__badge"><span class="oi oi-collapse-up"></span> اپلیکیشن</span>
+                <h3 class="pwa-install-card__title">نصب پنل ارورسرویس روی دستگاه شما</h3>
+                <p class="pwa-install-card__desc">
+                    مدیریت خبرها، سفارش‌ها، چت پشتیبانی، پیامک‌ها و گزارش‌ها در پنجره‌ای اختصاصی؛
+                    سریع‌تر، سبک‌تر و بدون گره خوردن به تب مرورگر.
+                </p>
+                <ul class="pwa-install-card__benefits">
+                    <li><span class="oi oi-bolt"></span> بارگذاری سریع‌تر و مصرف کمتر اینترنت</li>
+                    <li><span class="oi oi-home"></span> آیکن مخصوص روی صفحه‌نمایش دستگاه</li>
+                    <li><span class="oi oi-bell"></span> اطلاع‌رسانی مانند یک اپلیکیشن واقعی</li>
+                </ul>
+                <div class="pwa-install-card__actions">
+                    <button type="button" class="pwa-install-btn pwa-install-btn--primary" @onclick="InstallApp">
+                        <span class="oi oi-download"></span> نصب روی دستگاه
+                    </button>
+                    <button type="button" class="pwa-install-btn pwa-install-btn--ghost" @onclick="DismissInstall">
+                        بعداً یادآوری کن
+                    </button>
+                </div>
+                <div class="pwa-install-card__hint">
+                    <span class="oi oi-info"></span>
+                    راهنمای دستی: از منوی مرورگر گزینه <b>«افزودن به صفحه اصلی»</b> یا <b>«نصب اپ»</b> را انتخاب کنید.
+                </div>
+            </div>
+        </section>
+    }
+
     <!-- Version Badge -->
     @if (!string.IsNullOrEmpty(currentVersion))
     {
@@ -1554,6 +1603,146 @@
             direction: ltr; text-align: right;
         }
     }
+
+    /* PWA Install Card */
+    .pwa-install-card {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        width: 100%;
+        margin-top: 22px;
+        padding: 30px 34px;
+        border-radius: 26px;
+        color: #fff;
+        overflow: hidden;
+        background: linear-gradient(130deg, #2563eb 0%, #7c3aed 55%, #db2777 100%);
+        box-shadow: 0 22px 55px -18px rgba(109, 40, 217, 0.55), inset 0 1px 0 rgba(255,255,255,0.18);
+    }
+    .pwa-install-card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(circle at 12% 8%, rgba(255,255,255,0.16) 0%, transparent 42%),
+            radial-gradient(circle at 92% 96%, rgba(255,255,255,0.14) 0%, transparent 45%);
+        pointer-events: none;
+    }
+    .pwa-install-card::after {
+        content: '';
+        position: absolute;
+        top: -70px; left: -70px;
+        width: 220px; height: 220px;
+        border-radius: 50%;
+        border: 28px solid rgba(255,255,255,0.07);
+        pointer-events: none;
+    }
+    .pwa-install-card__art { display: none; flex-shrink: 0; position: relative; z-index: 1; }
+    .pwa-art-phone {
+        width: 118px;
+        background: rgba(255,255,255,0.16);
+        border: 2px solid rgba(255,255,255,0.55);
+        border-radius: 24px;
+        padding: 8px 7px 12px;
+        text-align: center;
+        box-shadow: 0 18px 35px -12px rgba(0,0,0,0.35);
+    }
+    .pwa-art-phone__camera {
+        width: 8px; height: 8px;
+        margin: 0 auto 8px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.85);
+    }
+    .pwa-art-phone__screen {
+        background: radial-gradient(circle at 30% 20%, #0ea5e9, #312e81 60%);
+        border-radius: 14px;
+        padding: 16px 14px;
+        display: grid;
+        gap: 8px;
+        justify-items: center;
+    }
+    .pwa-art-phone__logo {
+        width: 38px; height: 38px;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.16);
+        display: grid; place-items: center;
+        font-size: 1.1rem; color: #fff;
+        margin-bottom: 6px;
+    }
+    .pwa-art-phone__line {
+        height: 7px;
+        border-radius: 99px;
+        background: rgba(255,255,255,0.65);
+    }
+    .pwa-art-phone__home {
+        width: 34px; height: 4px;
+        margin: 10px auto 0;
+        border-radius: 99px;
+        background: rgba(255,255,255,0.85);
+    }
+    .pwa-install-card__body { position: relative; z-index: 1; flex: 1; min-width: 0; }
+    .pwa-install-card__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(255,255,255,0.18);
+        border: 1px solid rgba(255,255,255,0.28);
+        padding: 4px 12px;
+        border-radius: 99px;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.3px;
+    }
+    .pwa-install-card__title { font-weight: 900; margin: 12px 0 8px; font-size: 1.15rem; }
+    .pwa-install-card__desc { font-size: 0.86rem; line-height: 1.9; color: rgba(255,255,255,0.92); margin-bottom: 10px; }
+    .pwa-install-card__benefits { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 6px; }
+    .pwa-install-card__benefits li { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.95); }
+    .pwa-install-card__benefits .oi { color: #fff; flex-shrink: 0; }
+    .pwa-install-card__actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .pwa-install-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: none;
+        cursor: pointer;
+        padding: 11px 22px;
+        border-radius: 14px;
+        font-weight: 800;
+        font-size: 0.85rem;
+        transition: all 0.2s ease;
+    }
+    .pwa-install-btn--primary {
+        background: #fff;
+        color: #6d28d9;
+        box-shadow: 0 10px 22px -8px rgba(0,0,0,0.35);
+    }
+    .pwa-install-btn--primary:hover { background: #fef3c7; transform: translateY(-2px); }
+    .pwa-install-btn--ghost {
+        background: rgba(255,255,255,0.16);
+        color: #fff;
+        border: 1px solid rgba(255,255,255,0.35);
+    }
+    .pwa-install-btn--ghost:hover { background: rgba(255,255,255,0.28); }
+    .pwa-install-card__hint {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-top: 16px;
+        font-size: 0.72rem;
+        color: rgba(255,255,255,0.85);
+        direction: rtl;
+    }
+    .pwa-install-card__hint b { color: #fff; font-weight: 800; }
+    @@media (min-width: 992px) {
+        .pwa-install-card__art { display: block; }
+    }
+    @@media (max-width: 576px) {
+        .pwa-install-card { padding: 22px 20px; border-radius: 20px; }
+        .pwa-install-card__title { font-size: 1.02rem; }
+        .pwa-install-card__actions { flex-direction: column; }
+        .pwa-install-btn { justify-content: center; width: 100%; }
+        .pwa-install-card__hint { align-items: flex-start; line-height: 1.8; }
+    }
 </style>
 
 @code {
@@ -1564,5 +1753,93 @@
         public string Title { get; set; } = "";
         public string Description { get; set; } = "";
         public List<string> Features { get; set; } = new();
+    }
+}
+
+@code {
+    private const string PwaDismissedKey = "pwaInstallDismissAt";
+    private const long PwaReminderWindowMs = 24L * 60 * 60 * 1000;
+    private bool _pwaInstallable;
+    private DotNetObjectReference<Dashboard>? _pwaHelper;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _pwaHelper = DotNetObjectReference.Create(this);
+                await JSRuntime.InvokeVoidAsync("initDashboardInstallHandler", _pwaHelper);
+            }
+            catch { }
+            await RefreshInstallState();
+        }
+    }
+
+    public void Dispose()
+    {
+        _pwaHelper?.Dispose();
+    }
+
+    [JSInvokable]
+    public async Task NotifyDashboardInstallAvailable()
+    {
+        await RefreshInstallState();
+    }
+
+    private async Task RefreshInstallState()
+    {
+        try
+        {
+            if (!await JSRuntime.InvokeAsync<bool>("getPwaInstallStatus"))
+            {
+                _pwaInstallable = false;
+                StateHasChanged();
+                return;
+            }
+
+            var dismissedAtRaw = await JSRuntime.InvokeAsync<string?>("pwaGetDismissedAt");
+            if (!string.IsNullOrEmpty(dismissedAtRaw) && long.TryParse(dismissedAtRaw, out var dismissedAt))
+            {
+                var elapsed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - dismissedAt;
+                _pwaInstallable = elapsed < 0 || elapsed >= PwaReminderWindowMs;
+            }
+            else
+            {
+                _pwaInstallable = true;
+            }
+            StateHasChanged();
+        }
+        catch
+        {
+            _pwaInstallable = false;
+        }
+    }
+
+    private async Task InstallApp()
+    {
+        try
+        {
+            if (await JSRuntime.InvokeAsync<bool>("installPWA"))
+            {
+                await JSRuntime.InvokeVoidAsync("pwaClearDismissedAt");
+                _pwaInstallable = false;
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private Task DismissInstall()
+    {
+        try
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            JSRuntime.InvokeVoidAsync("pwaSetDismissedAt", now.ToString());
+        }
+        catch { }
+        _pwaInstallable = false;
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 }
