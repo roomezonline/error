@@ -1253,6 +1253,20 @@
                 }, 320);
             }
 
+            function showError() {
+                if (done) return;
+                done = true;
+                var card = splash.querySelector('.app-splash__card');
+                if (card) {
+                    card.innerHTML =
+                        '<div class="app-splash__logo"><img class="app-splash__logo-img" src="images/branding/logo.svg" alt="" /></div>' +
+                        '<div class="app-splash__brand">ارورسرویس</div>' +
+                        '<div style="color:#dc3545;font-size:14px;margin:8px 0;">بارگذاری سایت با خطا مواجه شد</div>' +
+                        '<div style="color:#64748b;font-size:12px;margin-bottom:12px;">لطفاً اتصال اینترنت خود را بررسی کنید</div>' +
+                        '<button onclick="window.location.reload()" style="background:#2563eb;color:#fff;border:none;padding:10px 28px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">تلاش مجدد</button>';
+                }
+            }
+
             var observer = new MutationObserver(function () {
                 if (app.childElementCount > 0) {
                     hide();
@@ -1262,7 +1276,13 @@
 
             observer.observe(app, { childList: true, subtree: true });
 
-            window.setTimeout(hide, 3000);
+            // After 8 seconds, if Blazor hasn't started, show error with retry
+            window.setTimeout(function () {
+                if (app.childElementCount === 0) {
+                    observer.disconnect();
+                    showError();
+                }
+            }, 8000);
         })();
     </script>
 

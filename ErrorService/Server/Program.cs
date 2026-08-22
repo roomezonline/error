@@ -32,7 +32,7 @@ builder.Services.AddResponseCompression(options =>
 {
     options.EnableForHttps = true;
     options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
-        new[] { "application/octet-stream", "application/xml", "text/xml" });
+        new[] { "application/octet-stream", "application/xml", "text/xml", "application/wasm", "application/font-woff2", "font/woff2" });
 });
 
 builder.Services.AddScoped<JwtTokenService>();
