@@ -983,6 +983,7 @@
     private List<RecentlyViewedItem> _recentItems = new();
     private bool isLoading = true;
     private int currentImageIndex = 0;
+    private List<string>? _cachedImages;
     private string countdownText = "";
     private Timer? timer;
     private string? productJsonLd;
@@ -1113,7 +1114,8 @@
 
     private void OpenLightbox(int index)
     {
-        _lightboxIndex = index;
+        var images = GetAllImages();
+        _lightboxIndex = Math.Clamp(index, 0, images.Count - 1);
         showLightbox = true;
         StateHasChanged();
         try { _ = JS.InvokeVoidAsync("__pdFocusElement", "pd-lightbox-el"); } catch { }
@@ -1214,6 +1216,8 @@
     {
         _quantity = 1;
         _activeTab = 0;
+        currentImageIndex = 0;
+        _lightboxIndex = 0;
         showLightbox = false;
         showShareModal = false;
         _cartBtnState = CartBtnState.Default;
@@ -1222,6 +1226,7 @@
         reviewSummary = null;
         _productCommentDtos = new();
         await LoadProduct();
+        _cachedImages = null;
         await InitActionStates();
         await LoadReviews();
     }
@@ -1422,13 +1427,15 @@
 
     private List<string> GetAllImages()
     {
+        if (_cachedImages != null) return _cachedImages;
         var list = new List<string>();
         if (!string.IsNullOrEmpty(product?.MainImageUrl)) list.Add(product.MainImageUrl);
         if (!string.IsNullOrEmpty(product?.ImageUrl2)) list.Add(product.ImageUrl2);
         if (!string.IsNullOrEmpty(product?.ImageUrl3)) list.Add(product.ImageUrl3);
         if (!string.IsNullOrEmpty(product?.ImageUrl4)) list.Add(product.ImageUrl4);
         if (list.Count == 0) list.Add("/images/placeholder-product.svg");
-        return list;
+        _cachedImages = list;
+        return _cachedImages;
     }
 
     private void StartCountdown()
