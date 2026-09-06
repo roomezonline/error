@@ -71,6 +71,22 @@
                             </div>
                         </div>
 
+                        @if (IsAboveCardToCardLimit)
+                        {
+                            <div class="limit-note animate__animated animate__fadeInUp">
+                                <div class="limit-note__icon"><span class="oi oi-warning"></span></div>
+                                <div class="limit-note__body">
+                                    <div class="limit-note__title">مبلغ سفارش بالاتر از سقف کارت به کارت است</div>
+                                    <div class="limit-note__desc">
+                                        سقف فعلی کارت به کارت <b>۱۰۰ میلیون ریال</b> است و مبلغ این سفارش
+                                        (<b>@PayAmountToman.ToString("N0") تومان</b>) بالاتر از آن می‌باشد.
+                                        توصیه می‌شود مبلغ را از طریق <b>سیستم پایا/ساتنا (پل)</b> واریز کنید؛
+                                        برای این کار کافی است <b>شماره شبا</b> حساب مقصد را از همین صفحه کپی کنید.
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
                         <div class="bank-grid">
                             @if (bankAccounts == null || !bankAccounts.Any())
                             {
@@ -272,6 +288,23 @@
 
     .bank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; margin-bottom: 12px; }
 
+    .limit-note {
+        display: flex; gap: 14px; align-items: flex-start; margin-bottom: 22px;
+        padding: 18px 20px; border-radius: 16px;
+        background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+        border: 1px solid #fed7aa; color: #9a3412;
+        box-shadow: 0 4px 16px rgba(249, 115, 22, 0.08);
+    }
+    .limit-note__icon {
+        flex-shrink: 0; width: 42px; height: 42px; border-radius: 13px;
+        background: linear-gradient(135deg, #fb923c, #f97316); color: #fff;
+        display: grid; place-items: center; font-size: 1.1rem;
+        box-shadow: 0 4px 10px rgba(249, 115, 22, 0.35);
+    }
+    .limit-note__title { font-size: 0.92rem; font-weight: 800; color: #9a3412; margin-bottom: 6px; }
+    .limit-note__desc { font-size: 0.8rem; line-height: 1.95; color: #9a3412; margin: 0; opacity: 0.95; }
+    .limit-note__desc b { color: #c2410c; font-weight: 800; }
+
     .bank-card {
         background: #fff; color: var(--shop-text, #1e293b);
         border-radius: 18px; padding: 0; position: relative; overflow: hidden;
@@ -413,6 +446,8 @@
         .order-banner-code { text-align: center; }
         .bank-grid { grid-template-columns: 1fr; gap: 14px; }
         .bank-card-number { font-size: 1rem; padding: 12px; }
+        .limit-note { padding: 16px; }
+        .limit-note__icon { width: 38px; height: 38px; font-size: 1rem; }
         .upload-zone { padding: 36px 20px; }
     }
 </style>
@@ -429,6 +464,10 @@
     private readonly List<SelectedReceiptFile> selectedFiles = new();
 
     private const int MaxReceiptImages = 3;
+    private const decimal CardToCardLimitRials = 100_000_000m;
+
+    private decimal PayAmountToman => order is null ? 0 : order.TotalAmount - (order.DiscountAmount ?? 0);
+    private bool IsAboveCardToCardLimit => PayAmountToman * 10 > CardToCardLimitRials;
 
     private int UploadedReceiptCount => order?.ReceiptImageUrls.Count ?? 0;
     private int RemainingSlots => Math.Max(0, MaxReceiptImages - UploadedReceiptCount);
