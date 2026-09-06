@@ -869,6 +869,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasKey(x => x.Id);
             entity.Property(x => x.OrderNumber).IsRequired().HasMaxLength(50);
             entity.Property(x => x.TotalAmount).HasPrecision(18, 2);
+            entity.Property(x => x.ReceiptImageUrlsJson).HasMaxLength(2000);
             entity.HasIndex(x => x.OrderNumber).IsUnique();
             entity.HasIndex(x => x.Status);
             entity.HasIndex(x => x.CreatedAt);

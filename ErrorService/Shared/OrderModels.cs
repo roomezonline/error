@@ -35,6 +35,7 @@ public class OrderDto
     
     // Payment Info
     public string? ReceiptImageUrl { get; set; }
+    public List<string> ReceiptImageUrls { get; set; } = new();
     public string? TrackingNumber { get; set; }
     public DateTimeOffset? PaymentDate { get; set; }
     public string? AdminNotes { get; set; }

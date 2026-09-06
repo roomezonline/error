@@ -117,42 +117,87 @@
                             <div class="step-num step-num--ok">۲</div>
                             <div>
                                 <h2 class="section-title">آپلود رسید پرداخت</h2>
-                                <p class="section-desc">تصویر فیش واریزی یا اسکرین‌شات پرداخت را ارسال کنید</p>
+                                <p class="section-desc">تصویر فیش واریزی یا اسکرین‌شات پرداخت را ارسال کنید (تا ۳ تصویر)</p>
                             </div>
                         </div>
 
-                        @if (order.Status == OrderStatus.PendingPayment)
+                        @if (order.Status == OrderStatus.PendingPayment || order.Status == OrderStatus.ReceiptUploaded)
                         {
+                            var remaining = RemainingSlots;
                             <div class="upload-section">
-                                <div class="field-group mb-3">
-                                    <label class="field-label">شماره پیگیری <span class="optional">(اختیاری)</span></label>
-                                    <input type="text" class="field-input text-center ltr" @bind="trackingNumber" placeholder="کد پیگیری یا ارجاع" inputmode="numeric" />
-                                </div>
-
-                                @if (string.IsNullOrEmpty(previewUrl))
+                                @if (order.ReceiptImageUrls.Count > 0)
                                 {
+                                    <div class="existing-receipts mb-3">
+                                        <label class="field-label">رسیدهای ارسال‌شده (@order.ReceiptImageUrls.Count / @MaxReceiptImages)</label>
+                                        <div class="receipt-grid">
+                                            @foreach (var url in order.ReceiptImageUrls)
+                                            {
+                                                <a class="receipt-thumb" href="@url" target="_blank" rel="noopener">
+                                                    <img src="@url" alt="رسید پرداخت" />
+                                                </a>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (order.Status == OrderStatus.ReceiptUploaded)
+                                {
+                                    <div class="alert alert-success rounded-4 border-0 p-3 d-flex gap-2 align-items-start" style="background:#f0fdf4;border-color:#d1fae5">
+                                        <span class="oi oi-circle-check text-success mt-1"></span>
+                                        <div class="small lh-base">
+                                            رسید شما دریافت شد. در صورت نیاز می‌توانید تا <b>@MaxReceiptImages</b> تصویر رسید ثبت کنید
+                                            (تا <b>@remaining</b> تصویر دیگر مجاز است).
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (remaining > 0)
+                                {
+                                    <div class="field-group mb-3">
+                                        <label class="field-label">شماره پیگیری <span class="optional">(اختیاری)</span></label>
+                                        <input type="text" class="field-input text-center ltr" @bind="trackingNumber" placeholder="کد پیگیری یا ارجاع" inputmode="numeric" />
+                                    </div>
+
                                     <div class="upload-zone">
-                                        <InputFile OnChange="HandleFileSelected" class="upload-input" accept="image/*" />
+                                        <InputFile OnChange="HandleFilesSelected" multiple class="upload-input" accept="image/*" />
                                         <div class="upload-icon">
                                             <span class="oi oi-cloud-upload"></span>
                                         </div>
                                         <h6 class="upload-title">انتخاب تصویر رسید</h6>
-                                        <p class="upload-desc">حداکثر ۱۰ مگابایت — PNG, JPG</p>
+                                        <p class="upload-desc">تا @remaining تصویر — حداکثر @MaxReceiptImages تصویر کل — PNG, JPG, WEBP</p>
                                     </div>
+
+                                    @if (selectedFiles.Any())
+                                    {
+                                        <div class="preview-area animate__animated animate__zoomIn">
+                                            <div class="preview-grid">
+                                                @for (int i = 0; i < selectedFiles.Count; i++)
+                                                {
+                                                    var index = i;
+                                                    var preview = selectedFiles[i];
+                                                    <div class="preview-box">
+                                                        <img src="@preview.PreviewUrl" alt="پیش‌نمایش رسید" class="preview-img" />
+                                                        <button type="button" class="preview-remove" @onclick="() => selectedFiles.RemoveAt(index)" aria-label="حذف تصویر">×</button>
+                                                    </div>
+                                                }
+                                            </div>
+                                            <div class="d-flex gap-2 justify-content-center mt-4 px-3">
+                                                <button class="btn btn-primary-custom px-5 py-3" @onclick="UploadReceipt" disabled="@isUploading">
+                                                    @if (isUploading) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                                                    @(order.Status == OrderStatus.ReceiptUploaded ? "افزودن رسید" : "ارسال رسید")
+                                                </button>
+                                                <button class="btn btn-ghost-custom px-4 py-3" @onclick="() => selectedFiles.Clear()">انصراف</button>
+                                            </div>
+                                        </div>
+                                    }
                                 }
                                 else
                                 {
-                                    <div class="preview-area animate__animated animate__zoomIn">
-                                        <div class="preview-img-wrap">
-                                            <img src="@previewUrl" alt="پیش‌نمایش رسید" class="preview-img" />
-                                        </div>
-                                        <div class="d-flex gap-2 justify-content-center mt-4 px-3">
-                                            <button class="btn btn-primary-custom px-5 py-3" @onclick="UploadReceipt" disabled="@isUploading">
-                                                @if (isUploading) { <span class="spinner-border spinner-border-sm me-2"></span> }
-                                                ارسال رسید
-                                            </button>
-                                            <button class="btn btn-ghost-custom px-4 py-3" @onclick="() => previewUrl = null">انصراف</button>
-                                        </div>
+                                    <div class="success-card animate__animated animate__bounceIn">
+                                        <div class="success-icon"><span class="oi oi-circle-check"></span></div>
+                                        <h3 class="success-title">پیشینه رسید کامل است</h3>
+                                        <p class="success-desc">حداکثر @MaxReceiptImages تصویر رسید برای این سفارش ثبت شده است. سفارش شما در حال بررسی است.</p>
+                                        <a href="/" class="btn btn-outline-custom px-5 py-2 mt-3">بازگشت به صفحه اصلی</a>
                                     </div>
                                 }
                             </div>
@@ -302,12 +347,31 @@
     .upload-title { font-size: 0.95rem; font-weight: 800; margin-bottom: 6px; }
     .upload-desc { font-size: 0.78rem; color: #94a3b8; margin: 0; }
 
-    .preview-area { text-align: center; }
-    .preview-img-wrap {
-        display: inline-block; padding: 8px; background: #fff;
-        border: 1px solid #e2e8f0; border-radius: 16px;
+    .existing-receipts .receipt-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 10px;
     }
-    .preview-img { max-height: 280px; border-radius: 12px; }
+    .receipt-thumb {
+        display: block; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #f8fafc;
+        transition: transform 0.15s;
+    }
+    .receipt-thumb:hover { transform: translateY(-2px); }
+    .receipt-thumb img { width: 100%; height: 90px; object-fit: cover; display: block; }
+
+    .preview-area { text-align: center; }
+    .preview-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px;
+    }
+    .preview-box {
+        position: relative; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;
+    }
+    .preview-box .preview-img { width: 100%; height: 110px; object-fit: cover; display: block; }
+    .preview-remove {
+        position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; padding: 0;
+        border: none; border-radius: 50%; background: rgba(15,23,42,0.65); color: #fff;
+        font-size: 1rem; line-height: 1; display: grid; place-items: center;
+        transition: background 0.15s;
+    }
+    .preview-remove:hover { background: #ef4444; }
 
     .success-card {
         text-align: center; padding: 48px 24px;
@@ -362,10 +426,20 @@
     private bool isLoading = true;
     private bool isUploading = false;
     private string? trackingNumber;
-    private string? previewUrl;
-    private byte[]? fileBuffer;
-    private string? fileName;
-    private string? fileContentType;
+    private readonly List<SelectedReceiptFile> selectedFiles = new();
+
+    private const int MaxReceiptImages = 3;
+
+    private int UploadedReceiptCount => order?.ReceiptImageUrls.Count ?? 0;
+    private int RemainingSlots => Math.Max(0, MaxReceiptImages - UploadedReceiptCount);
+
+    private sealed class SelectedReceiptFile
+    {
+        public string FileName { get; set; } = string.Empty;
+        public string ContentType { get; set; } = "image/jpeg";
+        public byte[] Buffer { get; set; } = Array.Empty<byte>();
+        public string PreviewUrl { get; set; } = string.Empty;
+    }
 
     private string FormatCardNumber(string? cardNumber)
     {
@@ -393,49 +467,62 @@
             isLoading = true;
             order = await Http.GetFromJsonAsync<OrderDto>($"{OrderUrl()}");
             bankAccounts = await Http.GetFromJsonAsync<List<BankAccountDto>>("api/bankaccounts/gateway");
+            trackingNumber = order?.TrackingNumber ?? trackingNumber;
         }
         catch (Exception ex) { ToastService.ShowError("خطا در دریافت اطلاعات: " + ex.Message); }
         finally { isLoading = false; }
     }
 
-    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    private async Task HandleFilesSelected(InputFileChangeEventArgs e)
     {
-        var file = e.File;
-        if (file != null)
+        try
         {
-            try
+            var files = e.GetMultipleFiles(Math.Max(1, RemainingSlots));
+            foreach (var file in files)
             {
-                fileName = file.Name;
-                fileContentType = file.ContentType;
-                fileBuffer = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
-                previewUrl = $"data:{fileContentType};base64,{Convert.ToBase64String(fileBuffer)}";
+                if (RemainingSlots <= 0) break;
+                var buffer = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+                selectedFiles.Add(new SelectedReceiptFile
+                {
+                    FileName = file.Name,
+                    ContentType = file.ContentType,
+                    Buffer = buffer,
+                    PreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(buffer)}"
+                });
             }
-            catch (Exception ex) { ToastService.ShowError("خطا در خواندن فایل: " + ex.Message); }
         }
+        catch (Exception ex) { ToastService.ShowError("خطا در خواندن فایل: " + ex.Message); }
     }
 
     private async Task UploadReceipt()
     {
-        if (fileBuffer == null) { ToastService.ShowError("ابتدا تصویر رسید را انتخاب کنید"); return; }
+        if (selectedFiles.Count == 0) { ToastService.ShowError("ابتدا تصویر رسید را انتخاب کنید"); return; }
         if (isUploading) return;
         isUploading = true;
         try
         {
             var content = new MultipartFormDataContent();
-            var byteArrayContent = new ByteArrayContent(fileBuffer);
-            byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(fileContentType ?? "image/jpeg");
-            content.Add(byteArrayContent, "file", fileName ?? "receipt.jpg");
+            foreach (var f in selectedFiles)
+            {
+                var byteArrayContent = new ByteArrayContent(f.Buffer);
+                byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(f.ContentType);
+                content.Add(byteArrayContent, "file", f.FileName);
+            }
             if (!string.IsNullOrEmpty(trackingNumber)) content.Add(new StringContent(trackingNumber), "trackingNumber");
             if (!string.IsNullOrWhiteSpace(AccessToken)) content.Add(new StringContent(AccessToken), "accessToken");
 
             var response = await Http.PostAsync($"api/orders/{OrderId}/receipt", content);
             if (response.IsSuccessStatusCode)
             {
-                ToastService.ShowSuccess("رسید پرداخت با موفقیت ثبت شد");
+                ToastService.ShowSuccess(order?.Status == OrderStatus.ReceiptUploaded ? "رسید جدید ثبت شد" : "رسید پرداخت با موفقیت ثبت شد");
                 order = await Http.GetFromJsonAsync<OrderDto>(OrderUrl());
-                previewUrl = null; fileBuffer = null;
+                selectedFiles.Clear();
             }
-            else { ToastService.ShowError("خطا در ارسال فایل"); }
+            else
+            {
+                var serverMessage = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(serverMessage) ? "خطا در ارسال فایل" : serverMessage.Trim().Trim('"'));
+            }
         }
         catch { ToastService.ShowError("خطای ارتباط با سرور"); }
         finally { isUploading = false; }

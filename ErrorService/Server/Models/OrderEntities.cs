@@ -65,6 +65,9 @@ public class Order
     [MaxLength(500)]
     public string? ReceiptImageUrl { get; set; }
 
+    [MaxLength(2000)]
+    public string? ReceiptImageUrlsJson { get; set; }
+
     [MaxLength(100)]
     public string? TrackingNumber { get; set; }
 

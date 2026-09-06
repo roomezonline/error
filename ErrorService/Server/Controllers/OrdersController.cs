@@ -5,6 +5,7 @@ using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace ErrorService.Server.Controllers;
 
@@ -72,6 +73,38 @@ public sealed class OrdersController : ControllerBase
         if (filePath.StartsWith(_env.WebRootPath, StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(filePath))
             System.IO.File.Delete(filePath);
     }
+
+    private void DeleteReceiptFiles(IEnumerable<string>? receiptImageUrls)
+    {
+        if (receiptImageUrls == null) return;
+        foreach (var url in receiptImageUrls)
+            DeleteReceiptFile(url);
+    }
+
+    private static List<string> GetReceiptUrls(Order order)
+    {
+        if (!string.IsNullOrWhiteSpace(order.ReceiptImageUrlsJson))
+        {
+            try
+            {
+                var urls = JsonSerializer.Deserialize<List<string>>(order.ReceiptImageUrlsJson);
+                if (urls != null && urls.Count > 0)
+                    return urls;
+            }
+            catch (JsonException)
+            {
+                // fall through to legacy field
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.ReceiptImageUrl))
+            return new List<string> { order.ReceiptImageUrl };
+
+        return new List<string>();
+    }
+
+    private static string SerializeReceiptUrls(List<string> urls)
+        => urls.Count == 0 ? string.Empty : JsonSerializer.Serialize(urls);
 
     private bool IsCallerAuthenticated() => User.Identity?.IsAuthenticated == true;
 
@@ -290,7 +323,8 @@ public sealed class OrdersController : ControllerBase
             ProvinceName = order.ProvinceName,
             CityName = order.CityName,
             PostalCode = order.PostalCode,
-            ReceiptImageUrl = order.ReceiptImageUrl,
+ReceiptImageUrl = order.ReceiptImageUrl,
+            ReceiptImageUrls = GetReceiptUrls(order),
             TrackingNumber = order.TrackingNumber,
             PaymentDate = order.PaymentDate,
             PaymentProvider = order.PaymentProvider,
@@ -339,6 +373,7 @@ public sealed class OrdersController : ControllerBase
                 CityName = order.CityName,
                 PostalCode = order.PostalCode,
 ReceiptImageUrl = order.ReceiptImageUrl,
+            ReceiptImageUrls = GetReceiptUrls(order),
             TrackingNumber = order.TrackingNumber,
             PaymentDate = order.PaymentDate,
             AdminNotes = order.AdminNotes,
@@ -358,9 +393,9 @@ ReceiptImageUrl = order.ReceiptImageUrl,
         return Ok(orders);
     }
 
-    [HttpPost("{id:int}/receipt")]
+[HttpPost("{id:int}/receipt")]
     [RequestSizeLimit(15_000_000)]
-    public async Task<IActionResult> UploadReceipt(int id, [FromForm] IFormFile file, [FromForm] string? trackingNumber, [FromForm] string? accessToken)
+    public async Task<IActionResult> UploadReceipt(int id, [FromForm] List<IFormFile> files, [FromForm] string? trackingNumber, [FromForm] string? accessToken)
     {
         var order = await _db.Orders.FindAsync(id);
         if (order == null) return NotFound();
@@ -374,27 +409,46 @@ ReceiptImageUrl = order.ReceiptImageUrl,
         if (order.Status is OrderStatus.Approved or OrderStatus.Completed or OrderStatus.Rejected or OrderStatus.Cancelled)
             return BadRequest("در وضعیت فعلی سفارش امکان آپلود مجدد رسید وجود ندارد.");
 
-        if (file == null || file.Length == 0) return BadRequest("فایل رسید ارسال نشده است.");
+        if (files == null || files.Count == 0)
+            return BadRequest("فایل رسید ارسال نشده است.");
 
-        var ext = Path.GetExtension(file.FileName);
-        if (string.IsNullOrWhiteSpace(ext)) ext = ".bin";
-        var safeExt = ext.ToLowerInvariant();
-        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp" };
-        if (!allowed.Contains(safeExt))
-            return BadRequest("فرمت فایل مجاز نیست. فقط تصاویر jpg, jpeg, png, webp");
+        var existingUrls = GetReceiptUrls(order);
+        const int maxTotal = 3;
+        if (existingUrls.Count + files.Count > maxTotal)
+            return BadRequest($"حداکثر {maxTotal} تصویر رسید مجاز است. فعلاً {existingUrls.Count} تصویر ثبت شده است.");
 
         var uploadsFolder = Path.Combine(_env.WebRootPath, "uploads", "receipts");
         if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
 
-        var fileName = $"{id}_{Guid.NewGuid():N}{safeExt}";
-        var filePath = Path.Combine(uploadsFolder, fileName);
-
-        using (var stream = new FileStream(filePath, FileMode.Create))
+        var savedUrls = new List<string>();
+        foreach (var file in files)
         {
-            await file.CopyToAsync(stream);
+            if (file == null || file.Length == 0) continue;
+
+            var ext = Path.GetExtension(file.FileName);
+            if (string.IsNullOrWhiteSpace(ext)) ext = ".bin";
+            var safeExt = ext.ToLowerInvariant();
+            var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp" };
+            if (!allowed.Contains(safeExt))
+                return BadRequest("فرمت فایل مجاز نیست. فقط تصاویر jpg, jpeg, png, webp");
+
+            var fileName = $"{id}_{Guid.NewGuid():N}{safeExt}";
+            var filePath = Path.Combine(uploadsFolder, fileName);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            savedUrls.Add($"/uploads/receipts/{fileName}");
         }
 
-        order.ReceiptImageUrl = $"/uploads/receipts/{fileName}";
+        if (savedUrls.Count == 0)
+            return BadRequest("هیچ فایل معتبری ارسال نشده است.");
+
+        existingUrls.AddRange(savedUrls);
+        order.ReceiptImageUrlsJson = SerializeReceiptUrls(existingUrls);
+        order.ReceiptImageUrl = existingUrls[^1];
         order.TrackingNumber = trackingNumber;
         order.PaymentDate = DateTimeOffset.UtcNow;
         order.Status = OrderStatus.ReceiptUploaded;
@@ -402,7 +456,7 @@ ReceiptImageUrl = order.ReceiptImageUrl,
 
         await _db.SaveChangesAsync();
 
-        return Ok(new { url = order.ReceiptImageUrl });
+        return Ok(new { urls = existingUrls });
     }
 
     [Authorize(Policy = "perm:admin.orders.manage")]
@@ -448,7 +502,7 @@ ReceiptImageUrl = order.ReceiptImageUrl,
 
         await ReleaseCouponUsageAsync(order.CouponId);
 
-        DeleteReceiptFile(order.ReceiptImageUrl);
+        DeleteReceiptFiles(GetReceiptUrls(order));
 
         _db.Orders.Remove(order);
         await _db.SaveChangesAsync();
@@ -503,7 +557,7 @@ ReceiptImageUrl = order.ReceiptImageUrl,
         if (!AllowedTransitions.Contains((previousStatus, request.Status)))
             return BadRequest("انتقال وضعیت انتخابی برای این سفارش مجاز نیست.");
 
-        if (request.Status == OrderStatus.Approved && string.IsNullOrWhiteSpace(order.ReceiptImageUrl) && order.PaymentProvider == null)
+        if (request.Status == OrderStatus.Approved && GetReceiptUrls(order).Count == 0 && order.PaymentProvider == null)
             return BadRequest("برای تایید سفارش، ابتدا باید رسید پرداخت آپلود شده باشد.");
 
         await using var tx = await _db.Database.BeginTransactionAsync();
