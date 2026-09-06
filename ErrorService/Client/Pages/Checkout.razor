@@ -107,7 +107,7 @@
                                 </div>
                             </div>
 
-                            <div class="mt-5 d-none d-lg-block">
+                            <div class="mt-5">
                                 <button type="submit" class="btn btn-primary-custom py-3 w-100" disabled="@isProcessing">
                                     @if (isProcessing) { <span class="spinner-border spinner-border-sm me-2"></span> }
                                     تایید و پرداخت نهایی
@@ -190,7 +190,7 @@
                 </div>
             </div>
 
-            <div class="bottom-bar">
+            <div class="bottom-bar d-none d-lg-block">
                 <div class="bottom-bar-inner">
                     <div class="d-flex align-items-center justify-content-between gap-3 w-100">
                         <div>
@@ -351,7 +351,6 @@
     .bottom-bar-price small { font-size: 0.65rem; font-weight: 600; }
 
     @@media (max-width: 768px) {
-        .checkout-page { padding-bottom: 100px; }
         .section-card { padding: 16px 14px; }
         .summary-card { padding: 16px 14px; border-radius: 16px; }
         .section-header { margin-bottom: 20px; }
