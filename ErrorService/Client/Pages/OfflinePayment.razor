@@ -545,7 +545,7 @@
             {
                 var byteArrayContent = new ByteArrayContent(f.Buffer);
                 byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(f.ContentType);
-                content.Add(byteArrayContent, "file", f.FileName);
+                content.Add(byteArrayContent, "files", f.FileName);
             }
             if (!string.IsNullOrEmpty(trackingNumber)) content.Add(new StringContent(trackingNumber), "trackingNumber");
             if (!string.IsNullOrWhiteSpace(AccessToken)) content.Add(new StringContent(AccessToken), "accessToken");
