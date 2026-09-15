@@ -78,6 +78,7 @@
         }
 
         IsUploading = true;
+        StateHasChanged();
         try
         {
             using var content = new MultipartFormDataContent();
@@ -87,7 +88,8 @@
             var bytes = ms.ToArray();
 
             var byteArrayContent = new ByteArrayContent(bytes);
-            byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            var contentType = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType;
+            byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
             content.Add(byteArrayContent, "file", file.Name);
 
             var resp = await Http.PostAsync(UploadUrl, content);
@@ -104,13 +106,14 @@
                 ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا در آپلود" : body.Trim().Trim('"'));
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            ToastService.ShowError("خطای سیستمی در آپلود");
+            ToastService.ShowError($"خطای سیستمی در آپلود: {ex.Message}");
         }
         finally
         {
             IsUploading = false;
+            StateHasChanged();
         }
     }
 

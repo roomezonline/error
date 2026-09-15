@@ -70,12 +70,12 @@
     </div>
 }
 
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <div class="input-group" style="max-width:320px">
+<div class="projects-toolbar mb-3">
+    <div class="input-group projects-toolbar__search">
         <span class="input-group-text bg-white rounded-end-3 border-start-0"><span class="oi oi-magnifying-glass"></span></span>
         <input class="form-control rounded-start-3 border-start-0" placeholder="جستجوی پروژه..." @bind="searchQuery" @bind:event="oninput" @onkeyup="SearchProjects" />
     </div>
-    <button class="btn btn-success rounded-pill px-4" @onclick="NewProject">
+    <button class="btn btn-success rounded-pill px-4 projects-toolbar__btn" @onclick="NewProject">
         <span class="oi oi-plus me-1"></span> پروژه جدید
     </button>
 </div>
@@ -130,16 +130,21 @@ else
                             <span class="me-auto">@p.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")</span>
                         </div>
                     </div>
-                    <div class="card-footer bg-transparent border-0 px-3 pb-3 d-flex gap-2">
-                        <a href="api/projects/@(p.Id)/export" class="btn btn-sm btn-outline-primary rounded-pill" @onclick:stopPropagation target="_blank" title="دانلود ZIP">
-                            <span class="oi oi-data-transfer-download"></span>
-                        </a>
-                        <button class="btn btn-sm btn-outline-warning rounded-pill" @onclick:stopPropagation="true" @onclick="() => EditProject(p)" title="ویرایش">
-                            <span class="oi oi-pencil"></span>
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger rounded-pill me-auto" @onclick:stopPropagation="true" @onclick="() => ConfirmDelete(p)" title="حذف">
-                            <span class="oi oi-trash"></span>
-                        </button>
+                    <div class="card-footer bg-transparent border-0 px-3 pb-3">
+                        <div class="project-card__actions">
+                            <a href="api/projects/@(p.Id)/export" class="project-card__action project-card__action--download" @onclick:stopPropagation target="_blank" title="دانلود ZIP">
+                                <span class="oi oi-data-transfer-download"></span>
+                                <span>دانلود</span>
+                            </a>
+                            <button class="project-card__action project-card__action--edit" @onclick:stopPropagation="true" @onclick="() => EditProject(p)" title="ویرایش">
+                                <span class="oi oi-pencil"></span>
+                                <span>ویرایش</span>
+                            </button>
+                            <button class="project-card__action project-card__action--delete" @onclick:stopPropagation="true" @onclick="() => ConfirmDelete(p)" title="حذف">
+                                <span class="oi oi-trash"></span>
+                                <span>حذف</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -148,12 +153,64 @@ else
 }
 
 <style>
+    .projects-toolbar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+    }
+    .projects-toolbar__search { flex: 1; max-width: 320px; }
+    .projects-toolbar__btn { white-space: nowrap; flex-shrink: 0; }
+
+    @@media (max-width: 575.98px) {
+        .projects-toolbar {
+            flex-direction: column;
+            gap: 10px;
+        }
+        .projects-toolbar__search { max-width: 100%; width: 100%; }
+        .projects-toolbar__btn { width: 100%; padding: 12px !important; font-size: 1rem; }
+    }
+
     .project-card { transition: transform 0.2s, box-shadow 0.2s; }
     .project-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important; }
     .project-card__cover { height: 160px; overflow: hidden; background: #f1f5f9; position: relative; }
     .project-card__cover img { width: 100%; height: 100%; object-fit: cover; }
     .project-card__cover--empty { width: 100%; height: 100%; display: grid; place-items: center; color: #cbd5e1; font-size: 2rem; }
     .project-card__badges { position: absolute; top: 10px; right: 10px; }
+
+    .project-card__actions {
+        display: flex;
+        gap: 8px;
+    }
+    .project-card__action {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 10px 8px;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        color: #475569;
+        font-size: 0.82rem;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .project-card__action:hover { background: #f1f5f9; }
+    .project-card__action .oi { font-size: 0.9rem; }
+    .project-card__action--download { color: #2563eb; border-color: #bfdbfe; }
+    .project-card__action--download:hover { background: #eff6ff; }
+    .project-card__action--edit { color: #d97706; border-color: #fde68a; }
+    .project-card__action--edit:hover { background: #fffbeb; }
+    .project-card__action--delete { color: #dc2626; border-color: #fecaca; }
+    .project-card__action--delete:hover { background: #fef2f2; }
+
+    @@media (max-width: 575.98px) {
+        .project-card__action { padding: 12px 10px; font-size: 0.85rem; }
+        .project-card__action .oi { font-size: 1rem; }
+    }
 </style>
 
 @code {

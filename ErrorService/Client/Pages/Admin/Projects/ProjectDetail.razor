@@ -40,16 +40,15 @@ else
         </a>
     </div>
 
-    <ul class="nav nav-pills mb-4 gap-2 flex-nowrap" style="overflow-x:auto">
+    <div class="project-tabs mb-4">
         @foreach (var tab in tabs)
         {
-            <li>
-                <button class="nav-link rounded-pill @(activeTab == tab.Key ? "active" : "")" @onclick="() => activeTab = tab.Key">
-                    <span class="oi @tab.Icon me-1"></span> @tab.Label
-                </button>
-            </li>
+            <button class="project-tab @(activeTab == tab.Key ? "project-tab--active" : "")" @onclick="() => activeTab = tab.Key">
+                <span class="oi @tab.Icon"></span>
+                <span>@tab.Label</span>
+            </button>
         }
-    </ul>
+    </div>
 
     @if (activeTab == "info")
     {
@@ -84,7 +83,7 @@ else
                         <ImageUploader @bind-ImageUrl="editModel.CoverImageUrl" UploadUrl=@($"api/projects/upload?projectId={Id}&type=cover") ShowCamera="false" />
                     </div>
                     <div class="col-12">
-                        <button type="submit" class="btn btn-primary rounded-pill px-4" disabled="@isSaving">
+                        <button type="submit" class="btn btn-primary rounded-pill px-5 py-2" disabled="@isSaving">
                             @if (isSaving) { <span class="spinner-border spinner-border-sm me-2"></span> } ذخیره
                         </button>
                     </div>
@@ -114,18 +113,26 @@ else
                 }
             </div>
             <div class="border-top pt-3">
-                <h6 class="fw-bold mb-2 small text-muted">افزودن عکس جدید</h6>
+                <h6 class="fw-bold mb-3">افزودن عکس جدید</h6>
                 <ImageUploader @bind-ImageUrl="newImageUrl" UploadUrl=@($"api/projects/upload?projectId={Id}&type=images") ShowCamera="false" />
-                <div class="row g-2 mt-2">
-                    <div class="col-md-6">
+                <div class="row g-2 mt-3">
+                    <div class="col-md-5">
                         <input class="form-control form-control-sm rounded-3" placeholder="عنوان عکس (اختیاری)" @bind="newImageCaption" />
                     </div>
                     <div class="col-md-3">
                         <input type="number" class="form-control form-control-sm rounded-3" placeholder="ترتیب" @bind="newImageSort" />
                     </div>
-                    <div class="col-md-3">
-                        <button class="btn btn-success btn-sm rounded-pill w-100" @onclick="AddImage" disabled="@(string.IsNullOrEmpty(newImageUrl))">
-                            <span class="oi oi-plus me-1"></span> افزودن
+                    <div class="col-md-4">
+                        <button class="btn-add-project" @onclick="AddImage" disabled="@(string.IsNullOrEmpty(newImageUrl) || isAddingImage)">
+                            @if (isAddingImage)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            else
+                            {
+                                <span class="oi oi-plus me-1"></span>
+                            }
+                            افزودن عکس
                         </button>
                     </div>
                 </div>
@@ -175,12 +182,12 @@ else
             }
 
             <div class="border-top pt-3">
-                <h6 class="fw-bold mb-2 small text-muted">افزودن فایل جدید</h6>
+                <h6 class="fw-bold mb-3">افزودن فایل جدید</h6>
                 <FileUploader @bind-FileUrl="newFileUrl" FileName="@newFileTitle"
                               UploadUrl=@($"api/projects/upload?projectId={Id}&type=files")
                               Accept="*/*"
                               AcceptHint="سند، PCB، نقشه و سایر فایل‌ها" />
-                <div class="row g-2 mt-2">
+                <div class="row g-2 mt-3">
                     <div class="col-md-3">
                         <input class="form-control form-control-sm rounded-3" placeholder="نام فایل" @bind="newFileTitle" />
                     </div>
@@ -200,8 +207,16 @@ else
                         <input class="form-control form-control-sm rounded-3" placeholder="توضیحات" @bind="newFileDesc" />
                     </div>
                     <div class="col-md-2">
-                        <button class="btn btn-success btn-sm rounded-pill w-100" @onclick="AddFile" disabled="@(string.IsNullOrEmpty(newFileUrl) || string.IsNullOrWhiteSpace(newFileTitle))">
-                            <span class="oi oi-plus me-1"></span> افزودن
+                        <button class="btn-add-project" @onclick="AddFile" disabled="@(string.IsNullOrEmpty(newFileUrl) || string.IsNullOrWhiteSpace(newFileTitle) || isAddingFile)">
+                            @if (isAddingFile)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            else
+                            {
+                                <span class="oi oi-plus me-1"></span>
+                            }
+                            افزودن فایل
                         </button>
                     </div>
                 </div>
@@ -213,7 +228,7 @@ else
         <div class="card border-0 shadow-sm rounded-4 p-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h6 class="fw-bold mb-0">بخش‌های محتوایی (@project.Sections.Count)</h6>
-                <button class="btn btn-success btn-sm rounded-pill" @onclick="ShowNewSection">
+                <button class="btn-add-project" @onclick="ShowNewSection">
                     <span class="oi oi-plus me-1"></span> بخش جدید
                 </button>
             </div>
@@ -269,16 +284,20 @@ else
                                     {
                                         <textarea class="form-control form-control-sm rounded-3" rows="2" placeholder="متن محتوا" @bind="newItemText"></textarea>
                                     }
+                                    else if (newItemType == "Image")
+                                    {
+                                        <ImageUploader @bind-ImageUrl="newItemMediaUrl" UploadUrl=@($"api/projects/upload?projectId={Id}&type=images") ShowCamera="false" />
+                                    }
                                     else
                                     {
-                                        <input class="form-control form-control-sm rounded-3" placeholder="آدرس فایل/عکس" @bind="newItemMediaUrl" />
+                                        <FileUploader @bind-FileUrl="newItemMediaUrl" UploadUrl=@($"api/projects/upload?projectId={Id}&type=files") Accept="*/*" AcceptHint="فایل ضمیمه" />
                                     }
                                 </div>
                                 <div class="col-md-3">
                                     <input class="form-control form-control-sm rounded-3" placeholder="توضیحات" @bind="newItemDesc" />
                                 </div>
                                 <div class="col-md-2 d-flex gap-1">
-                                    <button class="btn btn-primary btn-sm rounded-pill flex-grow-1" @onclick="() => AddSectionItem(sec.Id)">افزودن</button>
+                                    <button class="btn-add-project btn-add-project--sm" @onclick="() => AddSectionItem(sec.Id)">افزودن</button>
                                     <button class="btn btn-outline-secondary btn-sm rounded-pill" @onclick="() => showItemForm = false">×</button>
                                 </div>
                             </div>
@@ -323,6 +342,71 @@ else
     }
 }
 
+<style>
+    .project-tabs {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+    }
+    .project-tabs::-webkit-scrollbar { display: none; }
+
+    .project-tab {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 20px;
+        border-radius: 14px;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        color: #64748b;
+        font-weight: 700;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    .project-tab:hover { background: #f1f5f9; color: #334155; }
+    .project-tab--active {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        color: #fff;
+        border-color: transparent;
+        box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+    }
+    .project-tab .oi { font-size: 1rem; }
+
+    @@media (max-width: 575.98px) {
+        .project-tab { padding: 14px 16px; font-size: 0.85rem; gap: 6px; }
+        .project-tab .oi { font-size: 0.9rem; }
+    }
+
+    .btn-add-project {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 12px 24px;
+        border-radius: 12px;
+        border: none;
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: #fff;
+        font-weight: 700;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+    }
+    .btn-add-project:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16,185,129,0.3); }
+    .btn-add-project:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+    .btn-add-project--sm { padding: 10px 18px; font-size: 0.85rem; }
+
+    @@media (max-width: 575.98px) {
+        .btn-add-project { width: 100%; padding: 14px 20px; }
+    }
+</style>
+
 @code {
     [Parameter] public int Id { get; set; }
     [Inject] private HttpClient Http { get; set; } = default!;
@@ -345,6 +429,7 @@ else
     private string? newImageUrl;
     private string? newImageCaption;
     private int newImageSort;
+    private bool isAddingImage;
 
     // File form
     private string? newFileUrl;
@@ -352,6 +437,7 @@ else
     private string newFileType = "Document";
     private string? newFileVersion;
     private string? newFileDesc;
+    private bool isAddingFile;
 
     // Section form
     private bool showSectionForm = false;
@@ -411,7 +497,9 @@ else
 
     private async Task AddImage()
     {
-        if (string.IsNullOrEmpty(newImageUrl)) return;
+        if (string.IsNullOrEmpty(newImageUrl) || isAddingImage) return;
+        isAddingImage = true;
+        StateHasChanged();
         try
         {
             var resp = await Http.PostAsJsonAsync($"api/projects/{Id}/images", new ProjectImageAddRequest
@@ -428,6 +516,7 @@ else
             }
         }
         catch { ToastService.ShowError("خطا"); }
+        finally { isAddingImage = false; StateHasChanged(); }
     }
 
     private async Task DeleteImage(int imageId)
@@ -442,7 +531,9 @@ else
 
     private async Task AddFile()
     {
-        if (string.IsNullOrEmpty(newFileUrl) || string.IsNullOrWhiteSpace(newFileTitle)) return;
+        if (string.IsNullOrEmpty(newFileUrl) || string.IsNullOrWhiteSpace(newFileTitle) || isAddingFile) return;
+        isAddingFile = true;
+        StateHasChanged();
         try
         {
             var resp = await Http.PostAsJsonAsync($"api/projects/{Id}/files", new ProjectFileAddRequest
@@ -461,6 +552,7 @@ else
             }
         }
         catch { ToastService.ShowError("خطا"); }
+        finally { isAddingFile = false; StateHasChanged(); }
     }
 
     private async Task DeleteFile(int fileId)

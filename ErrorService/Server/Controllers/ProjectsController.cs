@@ -17,7 +17,7 @@ public sealed class ProjectsController : ControllerBase
     private readonly IWebHostEnvironment _env;
 
     private static readonly HashSet<string> AllowedImageExts = new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp" };
-    private static readonly HashSet<string> AllowedFileExts = new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip", ".rar", ".7z", ".txt", ".csv", ".json", ".xml", ".kicad_pcb", ".kicad_sch", ".brd", ".sch", ".gbr", ".drl", ".zip" };
+    private static readonly HashSet<string> AllowedFileExts = new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip", ".rar", ".7z", ".txt", ".csv", ".json", ".xml", ".kicad_pcb", ".kicad_sch", ".brd", ".sch", ".gbr", ".drl", ".dxf", ".dwg", ".stp", ".step", ".iges", ".igs", ".obj", ".stl" };
 
     public ProjectsController(ErrorServiceDbContext db, IWebHostEnvironment env)
     {
