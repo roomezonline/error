@@ -176,7 +176,10 @@ else
 
             <div class="border-top pt-3">
                 <h6 class="fw-bold mb-2 small text-muted">افزودن فایل جدید</h6>
-                <ImageUploader @bind-ImageUrl="newFileUrl" UploadUrl=@($"api/projects/upload?projectId={Id}&type=files") ShowCamera="false" />
+                <FileUploader @bind-FileUrl="newFileUrl" FileName="@newFileTitle"
+                              UploadUrl=@($"api/projects/upload?projectId={Id}&type=files")
+                              Accept="*/*"
+                              AcceptHint="سند، PCB، نقشه و سایر فایل‌ها" />
                 <div class="row g-2 mt-2">
                     <div class="col-md-3">
                         <input class="form-control form-control-sm rounded-3" placeholder="نام فایل" @bind="newFileTitle" />

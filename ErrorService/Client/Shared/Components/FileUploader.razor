@@ -1,0 +1,133 @@
+@using Microsoft.AspNetCore.Components.Forms
+
+<div class="file-uploader @(string.IsNullOrEmpty(FileUrl) ? "" : "file-uploader--has-file") @(IsUploading ? "file-uploader--uploading" : "")">
+    <div class="file-uploader__container">
+        @if (!string.IsNullOrEmpty(FileUrl))
+        {
+            <div class="file-uploader__file-info">
+                <div class="file-uploader__file-icon">
+                    <span class="oi oi-document"></span>
+                </div>
+                <div class="file-uploader__file-details">
+                    <div class="file-uploader__file-name">@(FileName ?? GetFileNameFromUrl(FileUrl))</div>
+                    <div class="file-uploader__file-url">@FileUrl</div>
+                </div>
+                <div class="file-uploader__actions">
+                    <label class="file-uploader__action-btn file-uploader__action-btn--change" title="تغییر فایل">
+                        <span class="oi oi-pencil"></span>
+                        <InputFile OnChange="HandleFileSelected" accept="@Accept" class="d-none" />
+                    </label>
+                    <button type="button" class="file-uploader__action-btn file-uploader__action-btn--delete" @onclick="RemoveFile" title="حذف فایل">
+                        <span class="oi oi-trash"></span>
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <label class="file-uploader__dropzone">
+                <div class="file-uploader__icon-wrapper">
+                    <div class="file-uploader__icon">
+                        <span class="oi oi-cloud-upload"></span>
+                    </div>
+                </div>
+                <div class="file-uploader__text">
+                    <span class="file-uploader__title">انتخاب فایل</span>
+                    <span class="file-uploader__hint">حداکثر @(MaxSizeMb) مگابایت — @AcceptHint</span>
+                </div>
+                <InputFile OnChange="HandleFileSelected" accept="@Accept" class="d-none" />
+            </label>
+        }
+    </div>
+
+    @if (IsUploading)
+    {
+        <div class="file-uploader__progress">
+            <div class="spinner-border spinner-border-sm text-primary"></div>
+            <span>در حال آپلود...</span>
+            <div class="file-uploader__progress-bar">
+                <div class="file-uploader__progress-bar-fill"></div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? FileUrl { get; set; }
+    [Parameter] public EventCallback<string?> FileUrlChanged { get; set; }
+    [Parameter] public string? FileName { get; set; }
+    [Parameter] public string Accept { get; set; } = "*/*";
+    [Parameter] public int MaxSizeMb { get; set; } = 50;
+    [Parameter] public string UploadUrl { get; set; } = "api/projects/upload";
+    [Parameter] public string AcceptHint { get; set; } = "تمام فایل‌ها پذیرفته می‌شود";
+
+    [Inject] private HttpClient Http { get; set; } = default!;
+    [Inject] private ErrorService.Client.Services.ToastService ToastService { get; set; } = default!;
+
+    private bool IsUploading { get; set; }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        if (file.Size > MaxSizeMb * 1024 * 1024)
+        {
+            ToastService.ShowError($"حجم فایل زیاد است (حداکثر {MaxSizeMb} مگابایت)");
+            return;
+        }
+
+        IsUploading = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var stream = file.OpenReadStream(MaxSizeMb * 1024L * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+
+            var byteArrayContent = new ByteArrayContent(bytes);
+            byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteArrayContent, "file", file.Name);
+
+            var resp = await Http.PostAsync(UploadUrl, content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim().Trim('"');
+                FileUrl = url;
+                await FileUrlChanged.InvokeAsync(FileUrl);
+                ToastService.ShowSuccess("فایل با موفقیت آپلود شد");
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا در آپلود" : body.Trim().Trim('"'));
+            }
+        }
+        catch (Exception)
+        {
+            ToastService.ShowError("خطای سیستمی در آپلود");
+        }
+        finally
+        {
+            IsUploading = false;
+        }
+    }
+
+    private async Task RemoveFile()
+    {
+        FileUrl = null;
+        await FileUrlChanged.InvokeAsync(null);
+    }
+
+    private static string GetFileNameFromUrl(string url)
+    {
+        try
+        {
+            var uri = new Uri(url);
+            var name = Path.GetFileName(uri.LocalPath);
+            return string.IsNullOrEmpty(name) ? url : name;
+        }
+        catch { return url; }
+    }
+}

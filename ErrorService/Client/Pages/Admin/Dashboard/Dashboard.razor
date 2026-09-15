@@ -17,6 +17,7 @@
     private bool CanSeeContentSection;
     private bool CanSeeTechnicalAndUsersSection;
     private bool CanSeeSecurityAndSettingsSection;
+    private bool CanSeeProjectsSection;
     private bool CanSeeMonitoringView;
     private bool CanSeeSmsSection;
     private bool IsSuperAdmin;
@@ -73,6 +74,10 @@
             user.HasClaim("perm", "admin.categories.view") ||
             user.HasClaim("perm", "admin.orders.view") ||
             user.HasClaim("perm", "admin.bankaccounts.manage");
+
+        CanSeeProjectsSection =
+            user.HasClaim("perm", "admin.projects.view") ||
+            user.HasClaim("perm", "admin.projects.manage");
 
         CanSeeContentSection =
             user.HasClaim("perm", "admin.academy.view") ||
@@ -856,15 +861,6 @@
                         </a>
                     </AuthorizeView>
 
-                    <AuthorizeView Policy="perm:admin.projects.view">
-                        <a class="app-item shadow-sm" href="/admin/projects">
-                            <div class="app-icon-box bg-info-subtle text-info">
-                                <span class="oi oi-folder-open"></span>
-                            </div>
-                            <span class="app-name">پروژه‌ها</span>
-                        </a>
-                    </AuthorizeView>
-
                     <AuthorizeView Policy="perm:admin.stories.view">
                         <a class="app-item shadow-sm" href="/admin/stories">
                             <div class="app-icon-box bg-danger-subtle text-danger">
@@ -943,6 +939,23 @@
                                     <span class="oi oi-image"></span>
                                 </div>
                                 <span class="app-name">نمونه‌کارها</span>
+                            </a>
+                        </AuthorizeView>
+                    </div>
+                </div>
+            }
+
+            @if (CanSeeProjectsSection)
+            {
+                <div class="apps-section">
+                    <div class="apps-section__head">پروژه‌ها و دیتاشیت‌ها</div>
+                    <div class="apps-grid">
+                        <AuthorizeView Policy="perm:admin.projects.view">
+                            <a class="app-item shadow-sm" href="/admin/projects">
+                                <div class="app-icon-box" style="background:rgba(99,102,241,0.1);color:#6366f1;">
+                                    <span class="oi oi-folder-open"></span>
+                                </div>
+                                <span class="app-name">مدیریت پروژه‌ها</span>
                             </a>
                         </AuthorizeView>
                     </div>
