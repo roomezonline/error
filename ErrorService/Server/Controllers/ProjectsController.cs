@@ -247,8 +247,14 @@ public sealed class ProjectsController : ControllerBase
         if (isImage && !AllowedImageExts.Contains(ext))
             return BadRequest("فرمت فایل مجاز نیست. فقط تصاویر jpg, jpeg, png, webp");
 
-        if (!isImage && !AllowedImageExts.Contains(ext) && !AllowedFileExts.Contains(ext))
+        if (!isImage && projectId.HasValue)
+        {
+            // For project file uploads: accept ALL file types
+        }
+        else if (!isImage && !AllowedImageExts.Contains(ext) && !AllowedFileExts.Contains(ext))
+        {
             return BadRequest("فرمت فایل مجاز نیست.");
+        }
 
         var folder = subFolder;
         if (projectId.HasValue)
