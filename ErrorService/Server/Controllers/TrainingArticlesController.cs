@@ -39,7 +39,8 @@ public sealed class TrainingArticlesController : ControllerBase
                 CoverImageUrl = x.CoverImageUrl,
                 IsPublished = x.IsPublished,
                 IsPremium = x.IsPremium,
-                CreatedAt = x.CreatedAt
+                CreatedAt = x.CreatedAt,
+                ViewCount = x.ViewCount
             })
             .ToListAsync();
     }
@@ -106,7 +107,8 @@ public sealed class TrainingArticlesController : ControllerBase
                 ThumbnailUrl = b.ThumbnailUrl,
                 SortOrder = b.SortOrder
             }).ToList(),
-            Comments = tree
+            Comments = tree,
+            ViewCount = article.ViewCount
         };
     }
 

@@ -15,6 +15,11 @@
     OgType="video.other"
     JsonLd="@lessonJsonLd" />
 
+@if (lesson != null)
+{
+    <ViewTracker EntityType="lesson" EntityId="LessonId" />
+}
+
 <div class="lesson-viewer-page py-4 bg-light" dir="rtl">
     <div class="container">
         @if (isLoading)

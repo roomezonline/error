@@ -1,0 +1,32 @@
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+@code {
+    [Parameter] public string EntityType { get; set; } = string.Empty;
+    [Parameter] public int EntityId { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || string.IsNullOrEmpty(EntityType) || EntityId <= 0) return;
+
+        try
+        {
+            // Try to get a anonymous ID from localStorage, create if not exists
+            var anonId = await JS.InvokeAsync<string?>("eval", "localStorage.getItem('_vid')");
+            if (string.IsNullOrEmpty(anonId))
+            {
+                anonId = Guid.NewGuid().ToString("N").Substring(0, 12);
+                await JS.InvokeVoidAsync("eval", $"localStorage.setItem('_vid','{anonId}')");
+            }
+
+            // Use a session flag to avoid counting repeat views within 30 min
+            var flagKey = $"_pv_{EntityType}_{EntityId}";
+            var alreadyCounted = await JS.InvokeAsync<bool?>("eval", $"sessionStorage.getItem('{flagKey}')");
+            if (alreadyCounted == true) return;
+
+            await Http.PostAsJsonAsync("api/pageviews/track", new { EntityType, EntityId });
+            await JS.InvokeVoidAsync("eval", $"sessionStorage.setItem('{flagKey}','1')");
+        }
+        catch { }
+    }
+}

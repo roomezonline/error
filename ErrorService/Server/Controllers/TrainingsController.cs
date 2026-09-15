@@ -79,7 +79,8 @@ public class TrainingsController : ControllerBase
                 SortOrder = x.SortOrder,
                 CourseTitle = x.Course.Title,
                 CourseCoverImageUrl = x.Course.CoverImageUrl,
-                CourseSlug = x.Course.Slug
+                CourseSlug = x.Course.Slug,
+                ViewCount = x.ViewCount
             })
             .ToListAsync();
     }
@@ -107,7 +108,8 @@ public class TrainingsController : ControllerBase
                 IsPremium = x.IsPremium,
                 SortOrder = x.SortOrder,
                 CreatedAt = x.CreatedAt,
-                LessonsCount = x.Lessons.Count
+                LessonsCount = x.Lessons.Count,
+                ViewCount = x.ViewCount
             })
             .ToListAsync();
     }
@@ -133,7 +135,8 @@ public class TrainingsController : ControllerBase
             IsPremium = course.IsPremium,
             SortOrder = course.SortOrder,
             CreatedAt = course.CreatedAt,
-            LessonsCount = course.Lessons.Count
+            LessonsCount = course.Lessons.Count,
+            ViewCount = course.ViewCount
         };
     }
 
@@ -158,7 +161,8 @@ public class TrainingsController : ControllerBase
             IsPremium = course.IsPremium,
             SortOrder = course.SortOrder,
             CreatedAt = course.CreatedAt,
-            LessonsCount = course.Lessons.Count
+            LessonsCount = course.Lessons.Count,
+            ViewCount = course.ViewCount
         };
     }
 
@@ -239,7 +243,8 @@ public class TrainingsController : ControllerBase
                 Summary = x.Summary,
                 IsPublished = x.IsPublished,
                 IsPremium = x.IsPremium,
-                SortOrder = x.SortOrder
+                SortOrder = x.SortOrder,
+                ViewCount = x.ViewCount
             })
             .ToListAsync();
     }
@@ -294,7 +299,8 @@ public class TrainingsController : ControllerBase
                 FileName = a.FileName,
                 SizeBytes = a.SizeBytes,
                 SortOrder = a.SortOrder
-            }).ToList()
+            }).ToList(),
+            ViewCount = lesson.ViewCount
         };
     }
 

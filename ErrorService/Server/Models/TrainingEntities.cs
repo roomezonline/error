@@ -37,6 +37,8 @@ public sealed class TrainingCourse
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    public int ViewCount { get; set; } = 0;
+
     public ICollection<TrainingLesson> Lessons { get; set; } = new List<TrainingLesson>();
 }
 
@@ -61,6 +63,8 @@ public sealed class TrainingLesson
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public int ViewCount { get; set; } = 0;
 
     public ICollection<TrainingBlock> Blocks { get; set; } = new List<TrainingBlock>();
     public ICollection<TrainingAttachment> Attachments { get; set; } = new List<TrainingAttachment>();

@@ -25,6 +25,8 @@ public sealed class TrainingArticle
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    public int ViewCount { get; set; } = 0;
+
     public ICollection<TrainingArticleBlock> Blocks { get; set; } = new List<TrainingArticleBlock>();
 }
 

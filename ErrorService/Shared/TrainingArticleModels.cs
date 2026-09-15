@@ -15,6 +15,7 @@ public sealed class TrainingArticleDto
     public List<TrainingArticleBlockDto> Blocks { get; set; } = new();
     public List<TrainingArticleCommentDto> Comments { get; set; } = new();
     public double AverageRating { get; set; }
+    public int ViewCount { get; set; }
 }
 
 public sealed class TrainingArticleCommentDto

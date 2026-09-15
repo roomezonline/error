@@ -49,6 +49,8 @@
                 OgImage="@(product.MainImageUrl ?? "/images/og-default.jpg")"
                 JsonLd="@productJsonLd" />
 
+            <ViewTracker EntityType="product" EntityId="product.Id" />
+
             <!-- Mobile header sticky -->
             <div class="pd-header-sticky d-lg-none shadow-sm">
                 <div class="pd-header-inner">

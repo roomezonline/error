@@ -79,10 +79,12 @@ public class Product : IDiscountInfo
     public string? DatasheetUrl { get; set; }
 
     [MaxLength(2000)]
+    public string? RelatedProductIds { get; set; } // Comma separated IDs
+
+    [MaxLength(2000)]
     public string? FailureSymptoms { get; set; } // Symptoms when this part is faulty
 
-    [MaxLength(500)]
-    public string? RelatedProductIds { get; set; } // Comma separated IDs
+    public int ViewCount { get; set; } = 0;
 }
 
 public class News

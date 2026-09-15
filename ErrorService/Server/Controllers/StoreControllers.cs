@@ -335,7 +335,8 @@ public class ProductsController : ControllerBase
                     CompatibilityInfo = p.CompatibilityInfo,
                     DatasheetUrl = p.DatasheetUrl,
                     FailureSymptoms = p.FailureSymptoms,
-                    RelatedProductIds = p.RelatedProductIds
+                    RelatedProductIds = p.RelatedProductIds,
+                    ViewCount = p.ViewCount
                 }).ToListAsync();
             return Ok(items.OrderBy(p => picked.IndexOf(p.Id)));
         }

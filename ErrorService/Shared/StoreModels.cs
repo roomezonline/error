@@ -82,6 +82,7 @@ public class ProductDto : IDiscountInfo
     public string? DatasheetUrl { get; set; }
     public string? FailureSymptoms { get; set; }
     public string? RelatedProductIds { get; set; }
+    public int ViewCount { get; set; }
 }
 
 public class ProductUpsertRequest

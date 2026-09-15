@@ -44,6 +44,8 @@
                 OgImage="@(article.CoverImageUrl ?? "/images/og-default.jpg")"
                 JsonLd="@articleJsonLd" />
 
+            <ViewTracker EntityType="article" EntityId="article.Id" />
+
             <div class="article-header-sticky d-lg-none shadow-sm">
                 <div class="container d-flex align-items-center justify-content-between h-100 px-2">
                     <a href="/academy" class="nav-btn-mobile" title="بازگشت به آکادمی" aria-label="بازگشت به آکادمی">

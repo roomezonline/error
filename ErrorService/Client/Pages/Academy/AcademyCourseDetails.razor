@@ -24,6 +24,8 @@
                 OgImage="@(course.CoverImageUrl ?? "/images/og-default.jpg")"
                 JsonLd="@courseJsonLd" />
 
+            <ViewTracker EntityType="course" EntityId="course.Id" />
+
             <nav aria-label="breadcrumb" class="mb-4">
                 <ol class="breadcrumb">
                     <li class="breadcrumb-item"><a href="/academy">آکادمی</a></li>

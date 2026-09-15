@@ -24,6 +24,7 @@ public class TrainingCourseDto
     public int SortOrder { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public int LessonsCount { get; set; }
+    public int ViewCount { get; set; }
 }
 
 public class TrainingCourseUpsertRequest
@@ -51,6 +52,7 @@ public class TrainingLessonDto
     public string? CourseCoverImageUrl { get; set; }
     public List<TrainingBlockDto> Blocks { get; set; } = new();
     public List<TrainingAttachmentDto> Attachments { get; set; } = new();
+    public int ViewCount { get; set; }
 }
 
 public class TrainingLessonUpsertRequest
