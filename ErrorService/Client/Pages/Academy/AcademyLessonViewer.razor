@@ -64,7 +64,7 @@
                                     <div class="content-block mb-5">
                                         @if (!string.IsNullOrEmpty(block.Title))
                                         {
-                                            <h4 class="fw-bold mb-3">@block.Title</h4>
+                                            <h4 class="fw-bold mb-3 content-block__title">@block.Title</h4>
                                         }
 
                                         @switch (block.BlockType)
@@ -130,10 +130,23 @@
                         </div>
                     }
 
-                    <div class="card border-0 shadow-sm rounded-4 p-4 bg-primary text-white">
-                        <h6 class="fw-bold mb-3">دسترسی سریع</h6>
-                        <a href="/academy/@CourseId" class="btn btn-light btn-sm w-100 rounded-pill mb-2">لیست تمام قسمت‌ها</a>
-                        <a href="/academy" class="btn btn-outline-light btn-sm w-100 rounded-pill">بازگشت به آکادمی</a>
+                    <div class="quick-access-card card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+                        <div class="quick-access-card__header">
+                            <span class="oi oi-speedometer"></span>
+                            <h6 class="fw-bold mb-0">دسترسی سریع</h6>
+                        </div>
+                        <div class="quick-access-card__body">
+                            <a href="/academy/@CourseId" class="quick-access-card__link">
+                                <span class="oi oi-list"></span>
+                                <span>لیست تمام قسمت‌ها</span>
+                                <span class="oi oi-chevron-left me-auto"></span>
+                            </a>
+                            <a href="/academy" class="quick-access-card__link">
+                                <span class="oi oi-home"></span>
+                                <span>بازگشت به آکادمی</span>
+                                <span class="oi oi-chevron-left me-auto"></span>
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -146,6 +159,81 @@
     .leading-relaxed { line-height: 1.7; }
     .content-block video, .content-block iframe { max-width: 100%; aspect-ratio: 16/9; }
     .embed-content ::deep iframe { width: 100% !important; aspect-ratio: 16/9; border-radius: 12px; }
+
+    .content-block__title {
+        color: #1e40af;
+        padding-right: 14px;
+        border-right: 4px solid #3b82f6;
+        padding-top: 2px;
+        padding-bottom: 2px;
+    }
+
+    .quick-access-card__header {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        color: #fff;
+        padding: 16px 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 1rem;
+    }
+
+    .quick-access-card__header .oi {
+        font-size: 1.2rem;
+        opacity: 0.9;
+    }
+
+    .quick-access-card__body {
+        padding: 12px 16px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .quick-access-card__link {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        color: #1e293b;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: all 0.2s ease;
+    }
+
+    .quick-access-card__link:hover {
+        background: #eff6ff;
+        border-color: #bfdbfe;
+        color: #1e40af;
+        transform: translateX(-3px);
+    }
+
+    .quick-access-card__link .oi:first-child {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #2563eb;
+        display: grid;
+        place-items: center;
+        font-size: 0.85rem;
+        flex-shrink: 0;
+    }
+
+    .quick-access-card__link .oi-chevron-left {
+        font-size: 0.7rem;
+        color: #94a3b8;
+    }
+
+    @@media (max-width: 991.98px) {
+        .quick-access-card {
+            margin-bottom: 0 !important;
+        }
+    }
 
     .lesson-gallery {
         display: grid;
