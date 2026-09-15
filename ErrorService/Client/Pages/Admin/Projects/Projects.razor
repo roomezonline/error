@@ -1,0 +1,274 @@
+@page "/admin/projects"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.projects.view")]
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@inject ToastService ToastService
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<PageTitle>مدیریت پروژه‌ها</PageTitle>
+
+<h3 class="admin-page-title d-flex align-items-center gap-2">
+    <span class="oi oi-folder-open"></span>
+    <span>پروژه‌ها</span>
+</h3>
+
+<ConfirmDialog IsVisible="showConfirm"
+               Title="حذف پروژه"
+               Message=@($"آیا از حذف پروژه \"{itemToDelete?.Name}\" و تمام متعلقات آن اطمینان دارید؟")
+               OnResult="HandleDeleteResult" />
+
+@if (showEditor)
+{
+    <div class="card shadow-sm border-0 rounded-4 mb-4 p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold mb-0">@(editingId == 0 ? "پروژه جدید" : "ویرایش پروژه")</h5>
+            <button class="btn btn-sm btn-outline-secondary rounded-pill" @onclick="CloseEditor">انصراف</button>
+        </div>
+        <EditForm Model="model" OnValidSubmit="SaveProject">
+            <DataAnnotationsValidator />
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label small text-muted">نام پروژه *</label>
+                    <InputText class="form-control rounded-3" @bind-Value="model.Name" placeholder="نام پروژه" />
+                    <ValidationMessage For="() => model.Name" class="text-danger small" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small text-muted">ترتیب نمایش</label>
+                    <InputNumber class="form-control rounded-3" @bind-Value="model.SortOrder" />
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <div class="form-check form-switch">
+                        <InputCheckbox class="form-check-input" @bind-Value="model.IsActive" id="isActive" />
+                        <label class="form-check-label" for="isActive">فعال</label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label small text-muted">خلاصه</label>
+                    <InputText class="form-control rounded-3" @bind-Value="model.Summary" placeholder="خلاصه کوتاه از پروژه" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label small text-muted">توضیحات کامل</label>
+                    <InputTextArea class="form-control rounded-3" @bind-Value="model.Description" rows="4" placeholder="توضیحات کامل پروژه..." />
+                </div>
+                <div class="col-12">
+                    <label class="form-label small text-muted">عکس جلد</label>
+                    <ImageUploader @bind-ImageUrl="model.CoverImageUrl" UploadUrl="api/projects/upload?type=cover" ShowCamera="false" />
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary rounded-pill px-5 py-2" disabled="@isSaving">
+                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                        @(editingId == 0 ? "ایجاد پروژه" : "ذخیره تغییرات")
+                    </button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="input-group" style="max-width:320px">
+        <span class="input-group-text bg-white rounded-end-3 border-start-0"><span class="oi oi-magnifying-glass"></span></span>
+        <input class="form-control rounded-start-3 border-start-0" placeholder="جستجوی پروژه..." @bind="searchQuery" @bind:event="oninput" @onkeyup="SearchProjects" />
+    </div>
+    <button class="btn btn-success rounded-pill px-4" @onclick="NewProject">
+        <span class="oi oi-plus me-1"></span> پروژه جدید
+    </button>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary"></div>
+        <p class="text-muted mt-2 small">در حال بارگذاری...</p>
+    </div>
+}
+else if (projects.Count == 0)
+{
+    <div class="text-center py-5 bg-white rounded-4 border">
+        <span class="oi oi-folder-open display-4 text-muted"></span>
+        <p class="text-muted mt-2">هنوز پروژه‌ای ثبت نشده است.</p>
+        <button class="btn btn-primary rounded-pill px-4" @onclick="NewProject">ایجاد اولین پروژه</button>
+    </div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var p in projects)
+        {
+            <div class="col-md-6 col-lg-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100 project-card" @onclick="() => GoToDetail(p.Id)" style="cursor:pointer">
+                    <div class="project-card__cover">
+                        @if (!string.IsNullOrWhiteSpace(p.CoverImageUrl))
+                        {
+                            <img src="@p.CoverImageUrl" alt="@p.Name" />
+                        }
+                        else
+                        {
+                            <div class="project-card__cover--empty">
+                                <span class="oi oi-image"></span>
+                            </div>
+                        }
+                        <div class="project-card__badges">
+                            <span class="badge @(p.IsActive ? "bg-success" : "bg-secondary")">@(p.IsActive ? "فعال" : "غیرفعال")</span>
+                        </div>
+                    </div>
+                    <div class="card-body d-flex flex-column">
+                        <h6 class="card-title fw-bold mb-1">@p.Name</h6>
+                        @if (!string.IsNullOrWhiteSpace(p.Summary))
+                        {
+                            <p class="card-text small text-muted flex-grow-1">@p.Summary</p>
+                        }
+                        <div class="d-flex gap-3 text-muted small mt-auto pt-2 border-top">
+                            <span><span class="oi oi-image me-1"></span>@p.ImageCount</span>
+                            <span><span class="oi oi-document me-1"></span>@p.FileCount</span>
+                            <span><span class="oi oi-list me-1"></span>@p.SectionCount</span>
+                            <span class="me-auto">@p.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd")</span>
+                        </div>
+                    </div>
+                    <div class="card-footer bg-transparent border-0 px-3 pb-3 d-flex gap-2">
+                        <a href="api/projects/@(p.Id)/export" class="btn btn-sm btn-outline-primary rounded-pill" @onclick:stopPropagation target="_blank" title="دانلود ZIP">
+                            <span class="oi oi-data-transfer-download"></span>
+                        </a>
+                        <button class="btn btn-sm btn-outline-warning rounded-pill" @onclick:stopPropagation="true" @onclick="() => EditProject(p)" title="ویرایش">
+                            <span class="oi oi-pencil"></span>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger rounded-pill me-auto" @onclick:stopPropagation="true" @onclick="() => ConfirmDelete(p)" title="حذف">
+                            <span class="oi oi-trash"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .project-card { transition: transform 0.2s, box-shadow 0.2s; }
+    .project-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important; }
+    .project-card__cover { height: 160px; overflow: hidden; background: #f1f5f9; position: relative; }
+    .project-card__cover img { width: 100%; height: 100%; object-fit: cover; }
+    .project-card__cover--empty { width: 100%; height: 100%; display: grid; place-items: center; color: #cbd5e1; font-size: 2rem; }
+    .project-card__badges { position: absolute; top: 10px; right: 10px; }
+</style>
+
+@code {
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+    private List<ProjectListDto> projects = new();
+    private bool isLoading = true;
+    private bool showEditor = false;
+    private bool isSaving = false;
+    private bool showConfirm = false;
+    private int editingId = 0;
+    private string? searchQuery;
+    private ProjectUpsertRequest model = new();
+    private ProjectListDto? itemToDelete;
+
+    protected override async Task OnInitializedAsync() => await LoadProjects();
+
+    private async Task LoadProjects()
+    {
+        isLoading = true;
+        try
+        {
+            var url = string.IsNullOrWhiteSpace(searchQuery)
+                ? "api/projects"
+                : $"api/projects?search={Uri.EscapeDataString(searchQuery)}";
+            projects = await Http.GetFromJsonAsync<List<ProjectListDto>>(url) ?? new();
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا در دریافت پروژه‌ها: " + ex.Message); }
+        finally { isLoading = false; }
+    }
+
+    private async Task SearchProjects()
+    {
+        if (searchQuery?.Length >= 2 || string.IsNullOrEmpty(searchQuery))
+            await LoadProjects();
+    }
+
+    private void NewProject()
+    {
+        editingId = 0;
+        model = new ProjectUpsertRequest { IsActive = true, SortOrder = 0 };
+        showEditor = true;
+    }
+
+    private void EditProject(ProjectListDto p)
+    {
+        editingId = p.Id;
+        model = new ProjectUpsertRequest
+        {
+            Name = p.Name,
+            Summary = p.Summary,
+            CoverImageUrl = p.CoverImageUrl,
+            SortOrder = p.SortOrder,
+            IsActive = p.IsActive
+        };
+        showEditor = true;
+    }
+
+    private void CloseEditor()
+    {
+        showEditor = false;
+        editingId = 0;
+    }
+
+    private async Task SaveProject()
+    {
+        if (isSaving) return;
+        isSaving = true;
+        try
+        {
+            HttpResponseMessage resp;
+            if (editingId == 0)
+                resp = await Http.PostAsJsonAsync("api/projects", model);
+            else
+                resp = await Http.PutAsJsonAsync($"api/projects/{editingId}", model);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(editingId == 0 ? "پروژه ایجاد شد" : "تغییرات ذخیره شد");
+                showEditor = false;
+                await LoadProjects();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ذخیره" : msg.Trim().Trim('"'));
+            }
+        }
+        catch { ToastService.ShowError("خطای ارتباط با سرور"); }
+        finally { isSaving = false; }
+    }
+
+    private void ConfirmDelete(ProjectListDto p)
+    {
+        itemToDelete = p;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool result)
+    {
+        showConfirm = false;
+        if (!result || itemToDelete == null) return;
+
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/projects/{itemToDelete.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("پروژه حذف شد");
+                await LoadProjects();
+            }
+            else ToastService.ShowError("خطا در حذف پروژه");
+        }
+        catch { ToastService.ShowError("خطای ارتباط با سرور"); }
+        itemToDelete = null;
+    }
+
+    private void GoToDetail(int id) => Nav.NavigateTo($"/admin/projects/{id}");
+}

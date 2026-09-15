@@ -684,6 +684,12 @@
                                 <span class="oi oi-document"></span>
                                 <span>مقالات و آموزش‌ها</span>
                             </a>
+                            <AuthorizeView Policy="perm:admin.projects.view" Context="projectsCtx">
+                                <a href="/admin/projects" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                    <span class="oi oi-folder-open"></span>
+                                    <span>پروژه‌ها</span>
+                                </a>
+                            </AuthorizeView>
                             <a href="/admin/news" class="admin-drawer__item" @onclick="ToggleNavDrawer">
                                 <span class="oi oi-list"></span>
                                 <span>اخبار</span>

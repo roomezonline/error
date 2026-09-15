@@ -110,6 +110,12 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<BackupSettings> BackupSettings { get; set; }
     public DbSet<BackupHistory> BackupHistories { get; set; }
 
+    public DbSet<Project> Projects { get; set; }
+    public DbSet<ProjectImage> ProjectImages { get; set; }
+    public DbSet<ProjectFile> ProjectFiles { get; set; }
+    public DbSet<ProjectSection> ProjectSections { get; set; }
+    public DbSet<ProjectSectionItem> ProjectSectionItems { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<MonitoringDevice>(entity =>
@@ -1147,6 +1153,50 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.ErrorMessage).HasMaxLength(2000);
             entity.HasIndex(x => x.CreatedAt);
             entity.HasIndex(x => x.Status);
+        });
+
+        modelBuilder.Entity<Project>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).IsRequired().HasMaxLength(200);
+            entity.Property(x => x.Slug).HasMaxLength(250);
+            entity.HasIndex(x => x.Slug).IsUnique().HasFilter("[Slug] IS NOT NULL");
+            entity.HasIndex(x => x.IsActive);
+            entity.HasIndex(x => x.SortOrder);
+            entity.HasIndex(x => x.CreatedAt);
+        });
+
+        modelBuilder.Entity<ProjectImage>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ImageUrl).IsRequired().HasMaxLength(500);
+            entity.HasIndex(x => new { x.ProjectId, x.SortOrder });
+            entity.HasOne(x => x.Project).WithMany(x => x.Images).HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProjectFile>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.FileName).IsRequired().HasMaxLength(200);
+            entity.Property(x => x.FileUrl).IsRequired().HasMaxLength(500);
+            entity.HasIndex(x => new { x.ProjectId, x.FileType });
+            entity.HasOne(x => x.Project).WithMany(x => x.Files).HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProjectSection>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Title).IsRequired().HasMaxLength(200);
+            entity.HasIndex(x => new { x.ProjectId, x.SortOrder });
+            entity.HasOne(x => x.Project).WithMany(x => x.Sections).HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProjectSectionItem>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.MediaUrl).HasMaxLength(500);
+            entity.HasIndex(x => new { x.SectionId, x.SortOrder });
+            entity.HasOne(x => x.Section).WithMany(x => x.Items).HasForeignKey(x => x.SectionId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
