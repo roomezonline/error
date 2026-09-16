@@ -101,7 +101,7 @@ else
         @foreach (var p in projects)
         {
             <div class="col-md-6 col-lg-4">
-                <div class="card border-0 shadow-sm rounded-4 h-100 project-card" @onclick="() => GoToDetail(p.Id)" style="cursor:pointer">
+                <div class="card border-0 shadow-sm rounded-4 h-100 project-card" @onclick="() => ShowModeModal(p)" style="cursor:pointer">
                     <div class="project-card__cover">
                         @if (!string.IsNullOrWhiteSpace(p.CoverImageUrl))
                         {
@@ -132,7 +132,7 @@ else
                     </div>
                     <div class="card-footer bg-transparent border-0 px-3 pb-3">
                         <div class="project-card__actions">
-                            <a href="api/projects/@(p.Id)/export" class="project-card__action project-card__action--download" @onclick:stopPropagation target="_blank" title="دانلود ZIP">
+                            <a class="project-card__action project-card__action--download" @onclick:stopPropagation @onclick="() => DownloadProjectZip(p.Id)" title="دانلود ZIP" style="cursor:pointer;">
                                 <span class="oi oi-data-transfer-download"></span>
                                 <span>دانلود</span>
                             </a>
@@ -149,6 +149,39 @@ else
                 </div>
             </div>
         }
+    </div>
+}
+
+@if (showModeModal && selectedProjectForMode != null)
+{
+    <div class="mode-modal-overlay" @onclick="CloseModeModal">
+        <div class="mode-modal" @onclick:stopPropagation>
+            <div class="mode-modal__header">
+                <img src="@(string.IsNullOrWhiteSpace(selectedProjectForMode.CoverImageUrl) ? "" : selectedProjectForMode.CoverImageUrl)" alt="@selectedProjectForMode.Name" class="mode-modal__cover" />
+                <div class="mode-modal__info">
+                    <h5 class="fw-bold mb-1">@selectedProjectForMode.Name</h5>
+                    @if (!string.IsNullOrWhiteSpace(selectedProjectForMode.Summary))
+                    {
+                        <p class="text-muted small mb-0">@selectedProjectForMode.Summary</p>
+                    }
+                </div>
+            </div>
+            <div class="mode-modal__body">
+                <p class="text-muted small mb-3">نحوه باز کردن پروژه را انتخاب کنید:</p>
+                <div class="mode-modal__buttons">
+                    <button class="mode-btn mode-btn--view" @onclick="() => OpenProject(selectedProjectForMode.Id, false)">
+                        <span class="oi oi-eye"></span>
+                        <span class="mode-btn__label">مشاهده</span>
+                        <span class="mode-btn__desc">فقط خواندنی و دانلود</span>
+                    </button>
+                    <button class="mode-btn mode-btn--edit" @onclick="() => OpenProject(selectedProjectForMode.Id, true)">
+                        <span class="oi oi-pencil"></span>
+                        <span class="mode-btn__label">ویرایش</span>
+                        <span class="mode-btn__desc">تغییر و مدیریت پروژه</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 }
 
@@ -211,6 +244,49 @@ else
         .project-card__action { padding: 12px 10px; font-size: 0.85rem; }
         .project-card__action .oi { font-size: 1rem; }
     }
+    .mode-modal-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 1060; backdrop-filter: blur(4px); animation: fadeIn 0.2s;
+    }
+    .mode-modal {
+        background: #fff; border-radius: 16px; width: 90%; max-width: 440px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.25); overflow: hidden;
+        animation: slideUp 0.25s ease-out;
+    }
+    .mode-modal__header {
+        position: relative; height: 140px; overflow: hidden; background: #f1f5f9;
+    }
+    .mode-modal__cover {
+        width: 100%; height: 100%; object-fit: cover;
+    }
+    .mode-modal__info {
+        position: absolute; bottom: 0; left: 0; right: 0;
+        background: linear-gradient(transparent, rgba(0,0,0,0.7));
+        padding: 16px 20px 12px; color: #fff;
+    }
+    .mode-modal__info h5 { color: #fff; }
+    .mode-modal__info p { color: rgba(255,255,255,0.8); }
+    .mode-modal__body { padding: 20px; }
+    .mode-modal__buttons { display: flex; gap: 12px; }
+    .mode-btn {
+        flex: 1; border: 2px solid #e2e8f0; border-radius: 12px;
+        padding: 20px 12px; background: #fff; cursor: pointer;
+        display: flex; flex-direction: column; align-items: center; gap: 6px;
+        transition: all 0.2s;
+    }
+    .mode-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .mode-btn .oi { font-size: 1.8rem; }
+    .mode-btn__label { font-weight: 700; font-size: 0.95rem; }
+    .mode-btn__desc { font-size: 0.72rem; color: #94a3b8; }
+    .mode-btn--view { border-color: #22c55e; }
+    .mode-btn--view:hover { background: #f0fdf4; border-color: #16a34a; }
+    .mode-btn--view .oi, .mode-btn--view .mode-btn__label { color: #16a34a; }
+    .mode-btn--edit { border-color: #6366f1; }
+    .mode-btn--edit:hover { background: #eef2ff; border-color: #4f46e5; }
+    .mode-btn--edit .oi, .mode-btn--edit .mode-btn__label { color: #4f46e5; }
+    @@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 
 @code {
@@ -328,4 +404,47 @@ else
     }
 
     private void GoToDetail(int id) => Nav.NavigateTo($"/admin/projects/{id}");
+
+    private async Task DownloadProjectZip(int projectId)
+    {
+        try
+        {
+            var token = await JS.InvokeAsync<string?>("eval", "localStorage.getItem('auth_token')");
+            var url = $"/api/projects/{projectId}/export";
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                await JS.InvokeVoidAsync("downloadWithAuth", url, token, $"project-{projectId}.zip");
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("window.open", url, "_blank");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطا در دانلود: " + ex.Message);
+        }
+    }
+
+    private bool showModeModal = false;
+    private ProjectListDto? selectedProjectForMode;
+
+    private void ShowModeModal(ProjectListDto p)
+    {
+        selectedProjectForMode = p;
+        showModeModal = true;
+    }
+
+    private void CloseModeModal()
+    {
+        showModeModal = false;
+        selectedProjectForMode = null;
+    }
+
+    private void OpenProject(int id, bool editMode)
+    {
+        showModeModal = false;
+        selectedProjectForMode = null;
+        Nav.NavigateTo($"/admin/projects/{id}{(editMode ? "" : "?view=1")}");
+    }
 }

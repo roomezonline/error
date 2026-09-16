@@ -103,6 +103,7 @@
                         <th class="ps-4" style="width: 100px;">کاور</th>
                         <th>عنوان دوره</th>
                         <th>تعداد قسمت‌ها</th>
+                        <th><span class="oi oi-eye"></span> بازدید</th>
                         <th>وضعیت</th>
                         <th>دسترسی</th>
                         <th class="text-end pe-4">عملیات</th>
@@ -141,6 +142,7 @@
                                     <div class="small text-muted text-truncate" style="max-width: 300px;">@course.Summary</div>
                                 </td>
                                 <td><span class="badge bg-light text-dark border rounded-pill px-3">@course.LessonsCount قسمت</span></td>
+                                <td><span class="text-muted">@course.ViewCount.ToString("N0")</span></td>
                                 <td>
                                     <span class="badge @(course.IsPublished ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning") rounded-pill px-3">
                                         @(course.IsPublished ? "منتشر شده" : "پیش‌نویس")

@@ -283,6 +283,7 @@
                                 }
                             </div>
                             <div class="product-card__id">کد: #@prod.Id@(!string.IsNullOrWhiteSpace(prod.Sku) ? $" • {prod.Sku}" : "")</div>
+                            <div class="product-card__views"><span class="oi oi-eye"></span> @prod.ViewCount.ToString("N0") بازدید</div>
                         </div>
                         <span class="product-card__status @(prod.IsAvailable ? "status-available" : "status-unavailable")">
                             @(prod.IsAvailable ? $"موجود ({prod.StockQuantity} عدد)" : "ناموجود")
@@ -517,6 +518,13 @@
         color: #94a3b8;
         margin-top: 1px;
     }
+    .product-card__views {
+        font-size: 0.72rem;
+        color: #6366f1;
+        margin-top: 2px;
+        font-weight: 600;
+    }
+    .product-card__views .oi { font-size: 0.7rem; margin-left: 3px; }
     .product-card__status {
         font-size: 0.7rem;
         padding: 3px 10px;

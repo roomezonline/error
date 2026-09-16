@@ -80,7 +80,13 @@
                         }
                         
                         <div class="card-body p-4 p-md-5">
-                            <h1 class="fw-black display-6 mb-4">@article.Title</h1>
+                            <h1 class="fw-black display-6 mb-2">@article.Title</h1>
+                            <div class="d-flex align-items-center gap-3 mb-4" style="font-size: 0.82rem; color: #6366f1;">
+                                <span class="d-flex align-items-center gap-1">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    @article.ViewCount.ToString("N0") بازدید
+                                </span>
+                            </div>
                             
                             <div class="d-flex flex-wrap align-items-center gap-3 mb-5 pb-4 border-bottom">
                                 <div class="badge bg-primary text-white rounded-pill px-3 py-2">@(article.IsPremium ? "آموزش ویژه" : "آموزش رایگان")</div>

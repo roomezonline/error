@@ -37,19 +37,41 @@ public sealed class MonitoringDevicesController : ControllerBase
             query = query.Where(x => !assignedDeviceIds.Contains(x.Id) && x.IsActive);
         }
 
-        var list = await query
+        var devices = await query
             .OrderByDescending(x => x.IsActive)
             .ThenBy(x => x.Title)
-            .Select(x => new MonitoringDeviceDto
+            .ToListAsync();
+
+        var deviceNumbers = devices.Select(d => d.DeviceNumber).ToList();
+
+        var lastDataDict = await _db.MonitoringDataRecords
+            .AsNoTracking()
+            .Where(r => deviceNumbers.Contains(r.DeviceCode))
+            .GroupBy(r => r.DeviceCode)
+            .Select(g => new { Code = g.Key, LastTime = g.Max(r => r.Timestamp) })
+            .ToDictionaryAsync(x => x.Code, x => x.LastTime);
+
+        var onlineThreshold = TimeSpan.FromMinutes(5);
+
+        var list = devices.Select(x =>
+        {
+            var hasData = lastDataDict.TryGetValue(x.DeviceNumber, out var lastTs);
+            var lastTime = hasData ? (DateTimeOffset?)lastTs : null;
+            var isOnline = hasData && (now - lastTs) < onlineThreshold;
+
+            return new MonitoringDeviceDto
             {
                 Id = x.Id,
                 Title = x.Title,
                 DeviceNumber = x.DeviceNumber,
                 IsActive = x.IsActive,
+                IsOnline = isOnline,
+                LastDataTime = lastTime,
+                LastDataTimeFa = lastTime.HasValue ? PersianDateHelper.ToPersianDateTimeString(lastTime.Value, false) : null,
                 CreatedAt = x.CreatedAt,
                 UpdatedAt = x.UpdatedAt
-            })
-            .ToListAsync();
+            };
+        }).ToList();
 
         return Ok(list);
     }
@@ -252,19 +274,40 @@ public sealed class MonitoringDevicesController : ControllerBase
             .OrderByDescending(x => x.StartAt)
             .ToListAsync();
 
-        var list = rawList.Select(x => new MonitoringDeviceAssignmentDto
+        var deviceNumbers = rawList.Select(x => x.MonitoringDevice.DeviceNumber).Distinct().ToList();
+
+        var lastDataDict = await _db.MonitoringDataRecords
+            .AsNoTracking()
+            .Where(r => deviceNumbers.Contains(r.DeviceCode))
+            .GroupBy(r => r.DeviceCode)
+            .Select(g => new { Code = g.Key, LastTime = g.Max(r => r.Timestamp) })
+            .ToDictionaryAsync(x => x.Code, x => x.LastTime);
+
+        var onlineThreshold = TimeSpan.FromMinutes(5);
+
+        var list = rawList.Select(x =>
         {
-            Id = x.Id,
-            MonitoringDeviceId = x.MonitoringDeviceId,
-            MonitoringDeviceTitle = x.MonitoringDevice.Title,
-            MonitoringDeviceNumber = x.MonitoringDevice.DeviceNumber,
-            WorkshopId = x.WorkshopId,
-            WorkshopName = x.Workshop.WorkshopName,
-            StartAt = x.StartAt,
-            EndAt = x.EndAt,
-            IsActiveNow = x.StartAt <= now && (x.EndAt == null || x.EndAt > now),
-            StartDateFa = PersianDateHelper.ToPersianDateTimeString(x.StartAt, false),
-            EndDateFa = x.EndAt.HasValue ? PersianDateHelper.ToPersianDateTimeString(x.EndAt.Value, false) : "نامحدود"
+            var hasData = lastDataDict.TryGetValue(x.MonitoringDevice.DeviceNumber, out var lastTs);
+            var lastTime = hasData ? (DateTimeOffset?)lastTs : null;
+            var isOnline = hasData && (now - lastTs) < onlineThreshold;
+
+            return new MonitoringDeviceAssignmentDto
+            {
+                Id = x.Id,
+                MonitoringDeviceId = x.MonitoringDeviceId,
+                MonitoringDeviceTitle = x.MonitoringDevice.Title,
+                MonitoringDeviceNumber = x.MonitoringDevice.DeviceNumber,
+                WorkshopId = x.WorkshopId,
+                WorkshopName = x.Workshop.WorkshopName,
+                StartAt = x.StartAt,
+                EndAt = x.EndAt,
+                IsActiveNow = x.StartAt <= now && (x.EndAt == null || x.EndAt > now),
+                StartDateFa = PersianDateHelper.ToPersianDateTimeString(x.StartAt, false),
+                EndDateFa = x.EndAt.HasValue ? PersianDateHelper.ToPersianDateTimeString(x.EndAt.Value, false) : "نامحدود",
+                IsOnline = isOnline,
+                LastDataTime = lastTime,
+                LastDataTimeFa = lastTime.HasValue ? PersianDateHelper.ToPersianDateTimeString(lastTime.Value, false) : null
+            };
         }).ToList();
 
         return Ok(list);

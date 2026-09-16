@@ -47,6 +47,12 @@
                     </div>
 
                     <h1 class="fw-bold mb-4">@course.Title</h1>
+                    <div class="d-flex align-items-center gap-3 mb-3" style="font-size: 0.85rem; color: #6366f1;">
+                        <span class="d-flex align-items-center gap-1">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            @course.ViewCount.ToString("N0") بازدید
+                        </span>
+                    </div>
                     <div class="course-description fs-5 text-muted mb-5 leading-relaxed">
                         @course.Summary
                     </div>

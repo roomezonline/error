@@ -141,6 +141,10 @@
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
                             کد محصول: #@product.Id.ToString("D6")
                         </span>
+                        <span class="pd-extra-item">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            @product.ViewCount.ToString("N0") بازدید
+                        </span>
                         @if (product.IsAvailable && product.StockQuantity > 0)
                         {
                             <span class="pd-extra-item pd-instock">

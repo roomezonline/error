@@ -85,17 +85,18 @@
                         <th>عنوان قسمت</th>
                         <th>وضعیت</th>
                         <th>دسترسی</th>
+                        <th><span class="oi oi-eye"></span> بازدید</th>
                         <th class="text-end pe-4">عملیات</th>
                     </tr>
                 </thead>
                 <tbody>
                     @if (lessons == null)
                     {
-                        <tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
+                        <tr><td colspan="6" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
                     }
                     else if (!lessons.Any())
                     {
-                        <tr><td colspan="5" class="text-center py-5 text-muted">هیچ قسمتی برای این دوره ثبت نشده است.</td></tr>
+                        <tr><td colspan="6" class="text-center py-5 text-muted">هیچ قسمتی برای این دوره ثبت نشده است.</td></tr>
                     }
                     else
                     {
@@ -120,6 +121,7 @@
                                         @(lesson.IsPremium ? "ویژه" : "رایگان")
                                     </span>
                                 </td>
+                                <td><span class="text-muted small">@lesson.ViewCount.ToString("N0")</span></td>
                                 <td class="text-end pe-4">
                                     <button class="btn btn-sm btn-outline-info border-0 rounded-circle me-1" @onclick="() => ManageContent(lesson.Id)" title="مدیریت محتوا و بلوک‌ها">
                                         <span class="oi oi-spreadsheet"></span>

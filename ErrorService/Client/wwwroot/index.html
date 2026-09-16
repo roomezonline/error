@@ -289,6 +289,27 @@
             document.body.removeChild(link);
         };
 
+        window.downloadWithAuth = async function(url, token, fileName) {
+            try {
+                var resp = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                var blob = await resp.blob();
+                var blobUrl = URL.createObjectURL(blob);
+                var link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = fileName || 'download.zip';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(blobUrl);
+            } catch (e) {
+                console.error('Download failed:', e);
+                window.open(url, '_blank');
+            }
+        };
+
         window.scrollToElement = function(element, block) {
             if (element) {
                 element.scrollIntoView({ behavior: 'smooth', block: block || 'center' });

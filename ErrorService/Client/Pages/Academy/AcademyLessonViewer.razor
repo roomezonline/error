@@ -56,7 +56,13 @@
                 <div class="col-lg-9">
                     <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
                         <div class="card-body p-4 p-md-5">
-                            <h1 class="fw-bold h2 mb-4">@lesson.Title</h1>
+                            <h1 class="fw-bold h2 mb-2">@lesson.Title</h1>
+                            <div class="d-flex align-items-center gap-3 mb-4" style="font-size: 0.82rem; color: #6366f1;">
+                                <span class="d-flex align-items-center gap-1">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    @lesson.ViewCount.ToString("N0") بازدید
+                                </span>
+                            </div>
                             
                             @if (!string.IsNullOrEmpty(lesson.Summary))
                             {

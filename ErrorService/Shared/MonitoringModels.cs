@@ -9,6 +9,10 @@ public sealed class MonitoringDeviceDto
     public string DeviceNumber { get; set; } = string.Empty;
     public bool IsActive { get; set; }
 
+    public bool IsOnline { get; set; }
+    public DateTimeOffset? LastDataTime { get; set; }
+    public string? LastDataTimeFa { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
@@ -43,6 +47,10 @@ public sealed class MonitoringDeviceAssignmentDto
     public string EndDateFa { get; set; } = string.Empty;
 
     public bool IsActiveNow { get; set; }
+
+    public bool IsOnline { get; set; }
+    public DateTimeOffset? LastDataTime { get; set; }
+    public string? LastDataTimeFa { get; set; }
 }
 
 public sealed class MonitoringDeviceAssignRequest

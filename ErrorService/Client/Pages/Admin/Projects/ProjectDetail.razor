@@ -27,16 +27,24 @@ else if (project == null)
 }
 else
 {
-    <div class="d-flex align-items-center gap-3 mb-4">
-        <a href="/admin/projects" class="btn btn-sm btn-outline-secondary rounded-circle" style="width:38px;height:38px;display:grid;place-items:center">
+    <div class="d-flex align-items-center gap-2 mb-4 flex-wrap">
+        <a href="/admin/projects" class="btn btn-sm btn-outline-secondary rounded-circle flex-shrink-0" style="width:36px;height:36px;display:grid;place-items:center">
             <span class="oi oi-arrow-right"></span>
         </a>
-        <div class="flex-grow-1">
-            <h4 class="fw-bold mb-0">@project.Name</h4>
+        <div class="flex-grow-1" style="min-width:0;">
+            <h4 class="fw-bold mb-0 text-truncate">@project.Name</h4>
             <small class="text-muted">ایجاد شده: @project.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</small>
         </div>
-        <a href="api/projects/@(Id)/export" class="btn btn-outline-primary rounded-pill px-3" target="_blank">
-            <span class="oi oi-data-transfer-download me-1"></span> دانلود ZIP
+        @if (isViewOnly)
+        {
+            <span class="badge bg-success-subtle text-success rounded-pill px-2 py-1" style="font-size:0.72rem;">
+                <span class="oi oi-eye me-1"></span> مشاهده
+            </span>
+        }
+        <a class="btn btn-sm btn-outline-primary rounded-pill px-3 flex-shrink-0" style="white-space:nowrap;cursor:pointer;" @onclick="DownloadZipAsync">
+            <span class="oi oi-data-transfer-download me-1" style="font-size:0.8rem;"></span>
+            <span class="d-none d-sm-inline">دانلود ZIP</span>
+            <span class="d-sm-none">ZIP</span>
         </a>
     </div>
 
@@ -53,6 +61,76 @@ else
     @if (activeTab == "info")
     {
         <div class="card border-0 shadow-sm rounded-4 p-4">
+            @if (isViewOnly)
+            {
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="view-chip">
+                            <div class="view-chip__icon bg-primary-subtle text-primary"><span class="oi oi-info"></span></div>
+                            <div class="view-chip__content">
+                                <div class="view-chip__label">نام پروژه</div>
+                                <div class="view-chip__value fw-bold fs-5">@project.Name</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-12">
+                        <div class="view-chip">
+                            <div class="view-chip__icon bg-secondary-subtle text-secondary"><span class="oi oi-sort-ascending"></span></div>
+                            <div class="view-chip__content">
+                                <div class="view-chip__label">ترتیب</div>
+                                <div class="view-chip__value">@project.SortOrder</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-12">
+                        <div class="view-chip">
+                            <div class="view-chip__icon @(project.IsActive ? "bg-success-subtle text-success" : "bg-secondary-subtle text-secondary")"><span class="oi @(project.IsActive ? "oi-check" : "oi-x")"></span></div>
+                            <div class="view-chip__content">
+                                <div class="view-chip__label">وضعیت</div>
+                                <div class="view-chip__value">@(project.IsActive ? "فعال" : "غیرفعال")</div>
+                            </div>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(project.Summary))
+                    {
+                    <div class="col-12">
+                        <div class="view-chip">
+                            <div class="view-chip__icon bg-info-subtle text-info"><span class="oi oi-text"></span></div>
+                            <div class="view-chip__content">
+                                <div class="view-chip__label">خلاصه</div>
+                                <div class="view-chip__value">@project.Summary</div>
+                            </div>
+                        </div>
+                    </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(project.Description))
+                    {
+                    <div class="col-12">
+                        <div class="view-chip">
+                            <div class="view-chip__icon bg-warning-subtle text-warning"><span class="oi oi-document"></span></div>
+                            <div class="view-chip__content">
+                                <div class="view-chip__label">توضیحات</div>
+                                <div class="view-chip__value" style="white-space:pre-wrap;">@project.Description</div>
+                            </div>
+                        </div>
+                    </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(project.CoverImageUrl))
+                    {
+                    <div class="col-12">
+                        <div class="view-chip">
+                            <div class="view-chip__icon bg-danger-subtle text-danger"><span class="oi oi-image"></span></div>
+                            <div class="view-chip__content">
+                                <div class="view-chip__label">عکس جلد</div>
+                                <img src="@project.CoverImageUrl" class="rounded-3 mt-1" style="max-height:180px;cursor:pointer;max-width:100%;" @onclick="() => OpenLightbox(project.CoverImageUrl)" />
+                            </div>
+                        </div>
+                    </div>
+                    }
+                </div>
+            }
+            else
+            {
             <EditForm Model="editModel" OnValidSubmit="SaveInfo">
                 <DataAnnotationsValidator />
                 <div class="row g-3">
@@ -89,6 +167,7 @@ else
                     </div>
                 </div>
             </EditForm>
+            }
         </div>
     }
     else if (activeTab == "images")
@@ -99,11 +178,14 @@ else
                 @foreach (var img in project.Images)
                 {
                     <div class="col-6 col-md-4 col-lg-3">
-                        <div class="position-relative rounded-3 overflow-hidden border" style="aspect-ratio:1">
+                        <div class="position-relative rounded-3 overflow-hidden border" style="aspect-ratio:1;cursor:pointer;" @onclick="() => OpenLightbox(img.ImageUrl)">
                             <img src="@img.ImageUrl" alt="@img.Caption" style="width:100%;height:100%;object-fit:cover" />
-                            <button class="btn btn-sm btn-danger position-absolute top-0 start-0 m-1 rounded-circle" style="width:28px;height:28px" @onclick="() => DeleteImage(img.Id)">
-                                <span class="oi oi-trash p-0" style="font-size:0.7rem"></span>
-                            </button>
+                            @if (!isViewOnly)
+                            {
+                                <button class="btn btn-sm btn-danger position-absolute top-0 start-0 m-1 rounded-circle" style="width:28px;height:28px" @onclick:stopPropagation="true" @onclick="() => DeleteImage(img.Id)">
+                                    <span class="oi oi-trash p-0" style="font-size:0.7rem"></span>
+                                </button>
+                            }
                             @if (!string.IsNullOrWhiteSpace(img.Caption))
                             {
                                 <div class="position-absolute bottom-0 start-0 end-0 bg-dark bg-opacity-75 text-white px-2 py-1 small">@img.Caption</div>
@@ -112,6 +194,8 @@ else
                     </div>
                 }
             </div>
+            @if (!isViewOnly)
+            {
             <div class="border-top pt-3">
                 <h6 class="fw-bold mb-3">افزودن عکس جدید</h6>
                 <ImageUploader @bind-ImageUrl="newImageUrl" UploadUrl=@($"api/projects/upload?projectId={Id}&type=images") ShowCamera="false" />
@@ -137,6 +221,7 @@ else
                     </div>
                 </div>
             </div>
+            }
         </div>
     }
     else if (activeTab == "files")
@@ -155,25 +240,42 @@ else
                                 <th>ورژن</th>
                                 <th>توضیحات</th>
                                 <th>تاریخ</th>
-                                <th></th>
+                                @if (!isViewOnly) { <th></th> }
                             </tr>
                         </thead>
                         <tbody>
                             @foreach (var f in project.Files)
                             {
+                                var isImage = !string.IsNullOrEmpty(f.FileUrl) && (f.FileUrl.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || f.FileUrl.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) || f.FileUrl.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || f.FileUrl.EndsWith(".webp", StringComparison.OrdinalIgnoreCase));
                                 <tr>
                                     <td>
-                                        <a href="@f.FileUrl" target="_blank" class="text-decoration-none fw-bold">@f.FileName</a>
+                                        @if (isImage)
+                                        {
+                                            <a href="@f.FileUrl" target="_blank" class="text-decoration-none fw-bold d-flex align-items-center gap-2" style="cursor:pointer;">
+                                                <img src="@f.FileUrl" alt="@f.FileName" style="width:36px;height:36px;object-fit:cover;border-radius:6px;" @onclick:stopPropagation @onclick="() => OpenLightbox(f.FileUrl)" />
+                                                @f.FileName
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <a href="@f.FileUrl" target="_blank" download="@f.FileName" class="text-decoration-none fw-bold d-flex align-items-center gap-2">
+                                                <span class="oi oi-arrow-circle-bottom" style="color:#6366f1;font-size:1.1rem;"></span>
+                                                @f.FileName
+                                            </a>
+                                        }
                                     </td>
                                     <td><span class="badge bg-info-subtle text-info">@GetFileTypeLabel(f.FileType)</span></td>
                                     <td>@(f.Version ?? "—")</td>
                                     <td class="small text-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@(f.Description ?? "—")</td>
                                     <td class="small text-muted">@f.UploadedAt.ToLocalTime().ToString("MM/dd")</td>
+                                    @if (!isViewOnly)
+                                    {
                                     <td>
                                         <button class="btn btn-sm btn-outline-danger rounded-pill" @onclick="() => DeleteFile(f.Id)">
                                             <span class="oi oi-trash" style="font-size:0.7rem"></span>
                                         </button>
                                     </td>
+                                    }
                                 </tr>
                             }
                         </tbody>
@@ -181,6 +283,8 @@ else
                 </div>
             }
 
+            @if (!isViewOnly)
+            {
             <div class="border-top pt-3">
                 <h6 class="fw-bold mb-3">افزودن فایل جدید</h6>
                 <FileUploader @bind-FileUrl="newFileUrl" FileName="@newFileTitle"
@@ -221,6 +325,7 @@ else
                     </div>
                 </div>
             </div>
+            }
         </div>
     }
     else if (activeTab == "sections")
@@ -228,12 +333,15 @@ else
         <div class="card border-0 shadow-sm rounded-4 p-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h6 class="fw-bold mb-0">بخش‌های محتوایی (@project.Sections.Count)</h6>
+                @if (!isViewOnly)
+                {
                 <button class="btn-add-project" @onclick="ShowNewSection">
                     <span class="oi oi-plus me-1"></span> بخش جدید
                 </button>
+                }
             </div>
 
-            @if (showSectionForm)
+            @if (!isViewOnly && showSectionForm)
             {
                 <div class="bg-light rounded-3 p-3 mb-3">
                     <div class="row g-2">
@@ -258,6 +366,8 @@ else
                 <div class="border rounded-3 p-3 mb-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <div class="fw-bold">@sec.Title <small class="text-muted">(@sec.Items.Count آیتم)</small></div>
+                        @if (!isViewOnly)
+                        {
                         <div class="d-flex gap-2">
                             <button class="btn btn-sm btn-outline-primary rounded-pill" @onclick="() => StartAddItem(sec.Id)">
                                 <span class="oi oi-plus" style="font-size:0.7rem"></span>
@@ -266,9 +376,10 @@ else
                                 <span class="oi oi-trash" style="font-size:0.7rem"></span>
                             </button>
                         </div>
+                        }
                     </div>
 
-                    @if (activeSectionId == sec.Id && showItemForm)
+                    @if (!isViewOnly && activeSectionId == sec.Id && showItemForm)
                     {
                         <div class="bg-light rounded-3 p-3 mb-2">
                             <div class="row g-2">
@@ -308,27 +419,47 @@ else
                     {
                         @foreach (var item in sec.Items)
                         {
-                            <div class="d-flex align-items-start gap-2 py-2 border-top small">
-                                <span class="badge @(item.ItemType == SectionItemType.Text ? "bg-secondary" : item.ItemType == SectionItemType.Image ? "bg-info" : "bg-warning")">
-                                    @(item.ItemType == SectionItemType.Text ? "متن" : item.ItemType == SectionItemType.Image ? "عکس" : "فایل")
-                                </span>
-                                <div class="flex-grow-1">
+                            <div class="d-flex align-items-center gap-3 py-2 border-top small">
+                                @if (item.ItemType == SectionItemType.Image && !string.IsNullOrEmpty(item.MediaUrl))
+                                {
+                                    <img src="@item.MediaUrl" alt="@item.FileName" style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;cursor:pointer;" @onclick="() => OpenLightbox(item.MediaUrl)" />
+                                }
+                                else if (item.ItemType == SectionItemType.File && !string.IsNullOrEmpty(item.MediaUrl))
+                                {
+                                    <a href="@item.MediaUrl" target="_blank" download="@(item.FileName ?? "file")" class="d-flex align-items-center justify-content-center" style="width:48px;height:48px;background:linear-gradient(135deg,#ede9fe,#e0e7ff);border-radius:8px;text-decoration:none;">
+                                        <span class="oi oi-arrow-circle-bottom" style="color:#6366f1;font-size:1.3rem;"></span>
+                                    </a>
+                                }
+                                else
+                                {
+                                    <div class="d-flex align-items-center justify-content-center" style="width:48px;height:48px;background:#f1f5f9;border-radius:8px;">
+                                        <span class="oi oi-text" style="color:#94a3b8;font-size:1.1rem;"></span>
+                                    </div>
+                                }
+                                <div class="flex-grow-1" style="min-width:0;">
                                     @if (item.ItemType == SectionItemType.Text && !string.IsNullOrEmpty(item.TextContent))
                                     {
                                         <div class="text-muted" style="max-height:60px;overflow:hidden">@item.TextContent</div>
                                     }
-                                    else if (!string.IsNullOrEmpty(item.MediaUrl))
+                                    else if (item.ItemType == SectionItemType.Image)
                                     {
-                                        <a href="@item.MediaUrl" target="_blank" class="text-decoration-none">@(item.FileName ?? item.MediaUrl)</a>
+                                        <div class="fw-bold text-truncate" style="max-width:300px;">@(item.FileName ?? "تصویر")</div>
+                                    }
+                                    else if (item.ItemType == SectionItemType.File)
+                                    {
+                                        <a href="@item.MediaUrl" target="_blank" download="@(item.FileName ?? "file")" class="text-decoration-none fw-bold text-truncate d-block" style="max-width:300px;">@(item.FileName ?? "فایل")</a>
                                     }
                                     @if (!string.IsNullOrEmpty(item.Description))
                                     {
                                         <div class="text-muted small">@item.Description</div>
                                     }
                                 </div>
+                                @if (!isViewOnly)
+                                {
                                 <button class="btn btn-sm btn-outline-danger rounded-pill flex-shrink-0" @onclick="() => DeleteSectionItem(sec.Id, item.Id)">
                                     <span class="oi oi-trash" style="font-size:0.65rem"></span>
                                 </button>
+                                }
                             </div>
                         }
                     }
@@ -402,10 +533,58 @@ else
     .btn-add-project:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
     .btn-add-project--sm { padding: 10px 18px; font-size: 0.85rem; }
 
+    .view-chip {
+        display: flex; align-items: flex-start; gap: 14px;
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px;
+        padding: 16px 18px; transition: all 0.2s;
+    }
+    .view-chip:hover { background: #f1f5f9; border-color: #cbd5e1; }
+    .view-chip__icon {
+        width: 44px; height: 44px; border-radius: 12px;
+        display: grid; place-items: center; font-size: 1.1rem; flex-shrink: 0;
+    }
+    .view-chip__content { min-width: 0; flex: 1; }
+    .view-chip__label {
+        font-size: 0.72rem; color: #94a3b8; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
+    }
+    .view-chip__value { font-size: 0.95rem; color: #1e293b; word-break: break-word; }
+    @@media (max-width: 575.98px) {
+        .view-chip { padding: 12px 14px; gap: 10px; }
+        .view-chip__icon { width: 38px; height: 38px; font-size: 0.95rem; }
+        .view-chip__label { font-size: 0.68rem; }
+        .view-chip__value { font-size: 0.88rem; }
+    }
+
     @@media (max-width: 575.98px) {
         .btn-add-project { width: 100%; padding: 14px 20px; }
     }
+    .lightbox-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9999; cursor: zoom-out; animation: lbFadeIn 0.2s;
+    }
+    .lightbox-overlay img {
+        max-width: 92vw; max-height: 92vh; object-fit: contain;
+        border-radius: 8px; box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    }
+    .lightbox-close {
+        position: fixed; top: 16px; left: 16px; z-index: 10000;
+        background: rgba(255,255,255,0.15); border: none; color: #fff;
+        width: 40px; height: 40px; border-radius: 50%; font-size: 1.2rem;
+        cursor: pointer; display: grid; place-items: center;
+    }
+    .lightbox-close:hover { background: rgba(255,255,255,0.3); }
+    @@keyframes lbFadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>
+
+@if (!string.IsNullOrEmpty(lightboxUrl))
+{
+    <div class="lightbox-overlay" @onclick="CloseLightbox">
+        <button class="lightbox-close" @onclick="CloseLightbox">×</button>
+        <img src="@lightboxUrl" @onclick:stopPropagation />
+    </div>
+}
 
 @code {
     [Parameter] public int Id { get; set; }
@@ -417,6 +596,8 @@ else
     private bool isLoading = true;
     private bool isSaving = false;
     private string activeTab = "info";
+    private bool isViewOnly = false;
+    private string? lightboxUrl;
 
     private (string Key, string Label, string Icon)[] tabs = {
         ("info", "اطلاعات", "oi-info"),
@@ -452,7 +633,37 @@ else
     private string? newItemMediaUrl;
     private string? newItemDesc;
 
-    protected override async Task OnInitializedAsync() => await LoadProject();
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = new Uri(Nav.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        isViewOnly = query["view"] == "1";
+        await LoadProject();
+    }
+
+    private void OpenLightbox(string url) { lightboxUrl = url; }
+    private void CloseLightbox() { lightboxUrl = null; }
+
+    private async Task DownloadZipAsync()
+    {
+        try
+        {
+            var token = await JS.InvokeAsync<string?>("eval", "localStorage.getItem('auth_token')");
+            var url = $"/api/projects/{Id}/export";
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                await JS.InvokeVoidAsync("downloadWithAuth", url, token, $"project-{Id}.zip");
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("window.open", url, "_blank");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطا در دانلود: " + ex.Message);
+        }
+    }
 
     private async Task LoadProject()
     {

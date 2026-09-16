@@ -269,7 +269,17 @@ public sealed class ProjectsController : ControllerBase
             if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
         }
 
-        var fileName = $"{Guid.NewGuid():N}{ext}";
+        string fileName;
+        if (isImage || !projectId.HasValue)
+        {
+            fileName = $"{Guid.NewGuid():N}{ext}";
+        }
+        else
+        {
+            var originalName = Path.GetFileNameWithoutExtension(file.FileName);
+            fileName = GetUniqueFileName(folder, originalName, ext);
+        }
+
         var filePath = Path.Combine(folder, fileName);
 
         await using (var stream = new FileStream(filePath, FileMode.Create))
@@ -281,6 +291,34 @@ public sealed class ProjectsController : ControllerBase
             return Ok($"/uploads/projects/{projectId}/{subFolder}/{fileName}");
 
         return Ok($"/uploads/projects/_temp/{fileName}");
+    }
+
+    private static string GetUniqueFileName(string folder, string baseName, string ext)
+    {
+        var candidate = $"{baseName}{ext}";
+        if (!System.IO.File.Exists(Path.Combine(folder, candidate)))
+            return candidate;
+
+        for (int i = 1; ; i++)
+        {
+            candidate = $"{baseName} ({i}){ext}";
+            if (!System.IO.File.Exists(Path.Combine(folder, candidate)))
+                return candidate;
+        }
+    }
+
+    private void DeletePhysicalFile(string fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl)) return;
+        var relPath = fileUrl.TrimStart('/').Replace('\\', '/');
+        if (relPath.StartsWith("uploads/"))
+        {
+            var fullPath = Path.Combine(_env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot"), relPath);
+            if (System.IO.File.Exists(fullPath))
+            {
+                try { System.IO.File.Delete(fullPath); } catch { }
+            }
+        }
     }
 
     // ──────────────────── Images ────────────────────
@@ -318,6 +356,8 @@ public sealed class ProjectsController : ControllerBase
     {
         var image = await _db.ProjectImages.FirstOrDefaultAsync(x => x.Id == imageId && x.ProjectId == id);
         if (image == null) return NotFound();
+
+        DeletePhysicalFile(image.ImageUrl);
 
         _db.ProjectImages.Remove(image);
         await _db.SaveChangesAsync();
@@ -384,6 +424,8 @@ public sealed class ProjectsController : ControllerBase
     {
         var file = await _db.ProjectFiles.FirstOrDefaultAsync(x => x.Id == fileId && x.ProjectId == id);
         if (file == null) return NotFound();
+
+        DeletePhysicalFile(file.FileUrl);
 
         _db.ProjectFiles.Remove(file);
         await _db.SaveChangesAsync();
@@ -487,6 +529,8 @@ public sealed class ProjectsController : ControllerBase
         var item = await _db.ProjectSectionItems
             .FirstOrDefaultAsync(x => x.Id == itemId && x.SectionId == sectionId);
         if (item == null) return NotFound();
+
+        DeletePhysicalFile(item.MediaUrl);
 
         _db.ProjectSectionItems.Remove(item);
         await _db.SaveChangesAsync();

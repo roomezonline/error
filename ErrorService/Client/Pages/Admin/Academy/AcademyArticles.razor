@@ -112,17 +112,18 @@
                         <th>عنوان آموزش</th>
                         <th>تاریخ ایجاد</th>
                         <th>وضعیت</th>
+                        <th><span class="oi oi-eye"></span> بازدید</th>
                         <th class="text-end pe-4">عملیات</th>
                     </tr>
                 </thead>
                 <tbody>
                     @if (articles == null)
                     {
-                        <tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
+                        <tr><td colspan="6" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
                     }
                     else if (!articles.Any())
                     {
-                        <tr><td colspan="5" class="text-center py-5 text-muted">هیچ آموزش تک‌قسمتی یافت نشد.</td></tr>
+                        <tr><td colspan="6" class="text-center py-5 text-muted">هیچ آموزش تک‌قسمتی یافت نشد.</td></tr>
                     }
                     else
                     {
@@ -156,6 +157,7 @@
                                         @(article.IsPublished ? "منتشر شده" : "پیش‌نویس")
                                     </span>
                                 </td>
+                                <td><span class="text-muted small">@article.ViewCount.ToString("N0")</span></td>
                                 <td class="text-end pe-4">
                                     <a class="btn btn-sm btn-outline-info border-0 rounded-circle me-1" href="/admin/academy/articles/@article.Id/content" title="مدیریت محتوا">
                                         <span class="oi oi-layers"></span>

@@ -11,22 +11,27 @@
 
         try
         {
-            // Try to get a anonymous ID from localStorage, create if not exists
-            var anonId = await JS.InvokeAsync<string?>("eval", "localStorage.getItem('_vid')");
-            if (string.IsNullOrEmpty(anonId))
-            {
-                anonId = Guid.NewGuid().ToString("N").Substring(0, 12);
-                await JS.InvokeVoidAsync("eval", $"localStorage.setItem('_vid','{anonId}')");
-            }
-
-            // Use a session flag to avoid counting repeat views within 30 min
             var flagKey = $"_pv_{EntityType}_{EntityId}";
-            var alreadyCounted = await JS.InvokeAsync<bool?>("eval", $"sessionStorage.getItem('{flagKey}')");
-            if (alreadyCounted == true) return;
+            var alreadyCounted = await JS.InvokeAsync<string?>("sessionStorage.getItem", flagKey);
+            if (alreadyCounted == "1") return;
 
-            await Http.PostAsJsonAsync("api/pageviews/track", new { EntityType, EntityId });
-            await JS.InvokeVoidAsync("eval", $"sessionStorage.setItem('{flagKey}','1')");
+            var payload = new PageViewTrackRequest { EntityType = EntityType, EntityId = EntityId };
+            var resp = await Http.PostAsJsonAsync("api/pageviews/track", payload);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                await JS.InvokeVoidAsync("sessionStorage.setItem", flagKey, "1");
+            }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ViewTracker] Error: {ex.Message}");
+        }
+    }
+
+    public class PageViewTrackRequest
+    {
+        public string EntityType { get; set; } = string.Empty;
+        public int EntityId { get; set; }
     }
 }
