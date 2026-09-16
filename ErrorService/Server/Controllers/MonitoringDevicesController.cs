@@ -67,7 +67,7 @@ public sealed class MonitoringDevicesController : ControllerBase
                 IsActive = x.IsActive,
                 IsOnline = isOnline,
                 LastDataTime = lastTime,
-                LastDataTimeFa = lastTime.HasValue ? PersianDateHelper.ToPersianDateTimeString(lastTime.Value, false) : null,
+                LastDataTimeFa = lastTime.HasValue ? PersianDateHelper.ToPersianDateTimeString(lastTime.Value, includeTime: true, includeSeconds: false) : null,
                 CreatedAt = x.CreatedAt,
                 UpdatedAt = x.UpdatedAt
             };
@@ -306,7 +306,7 @@ public sealed class MonitoringDevicesController : ControllerBase
                 EndDateFa = x.EndAt.HasValue ? PersianDateHelper.ToPersianDateTimeString(x.EndAt.Value, false) : "نامحدود",
                 IsOnline = isOnline,
                 LastDataTime = lastTime,
-                LastDataTimeFa = lastTime.HasValue ? PersianDateHelper.ToPersianDateTimeString(lastTime.Value, false) : null
+                LastDataTimeFa = lastTime.HasValue ? PersianDateHelper.ToPersianDateTimeString(lastTime.Value, includeTime: true, includeSeconds: false) : null
             };
         }).ToList();
 

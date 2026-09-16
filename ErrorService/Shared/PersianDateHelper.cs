@@ -8,6 +8,11 @@ public static class PersianDateHelper
 
     public static string ToPersianDateTimeString(DateTimeOffset value, bool includeTime = true)
     {
+        return ToPersianDateTimeString(value, includeTime, includeSeconds: true);
+    }
+
+    public static string ToPersianDateTimeString(DateTimeOffset value, bool includeTime, bool includeSeconds)
+    {
         if (value.Ticks < 123600000000) return "-";
         try
         {
@@ -19,7 +24,8 @@ public static class PersianDateHelper
             if (!includeTime)
                 return $"{y:0000}/{m:00}/{d:00}";
 
-            return $"{y:0000}/{m:00}/{d:00} {dt:HH:mm:ss}";
+            var timeFmt = includeSeconds ? $"{dt:HH:mm:ss}" : $"{dt:HH:mm}";
+            return $"{y:0000}/{m:00}/{d:00} {timeFmt}";
         }
         catch (ArgumentOutOfRangeException)
         {
