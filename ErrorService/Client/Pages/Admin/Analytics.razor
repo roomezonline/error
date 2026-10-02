@@ -519,7 +519,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var nowTehran = DateTime.UtcNow.AddMinutes(330);
+        var nowTehran = DateTime.UtcNow.AddMinutes(210);
         _to = nowTehran.ToString("yyyy-MM-dd");
         _from = nowTehran.AddDays(-29).ToString("yyyy-MM-dd");
         await RefreshAll();
@@ -664,7 +664,7 @@
     private async Task ClearFilters()
     {
         _search = "";
-        var nowTehran = DateTime.UtcNow.AddMinutes(330);
+        var nowTehran = DateTime.UtcNow.AddMinutes(210);
         _from = nowTehran.AddDays(-29).ToString("yyyy-MM-dd");
         _to = nowTehran.ToString("yyyy-MM-dd");
         _page = 1;
@@ -674,7 +674,7 @@
 
     private bool IsDefaultRange()
     {
-        var nowTehran = DateTime.UtcNow.AddMinutes(330);
+        var nowTehran = DateTime.UtcNow.AddMinutes(210);
         return _from == nowTehran.AddDays(-29).ToString("yyyy-MM-dd") && _to == nowTehran.ToString("yyyy-MM-dd");
     }
 

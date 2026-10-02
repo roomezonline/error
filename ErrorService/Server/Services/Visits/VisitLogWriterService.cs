@@ -173,7 +173,7 @@ public sealed class VisitLogWriterService : BackgroundService
                         VisitorId = Truncate(c.VisitorId, 36),
                         StartedAtUtc = c.VisitedAtUtc,
                         EndedAtUtc = c.VisitedAtUtc,
-                        VisitDate = DateOnly.FromDateTime(c.VisitedAtUtc.AddMinutes(330)), // وقت تهران
+                        VisitDate = DateOnly.FromDateTime(c.VisitedAtUtc.AddMinutes(210)), // وقت تهران
                         IdentityKey = c.HasUserIdentity ? Truncate(c.IdentityKey, 64) : "v" + c.VisitorId,
                         UserName = c.HasUserIdentity ? Truncate(c.UserName, 200) : "",
                         Ip = Truncate(c.Ip, 45),
@@ -210,7 +210,7 @@ public sealed class VisitLogWriterService : BackgroundService
                 logRows.Add(new VisitLog
                 {
                     VisitedAtUtc = c.VisitedAtUtc,
-                    VisitDate = DateOnly.FromDateTime(c.VisitedAtUtc.AddMinutes(330)),
+                    VisitDate = DateOnly.FromDateTime(c.VisitedAtUtc.AddMinutes(210)),
                     Ip = Truncate(c.Ip, 45),
                     Path = Truncate(c.Path, 300),
                     Referrer = Truncate(c.Referrer, 500),

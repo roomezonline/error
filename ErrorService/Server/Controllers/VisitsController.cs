@@ -248,7 +248,7 @@ public sealed class VisitsController : ControllerBase
         if (pageSize < 1) pageSize = 25;
         if (pageSize > 100) pageSize = 100;
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(330));
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(210));
         var fromDate = DateOnly.TryParse(from, out var f) ? f : today.AddDays(-29);
         var toDate = DateOnly.TryParse(to, out var t) ? t : today;
         if (toDate < fromDate) (fromDate, toDate) = (toDate, fromDate);
@@ -297,8 +297,8 @@ public sealed class VisitsController : ControllerBase
         {
             Id = x.Id,
             VisitedAtUtc = x.StartedAtUtc,
-            VisitedAtLocal = x.StartedAtUtc.AddMinutes(330),
-            EndedAtLocal = x.EndedAtUtc.AddMinutes(330),
+            VisitedAtLocal = x.StartedAtUtc.AddMinutes(210),
+            EndedAtLocal = x.EndedAtUtc.AddMinutes(210),
             DurationMinutes = (int)(x.EndedAtUtc - x.StartedAtUtc).TotalMinutes,
             Ip = x.Ip,
             Path = x.EntryPath,
@@ -333,7 +333,7 @@ public sealed class VisitsController : ControllerBase
         if (days < 7) days = 7;
         if (days > 180) days = 180;
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(330));
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(210));
         var start = today.AddDays(-(days - 1));
 
         var stats = await _db.DailyVisitStats.AsNoTracking()
@@ -393,7 +393,7 @@ public sealed class VisitsController : ControllerBase
         if (take < 1) take = 15;
         if (take > 100) take = 100;
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(330));
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(210));
         var start = today.AddDays(-(days - 1));
 
         var rows = await _db.DailyPagePathStats.AsNoTracking()
@@ -426,7 +426,7 @@ public sealed class VisitsController : ControllerBase
     /// <summary>شروع امروز/هفته (شنبه)/ماه شمسی/سال شمسی — بر مبنای وقت تهران.</summary>
     private static (DateOnly Today, DateOnly WeekStart, DateOnly MonthStart, DateOnly YearStart) GetPeriodStarts()
     {
-        var nowLocal = DateTime.UtcNow.AddMinutes(330); // UTC+3:30
+        var nowLocal = DateTime.UtcNow.AddMinutes(210); // UTC+3:30
         var today = DateOnly.FromDateTime(nowLocal);
 
         // هفته ایرانی: شنبه‌تاپنجشنبه

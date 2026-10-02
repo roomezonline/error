@@ -56,7 +56,7 @@ public sealed class VisitMaintenanceService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ErrorServiceDbContext>();
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(330));
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(210));
         var yesterday = today.AddDays(-1);
 
         // ۰) اولین اجرا: بازسازی جلسه‌ها از لاگ خام (داده‌های قبل از این قابلیت)
