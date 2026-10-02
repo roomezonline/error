@@ -9,7 +9,7 @@
 
 <SeoHeader Title="پیگیری سفارش | ارورسرویس" Description="وضعیت سفارش خود را با شماره سفارش و شماره موبایل دنبال کنید" OgType="website" />
 
-<div class="tracking-page py-5">
+<div class="tracking-page py-5" dir="rtl">
     <div class="container" style="max-width: 880px;">
         <h1 class="fw-black fs-3 mb-1">پیگیری سفارش</h1>
         <p class="text-muted mb-4">شماره سفارش (کد سفارش) و شماره موبایلی را که هنگام ثبت سفارش وارد کرده‌اید بنویسید.</p>
@@ -18,7 +18,7 @@
             <div class="row g-3">
                 <div class="col-md-5">
                     <label class="form-label small text-muted">شماره سفارش</label>
-                    <input class="form-control rounded-3 ltr" dir="ltr" @bind="OrderNumber" placeholder="مثلا ORD-20260811-482913" />
+                    <input class="form-control rounded-3 ltr" dir="ltr" @bind="OrderNumber" placeholder="مثلا ORD-K7M2XP" />
                 </div>
                 <div class="col-md-5">
                     <label class="form-label small text-muted">شماره موبایل</label>
@@ -56,8 +56,16 @@
                         <div class="fs-4 fw-bold mt-1" dir="ltr">@_order.OrderNumber</div>
                         <div class="small text-muted mt-1">تاریخ ثبت: @PersianDate.ToJalaliDateTime(_order.CreatedAt)</div>
                     </div>
-                    <span class="badge fs-6 px-3 py-2 rounded-pill @GetStatusBadgeClass(_order.Status)">@GetStatusText(_order.Status)</span>
+                    <span class="badge fs-6 px-3 py-2 rounded-pill" style="@OrderDisplayHelper.SolidBadgeStyle(_order)">@OrderDisplayHelper.Label(_order)</span>
                 </div>
+
+                <OrderStageStepper Status="_order.Status"
+                                   Stage="_order.Stage"
+                                   StageDates="_order.StageDates"
+                                   CreatedAt="_order.CreatedAt"
+                                   PaymentDate="_order.PaymentDate"
+                                   UpdatedAt="_order.UpdatedAt"
+                                   ShowExceptionBanner="false" />
 
                 <div class="row g-2 mb-3">
                     @foreach (var item in _order.Items)
@@ -83,7 +91,12 @@
                         }
                         @if (!string.IsNullOrEmpty(_order.AdminNotes))
                         {
-                            <div class="text-muted mt-2 fst-italic">یادداشت مدیر: @_order.AdminNotes</div>
+                            <div class="text-muted mt-2">
+                                <span class="fw-bold">یادداشت مدیر:</span>
+                                <div class="tracking-admin-note" dir="rtl" style="margin-top:6px">
+                                    <AdminNotesList Notes="@_order.AdminNotes" />
+                                </div>
+                            </div>
                         }
                     </div>
                     <div class="text-end">
@@ -117,6 +130,7 @@
 <style>
     .tracking-form { border: 1px solid rgba(0,0,0,0.05); }
     .tracking-result { border: 1px solid rgba(0,0,0,0.05); }
+    .tracking-admin-note { white-space: pre-wrap; direction: rtl; text-align: right; unicode-bidi: plaintext; line-height: 1.8; overflow-wrap: anywhere; font-style: normal; }
     .ltr { direction: ltr; text-align: left; }
     @@media (max-width: 576px) {
         .tracking-page .container { padding-inline: 0.75rem; }

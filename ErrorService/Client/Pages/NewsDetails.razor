@@ -32,6 +32,7 @@
                 Description="@(string.IsNullOrEmpty(news.Summary) ? $"مشاهده جزئیات خبر: {news.Title}" : (news.Summary.Length > 160 ? news.Summary.Substring(0, 157) + "..." : news.Summary))"
                 OgType="article"
                 OgImage="@(news.ImageUrl ?? "/images/og-default.jpg")"
+                CanonicalUrl="@($"https://errorservice.ir{SeoUrl.News(news.Id, news.Slug)}")"
                 JsonLd="@newsJsonLd" />
 
             <div class="news-details-page min-vh-100" dir="rtl">

@@ -8,10 +8,356 @@ var _progState = {
     pointMetadata: [],
     fullRange: { startTime: null, endTime: null },
     currentRange: { startTime: null, endTime: null },
+    pendingRange: { startTime: null, endTime: null },
     isLoading: false,
     _lastFetchKey: '',
-    monitoringId: 0
+    _requestSeq: 0,
+    _abortController: null,
+    mode: 'overview',
+    segments: [],
+    segmentCache: {},
+    currentSegment: -1,
+    monitoringId: 0,
+    lastRawTs: null,
+    baseTotal: 0,
+    appendedCount: 0,
+    totalRecords: 0
 };
+
+// ── Live update (delta fetch every 10s) ──
+var _liveState = {
+    enabled: false,
+    fetchTimer: null,
+    countdownTimer: null,
+    secondsLeft: 10,
+    busy: false
+};
+var LIVE_INTERVAL_SEC = 10;
+
+function _liveStop() {
+    _liveState.enabled = false;
+    _liveState.busy = false;
+    if (_liveState.fetchTimer) { clearInterval(_liveState.fetchTimer); _liveState.fetchTimer = null; }
+    if (_liveState.countdownTimer) { clearInterval(_liveState.countdownTimer); _liveState.countdownTimer = null; }
+    _liveUpdateUi(false);
+}
+
+function _liveUpdateUi(on, seconds) {
+    var wrap = document.getElementById('dpc-live');
+    var count = document.getElementById('dpc-live-countdown');
+    if (wrap) wrap.classList.toggle('is-on', !!on);
+    if (count) {
+        if (!on) {
+            count.hidden = true;
+            count.textContent = '';
+        } else {
+            count.hidden = false;
+            var s = seconds === undefined ? _liveState.secondsLeft : seconds;
+            count.textContent = 'تا اپدیت ' + s.toLocaleString('fa-IR');
+        }
+    }
+    if (on) _liveUpdateRecordsBadge();
+}
+
+function _liveUpdateRecordsBadge() {
+    var el = document.getElementById('dpc-zoom-info');
+    if (!el) return;
+    var total = (_progState.baseTotal || 0) + (_progState.appendedCount || 0);
+    if (total > 0) el.textContent = total.toLocaleString('fa-IR') + ' records';
+}
+
+function _liveScrollToEnd() {
+    var scrollEl = document.getElementById('dpc-scroll');
+    if (!scrollEl) return;
+    var max = Math.max(0, scrollEl.scrollWidth - scrollEl.clientWidth);
+    try { scrollEl.scrollTo({ left: max, behavior: 'smooth' }); }
+    catch (e) { scrollEl.scrollLeft = max; }
+}
+
+function _liveFetchDelta() {
+    if (!_liveState.enabled || _liveState.busy) return Promise.resolve();
+    if (!progressiveChart || !_progState.monitoringId) return Promise.resolve();
+    if (_progState.mode !== 'overview') return Promise.resolve();
+
+    var lastRaw = _progState.lastRawTs;
+    var lastEpoch = _progState.timestamps.length
+        ? _progState.timestamps[_progState.timestamps.length - 1]
+        : null;
+    var hasLast = lastRaw || lastEpoch !== null;
+
+    var params = new URLSearchParams();
+    if (hasLast) {
+        params.set('fromTime', lastRaw || new Date(lastEpoch).toISOString());
+    } else {
+        params.set('fromTime', new Date(Date.now() - 24 * 3600 * 1000).toISOString());
+    }
+    params.set('maxPoints', '500');
+
+    _liveState.busy = true;
+
+    return fetch('/api/monitoring/chart/' + _progState.monitoringId + '/progressive-records?' + params.toString())
+        .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
+        .then(function (data) {
+            if (!_liveState.enabled) return;
+            var added = _liveAppendDelta(data, lastEpoch);
+            if (added > 0) _liveScrollToEnd();
+            _liveUpdateRecordsBadge();
+        })
+        .catch(function () { /* keep countdown; retry next tick */ })
+        .finally(function () {
+            _liveState.busy = false;
+            _liveState.secondsLeft = LIVE_INTERVAL_SEC;
+            if (_liveState.enabled) _liveUpdateUi(true, LIVE_INTERVAL_SEC);
+        });
+}
+
+function _liveAppendDelta(data, lastEpoch) {
+    if (!progressiveChart || !data || !data.timestamps || !data.timestamps.length) {
+        if (data && data.fullRangeEnd) {
+            var fe0 = _tsToEpoch(data.fullRangeEnd);
+            if (fe0 && (!_progState.fullRange.endTime || fe0 > _progState.fullRange.endTime)) {
+                _progState.fullRange.endTime = fe0;
+                _progUpdateRangeLimits();
+            }
+        }
+        return 0;
+    }
+
+    var keepIdx = [];
+    var keepEpoch = [];
+    for (var i = 0; i < data.timestamps.length; i++) {
+        var e = _tsToEpoch(data.timestamps[i]);
+        if (e === null) continue;
+        if (lastEpoch !== null && lastEpoch !== undefined && e <= lastEpoch) continue;
+        keepIdx.push(i);
+        keepEpoch.push(e);
+    }
+    if (!keepIdx.length) {
+        if (data.fullRangeEnd) {
+            var fe1 = _tsToEpoch(data.fullRangeEnd);
+            if (fe1 && (!_progState.fullRange.endTime || fe1 > _progState.fullRange.endTime)) {
+                _progState.fullRange.endTime = fe1;
+                _progUpdateRangeLimits();
+                _syncMobileRangeSelector();
+            }
+        }
+        return 0;
+    }
+
+    var wasAtEnd = true;
+    if (_progState.pendingRange && _progState.pendingRange.endTime !== null && _progState.fullRange.endTime) {
+        var slack = 60000;
+        wasAtEnd = _progState.pendingRange.endTime >= (_progState.fullRange.endTime - slack);
+    }
+
+    var base = _progState.timestamps.length;
+    var n = keepIdx.length;
+
+    for (var k = 0; k < n; k++) {
+        _progState.timestamps.push(keepEpoch[k]);
+    }
+
+    if (data.labelsFa) {
+        for (var k = 0; k < n; k++) {
+            _progState.labelsFa.push(data.labelsFa[keepIdx[k]] || '');
+        }
+    } else {
+        for (var k = 0; k < n; k++) _progState.labelsFa.push('');
+    }
+
+    if (data.pointMetadata) {
+        for (var k = 0; k < n; k++) {
+            var meta = data.pointMetadata[keepIdx[k]];
+            if (!meta) continue;
+            var mCamel = meta.isEquipmentTransition !== undefined || meta.hasNote !== undefined || meta.index !== undefined;
+            _progState.pointMetadata.push({
+                index: base + k,
+                isEquipmentTransition: !!(mCamel ? meta.isEquipmentTransition : meta.IsEquipmentTransition),
+                transitionType: (mCamel ? meta.transitionType : meta.TransitionType) || '',
+                hasNote: !!(mCamel ? meta.hasNote : meta.HasNote),
+                tempChange: mCamel ? meta.tempChange : meta.TempChange,
+                currentChange: mCamel ? meta.currentChange : meta.CurrentChange
+            });
+        }
+    }
+
+    if (data.cycles) {
+        _progState.cycles = _progState.cycles || { power: [], motor: [], heater1: [], heater2: [] };
+        Object.keys(data.cycles).forEach(function (key) {
+            if (!Array.isArray(data.cycles[key])) return;
+            if (!Array.isArray(_progState.cycles[key])) _progState.cycles[key] = [];
+            data.cycles[key].forEach(function (c) {
+                if (!c) return;
+                var shifted = {
+                    startIndex: typeof c.startIndex === 'number' ? c.startIndex + base : c.startIndex,
+                    endIndex: typeof c.endIndex === 'number' ? c.endIndex + base : c.endIndex,
+                    startTime: c.startTime,
+                    endTime: c.endTime,
+                    duration: c.duration,
+                    durationSeconds: c.durationSeconds,
+                    isOpen: !!c.isOpen
+                };
+                // JSON from server may be camelCase or Pascal depending on serializer
+                if (shifted.startIndex === undefined && c.StartIndex !== undefined) {
+                    shifted.startIndex = c.StartIndex + base;
+                    shifted.endIndex = c.EndIndex + base;
+                    shifted.startTime = c.StartTime;
+                    shifted.endTime = c.EndTime;
+                    shifted.duration = c.Duration;
+                    shifted.durationSeconds = c.DurationSeconds;
+                    shifted.isOpen = !!c.IsOpen;
+                }
+                _progState.cycles[key].push(shifted);
+            });
+        });
+        _transitionCache = {};
+    }
+
+    function pushPoints(dsIdx, src, mapper) {
+        var ds = progressiveChart.data.datasets[dsIdx];
+        if (!ds) return;
+        if (!Array.isArray(ds.data)) ds.data = [];
+        for (var k = 0; k < n; k++) {
+            var raw = src ? src[keepIdx[k]] : null;
+            var y = mapper ? mapper(raw) : raw;
+            ds.data.push({ x: keepEpoch[k], y: y });
+        }
+    }
+
+    pushPoints(0, data.temperatureRef, function (v) { return v; });
+    pushPoints(1, data.temperatureFreez, function (v) { return v; });
+    pushPoints(2, data.power, function (v) { return v === 1 ? 1.0 : 0; });
+    pushPoints(3, data.motor, function (v) { return v === 1 ? 0.9 : 0; });
+    pushPoints(4, data.heater1, function (v) { return v === 1 ? 0.8 : 0; });
+    pushPoints(5, data.heater2, function (v) { return v === 1 ? 0.7 : 0; });
+    pushPoints(6, data.tavan, function (v) { return v; });
+    pushPoints(7, data.jaryan, function (v) { return v; });
+
+    if (_progGradients[0]) progressiveChart.data.datasets[0].backgroundColor = _progGradients[0];
+    if (_progGradients[1]) progressiveChart.data.datasets[1].backgroundColor = _progGradients[1];
+
+    if (!_progState.fullRange.startTime && keepEpoch[0] !== null && keepEpoch[0] !== undefined) {
+        _progState.fullRange.startTime = keepEpoch[0];
+    }
+    if (data.fullRangeEnd) {
+        var fe = _tsToEpoch(data.fullRangeEnd);
+        if (fe && (!_progState.fullRange.endTime || fe > _progState.fullRange.endTime)) {
+            _progState.fullRange.endTime = fe;
+        }
+    } else {
+        var lastNew = keepEpoch[n - 1];
+        if (!_progState.fullRange.endTime || lastNew > _progState.fullRange.endTime) {
+            _progState.fullRange.endTime = lastNew;
+        }
+    }
+
+    var lastIso = data.timestamps[keepIdx[n - 1]];
+    if (lastIso) _progState.lastRawTs = lastIso;
+
+    _progState.appendedCount = (_progState.appendedCount || 0) + n;
+
+    // Grow wrapper so new points are scrollable
+    var count = _progState.timestamps.length;
+    var wrapper = document.getElementById('dpc-wrapper');
+    var scrollEl = document.getElementById('dpc-scroll');
+    var dpr = window.innerWidth < 768 ? 1 : (window.devicePixelRatio || 1);
+    var safeCssMax = Math.floor(12000 / dpr);
+    var pxPerPoint = 7;
+    var containerWidth = scrollEl ? scrollEl.clientWidth : window.innerWidth;
+    if (window.innerWidth >= 768 && count * pxPerPoint <= containerWidth) {
+        if (wrapper) wrapper.style.width = '100%';
+    } else {
+        if (wrapper) wrapper.style.width = Math.min(count * pxPerPoint, safeCssMax) + 'px';
+    }
+
+    // If user was not tracking the end, keep their zoom window
+    if (wasAtEnd) {
+        _progState.pendingRange.startTime = null;
+        _progState.pendingRange.endTime = null;
+        _progState.currentRange.startTime = null;
+        _progState.currentRange.endTime = null;
+        var xs = progressiveChart.scales['x-axis-0'];
+        if (xs && xs.options && xs.options.ticks) {
+            xs.options.ticks.min = undefined;
+            xs.options.ticks.max = undefined;
+        }
+    } else if (_progState.pendingRange && _progState.pendingRange.endTime !== null) {
+        var xScale = progressiveChart.scales['x-axis-0'];
+        if (xScale) {
+            xScale.options.ticks.min = _progState.pendingRange.startTime;
+            xScale.options.ticks.max = _progState.pendingRange.endTime;
+        }
+    }
+
+    try { progressiveChart.update(0); } catch (e) {}
+    _progUpdateRangeLimits();
+    _syncMobileRangeSelector();
+
+    if (wasAtEnd) {
+        requestAnimationFrame(function () { _liveScrollToEnd(); });
+    }
+
+    return n;
+}
+
+function _liveStart() {
+    if (!_liveState.enabled) {
+        // ensure no stale timers
+        _liveStop();
+    } else {
+        return;
+    }
+    if (!progressiveChart || !_progState.monitoringId) {
+        var toggle = document.getElementById('dpc-live-toggle');
+        if (toggle) toggle.checked = false;
+        return;
+    }
+
+    // Live always watches the latest data in overview mode
+    if (_progState.mode !== 'overview') {
+        if (typeof _setChartMode === 'function') {
+            try { _setChartMode('overview'); } catch (e) {}
+        }
+        if (_progState.mode !== 'overview') {
+            var t2 = document.getElementById('dpc-live-toggle');
+            if (t2) t2.checked = false;
+            return;
+        }
+    }
+
+    _liveState.enabled = true;
+    _liveState.secondsLeft = LIVE_INTERVAL_SEC;
+    _liveUpdateUi(true, LIVE_INTERVAL_SEC);
+
+    // Leave any zoomed window and watch the full/latest range
+    try {
+        if (progressiveChart.resetZoom) progressiveChart.resetZoom();
+    } catch (e) {}
+    _progState.pendingRange.startTime = null;
+    _progState.pendingRange.endTime = null;
+    _progState.currentRange.startTime = null;
+    _progState.currentRange.endTime = null;
+    _progUpdateRangeLimits();
+    _syncMobileRangeSelector();
+
+    // Immediate fetch + scroll to latest
+    _liveFetchDelta().then(function () {
+        if (_liveState.enabled) _liveScrollToEnd();
+    });
+
+    _liveState.countdownTimer = setInterval(function () {
+        if (!_liveState.enabled) return;
+        _liveState.secondsLeft = Math.max(0, _liveState.secondsLeft - 1);
+        _liveUpdateUi(true, _liveState.secondsLeft);
+    }, 1000);
+
+    _liveState.fetchTimer = setInterval(function () {
+        _liveFetchDelta();
+    }, LIVE_INTERVAL_SEC * 1000);
+}
 
 // ── Navigation helpers ──
 
@@ -117,6 +463,20 @@ function _epochToTimeStr(epochMs) {
     return month + '/' + day + ' ' + hh + ':' + mm;
 }
 
+function _epochToFaAxisStr(epochMs) {
+    if (epochMs === null || epochMs === undefined) return '';
+    var scale = progressiveChart && progressiveChart.scales ? progressiveChart.scales['x-axis-0'] : null;
+    var range = scale && scale.min !== undefined && scale.max !== undefined ? scale.max - scale.min : 0;
+    var options = range > 86400000 * 2
+        ? { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }
+        : { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+    try {
+        return new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', options).format(new Date(epochMs));
+    } catch (e) {
+        return _epochToTimeStr(epochMs);
+    }
+}
+
 function _buildXY(dataArray, timestamps) {
     return (dataArray || []).map(function(v, i) {
         return { x: timestamps[i], y: v };
@@ -127,6 +487,287 @@ function _epochToFaStr(epochMs) {
     if (epochMs === null || epochMs === undefined) return '';
     return new Date(epochMs).toLocaleString('fa-IR', { hour: '2-digit', minute: '2-digit' });
 }
+
+// ── Span measure tool (press-drag-release) ──
+var _spanState = {
+    enabled: false,
+    anchor: null,   // epoch ms — first press
+    end: null,      // epoch ms — current / released
+    dragging: false,
+    locked: false
+};
+
+function _spanFormatDuration(ms) {
+    if (ms === null || ms === undefined || isNaN(ms)) return '—';
+    var neg = ms < 0;
+    ms = Math.abs(ms);
+    var totalSec = Math.floor(ms / 1000);
+    var d = Math.floor(totalSec / 86400);
+    var h = Math.floor((totalSec % 86400) / 3600);
+    var m = Math.floor((totalSec % 3600) / 60);
+    var s = totalSec % 60;
+    var fa = function (n) { return n.toLocaleString('fa-IR'); };
+    var parts = [];
+    if (d > 0) parts.push(fa(d) + ' روز');
+    if (h > 0) parts.push(fa(h) + ' ساعت');
+    if (m > 0) parts.push(fa(m) + ' دقیقه');
+    if (s > 0 || parts.length === 0) parts.push(fa(s) + ' ثانیه');
+    if (parts.length === 1) {
+        return (neg ? '−' : '') + parts[0];
+    }
+    var str = parts.slice(0, -1).join(' ') + ' و ' + parts[parts.length - 1];
+    return (neg ? '−' : '') + str;
+}
+
+function _spanFormatClock(epoch) {
+    if (epoch === null || epoch === undefined || isNaN(epoch)) return '—';
+    try {
+        return new Date(epoch).toLocaleString('fa-IR', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+        });
+    } catch (e) {
+        return new Date(epoch).toLocaleString();
+    }
+}
+
+function _spanClear() {
+    _spanState.anchor = null;
+    _spanState.end = null;
+    _spanState.dragging = false;
+    _spanState.locked = false;
+    _spanUpdateHud();
+    if (progressiveChart) { try { progressiveChart.draw(); } catch (e) {} }
+}
+
+function _spanUpdateHud() {
+    var hud = document.getElementById('dpc-span-hud');
+    var metaEl = document.getElementById('dpc-span-meta');
+    if (!hud || !metaEl) return;
+
+    if (_spanState.anchor === null) {
+        hud.hidden = true;
+        return;
+    }
+
+    hud.hidden = false;
+    var a = _spanState.anchor;
+    var b = _spanState.end !== null ? _spanState.end : a;
+
+    if (_spanState.dragging) {
+        metaEl.textContent = 'در حال اندازه‌گیری…';
+    } else if (_spanState.locked) {
+        var a1 = Math.min(a, b), b1 = Math.max(a, b);
+        metaEl.textContent = _spanFormatClock(a1) + ' → ' + _spanFormatClock(b1);
+    } else {
+        metaEl.textContent = 'نقطه اول را بگیر و بکش';
+    }
+}
+
+function _spanEpochFromClientX(clientX) {
+    if (!progressiveChart) return null;
+    var xScale = progressiveChart.scales['x-axis-0'];
+    if (!xScale) return null;
+    var canvas = progressiveChart.canvas;
+    if (!canvas) return null;
+    var rect = canvas.getBoundingClientRect();
+    var x = clientX - rect.left;
+    if (x < 0) x = 0;
+    if (x > rect.width) x = rect.width;
+    var ts = xScale.getValueForPixel(x);
+    if (ts === undefined || ts === null || isNaN(ts)) return null;
+    return ts;
+}
+
+function _spanSetEnabled(on) {
+    _spanState.enabled = !!on;
+    if (!on) {
+        _spanClear();
+    }
+    var btn = document.getElementById('dpc-span-tool');
+    if (btn) btn.classList.toggle('is-on', _spanState.enabled);
+    var root = document.getElementById('dpc-chart-root');
+    if (root) root.classList.toggle('is-span', _spanState.enabled);
+    var canvas = document.getElementById('dpc-canvas');
+    if (canvas) canvas.classList.toggle('is-span', _spanState.enabled);
+
+    // Disable pan/wheel zoom interference while measuring
+    if (progressiveChart && progressiveChart.options && progressiveChart.options.plugins && progressiveChart.options.plugins.zoom) {
+        var z = progressiveChart.options.plugins.zoom;
+        if (z.pan) z.pan.enabled = !_spanState.enabled;
+        if (z.zoom) z.zoom.enabled = !_spanState.enabled;
+    }
+    if (_spanState.enabled) {
+        _spanUpdateHud();
+    }
+    return _spanState.enabled;
+}
+
+function _spanBindPointer(chart) {
+    if (!chart || !chart.canvas) return;
+    var canvas = chart.canvas;
+    if (canvas._spanBound) return;
+    canvas._spanBound = true;
+
+    function onDown(e) {
+        if (!_spanState.enabled) return;
+        if (e.button !== undefined && e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var clientX = e.clientX;
+        if (clientX === undefined && e.touches && e.touches[0]) clientX = e.touches[0].clientX;
+        if (clientX === undefined) return;
+        var ts = _spanEpochFromClientX(clientX);
+        if (ts === null) return;
+        _spanState.anchor = ts;
+        _spanState.end = ts;
+        _spanState.dragging = true;
+        _spanState.locked = false;
+        _spanUpdateHud();
+        try { progressiveChart.draw(); } catch (err) {}
+    }
+
+    function onMove(e) {
+        if (!_spanState.enabled || !_spanState.dragging) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var clientX = e.clientX;
+        if (clientX === undefined && e.touches && e.touches[0]) clientX = e.touches[0].clientX;
+        if (clientX === undefined && e.changedTouches && e.changedTouches[0]) clientX = e.changedTouches[0].clientX;
+        if (clientX === undefined) return;
+        var ts = _spanEpochFromClientX(clientX);
+        if (ts === null) return;
+        _spanState.end = ts;
+        _spanUpdateHud();
+        try { progressiveChart.draw(); } catch (err) {}
+    }
+
+    function onUp(e) {
+        if (!_spanState.enabled || !_spanState.dragging) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var clientX = e.clientX;
+        if (clientX === undefined && e.changedTouches && e.changedTouches[0]) clientX = e.changedTouches[0].clientX;
+        if (clientX !== undefined) {
+            var ts = _spanEpochFromClientX(clientX);
+            if (ts !== null) _spanState.end = ts;
+        }
+        _spanState.dragging = false;
+        _spanState.locked = true;
+        _spanUpdateHud();
+        try { progressiveChart.draw(); } catch (err) {}
+    }
+
+    // Mouse
+    canvas.addEventListener('mousedown', onDown, true);
+    window.addEventListener('mousemove', onMove, true);
+    window.addEventListener('mouseup', onUp, true);
+    // Touch
+    canvas.addEventListener('touchstart', onDown, { capture: true, passive: false });
+    window.addEventListener('touchmove', onMove, { capture: true, passive: false });
+    window.addEventListener('touchend', onUp, { capture: true, passive: false });
+    window.addEventListener('touchcancel', onUp, { capture: true, passive: false });
+}
+
+// Draw anchor line, live line, shaded band, and duration chip
+Chart.plugins.register({
+    id: 'prog-span',
+    afterDatasetsDraw: function (chart) {
+        if (chart !== progressiveChart) return;
+        if (_spanState.anchor === null) return;
+        var xScale = chart.scales['x-axis-0'];
+        var area = chart.chartArea;
+        if (!xScale || !area) return;
+
+        var a = _spanState.anchor;
+        var b = _spanState.end !== null ? _spanState.end : a;
+        var pa = xScale.getPixelForValue(Math.min(a, b));
+        var pb = xScale.getPixelForValue(Math.max(a, b));
+        if (pa === undefined || pb === undefined || isNaN(pa) || isNaN(pb)) return;
+
+        var ctx = chart.ctx;
+        var top = area.top;
+        var bottom = area.bottom;
+        var left = Math.min(pa, pb);
+        var right = Math.max(pa, pb);
+        if (right - left < 2) right = left + 2;
+
+        ctx.save();
+
+        // Shaded band
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.14)';
+        ctx.fillRect(left, top, right - left, bottom - top);
+
+        // Anchor (first) line — solid amber
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(pa, top);
+        ctx.lineTo(pa, bottom);
+        ctx.stroke();
+
+        // End (live) line — dashed blue while dragging, solid amber when locked
+        ctx.strokeStyle = _spanState.dragging ? '#38bdf8' : '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.setLineDash(_spanState.dragging ? [6, 4] : [4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(pb, top);
+        ctx.lineTo(pb, bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Endpoint dots
+        ctx.fillStyle = '#f59e0b';
+        [pa, pb].forEach(function (px) {
+            ctx.beginPath();
+            ctx.arc(px, top + 6, 4, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Duration chip centered in the band
+        var delta = b - a;
+        var label = _spanFormatDuration(delta);
+        var canRtl = ('direction' in ctx);
+        if (canRtl) ctx.direction = 'rtl';
+        ctx.font = '800 13px Vazirmatn, sans-serif';
+        var tw = ctx.measureText(label).width;
+        var padX = 12, padY = 6;
+        var bw = tw + padX * 2;
+        var bh = 26;
+        var cx = (left + right) / 2;
+        var bx = cx - bw / 2;
+        var by = top + 14;
+        if (bx < area.left) bx = area.left;
+        if (bx + bw > area.right) bx = area.right - bw;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.7)';
+        ctx.lineWidth = 1;
+        var r = 8;
+        ctx.beginPath();
+        ctx.moveTo(bx + r, by);
+        ctx.lineTo(bx + bw - r, by);
+        ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
+        ctx.lineTo(bx + bw, by + bh - r);
+        ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
+        ctx.lineTo(bx + r, by + bh);
+        ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
+        ctx.lineTo(bx, by + r);
+        ctx.quadraticCurveTo(bx, by, bx + r, by);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#fcd34d';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, bx + bw / 2, by + bh / 2 + 1);
+        if (canRtl) ctx.direction = 'ltr';
+
+        ctx.restore();
+    }
+});
 
 // ── Cycle labels plugin ──
 Chart.plugins.register({
@@ -352,6 +993,7 @@ function _progSetupCtrlDragZoom(chart) {
     var isDragging = false;
 
     canvas.addEventListener('mousedown', function (e) {
+        if (_spanState.enabled) return;
         if (!e.ctrlKey || e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
@@ -376,6 +1018,7 @@ function _progSetupCtrlDragZoom(chart) {
     });
 
     document.addEventListener('mouseup', function (e) {
+        try {
         if (!isDragging) return;
         isDragging = false;
         overlay.style.display = 'none';
@@ -397,10 +1040,11 @@ function _progSetupCtrlDragZoom(chart) {
         // Apply zoom by setting scale min/max
         xScale.options.ticks.min = ts1;
         xScale.options.ticks.max = ts2;
-        chart.update(0);
+        try { chart.update(0); } catch (e) {}
 
         _updateZoomRatio();
         _progOnZoomEnd();
+        } catch (err) { console.error('dpc drag-zoom error:', err); }
     });
 }
 
@@ -449,8 +1093,9 @@ function _progSetupScroll() {
     var isDown = false, startX = 0, startLeft = 0, dragged = false;
     var threshold = 3;
 
-    function down(x) { isDown = true; dragged = false; startX = x; startLeft = el.scrollLeft; el.dataset._progDrag = '0'; }
+    function down(x) { if (_spanState.enabled) return; isDown = true; dragged = false; startX = x; startLeft = el.scrollLeft; el.dataset._progDrag = '0'; }
     function move(x) {
+        if (_spanState.enabled) { isDown = false; return; }
         if (!isDown) return;
         var dx = startX - x;
         if (Math.abs(dx) > threshold) { dragged = true; el.dataset._progDrag = '1'; }
@@ -459,14 +1104,14 @@ function _progSetupScroll() {
     function up() { isDown = false; el.dataset._progDrag = '0'; }
 
     // ── Mouse events ──
-    el.addEventListener('mousedown', function (e) { if (e.button !== 0) return; down(e.clientX); });
+    el.addEventListener('mousedown', function (e) { if (_spanState.enabled) return; if (e.button !== 0) return; down(e.clientX); });
     el.addEventListener('mousemove', function (e) { move(e.clientX); });
     document.addEventListener('mouseup', function () { if (dragged) { up(); } else { isDown = false; } });
     el.addEventListener('click', function (e) { if (dragged) { e.stopPropagation(); e.preventDefault(); } }, true);
 
     // ── Touch events ──
-    el.addEventListener('touchstart', function (e) { if (e.touches.length !== 1) return; down(e.touches[0].clientX); }, { passive: true });
-    el.addEventListener('touchmove', function (e) { if (e.touches.length !== 1) return; move(e.touches[0].clientX); }, { passive: true });
+    el.addEventListener('touchstart', function (e) { if (_spanState.enabled) return; if (e.touches.length !== 1) return; down(e.touches[0].clientX); }, { passive: true });
+    el.addEventListener('touchmove', function (e) { if (_spanState.enabled) return; if (e.touches.length !== 1) return; move(e.touches[0].clientX); }, { passive: true });
     el.addEventListener('touchend', up, { passive: true });
 
     // ── Wheel handler — smooth rAF-accumulated scrolling ──
@@ -497,7 +1142,14 @@ function _progSetupScroll() {
     }, { passive: false });
 
     // ── Scroll end detection ──
-    el.addEventListener('scroll', debouncedClamp);
+    el.addEventListener('scroll', function () {
+        debouncedClamp();
+        if (_progState.mode !== 'progressive' || _progState.isLoading) return;
+        var max = el.scrollWidth - el.clientWidth;
+        if (max > 0 && el.scrollLeft / max > 0.88 && _progState.currentSegment < _progState.segments.length - 1) {
+            _loadSegment(_progState.currentSegment + 1);
+        }
+    });
 }
 
 // ── Custom tooltip positioner ──
@@ -544,10 +1196,11 @@ var _progGradients = [null, null];
 
 // ── Fetch data from server ──
 function _progFetchData(monitoringId, fromTime, toTime, maxPoints) {
-    if (_progState.isLoading) return Promise.reject(new Error('already loading'));
+    if (_progState._abortController) _progState._abortController.abort();
 
     var params = new URLSearchParams();
-    params.set('maxPoints', String(maxPoints || 3000));
+    var requestedMaxPoints = maxPoints === undefined || maxPoints === null ? 3000 : maxPoints;
+    params.set('maxPoints', String(requestedMaxPoints));
     if (fromTime) params.set('fromTime', fromTime);
     if (toTime) params.set('toTime', toTime);
 
@@ -561,38 +1214,282 @@ function _progFetchData(monitoringId, fromTime, toTime, maxPoints) {
         params.set('noteIndices', noteIdx.join(','));
     }
 
-    var key = monitoringId + '|' + (fromTime || '') + '|' + (toTime || '');
+    var key = monitoringId + '|' + (fromTime || '') + '|' + (toTime || '') + '|' + String(requestedMaxPoints);
     // Skip if same as last fetch (user already has this data)
     if (key === _progState._lastFetchKey) return Promise.reject(new Error('already loaded'));
 
+    var requestSeq = ++_progState._requestSeq;
+    _progState._abortController = new AbortController();
     _progState.isLoading = true;
     _progState._lastFetchKey = key;
+    _progState.pendingRange = fromTime && toTime
+        ? { startTime: _tsToEpoch(fromTime), endTime: _tsToEpoch(toTime) }
+        : { startTime: null, endTime: null };
     _notifyLoading(true);
 
-    return fetch('/api/monitoring/chart/' + monitoringId + '/progressive-records?' + params.toString())
+    return fetch('/api/monitoring/chart/' + monitoringId + '/progressive-records?' + params.toString(), {
+        signal: _progState._abortController.signal
+    })
         .then(function (r) {
             if (!r.ok) throw new Error('HTTP ' + r.status);
             return r.json();
         })
         .then(function (data) {
+            if (requestSeq !== _progState._requestSeq) throw new Error('stale request');
             _progState.isLoading = false;
+            _progState._abortController = null;
             _notifyLoading(false);
             return data;
         })
         .catch(function (err) {
-            _progState.isLoading = false;
-            _notifyLoading(false);
+            if (requestSeq === _progState._requestSeq) {
+                _progState.isLoading = false;
+                _progState._abortController = null;
+                _notifyLoading(false);
+            }
             throw err;
         });
 }
 
 function _notifyLoading(isLoading) {
-    var el = document.getElementById('dpc-loading');
+    var el = document.getElementById('dpc-chart-loading');
     if (el) el.style.display = isLoading ? 'flex' : 'none';
+    var root = document.getElementById('dpc-chart-root');
+    var scrollEl = document.getElementById('dpc-scroll');
+    if (root) root.classList.toggle('dpc-chart-root--loading', isLoading);
+    if (scrollEl) {
+        scrollEl.classList.toggle('dpc-chart-scroll--locked', isLoading);
+        scrollEl.style.pointerEvents = isLoading ? 'none' : '';
+    }
+    _updateSegmentStatus();
+}
+
+function _mobileRangeLabel(epoch) {
+    if (epoch === null || epoch === undefined) return '—';
+    try {
+        return new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+            month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+        }).format(new Date(epoch));
+    } catch (e) { return _epochToTimeStr(epoch); }
+}
+
+function _syncMobileRangeSelector() {
+    var root = document.getElementById('dpc-range-selector');
+    if (!root || !_progState.fullRange.startTime || !_progState.fullRange.endTime) return;
+    var start = _progState.fullRange.startTime;
+    var end = _progState.fullRange.endTime;
+    var duration = end - start;
+    var fromLabel = root.querySelector('[data-range-from-label]');
+    var toLabel = root.querySelector('[data-range-to-label]');
+    var fill = root.querySelector('[data-range-fill]');
+    if (!fill || duration <= 0) return;
+    var currentStart = _progState.pendingRange.startTime !== null ? _progState.pendingRange.startTime : start;
+    var currentEnd = _progState.pendingRange.endTime !== null ? _progState.pendingRange.endTime : end;
+    var a = Math.max(0, Math.min(100, ((currentStart - start) / duration) * 100));
+    var b = Math.max(0, Math.min(100, ((currentEnd - start) / duration) * 100));
+    root.dataset.rangeStart = String(a * 10);
+    root.dataset.rangeEnd = String(b * 10);
+    fill.style.left = a + '%';
+    fill.style.width = Math.max(0, b - a) + '%';
+    if (fromLabel) fromLabel.textContent = _mobileRangeLabel(currentStart);
+    if (toLabel) toLabel.textContent = _mobileRangeLabel(currentEnd);
+}
+
+function _applyMobileRangeSelector() {
+    var root = document.getElementById('dpc-range-selector');
+    if (!root || !_progState.fullRange.startTime || !_progState.fullRange.endTime || _progState.isLoading) return;
+    if (_liveState.enabled) return;
+    var a = Math.min(parseFloat(root.dataset.rangeStart || '0'), parseFloat(root.dataset.rangeEnd || '1000'));
+    var b = Math.max(parseFloat(root.dataset.rangeStart || '0'), parseFloat(root.dataset.rangeEnd || '1000'));
+    if (b - a < 5) return;
+    var start = _progState.fullRange.startTime;
+    var end = _progState.fullRange.endTime;
+    var duration = end - start;
+    var from = new Date(start + duration * a / 1000).toISOString();
+    var to = new Date(start + duration * b / 1000).toISOString();
+    _progState.currentRange.startTime = from;
+    _progState.currentRange.endTime = to;
+    _progFetchData(_progState.monitoringId, from, to, window.innerWidth < 768 ? 1400 : 2500)
+        .then(_updateChartData)
+        .catch(function (err) { if (err && err.name !== 'AbortError' && err.message !== 'stale request') console.warn(err); });
+}
+
+function _updateProgressiveModeUi() {
+    var overview = document.getElementById('dpc-mode-overview');
+    var progressive = document.getElementById('dpc-mode-progressive');
+    var nav = document.getElementById('dpc-progressive-nav');
+    if (overview) overview.classList.toggle('is-active', _progState.mode === 'overview');
+    if (progressive) progressive.classList.toggle('is-active', _progState.mode === 'progressive');
+    if (nav) nav.hidden = _progState.mode !== 'progressive';
+    var range = document.getElementById('dpc-range-selector');
+    if (range) range.classList.toggle('dpc-range-selector--hidden', _progState.mode === 'progressive');
+}
+
+function _updateSegmentStatus() {
+    var status = document.getElementById('dpc-segment-status');
+    var prev = document.getElementById('dpc-segment-prev');
+    var next = document.getElementById('dpc-segment-next');
+    if (!status) return;
+    var current = _progState.currentSegment;
+    var segment = current >= 0 ? _progState.segments[current] : null;
+    var fa = function (n) { return (n || 0).toLocaleString('fa-IR'); };
+    if (segment) {
+        var loaded = segment.recordCount != null ? segment.recordCount : 0;
+        var total = _progState.totalRecords || _progState.baseTotal || 0;
+        var rangeChunk = '<span class="dpc-seg-chunk">بازه ' + fa(current + 1) + ' از ' + fa(_progState.segments.length) + '</span>';
+        var dot = '<span class="dpc-seg-dot">·</span>';
+        var recordsChunk = total > 0
+            ? '<span class="dpc-seg-chunk dpc-seg-chunk--records">' + fa(loaded) + ' رکورد از ' + fa(total) + ' رکورد</span>'
+            : '<span class="dpc-seg-chunk dpc-seg-chunk--records">' + fa(loaded) + ' رکورد</span>';
+        status.innerHTML = rangeChunk + dot + recordsChunk;
+    } else {
+        status.textContent = 'در حال آماده‌سازی بازه‌ها…';
+    }
+    if (prev) prev.disabled = current <= 0 || _progState.isLoading;
+    if (next) next.disabled = current < 0 || current >= _progState.segments.length - 1 || _progState.isLoading;
+}
+
+function _loadSegment(index) {
+    if (_progState.mode !== 'progressive' || index < 0 || index >= _progState.segments.length) return Promise.resolve();
+    var segment = _progState.segments[index];
+    var cacheKey = _progState.monitoringId + '|' + index;
+    _progState.currentSegment = index;
+    _updateSegmentStatus();
+    if (_progState.segmentCache[cacheKey]) {
+        _progState.pendingRange = { startTime: _tsToEpoch(segment.from), endTime: _tsToEpoch(segment.to) };
+        _updateChartData(_progState.segmentCache[cacheKey]);
+        _updateSegmentStatus();
+        return Promise.resolve();
+    }
+    return _progFetchData(_progState.monitoringId, segment.from, segment.to, 0)
+        .then(function (data) {
+            _progState.segmentCache[cacheKey] = data;
+            _updateChartData(data);
+            _updateSegmentStatus();
+        })
+        .catch(function (err) {
+            _updateSegmentStatus();
+            if (err && err.name !== 'AbortError' && err.message !== 'stale request') throw err;
+        });
+}
+
+function _loadProgressiveSegments() {
+    _notifyLoading(true);
+    _updateSegmentStatus();
+    return fetch('/api/monitoring/chart/' + _progState.monitoringId + '/segments?hours=12')
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (data) {
+            _progState.segments = data.segments || [];
+            _progState.segmentCache = {};
+            _progState.totalRecords = data.totalCount || data.TotalCount || _progState.baseTotal || 0;
+            if (!_progState.segments.length) throw new Error('برای این مانیتور بازه‌ای پیدا نشد');
+            _updateSegmentStatus();
+            return _loadSegment(0);
+        })
+        .finally(function () { _notifyLoading(false); _updateSegmentStatus(); });
+}
+
+function _setChartMode(mode) {
+    try {
+    if (mode !== 'overview' && mode !== 'progressive') return;
+    if (_progState.mode === mode && (mode !== 'progressive' || _progState.segments.length)) return;
+
+    if (mode === 'progressive') {
+        _liveStop();
+        var liveToggle = document.getElementById('dpc-live-toggle');
+        if (liveToggle) liveToggle.checked = false;
+    }
+
+    if (_progState.isLoading && _progState._abortController) {
+        try { _progState._abortController.abort(); } catch (e) {}
+        _progState._abortController = null;
+        _progState.isLoading = false;
+        _notifyLoading(false);
+    }
+
+    _progState.mode = mode;
+    _updateProgressiveModeUi();
+    if (mode === 'progressive') return _loadProgressiveSegments();
+    _progState.currentSegment = -1;
+    _updateSegmentStatus();
+    return _progResetZoom();
+    } catch (err) { console.error('dpc setChartMode error:', err); _notifyLoading(false); }
+}
+
+function _ensureMobileRangeSelector(container) {
+    var root = document.getElementById('dpc-range-selector');
+    if (root) return root;
+    root = document.createElement('div');
+    root.id = 'dpc-range-selector';
+    root.className = 'dpc-range-selector';
+    root.setAttribute('dir', 'rtl');
+    root.innerHTML =
+        '<div class="dpc-range-selector__head"><strong>انتخاب محدوده برای Zoom</strong><span>روی نوار بکشید</span></div>' +
+        '<div class="dpc-range-selector__labels"><span data-range-from-label>—</span><span data-range-to-label>—</span></div>' +
+        '<div class="dpc-range-selector__track" data-range-track role="slider" aria-label="انتخاب بازه زمانی">' +
+            '<span class="dpc-range-selector__fill" data-range-fill></span>' +
+        '</div>';
+    container.appendChild(root);
+    root.dataset.rangeStart = '0';
+    root.dataset.rangeEnd = '1000';
+    var track = root.querySelector('[data-range-track]');
+    var dragging = false;
+    var startPercent = 0;
+    function percentFromEvent(e) {
+        var rect = track.getBoundingClientRect();
+        return Math.max(0, Math.min(1000, ((e.clientX - rect.left) / rect.width) * 1000));
+    }
+    function renderSelection(a, b) {
+        var low = Math.min(a, b), high = Math.max(a, b);
+        root.dataset.rangeStart = String(low);
+        root.dataset.rangeEnd = String(high);
+        var fill = root.querySelector('[data-range-fill]');
+        if (fill) { fill.style.left = (low / 10) + '%'; fill.style.width = ((high - low) / 10) + '%'; }
+        var start = _progState.fullRange.startTime, end = _progState.fullRange.endTime;
+        if (start && end) {
+            var duration = end - start;
+            root.querySelector('[data-range-from-label]').textContent = _mobileRangeLabel(start + duration * low / 1000);
+            root.querySelector('[data-range-to-label]').textContent = _mobileRangeLabel(start + duration * high / 1000);
+        }
+    }
+    track.addEventListener('pointerdown', function (e) {
+        if (_progState.isLoading || _progState.mode !== 'overview') return;
+        dragging = true; startPercent = percentFromEvent(e); renderSelection(startPercent, startPercent);
+        track.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    track.addEventListener('pointermove', function (e) { if (dragging) { renderSelection(startPercent, percentFromEvent(e)); e.preventDefault(); } });
+    track.addEventListener('pointerup', function (e) {
+        if (!dragging) return; dragging = false; track.releasePointerCapture(e.pointerId); _applyMobileRangeSelector();
+    });
+    track.addEventListener('pointercancel', function () { dragging = false; });
+    return root;
+}
+
+function _ensureLoadingOverlay(container) {
+    var overlay = document.getElementById('dpc-chart-loading');
+    if (overlay) return overlay;
+
+    overlay = document.createElement('div');
+    overlay.id = 'dpc-chart-loading';
+    overlay.className = 'dpc-chart-loading';
+    overlay.setAttribute('role', 'status');
+    overlay.setAttribute('aria-live', 'polite');
+    overlay.innerHTML =
+        '<div class="dpc-chart-loading__card">' +
+            '<div class="dpc-chart-loading__icon"><span></span></div>' +
+            '<div class="dpc-chart-loading__copy" dir="rtl">' +
+                '<strong>در حال دریافت جزئیات</strong>' +
+                '<small>لطفاً چند لحظه منتظر بمانید…</small>' +
+            '</div>' +
+            '<div class="dpc-chart-loading__dots"><i></i><i></i><i></i></div>' +
+        '</div>';
+    container.appendChild(overlay);
+    return overlay;
 }
 
 // ── Handle zoom / pan end ──
 function _progOnZoomEnd() {
+    try {
     if (!progressiveChart || _progState.isLoading) return;
 
     var xScale = progressiveChart.scales['x-axis-0'];
@@ -622,6 +1519,12 @@ function _progOnZoomEnd() {
         return;
     }
 
+    // While live is on, keep the in-memory series (delta appends) intact.
+    if (_liveState.enabled) {
+        _updateZoomInfo(visibleFrom, visibleTo, Math.round(ratio * 100) + '%');
+        return;
+    }
+
     // Calculate how many data points currently visible
     var dataLen = progressiveChart.data.datasets[0] ? progressiveChart.data.datasets[0].data.length : 0;
     var visibleCount = 0;
@@ -630,7 +1533,7 @@ function _progOnZoomEnd() {
         if (ts !== undefined && ts >= leftTs && ts <= rightTs) visibleCount++;
     }
 
-    // Need more data — request appropriate number for screen density
+    // Request a detail level appropriate for the viewport.
     var scrollEl = document.getElementById('dpc-scroll');
     var containerWidth = scrollEl ? scrollEl.clientWidth : 1200;
     var PX_PER_POINT = 7;
@@ -647,6 +1550,7 @@ function _progOnZoomEnd() {
             _updateZoomInfo(visibleFrom, visibleTo, data.labels.length + ' pts');
         })
         .catch(function () {});
+    } catch (err) { console.error('dpc onZoomEnd error:', err); }
 }
 
 function _updateZoomInfo(fromTime, toTime, info) {
@@ -694,17 +1598,28 @@ function _updateChartData(data) {
     var epochTs = (data.timestamps || []).map(function(iso) { return _tsToEpoch(iso); });
     _progState.timestamps = epochTs;
 
-    // Update fullRange from actual data
+    // Keep the original full range when replacing the chart with a zoomed slice.
+    // Otherwise each zoom would redefine 100% as the latest slice and break
+    // zoom ratio calculations and later range decisions.
     var firstTs = epochTs[0];
     var lastTs = epochTs[count - 1];
-    if (firstTs !== null && lastTs !== null) {
-        _progState.fullRange.startTime = firstTs;
-        _progState.fullRange.endTime = lastTs;
-        if (!_progState.currentRange.startTime) {
-            _progState.currentRange.startTime = new Date(firstTs).toISOString();
-            _progState.currentRange.endTime = new Date(lastTs).toISOString();
-        }
+    var responseFullStart = data.fullRangeStart ? _tsToEpoch(data.fullRangeStart) : firstTs;
+    var responseFullEnd = data.fullRangeEnd ? _tsToEpoch(data.fullRangeEnd) : lastTs;
+    if (_progState.mode === 'progressive' && data.fullRangeStart && data.fullRangeEnd) {
+        _progState.fullRange.startTime = responseFullStart;
+        _progState.fullRange.endTime = responseFullEnd;
+        _progState.currentRange.startTime = new Date(responseFullStart).toISOString();
+        _progState.currentRange.endTime = new Date(responseFullEnd).toISOString();
+    } else if (firstTs !== null && lastTs !== null &&
+        (!_progState.fullRange.startTime || !_progState.fullRange.endTime)) {
+        _progState.fullRange.startTime = responseFullStart;
+        _progState.fullRange.endTime = responseFullEnd;
     }
+    if (firstTs !== null && lastTs !== null && !_progState.currentRange.startTime) {
+        _progState.currentRange.startTime = new Date(firstTs).toISOString();
+        _progState.currentRange.endTime = new Date(lastTs).toISOString();
+    }
+    _syncMobileRangeSelector();
 
     // ── Dynamic wrapper resize based on time span ──
     var wrapper = document.getElementById('dpc-wrapper');
@@ -722,6 +1637,7 @@ function _updateChartData(data) {
         var targetWidth = Math.min(count * pxPerPoint, safeCssMax);
         if (wrapper) wrapper.style.width = targetWidth + 'px';
     }
+    if (_progState.mode === 'progressive' && scrollEl) scrollEl.scrollLeft = 0;
 
     // Build {x,y} datasets
     progressiveChart.data.labels = [];
@@ -742,6 +1658,17 @@ function _updateChartData(data) {
     // Set zoom/pan range limits to exact data bounds
     _progUpdateRangeLimits();
 
+    // Keep the exact user-selected window after replacing the dataset.
+    var pending = _progState.pendingRange;
+    if (pending && pending.startTime !== null && pending.endTime !== null) {
+        var xScale = progressiveChart.scales['x-axis-0'];
+        if (xScale) {
+            xScale.options.ticks.min = pending.startTime;
+            xScale.options.ticks.max = pending.endTime;
+            try { progressiveChart.update(0); } catch (e) {}
+        }
+    }
+
     _notifyLoading(false);
 }
 
@@ -760,37 +1687,173 @@ function _progUpdateRangeLimits() {
 function _progResetZoom() {
     if (!progressiveChart) return;
 
-    // Use plugin's built-in reset to restore original ticks.min/max
+    if (_progState._abortController) {
+        try { _progState._abortController.abort(); } catch (e) {}
+        _progState._abortController = null;
+    }
+    _progState.isLoading = false;
+
     if (progressiveChart.resetZoom) {
-        progressiveChart.resetZoom();
+        try { progressiveChart.resetZoom(); } catch (e) {}
     }
 
     _progUpdateRangeLimits();
 
     _progState.currentRange.startTime = null;
     _progState.currentRange.endTime = null;
+    _progState.pendingRange.startTime = null;
+    _progState.pendingRange.endTime = null;
+    var rangeRoot = document.getElementById('dpc-range-selector');
+    if (rangeRoot) {
+        rangeRoot.dataset.rangeStart = '0';
+        rangeRoot.dataset.rangeEnd = '1000';
+        _syncMobileRangeSelector();
+    }
 
     var canvas = document.getElementById('dpc-canvas');
     var monitoringId = canvas ? parseInt(canvas.dataset.monitoringId || '0') : 0;
     if (!monitoringId) return;
 
+    if (_progState.mode === 'progressive') {
+        // Keep progressive mode: restore current segment, not full overview data.
+        if (_progState.currentSegment >= 0) {
+            var segIdx = _progState.currentSegment;
+            var cacheKey = _progState.monitoringId + '|' + segIdx;
+            _progState._lastFetchKey = '';
+            var cached = _progState.segmentCache[cacheKey];
+            if (cached) {
+                var segment = _progState.segments[segIdx];
+                _progState.pendingRange = {
+                    startTime: segment ? _tsToEpoch(segment.from) : null,
+                    endTime: segment ? _tsToEpoch(segment.to) : null
+                };
+                _updateChartData(cached);
+                _updateSegmentStatus();
+                return;
+            }
+            return _loadSegment(segIdx);
+        }
+        return _loadProgressiveSegments();
+    }
+
+    if (_liveState.enabled) {
+        // Live owns the series; just restore full zoom on current data.
+        _progUpdateRangeLimits();
+        return;
+    }
+
     _progState._lastFetchKey = '';
 
-    _progFetchData(monitoringId, null, null, window.innerWidth < 768 ? 1500 : 3000)
+    _progFetchData(monitoringId, null, null, 1200)
         .then(function (data) {
             _updateChartData(data);
             _updateZoomInfo(_progState.fullRange.startTime ? new Date(_progState.fullRange.startTime).toISOString() : null,
                            _progState.fullRange.endTime ? new Date(_progState.fullRange.endTime).toISOString() : null,
                            data.labels.length + ' pts');
+            if (_progState.timestamps.length) {
+                _progState.lastRawTs = new Date(_progState.timestamps[_progState.timestamps.length - 1]).toISOString();
+            }
+            _progState.baseTotal = data.TotalCount || data.totalCount || _progState.baseTotal;
+            _progState.totalRecords = _progState.baseTotal;
+            _progState.appendedCount = 0;
         })
         .catch(function () {});
 }
 
 // ── External API ──
+function _dpcBindEvents() {
+    if (window._dpcEventsBound) return;
+    window._dpcEventsBound = true;
+
+    document.addEventListener('change', function(e) {
+        if (e.target && e.target.id === 'dpc-live-toggle') {
+            if (window.monitoringProgressiveChart && window.monitoringProgressiveChart.setLiveMode) {
+                window.monitoringProgressiveChart.setLiveMode(e.target.checked);
+            }
+        }
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+        var chart = window.monitoringProgressiveChart;
+        if (!chart) return;
+        if (e.key === 'Escape') {
+            if (_spanState.anchor !== null) {
+                chart.clearSpan();
+            }
+            return;
+        }
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            chart.navPrev();
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            chart.navNext();
+        }
+    });
+
+    document.addEventListener('click', function(e) {
+        try {
+        var modeBtn = e.target.closest('[data-chart-mode]');
+        if (modeBtn) {
+            var mode = modeBtn.getAttribute('data-chart-mode');
+            if (window.monitoringProgressiveChart) window.monitoringProgressiveChart.setMode(mode);
+            return;
+        }
+        if (e.target.closest('#dpc-segment-prev')) {
+            if (window.monitoringProgressiveChart) window.monitoringProgressiveChart.previousSegment();
+            return;
+        }
+        if (e.target.closest('#dpc-segment-next')) {
+            if (window.monitoringProgressiveChart) window.monitoringProgressiveChart.nextSegment();
+            return;
+        }
+        if (e.target.closest('#dpc-span-clear')) {
+            if (window.monitoringProgressiveChart && window.monitoringProgressiveChart.clearSpan) {
+                window.monitoringProgressiveChart.clearSpan();
+            }
+            return;
+        }
+        if (e.target.closest('#dpc-span-tool')) {
+            if (window.monitoringProgressiveChart && window.monitoringProgressiveChart.setSpanMode) {
+                var next = !_spanState.enabled;
+                window.monitoringProgressiveChart.setSpanMode(next);
+            }
+            return;
+        }
+        var btn = e.target.closest('.dpc-legend-item[data-ds-idx]');
+        if (btn) {
+            var idx = parseInt(btn.getAttribute('data-ds-idx'), 10);
+            var isVisible = window.monitoringProgressiveChart.toggleDataset(idx);
+            btn.classList.toggle('dpc-legend-item--off', !isVisible);
+            var set = btn.closest('.dpc-eq-set');
+            if (set) {
+                set.querySelectorAll('.dpc-eq-nav-btn').forEach(function(nb) {
+                    nb.style.opacity = isVisible ? '1' : '0.3';
+                });
+            }
+            return;
+        }
+        var navBtn = e.target.closest('.dpc-eq-nav-btn');
+        if (navBtn) {
+            var set = navBtn.closest('.dpc-eq-set');
+            if (!set) return;
+            var ds = parseInt(set.getAttribute('data-eq-ds'), 10);
+            var dir = navBtn.getAttribute('data-dir');
+            if (window.monitoringProgressiveChart.isDatasetVisible) {
+                if (!window.monitoringProgressiveChart.isDatasetVisible(ds)) return;
+            }
+            window.monitoringProgressiveChart.navToTransition(ds, dir);
+        }
+        } catch (err) { console.error('dpc click error:', err); }
+    });
+}
+
 window.monitoringProgressiveChart = {
     // ── Combined init + load (called from Blazor) ──
     initAndLoad: function (containerId, data, monitoringId) {
         this.destroy();
+        _dpcBindEvents();
 
         var container = document.getElementById(containerId || 'dpc-chart-root');
         if (!container) { console.error('dpc: container not found'); return; }
@@ -818,6 +1881,8 @@ window.monitoringProgressiveChart = {
         wrapperDiv.appendChild(canvas);
         scrollDiv.appendChild(wrapperDiv);
         container.appendChild(scrollDiv);
+        _ensureLoadingOverlay(container);
+        _ensureMobileRangeSelector(container);
 
         var ctx = canvas.getContext('2d');
         if (!ctx) { console.error('dpc: canvas 2d context not available'); return; }
@@ -846,7 +1911,7 @@ window.monitoringProgressiveChart = {
                     { label: 'المنت ۱', data: [], borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.06)', borderWidth: 3, pointRadius: 0, pointHoverRadius: 6, steppedLine: true, fill: 5, yAxisID: 'y-eq', order: 1, hidden: true },
                     { label: 'المنت ۲', data: [], borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.05)', borderWidth: 3, pointRadius: 0, pointHoverRadius: 6, steppedLine: true, fill: 'origin', yAxisID: 'y-eq', order: 0, hidden: true },
                     { label: 'توان', data: [], borderColor: '#8b5cf6', borderWidth: 3, pointRadius: 0, pointHoverRadius: 5, lineTension: 0, fill: false, yAxisID: 'y-pwr', order: -1, hidden: true },
-                    { label: 'جریان', data: [], borderColor: '#14b8a6', borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5, lineTension: 0, fill: false, yAxisID: 'y-amp', order: -2, hidden: true }
+                    { label: 'جریان', data: [], borderColor: '#ec4899', borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5, lineTension: 0, spanGaps: false, fill: false, yAxisID: 'y-amp', order: -2, hidden: true }
                 ]
             },
             options: {
@@ -901,7 +1966,7 @@ window.monitoringProgressiveChart = {
                             ticks.sort(function(a, b) { return a - b; });
                             axis.ticks = ticks;
                         },
-                        ticks: { fontColor: '#94a3b8', fontFamily: 'Vazirmatn, sans-serif', fontSize: 11, maxRotation: 45, autoSkip: false, callback: function (value) { return _epochToTimeStr(value); } }
+                        ticks: { fontColor: '#64748b', fontFamily: 'Vazirmatn, sans-serif', fontSize: 11, maxRotation: 45, autoSkip: false, callback: function (value) { return _epochToFaAxisStr(value); } }
                     }],
                     yAxes: [{
                         id: 'y-temp', position: 'left',
@@ -921,22 +1986,29 @@ window.monitoringProgressiveChart = {
                     }, {
                         id: 'y-amp', position: 'right', weight: 2,
                         gridLines: { display: false },
-                    ticks: { fontColor: '#14b8a6', fontFamily: 'Vazirmatn, sans-serif', fontSize: 10, beginAtZero: true, padding: 4, callback: function (v) { return typeof v === 'number' ? v.toFixed(1) : v; } },
-                    scaleLabel: { display: true, labelString: 'جریان (A)', fontColor: '#14b8a6', fontFamily: 'Vazirmatn, sans-serif', fontSize: 10 }
+                    ticks: { fontColor: '#ec4899', fontFamily: 'Vazirmatn, sans-serif', fontSize: 10, beginAtZero: true, padding: 4, callback: function (v) { return typeof v === 'number' ? v.toFixed(1) : v; } },
+                    scaleLabel: { display: true, labelString: 'جریان (A)', fontColor: '#ec4899', fontFamily: 'Vazirmatn, sans-serif', fontSize: 10 }
                     }]
                 },
                 tooltips: {
                     enabled: true,
                     mode: 'index', intersect: false,
                     position: 'progTop',
-                    backgroundColor: 'rgba(255,255,255,0.92)',
+                    backgroundColor: 'rgba(255,255,255,0.38)',
                     titleFontFamily: 'Vazirmatn, sans-serif', bodyFontFamily: 'Vazirmatn, sans-serif',
                     titleFontColor: '#1e293b', bodyFontColor: '#334155',
                     titleFontSize: 13, bodyFontSize: 12, titleFontStyle: 'bold',
                     xPadding: 16, yPadding: 10,
                     displayColors: true, bodySpacing: 5, titleSpacing: 6,
                     cornerRadius: 8, caretSize: 6, caretPadding: 4,
-                    borderColor: 'rgba(0,0,0,0.08)', borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.72)', borderWidth: 1,
+                    filter: function (item) {
+                        if (item.datasetIndex >= 2 && item.datasetIndex <= 5) {
+                            var thresholds = [0.5, 0.45, 0.4, 0.35];
+                            return item.yLabel >= (thresholds[item.datasetIndex - 2] || 0.5);
+                        }
+                        return true;
+                    },
                     callbacks: {
                         title: function (items) {
                             var idx = items[0].index;
@@ -960,7 +2032,8 @@ window.monitoringProgressiveChart = {
                             if (ds >= 2 && ds <= 5) {
                                 var thresholds = [0.5, 0.45, 0.4, 0.35];
                                 var thresh = thresholds[ds - 2] || 0.5;
-                                return rle + label + ': ' + (v >= thresh ? 'روشن' : 'خاموش') + pdf;
+                                if (v < thresh) return null;
+                                return rle + label + ': روشن' + pdf;
                             }
                             if (ds === 6) return rle + label + ': ' + (typeof v === 'number' ? v.toFixed(1) : v) + ' W' + pdf;
                             if (ds === 7) return rle + label + ': ' + (typeof v === 'number' ? v.toFixed(2) : v) + ' A' + pdf;
@@ -994,6 +2067,7 @@ window.monitoringProgressiveChart = {
         _progBindCrosshair(progressiveChart);
         _progSetupCtrlDragZoom(progressiveChart);
         _progSetupNoteClick(progressiveChart);
+        _spanBindPointer(progressiveChart);
 
         // ── Now load the data ──
         if (!progressiveChart || !data || !data.labels) return;
@@ -1002,7 +2076,16 @@ window.monitoringProgressiveChart = {
         _progState.monitoringId = monitoringId || 0;
 
         _progState._lastFetchKey = String(monitoringId) + '||';
+        _progState.baseTotal = data.TotalCount || data.totalCount || 0;
+        _progState.totalRecords = _progState.baseTotal;
+        _progState.appendedCount = 0;
+        _progState.lastRawTs = (data.timestamps && data.timestamps.length)
+            ? data.timestamps[data.timestamps.length - 1]
+            : null;
         _updateChartData(data);
+        if (!_progState.lastRawTs && _progState.timestamps.length) {
+            _progState.lastRawTs = new Date(_progState.timestamps[_progState.timestamps.length - 1]).toISOString();
+        }
 
         var scrollEl = document.getElementById('dpc-scroll');
         if (scrollEl) scrollEl.scrollLeft = 0;
@@ -1027,7 +2110,7 @@ window.monitoringProgressiveChart = {
         var ds = progressiveChart.data.datasets[index];
         if (!ds) return;
         ds.hidden = !ds.hidden;
-        progressiveChart.update(0);
+        try { progressiveChart.update(0); } catch (e) {}
         return !ds.hidden;
     },
 
@@ -1065,23 +2148,82 @@ window.monitoringProgressiveChart = {
         _progResetZoom();
     },
 
+    setMode: function (mode) {
+        return _setChartMode(mode);
+    },
+
+    setLiveMode: function (on) {
+        if (on) _liveStart();
+        else _liveStop();
+        var toggle = document.getElementById('dpc-live-toggle');
+        if (toggle) toggle.checked = !!_liveState.enabled;
+        return _liveState.enabled;
+    },
+
+    isLive: function () { return _liveState.enabled; },
+
+    setSpanMode: function (on) {
+        return _spanSetEnabled(!!on);
+    },
+
+    clearSpan: function () {
+        _spanClear();
+    },
+
+    previousSegment: function () {
+        return _loadSegment(_progState.currentSegment - 1);
+    },
+
+    nextSegment: function () {
+        return _loadSegment(_progState.currentSegment + 1);
+    },
+
     resize: function () {
         if (!progressiveChart) return;
         try { progressiveChart.resize(); progressiveChart.update(0); } catch (e) {}
     },
 
-destroy: function () {
+    destroy: function () {
+            _liveStop();
+            _spanState.enabled = false;
+            _spanState.anchor = null;
+            _spanState.end = null;
+            _spanState.dragging = false;
+            _spanState.locked = false;
+            var spanBtn = document.getElementById('dpc-span-tool');
+            if (spanBtn) spanBtn.classList.remove('is-on');
+            var spanHud = document.getElementById('dpc-span-hud');
+            if (spanHud) spanHud.hidden = true;
             if (progressiveChart) {
                 progressiveChart.destroy();
                 progressiveChart = null;
             }
+            if (_progState._abortController) {
+                try { _progState._abortController.abort(); } catch (e) {}
+                _progState._abortController = null;
+            }
             _progState.timestamps = [];
             _progState.labelsFa = [];
             _progState.cycles = null;
+            _progState.pointMetadata = [];
             _progState.fullRange = { startTime: null, endTime: null };
             _progState.currentRange = { startTime: null, endTime: null };
+            _progState.pendingRange = { startTime: null, endTime: null };
+            _progState.isLoading = false;
+            _progState._requestSeq = 0;
             _progState._lastFetchKey = '';
-            _transitionCache = {};
+            _progState.mode = 'overview';
+            _progState.segments = [];
+            _progState.segmentCache = {};
+            _progState.currentSegment = -1;
+            _progState.monitoringId = 0;
+        _progState.lastRawTs = null;
+        _progState.baseTotal = 0;
+        _progState.appendedCount = 0;
+        _progState.totalRecords = 0;
+        _transitionCache = {};
+            var liveToggle = document.getElementById('dpc-live-toggle');
+            if (liveToggle) liveToggle.checked = false;
         },
 
         // ── Notes API ──
@@ -1202,6 +2344,7 @@ Chart.plugins.register({
 function _progSetupNoteClick(chart) {
     if (!chart || !chart.canvas) return;
     chart.canvas.addEventListener('click', function(e) {
+        if (_spanState.enabled) return;
         if (e.ctrlKey || e.button !== 0) return;
         var rect = chart.canvas.getBoundingClientRect();
         var x = e.clientX - rect.left;
@@ -1231,6 +2374,7 @@ function _progSetupContextMenu(chart) {
     var canvas = chart.canvas;
 
     canvas.addEventListener('contextmenu', function (e) {
+        if (_spanState.enabled) return;
         e.preventDefault();
         e.stopPropagation();
 
@@ -1308,5 +2452,24 @@ function _progShowNoteModal(index, clientX, clientY) {
         });
     }, 0);
 }
+
+// ── Blazor component wrappers (moved from MonitoringProgressiveChart.razor) ──
+window.resetProgressiveChartZoom = function () {
+    if (window.monitoringProgressiveChart && typeof window.monitoringProgressiveChart.resetZoom === 'function') {
+        window.monitoringProgressiveChart.resetZoom();
+    }
+};
+
+window.dpcApplyBodyClass = function () {
+    if (document.querySelector('.dpc-page')) {
+        document.body.classList.add('has-dpc-page');
+    } else {
+        document.body.classList.remove('has-dpc-page');
+    }
+};
+
+window.dpcClearBodyClass = function () {
+    document.body.classList.remove('has-dpc-page');
+};
 
 

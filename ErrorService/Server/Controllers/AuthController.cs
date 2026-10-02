@@ -15,13 +15,15 @@ public class AuthController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
     private readonly JwtTokenService _jwt;
+    private readonly NotificationEventService _notificationEvents;
     private readonly PasswordHasher<AppUser> _userHasher = new();
     private readonly PasswordHasher<WorkshopUser> _workshopHasher = new();
 
-    public AuthController(ErrorServiceDbContext db, JwtTokenService jwt)
+    public AuthController(ErrorServiceDbContext db, JwtTokenService jwt, NotificationEventService notificationEvents)
     {
         _db = db;
         _jwt = jwt;
+        _notificationEvents = notificationEvents;
     }
 
     [HttpPost("register")]
@@ -40,10 +42,25 @@ public class AuthController : ControllerBase
         };
 
         user.PasswordHash = _userHasher.HashPassword(user, request.Password);
+        user.PasswordPlain = request.Password;
         user.CreatedAt = DateTimeOffset.UtcNow;
         user.UpdatedAt = DateTimeOffset.UtcNow;
 
         _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+
+        await _notificationEvents.NotifyAsync(
+            eventType: "user.registered",
+            values: new Dictionary<string, string?>
+            {
+                ["Phone"] = user.PhoneNumber,
+                ["FullName"] = user.FullName
+            },
+            idempotencyKey: $"user.registered:{user.Id}",
+            fallbackSeverity: NotificationSeverity.Success,
+            fallbackTitle: "به ارورسرویس خوش آمدید",
+            fallbackBody: $"حساب کاربری شما با شماره {user.PhoneNumber} ساخته شد.",
+            appUserId: user.Id);
         await _db.SaveChangesAsync();
 
         var token = await _jwt.CreateTokenAsync(user);
@@ -258,6 +275,7 @@ public class AuthController : ControllerBase
             return BadRequest("رمز عبور فعلی اشتباه است");
 
         user.PasswordHash = _userHasher.HashPassword(user, request.NewPassword);
+        user.PasswordPlain = request.NewPassword;
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
         return NoContent();

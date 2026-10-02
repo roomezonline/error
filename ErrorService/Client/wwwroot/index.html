@@ -172,6 +172,22 @@
             cursor: pointer;
             user-select: none;
         }
+
+        /* Server-side prerendered content for crawlers */
+        .seo-prerender { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 .75rem; color: #0f172a; }
+        .seo-prerender-desc { color: #334155; line-height: 1.9; margin-bottom: .75rem; }
+        .seo-prerender-h2 { font-size: 1.15rem; font-weight: 700; margin: 1.25rem 0 .75rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: .4rem; }
+        .seo-prerender-list { padding-right: 1.25rem; color: #334155; line-height: 2; }
+        .seo-prerender-list a { color: #2563eb; }
+        .seo-prerender-article { color: #1e293b; line-height: 2; }
+        .seo-prerender-img { max-width: 100%; height: auto; border-radius: 12px; margin: .75rem 0; }
+        .seo-prerender-reviews { margin-top: 1.5rem; }
+        .seo-prerender-review { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: .9rem 1rem; margin-bottom: .75rem; }
+        .seo-prerender-review-author { font-size: .95rem; font-weight: 700; margin: 0 0 .35rem; color: #0f172a; }
+        .seo-prerender-review-rating { color: #b45309; font-size: .85rem; margin-bottom: .35rem; font-weight: 600; }
+        .seo-prerender-review-body { color: #334155; line-height: 1.9; white-space: pre-wrap; }
+        .seo-prerender-review-replies { margin-top: .6rem; padding-right: .85rem; border-right: 3px solid #2563eb; }
+        .seo-prerender-review-reply { color: #1e293b; font-size: .9rem; line-height: 1.8; margin-top: .35rem; background: #eff6ff; border-radius: 8px; padding: .5rem .7rem; }
     </style>
     <script>
         window.seoHelper = {
@@ -254,6 +270,8 @@
     <script src="js/monitoring-progressive-chart.js"></script>
     <script src="js/monitoring-timeline.js"></script>
     <script src="js/monitoring-professional-chart.js"></script>
+    <script src="js/monitoring-details-overlay.js"></script>
+    <script src="js/admin-insights.js?v=2"></script>
     <script src="_framework/blazor.webassembly.js"></script>
     <script src="vendor/plyr/plyr.polyfilled.js"></script>
     <script src="vendor/hls/hls.min.js"></script>
@@ -1411,6 +1429,7 @@
         })();
     </script>
 
+    <script>window.getDocReferrer = function () { return document.referrer || ''; };</script>
     <script src="js/commitment-export.js"></script>
 </body>
 

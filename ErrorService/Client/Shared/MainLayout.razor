@@ -5,6 +5,7 @@
 @inject NavigationManager Nav
 @inject HttpClient Http
 @inject ErrorService.Client.Services.CartService CartService
+@inject ErrorService.Client.Services.NotificationCenterService Notif
 @inject ErrorService.Client.Services.ToastService ToastService
 @inject ErrorService.Client.Services.ThemeService Theme
 @inject ErrorService.Client.Services.AuthService Auth
@@ -57,6 +58,51 @@
 
             <AuthorizeView>
                 <Authorized>
+                    <div class="hdr-bell-wrap">
+                        <button type="button" class="hdr-bell" @onclick="ToggleNotifPanel" @onclick:stopPropagation aria-label="اعلان‌ها">
+                            <span class="oi oi-bell"></span>
+                            @if (Notif.UnreadCount > 0)
+                            {
+                                <span class="hdr-bell__badge">@(Notif.UnreadCount > 99 ? "99+" : Notif.UnreadCount.ToString())</span>
+                            }
+                        </button>
+                        @if (showNotifPanel)
+                        {
+                            <div class="notif-overlay" @onclick="CloseNotifPanel"></div>
+                            <div class="notif-panel" @onclick:stopPropagation>
+                                <div class="notif-panel__head">
+                                    <span class="notif-panel__title"><span class="oi oi-bell"></span> اعلان‌ها</span>
+                                    @if (Notif.UnreadCount > 0)
+                                    {
+                                        <button type="button" class="notif-panel__readall" @onclick="MarkAllReads">خواندن همه</button>
+                                    }
+                                </div>
+                                <div class="notif-panel__list">
+                                    @if (Notif.Recent.Count == 0)
+                                    {
+                                        <div class="notif-panel__empty">اعلانی وجود ندارد.</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var item in Notif.Recent)
+                                        {
+                                            <button type="button" class="notif-mini @(item.IsRead ? "is-read" : "")" @onclick="() => OpenNotif(item)">
+                                                <span class="notif-mini__dot" style="@SeverityDotStyle(item.Severity)"></span>
+                                                <span class="notif-mini__body">
+                                                    <span class="notif-mini__title">@item.Title</span>
+                                                    <span class="notif-mini__desc">@item.Body</span>
+                                                    <span class="notif-mini__time">@ErrorService.Client.Services.NotificationCenterService.RelativeTime(item.CreatedAt)</span>
+                                                </span>
+                                            </button>
+                                        }
+                                    }
+                                </div>
+                                <div class="notif-panel__foot">
+                                    <a href="/profile#notifications" @onclick="CloseNotifPanel">مشاهده همه اعلان‌ها</a>
+                                </div>
+                            </div>
+                        }
+                    </div>
                     <div class="hdr-avatar-wrap">
                         <div class="hdr-avatar" @onclick="ToggleUserMenu" @onclick:stopPropagation>
                             @context.User.Identity?.Name?[0]
@@ -153,80 +199,134 @@
             @if (showSuggestions && !string.IsNullOrWhiteSpace(searchQuery) && searchQuery.Trim().Length >= 2)
             {
                 <div class="search-suggest shadow-lg">
-                    @if (suggestions == null)
+                    @if (isSearching && suggestions == null)
                     {
                         <div class="p-3 text-center text-muted small">
                             <span class="spinner-border spinner-border-sm me-2"></span>
                             در حال جستجو...
                         </div>
                     }
+                    else if (suggestions == null || !HasAnySuggestions)
+                    {
+                        <div class="p-3 text-center text-muted small">نتیجه‌ای یافت نشد</div>
+                    }
                     else
                     {
-                        @if (!HasAnySuggestions)
+                        @if (isSearching)
                         {
-                            <div class="p-3 text-center text-muted small">نتیجه‌ای یافت نشد</div>
+                            <div class="suggest-progress"></div>
                         }
-                        else
+
+                        @if (suggestions.Products.Any())
                         {
-                            @if (suggestions.Products.Any())
-                            {
-                                <div class="suggest-section">
-                                    <div class="suggest-title">محصولات</div>
-                                    @foreach (var item in suggestions.Products.Take(4))
-                                    {
-                                        <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
-                                            <span class="oi oi-box text-success"></span>
-                                            <span class="flex-grow-1 text-truncate">@item.Title</span>
-                                            <span class="oi oi-chevron-left text-muted"></span>
-                                        </button>
-                                    }
-                                </div>
-                            }
+                            <div class="suggest-section">
+                                <div class="suggest-title">محصولات</div>
+                                @foreach (var item in suggestions.Products.Take(5))
+                                {
+                                    <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
+                                        @if (!string.IsNullOrEmpty(item.ImageUrl))
+                                        {
+                                            <img class="suggest-thumb" src="@item.ImageUrl" alt="" loading="lazy" />
+                                        }
+                                        else
+                                        {
+                                            <span class="oi oi-box suggest-ico text-success"></span>
+                                        }
+                                        <span class="suggest-meta">
+                                            <span class="suggest-item-title">@item.Title</span>
+                                            @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                            {
+                                                <span class="suggest-item-sub">@item.Subtitle</span>
+                                            }
+                                        </span>
+                                        <span class="oi oi-chevron-left text-muted" style="font-size:0.75rem;flex-shrink:0;"></span>
+                                    </button>
+                                }
+                            </div>
+                        }
 
-                            @if (suggestions.ErrorCodes.Any())
-                            {
-                                <div class="suggest-section">
-                                    <div class="suggest-title">کدهای خطا</div>
-                                    @foreach (var item in suggestions.ErrorCodes.Take(4))
-                                    {
-                                        <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
-                                            <span class="oi oi-magnifying-glass text-primary"></span>
-                                            <span class="flex-grow-1 text-truncate">@item.Title</span>
-                                            <span class="oi oi-chevron-left text-muted"></span>
-                                        </button>
-                                    }
-                                </div>
-                            }
+                        @if (suggestions.ErrorCodes.Any())
+                        {
+                            <div class="suggest-section">
+                                <div class="suggest-title">کدهای خطا</div>
+                                @foreach (var item in suggestions.ErrorCodes.Take(5))
+                                {
+                                    <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
+                                        @if (!string.IsNullOrEmpty(item.ImageUrl))
+                                        {
+                                            <img class="suggest-thumb" src="@item.ImageUrl" alt="" loading="lazy" />
+                                        }
+                                        else
+                                        {
+                                            <span class="oi oi-warning suggest-ico text-warning"></span>
+                                        }
+                                        <span class="suggest-meta">
+                                            <span class="suggest-item-title">@item.Title</span>
+                                            @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                            {
+                                                <span class="suggest-item-sub">@item.Subtitle</span>
+                                            }
+                                        </span>
+                                        <span class="oi oi-chevron-left text-muted" style="font-size:0.75rem;flex-shrink:0;"></span>
+                                    </button>
+                                }
+                            </div>
+                        }
 
-                            @if (suggestions.Courses.Any())
-                            {
-                                <div class="suggest-section">
-                                    <div class="suggest-title">آموزش‌ها</div>
-                                    @foreach (var item in suggestions.Courses.Take(4))
-                                    {
-                                        <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
-                                            <span class="oi oi-book text-warning"></span>
-                                            <span class="flex-grow-1 text-truncate">@item.Title</span>
-                                            <span class="oi oi-chevron-left text-muted"></span>
-                                        </button>
-                                    }
-                                </div>
-                            }
+                        @if (suggestions.Courses.Any())
+                        {
+                            <div class="suggest-section">
+                                <div class="suggest-title">آموزش‌ها</div>
+                                @foreach (var item in suggestions.Courses.Take(5))
+                                {
+                                    <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
+                                        @if (!string.IsNullOrEmpty(item.ImageUrl))
+                                        {
+                                            <img class="suggest-thumb" src="@item.ImageUrl" alt="" loading="lazy" />
+                                        }
+                                        else
+                                        {
+                                            <span class="oi oi-book suggest-ico text-primary"></span>
+                                        }
+                                        <span class="suggest-meta">
+                                            <span class="suggest-item-title">@item.Title</span>
+                                            @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                            {
+                                                <span class="suggest-item-sub">@item.Subtitle</span>
+                                            }
+                                        </span>
+                                        <span class="oi oi-chevron-left text-muted" style="font-size:0.75rem;flex-shrink:0;"></span>
+                                    </button>
+                                }
+                            </div>
+                        }
 
-                            @if (suggestions.News.Any())
-                            {
-                                <div class="suggest-section">
-                                    <div class="suggest-title">اخبار</div>
-                                    @foreach (var item in suggestions.News.Take(4))
-                                    {
-                                        <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
-                                            <span class="oi oi-list text-danger"></span>
-                                            <span class="flex-grow-1 text-truncate">@item.Title</span>
-                                            <span class="oi oi-chevron-left text-muted"></span>
-                                        </button>
-                                    }
-                                </div>
-                            }
+                        @if (suggestions.News.Any())
+                        {
+                            <div class="suggest-section">
+                                <div class="suggest-title">اخبار</div>
+                                @foreach (var item in suggestions.News.Take(5))
+                                {
+                                    <button type="button" class="suggest-item" @onclick="() => NavigateToSuggestion(item.Url)">
+                                        @if (!string.IsNullOrEmpty(item.ImageUrl))
+                                        {
+                                            <img class="suggest-thumb" src="@item.ImageUrl" alt="" loading="lazy" />
+                                        }
+                                        else
+                                        {
+                                            <span class="oi oi-news suggest-ico text-danger"></span>
+                                        }
+                                        <span class="suggest-meta">
+                                            <span class="suggest-item-title">@item.Title</span>
+                                            @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                            {
+                                                <span class="suggest-item-sub">@item.Subtitle</span>
+                                            }
+                                        </span>
+                                        <span class="oi oi-chevron-left text-muted" style="font-size:0.75rem;flex-shrink:0;"></span>
+                                    </button>
+                                }
+                            </div>
                         }
 
                         <div class="suggest-footer">
@@ -535,6 +635,186 @@
         font-size: 1.05rem;
     }
 
+    /* ── Notification bell ── */
+    .hdr-bell-wrap {
+        position: relative;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+    }
+
+    .hdr-bell {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border: none;
+        background: transparent;
+        border-radius: 10px;
+        color: #64748b;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+    }
+
+    .hdr-bell:hover { background: rgba(0,0,0,0.04); color: #1a1a1a; }
+    .hdr-bell:active { transform: scale(0.92); }
+
+    .hdr-bell__badge {
+        position: absolute;
+        top: 0;
+        right: 0;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 999px;
+        background: #ef4444;
+        color: #fff;
+        font-size: 9px;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 0 2px var(--app-surface, #fff);
+        pointer-events: none;
+    }
+
+    .notif-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2090;
+        background: transparent;
+    }
+
+    .notif-panel {
+        position: fixed;
+        top: 66px;
+        left: 16px;
+        width: min(360px, calc(100vw - 32px));
+        max-height: min(480px, calc(100vh - 90px));
+        background: var(--app-surface, #fff);
+        border: 1px solid var(--app-border, #e5e7eb);
+        border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.14);
+        z-index: 2100;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        animation: hdrMenuIn 0.18s ease-out;
+    }
+
+    .notif-panel__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--app-border, #eee);
+    }
+
+    .notif-panel__title {
+        font-weight: 800;
+        font-size: 0.95rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .notif-panel__readall {
+        border: none;
+        background: transparent;
+        color: #0d6efd;
+        font-size: 0.78rem;
+        font-weight: 700;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 8px;
+    }
+
+    .notif-panel__readall:hover { background: rgba(13,110,253,0.08); }
+
+    .notif-panel__list {
+        overflow-y: auto;
+        padding: 6px;
+        flex: 1;
+        min-height: 0;
+    }
+
+    .notif-panel__empty {
+        text-align: center;
+        color: #94a3b8;
+        font-size: 0.85rem;
+        padding: 28px 12px;
+    }
+
+    .notif-panel__foot {
+        border-top: 1px solid var(--app-border, #eee);
+        padding: 10px;
+        text-align: center;
+    }
+
+    .notif-panel__foot a {
+        color: #0d6efd;
+        font-size: 0.85rem;
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    .notif-panel__foot a:hover { text-decoration: underline; }
+
+    .notif-mini {
+        display: flex;
+        gap: 10px;
+        width: 100%;
+        text-align: right;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        padding: 10px;
+        border-radius: 12px;
+        transition: background 0.15s;
+    }
+
+    .notif-mini:hover { background: rgba(0,0,0,0.04); }
+    .notif-mini.is-read { opacity: 0.6; }
+
+    .notif-mini__dot {
+        flex-shrink: 0;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-top: 6px;
+    }
+
+    .notif-mini__body {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+    }
+
+    .notif-mini__title {
+        font-weight: 800;
+        font-size: 0.85rem;
+        color: var(--app-text, #1a1a1a);
+    }
+
+    .notif-mini__desc {
+        font-size: 0.78rem;
+        color: #64748b;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    .notif-mini__time {
+        font-size: 0.7rem;
+        color: #94a3b8;
+    }
+
     .search-suggest-overlay {
         position: fixed;
         inset: 0;
@@ -577,6 +857,85 @@
 
     .suggest-item:hover { background: var(--app-bg); }
     .suggest-item .oi { font-size: 1rem; }
+
+    .suggest-item {
+        animation: suggestIn 0.16s ease;
+    }
+
+    @@keyframes suggestIn {
+        from { opacity: 0; transform: translateY(3px); }
+        to { opacity: 1; transform: none; }
+    }
+
+    .suggest-progress {
+        position: absolute;
+        top: 0;
+        right: 0;
+        left: 0;
+        height: 2px;
+        overflow: hidden;
+        pointer-events: none;
+    }
+
+    .suggest-progress::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 45%;
+        background: linear-gradient(90deg, transparent, var(--app-primary, #0d6efd), transparent);
+        animation: suggestLoad 0.9s ease-in-out infinite;
+    }
+
+    @@keyframes suggestLoad {
+        from { right: -45%; }
+        to { right: 100%; }
+    }
+
+    .suggest-thumb {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        object-fit: cover;
+        flex-shrink: 0;
+        background: var(--app-bg);
+    }
+
+    .suggest-item .suggest-ico {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border-radius: 10px;
+        background: var(--app-bg);
+        flex-shrink: 0;
+        font-size: 1rem;
+    }
+
+    .suggest-meta {
+        flex-grow: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .suggest-item-title {
+        font-size: 0.87rem;
+        font-weight: 800;
+        color: var(--app-text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .suggest-item-sub {
+        font-size: 0.73rem;
+        color: var(--app-text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 1px;
+    }
 
     .suggest-footer {
         display: flex;
@@ -637,7 +996,7 @@
         top: 0;
         left: 0;
         right: 0;
-        z-index: 1000;
+        z-index: 1030;
         will-change: transform;
     }
 
@@ -1219,8 +1578,10 @@
 @code {
     private bool showDrawer = false;
     private bool showUserMenu = false;
+    private bool showNotifPanel = false;
     private bool isNavigating = false;
     private DotNetObjectReference<MainLayout>? _dotNetRef;
+    private System.Threading.Timer? _notifTimer;
 
     private bool _hideBottomNav => Nav.Uri.Contains("/products/");
     private bool _isOnline = true;
@@ -1232,6 +1593,7 @@
         showUserMenu = !showUserMenu;
         if (showUserMenu)
         {
+            showNotifPanel = false;
             await JS.InvokeVoidAsync("__um_addHandler", _dotNetRef);
         }
         else
@@ -1239,6 +1601,41 @@
             await JS.InvokeVoidAsync("__um_removeHandler");
         }
     }
+
+    private async Task ToggleNotifPanel()
+    {
+        showNotifPanel = !showNotifPanel;
+        if (showNotifPanel)
+        {
+            if (showUserMenu)
+            {
+                showUserMenu = false;
+                await JS.InvokeVoidAsync("__um_removeHandler");
+            }
+            await Notif.RefreshAsync();
+        }
+    }
+
+    private void CloseNotifPanel() => showNotifPanel = false;
+
+    private async Task MarkAllReads() => await Notif.MarkAllReadAsync();
+
+    private async Task OpenNotif(NotificationDto item)
+    {
+        showNotifPanel = false;
+        if (!item.IsRead)
+            await Notif.MarkReadAsync(item.Id);
+        if (!string.IsNullOrWhiteSpace(item.ActionUrl))
+            Nav.NavigateTo(item.ActionUrl);
+    }
+
+    private static string SeverityDotStyle(int severity) => severity switch
+    {
+        1 => "background:#16a34a",
+        2 => "background:#f59e0b",
+        3 => "background:#dc2626",
+        _ => "background:#0d6efd"
+    };
 
     [JSInvokable]
     public void CloseUserMenuFromOutside()
@@ -1249,6 +1646,7 @@
     private string searchQuery = "";
     private SearchResponseDto? suggestions;
     private bool showSuggestions = false;
+    private bool isSearching = false;
     private CancellationTokenSource? suggestCts;
 
     private void HandleSearchKeyUp(KeyboardEventArgs e)
@@ -1270,13 +1668,19 @@
     private void ShowSuggestions()
     {
         showSuggestions = true;
+        var q = (searchQuery ?? string.Empty).Trim();
+        if (q.Length >= 2 && suggestions == null && !isSearching)
+            _ = InvokeAsync(() => HandleSearchInput(new ChangeEventArgs { Value = searchQuery }));
     }
 
     private void HideSuggestions()
     {
         showSuggestions = false;
         suggestions = null;
+        isSearching = false;
         suggestCts?.Cancel();
+        suggestCts?.Dispose();
+        suggestCts = null;
     }
 
     private async Task HandleSearchInput(ChangeEventArgs e)
@@ -1287,23 +1691,37 @@
         var q = (searchQuery ?? string.Empty).Trim();
         if (q.Length < 2)
         {
+            suggestCts?.Cancel();
+            suggestCts?.Dispose();
+            suggestCts = null;
             suggestions = null;
+            isSearching = false;
             return;
         }
 
         suggestCts?.Cancel();
+        suggestCts?.Dispose();
         suggestCts = new CancellationTokenSource();
         var token = suggestCts.Token;
 
-        suggestions = null;
+        isSearching = true;
+        await InvokeAsync(StateHasChanged);
+
         try
         {
             await Task.Delay(250, token);
-            suggestions = await Http.GetFromJsonAsync<SearchResponseDto>($"api/search?q={Uri.EscapeDataString(q)}&take=6", token);
+            var resp = await Http.GetFromJsonAsync<SearchResponseDto>($"api/search?q={Uri.EscapeDataString(q)}&take=8", token);
+            if (token.IsCancellationRequested) return;
+            suggestions = resp;
+            isSearching = false;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
         }
         catch
         {
-            // ignore
+            if (!token.IsCancellationRequested) isSearching = false;
         }
 
         await InvokeAsync(StateHasChanged);
@@ -1331,7 +1749,9 @@
         Theme.OnChange += StateHasChanged;
         await CartService.InitializeAsync();
         CartService.OnChange += StateHasChanged;
+        Notif.OnChange += StateHasChanged;
         Nav.LocationChanged += HandleLocationChanged;
+        _ = Notif.RefreshAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1365,6 +1785,10 @@
             await SetupHeaderScrollBehavior();
             try { await JS.InvokeVoidAsync("initScrollReveal"); } catch { }
             try { await InitOnlineDetection(); } catch { }
+            _notifTimer = new System.Threading.Timer(async _ =>
+            {
+                try { await InvokeAsync(Notif.RefreshAsync); } catch { }
+            }, null, 45000, 45000);
         }
     }
 
@@ -1506,6 +1930,7 @@
     {
         isNavigating = true;
         StateHasChanged();
+        _ = InvokeAsync(Notif.RefreshAsync);
         
         Task.Run(async () => {
             await Task.Delay(800);
@@ -1521,7 +1946,9 @@
     {
         Theme.OnChange -= StateHasChanged;
         CartService.OnChange -= StateHasChanged;
+        Notif.OnChange -= StateHasChanged;
         Nav.LocationChanged -= HandleLocationChanged;
+        _notifTimer?.Dispose();
         _dotNetRef?.Dispose();
         _onlineRef?.Dispose();
         try { JS.InvokeVoidAsync("__um_removeHandler"); } catch { }

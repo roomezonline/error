@@ -1,6 +1,7 @@
 using ErrorService.Server.Data;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
@@ -17,7 +18,11 @@ public class SearchController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<SearchResponseDto>> Get([FromQuery] string q, [FromQuery] int take = 8)
+    [OutputCache(Duration = 180, VaryByQueryKeys = new[] { "q", "take" })]
+    public async Task<ActionResult<SearchResponseDto>> Get(
+        [FromQuery] string q,
+        [FromQuery] int take = 8,
+        CancellationToken ct = default)
     {
         q = (q ?? string.Empty).Trim();
         if (q.Length < 2)
@@ -25,23 +30,12 @@ public class SearchController : ControllerBase
 
         take = Math.Clamp(take, 1, 20);
 
-        var productsQuery = _context.Products
-            .Include(p => p.Category)
+        var products = await _context.Products
             .AsNoTracking()
             .Where(p =>
                 p.Name.Contains(q) ||
                 (p.Description != null && p.Description.Contains(q)) ||
-                (p.Category != null && p.Category.Name.Contains(q)));
-
-        var newsQuery = _context.News
-            .AsNoTracking()
-            .Where(n =>
-                n.IsPublished &&
-                (n.Title.Contains(q) ||
-                 (n.Summary != null && n.Summary.Contains(q)) ||
-                 (n.Content != null && n.Content.Contains(q))));
-
-        var products = await productsQuery
+                (p.Category != null && p.Category.Name.Contains(q)))
             .OrderByDescending(p => p.CreatedAt)
             .Take(take)
             .Select(p => new SearchResultItemDto
@@ -50,11 +44,18 @@ public class SearchController : ControllerBase
                 Id = p.Id,
                 Title = p.Name,
                 Subtitle = p.Category != null ? p.Category.Name : null,
-                Url = $"/products/{p.Id}"
+                Url = $"/products/{p.Id}",
+                ImageUrl = p.MainImageUrl
             })
-            .ToListAsync();
+            .ToListAsync(ct);
 
-        var news = await newsQuery
+        var news = await _context.News
+            .AsNoTracking()
+            .Where(n =>
+                n.IsPublished &&
+                (n.Title.Contains(q) ||
+                 (n.Summary != null && n.Summary.Contains(q)) ||
+                 (n.Content != null && n.Content.Contains(q))))
             .OrderByDescending(n => n.CreatedAt)
             .Take(take)
             .Select(n => new SearchResultItemDto
@@ -63,27 +64,19 @@ public class SearchController : ControllerBase
                 Id = n.Id,
                 Title = n.Title,
                 Subtitle = n.Summary,
-                Url = $"/news/{n.Id}"
+                Url = $"/news/{n.Id}",
+                ImageUrl = n.ImageUrl
             })
-            .ToListAsync();
+            .ToListAsync(ct);
 
-        var errorCodesQuery = _context.ErrorCodes
+        var errorCodes = await _context.ErrorCodes
             .AsNoTracking()
             .Where(e =>
                 e.Code.Contains(q) ||
                 e.Brand.Contains(q) ||
                 e.DeviceType.Contains(q) ||
                 e.Description.Contains(q) ||
-                (e.TechnicalNotes != null && e.TechnicalNotes.Contains(q)));
-
-        var coursesQuery = _context.TrainingCourses
-            .AsNoTracking()
-            .Where(c =>
-                c.IsPublished &&
-                (c.Title.Contains(q) ||
-                 (c.Summary != null && c.Summary.Contains(q))));
-
-        var errorCodes = await errorCodesQuery
+                (e.TechnicalNotes != null && e.TechnicalNotes.Contains(q)))
             .Take(take)
             .Select(e => new SearchResultItemDto
             {
@@ -91,11 +84,17 @@ public class SearchController : ControllerBase
                 Id = e.Id,
                 Title = $"{e.Brand} - {e.Code}",
                 Subtitle = e.Description,
-                Url = "/technical/error-codes"
+                Url = $"/technical/error-codes/{Uri.EscapeDataString(e.Brand.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(e.DeviceType.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(e.Code.Trim().ToLowerInvariant())}",
+                ImageUrl = e.ImageUrl
             })
-            .ToListAsync();
+            .ToListAsync(ct);
 
-        var courses = await coursesQuery
+        var courses = await _context.TrainingCourses
+            .AsNoTracking()
+            .Where(c =>
+                c.IsPublished &&
+                (c.Title.Contains(q) ||
+                 (c.Summary != null && c.Summary.Contains(q))))
             .OrderByDescending(c => c.CreatedAt)
             .Take(take)
             .Select(c => new SearchResultItemDto
@@ -104,9 +103,10 @@ public class SearchController : ControllerBase
                 Id = c.Id,
                 Title = c.Title,
                 Subtitle = c.Summary,
-                Url = $"/academy/{c.Id}"
+                Url = $"/academy/{c.Id}",
+                ImageUrl = c.CoverImageUrl
             })
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(new SearchResponseDto
         {

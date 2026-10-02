@@ -8,7 +8,10 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>@_pageTitle</PageTitle>
+@if (!IsOverlay)
+{
+    <PageTitle>@_pageTitle</PageTitle>
+}
 
 <div class="mpc-page" dir="ltr">
     <div class="mpc-header">
@@ -487,112 +490,11 @@ body:has(.mpc-page) .admin-content-container {
 }
 </style>
 
-<script>
-(function() {
-    var _ready = function() { return typeof Chart !== 'undefined' && typeof window.monitoringProfessionalChart !== 'undefined'; };
-    window.initProfessionalChart = function(id) { var c = function() { if (!_ready()) { setTimeout(c, 80); return; } window.monitoringProfessionalChart.init(id); }; c(); };
-    window.updateProfessionalChart = function(id, d) { var c = function() { if (!_ready()) { setTimeout(c, 80); return; } window.monitoringProfessionalChart.updateData(id, d); }; c(); };
-    window.resizeProfessionalChart = function() { if (!_ready()) return; window.monitoringProfessionalChart.resize(); };
-
-    // Legend toggle: click handler on parent container
-    document.addEventListener('click', function(e) {
-        var btn = e.target.closest('.mpc-legend-item[data-ds-idx]');
-        if (!btn) return;
-        var idx = parseInt(btn.getAttribute('data-ds-idx'), 10);
-        if (isNaN(idx)) return;
-        var isVisible = window.monitoringProfessionalChart.toggleDataset(idx);
-        if (isVisible === undefined) return;
-        btn.classList.toggle('mpc-legend-item--off', !isVisible);
-    });
-
-    // Sparkline: hourly consumption mini chart
-    window._proSparkChart = null;
-    window.initEnergySparkline = function(data) {
-        var canvas = document.getElementById('er-spark-canvas');
-        if (!canvas) return;
-        if (window._proSparkChart) { window._proSparkChart.destroy(); window._proSparkChart = null; }
-        if (!data || !data.length) return;
-        var labels = data.map(function(d) { return d.label; });
-        var values = data.map(function(d) { return d.kwh; });
-        var temps = data.map(function(d) { return d.avgTemp; });
-        var maxVal = Math.max.apply(null, values) || 1;
-
-        var isDark = document.documentElement.classList.contains('dark');
-        var gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
-        var textColor = isDark ? '#94a3b8' : '#94a3b8';
-
-        var ctx = canvas.getContext('2d');
-        var gradient = ctx.createLinearGradient(0, 0, 0, 100);
-        gradient.addColorStop(0, 'rgba(99,102,241,0.35)');
-        gradient.addColorStop(1, 'rgba(99,102,241,0.01)');
-
-        window._proSparkChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'kWh',
-                    data: values,
-                    borderColor: '#6366f1',
-                    backgroundColor: gradient,
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    pointHoverRadius: 4,
-                    pointHoverBackgroundColor: '#6366f1',
-                    pointHoverBorderColor: '#fff',
-                    pointHoverBorderWidth: 2,
-                    fill: true,
-                    tension: 0.3
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: { duration: 300 },
-                legend: { display: false },
-                scales: {
-                    xAxes: [{
-                        type: 'category',
-                        gridLines: { display: false },
-                        ticks: { fontColor: textColor, fontFamily: 'Vazirmatn, sans-serif', fontSize: 9, maxTicksLimit: 8, autoSkip: true }
-                    }],
-                    yAxes: [{
-                        gridLines: { color: gridColor, drawBorder: false },
-                        ticks: { fontColor: textColor, fontFamily: 'Vazirmatn, sans-serif', fontSize: 9, beginAtZero: true, maxTicksLimit: 5, callback: function(v) { return v.toFixed(1); } }
-                    }]
-                },
-                tooltips: {
-                    enabled: true, mode: 'index', intersect: false,
-                    backgroundColor: isDark ? '#1e293b' : '#fff',
-                    titleFontFamily: 'Vazirmatn, sans-serif', bodyFontFamily: 'Vazirmatn, sans-serif',
-                    titleFontColor: isDark ? '#f1f5f9' : '#1e293b',
-                    bodyFontColor: isDark ? '#94a3b8' : '#64748b',
-                    titleFontSize: 11, bodyFontSize: 10,
-                    xPadding: 8, yPadding: 5,
-                    cornerRadius: 6,
-                    displayColors: false,
-                    callbacks: {
-                        title: function(items) { return 'ساعت ' + items[0].xLabel; },
-                        label: function(item) {
-                            var idx = item.index;
-                            return item.yLabel.toFixed(2) + ' kWh' + (temps[idx] ? ' · ' + temps[idx].toFixed(1) + '°C' : '');
-                        }
-                    }
-                },
-                hover: { mode: 'index', intersect: false },
-                elements: { point: { radius: 0, hitRadius: 10, hoverRadius: 4 } }
-            }
-        });
-    };
-    window.destroyEnergySparkline = function() {
-        if (window._proSparkChart) { window._proSparkChart.destroy(); window._proSparkChart = null; }
-    };
-})();
-</script>
-
 @code {
     [Parameter] public int MonitoringConnectionId { get; set; }
     [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+    [Parameter] public bool IsOverlay { get; set; }
+    [Parameter] public EventCallback OnOverlayClose { get; set; }
 
     private MonitoringChartResponse? _data;
     private bool _loading = true;
@@ -701,8 +603,14 @@ body:has(.mpc-page) .admin-content-container {
         return $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
     }
 
-    private void GoBack()
+    private async Task GoBack()
     {
+        if (IsOverlay)
+        {
+            await OnOverlayClose.InvokeAsync();
+            return;
+        }
+
         if (!string.IsNullOrEmpty(ReturnUrl))
             Navigation.NavigateTo(Uri.UnescapeDataString(ReturnUrl));
         else

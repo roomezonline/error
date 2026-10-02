@@ -49,6 +49,8 @@ public sealed class SiteSettings
     public string? ChatAiApiKey { get; set; }
     public string? ChatAiSystemPrompt { get; set; }
 
+    public bool RequireReviewApproval { get; set; } = true;
+
     public List<SiteHomeModuleSetting> HomeModules { get; set; } = new();
 }
 

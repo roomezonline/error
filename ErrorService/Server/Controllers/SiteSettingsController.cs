@@ -44,8 +44,10 @@ public sealed class SiteSettingsController : ControllerBase
 
         if (homeModulesAvailable)
         {
-            EnsureHomeModules(settings);
+            var removedUnknown = EnsureHomeModules(settings);
             SyncLegacyFlagsFromModules(settings);
+            if (removedUnknown)
+                await _db.SaveChangesAsync();
         }
 
         return new SiteSettingsDto
@@ -92,6 +94,7 @@ public sealed class SiteSettingsController : ControllerBase
             ChatAiModel = settings.ChatAiModel,
             ChatAiApiKey = settings.ChatAiApiKey,
             ChatAiSystemPrompt = settings.ChatAiSystemPrompt,
+            RequireReviewApproval = settings.RequireReviewApproval,
             HomeModules = homeModulesAvailable
                 ? settings.HomeModules
                     .OrderBy(x => x.SortOrder)
@@ -210,14 +213,20 @@ public sealed class SiteSettingsController : ControllerBase
         settings.ChatAiModel = dto.ChatAiModel;
         settings.ChatAiApiKey = dto.ChatAiApiKey;
         settings.ChatAiSystemPrompt = dto.ChatAiSystemPrompt;
+        settings.RequireReviewApproval = dto.RequireReviewApproval;
 
         await _db.SaveChangesAsync();
         return NoContent();
     }
 
-    private static void EnsureHomeModules(SiteSettings settings)
+    private static bool EnsureHomeModules(SiteSettings settings)
     {
         settings.HomeModules ??= new List<SiteHomeModuleSetting>();
+
+        var validKeys = Enum.GetValues<SiteHomeModuleKey>().Cast<int>().ToHashSet();
+        var unknown = settings.HomeModules.Where(x => !validKeys.Contains(x.Key)).ToList();
+        foreach (var u in unknown)
+            settings.HomeModules.Remove(u);
 
         AddIfMissing(settings, SiteHomeModuleKey.SpecialOffers, 10);
         AddIfMissing(settings, SiteHomeModuleKey.HomeCategories, 15);
@@ -232,6 +241,7 @@ public sealed class SiteSettingsController : ControllerBase
         AddIfMissing(settings, SiteHomeModuleKey.LatestArticles, 42);
         AddIfMissing(settings, SiteHomeModuleKey.TeamMembers, 50);
         AddIfMissing(settings, SiteHomeModuleKey.Stories, 5);
+        return unknown.Count > 0;
     }
 
     private static void AddIfMissing(SiteSettings settings, SiteHomeModuleKey key, int sortOrder)

@@ -6,6 +6,7 @@ publish_test/
 
 # Runtime uploads (written by the server at runtime)
 ErrorService/Server/wwwroot/uploads/
+ErrorService/Server/wwwroot/monitoring-data/
 
 # Database backups
 backdb/
@@ -28,6 +29,7 @@ app_offline.htm
 server_out.*
 server_err.*
 build.log
+build-errors.txt
 0
 0.1
 0.15

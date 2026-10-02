@@ -9,6 +9,7 @@
 @inject IJSRuntime JS
 @inject ErrorService.Client.Services.ToastService ToastService
 @inject ErrorService.Client.Services.AdminWorkshopSelectionService AdminWorkshopSelection
+@inject ErrorService.Client.Services.CustomerSearchCacheService CustomerCache
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
 @using ErrorService.Client.Shared
 @using ErrorService.Client.Helpers
@@ -2276,10 +2277,27 @@
         isLoading = false;
     }
 
+    private async Task PreloadCustomersAsync(bool notify = true)
+    {
+        try
+        {
+            if (!CanWorkOnWorkshop)
+                return;
+
+            await CustomerCache.GetOrLoadAsync(uploadWorkshopId);
+            if (notify)
+                StateHasChanged();
+        }
+        catch
+        {
+            // Preload is best-effort; modal will load on first open if needed.
+        }
+    }
+
     private async Task LoadContext()
     {
         await AdminWorkshopSelection.InitializeAsync();
-        
+
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         isSuperAdmin = state.User.IsInRole("super_admin");
 
@@ -2293,8 +2311,8 @@
 
         registeredAtPersian = PersianDateHelper.ToPersianDateTimeString(DateTimeOffset.Now, includeTime: false);
 
-        await LoadTechnicians();
-        await LoadDeviceTypes();
+        var preloadTask = PreloadCustomersAsync(notify: false);
+        await Task.WhenAll(LoadTechnicians(), LoadDeviceTypes(), preloadTask);
     }
 
     private void HandleWorkshopChanged(int? workshopId)
@@ -2309,6 +2327,7 @@
             registeredAtPersian = PersianDateHelper.ToPersianDateTimeString(DateTimeOffset.Now, includeTime: false);
             await LoadTechnicians();
             await LoadDeviceTypes();
+            _ = PreloadCustomersAsync();
             StateHasChanged();
         });
     }
@@ -2458,6 +2477,7 @@
             var updated = await resp.Content.ReadFromJsonAsync<WorkshopCustomerDto>();
             if (updated != null)
             {
+                CustomerCache.Upsert(uploadWorkshopId, updated);
                 SelectCustomer(updated);
                 ToastService.ShowSuccess("اطلاعات مشتری به‌روزرسانی شد");
             }
@@ -2551,6 +2571,7 @@
             var created = await resp.Content.ReadFromJsonAsync<WorkshopCustomerDto>();
             if (created != null)
             {
+                CustomerCache.Upsert(uploadWorkshopId, created);
                 SelectCustomer(created);
                 ToastService.ShowSuccess("مشتری ثبت شد");
                 newCustomer = new WorkshopCustomerUpsertRequest();

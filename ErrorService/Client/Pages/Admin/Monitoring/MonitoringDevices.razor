@@ -228,14 +228,14 @@
 
                         <div class="md-sort-bar">
                             <span class="md-sort-bar__label">مرتب‌سازی:</span>
-                            <button class="md-sort-chip @(assignmentSortMode == "number" ? "md-sort-chip--active" : "")" @onclick='() => assignmentSortMode = "number"'>
-                                <span class="oi oi-sort-ascending"></span> شماره
+                            <button class="md-sort-chip @(assignmentSortMode == "number" ? "md-sort-chip--active" : "")" @onclick="ToggleSortNumber">
+                                <span class="oi @(assignmentSortMode == "number" && assignmentSortDesc ? "oi-sort-ascending" : "oi-sort-descending")"></span> شماره
                             </button>
-                            <button class="md-sort-chip @(assignmentSortMode == "online" ? "md-sort-chip--active" : "")" @onclick='() => assignmentSortMode = "online"'>
-                                <span class="oi oi-bolt"></span> وضعیت
+                            <button class="md-sort-chip @(assignmentSortMode == "online" ? "md-sort-chip--active" : "")" @onclick="ToggleSortOnline">
+                                <span class="oi @(assignmentSortMode == "online" && assignmentSortDesc ? "oi-sort-ascending" : "oi-sort-descending")"></span> وضعیت
                             </button>
-                            <button class="md-sort-chip @(assignmentSortMode == "lastdata" ? "md-sort-chip--active" : "")" @onclick='() => assignmentSortMode = "lastdata"'>
-                                <span class="oi oi-clock"></span> آخرین ارسال
+                            <button class="md-sort-chip @(assignmentSortMode == "lastdata" ? "md-sort-chip--active" : "")" @onclick="ToggleSortLastData">
+                                <span class="oi @(assignmentSortMode == "lastdata" && assignmentSortDesc ? "oi-sort-ascending" : "oi-sort-descending")"></span> آخرین ارسال
                             </button>
                         </div>
 
@@ -602,6 +602,7 @@
     private string deviceSearchTerm = "";
     private string assignmentSearchTerm = "";
     private string assignmentSortMode = "number";
+    private bool assignmentSortDesc = true;
 
     private IEnumerable<MonitoringDeviceDto> FilteredDevices =>
         (string.IsNullOrWhiteSpace(deviceSearchTerm)
@@ -622,10 +623,31 @@
 
             return assignmentSortMode switch
             {
-                "online" => q.OrderByDescending(x => x.IsOnline).ThenByDescending(x => x.LastDataTime ?? DateTimeOffset.MinValue).ThenBy(x => ExtractNumber(x.MonitoringDeviceNumber)),
-                "lastdata" => q.OrderByDescending(x => x.LastDataTime ?? DateTimeOffset.MinValue).ThenBy(x => ExtractNumber(x.MonitoringDeviceNumber)),
-                _ => q.OrderBy(x => ExtractNumber(x.MonitoringDeviceNumber))
+                "online" => assignmentSortDesc
+                    ? q.OrderByDescending(x => x.IsOnline).ThenByDescending(x => x.LastDataTime ?? DateTimeOffset.MinValue).ThenBy(x => ExtractNumber(x.MonitoringDeviceNumber))
+                    : q.OrderBy(x => x.IsOnline).ThenBy(x => x.LastDataTime ?? DateTimeOffset.MinValue).ThenBy(x => ExtractNumber(x.MonitoringDeviceNumber)),
+                "lastdata" => assignmentSortDesc
+                    ? q.OrderByDescending(x => x.LastDataTime ?? DateTimeOffset.MinValue).ThenBy(x => ExtractNumber(x.MonitoringDeviceNumber))
+                    : q.OrderBy(x => x.LastDataTime ?? DateTimeOffset.MinValue).ThenBy(x => ExtractNumber(x.MonitoringDeviceNumber)),
+                _ => assignmentSortDesc
+                    ? q.OrderByDescending(x => ExtractNumber(x.MonitoringDeviceNumber))
+                    : q.OrderBy(x => ExtractNumber(x.MonitoringDeviceNumber))
             };
+        }
+    }
+
+    private void ToggleSortNumber() => ToggleSortMode("number");
+    private void ToggleSortOnline() => ToggleSortMode("online");
+    private void ToggleSortLastData() => ToggleSortMode("lastdata");
+
+    private void ToggleSortMode(string mode)
+    {
+        if (assignmentSortMode == mode)
+            assignmentSortDesc = !assignmentSortDesc;
+        else
+        {
+            assignmentSortMode = mode;
+            assignmentSortDesc = true;
         }
     }
 

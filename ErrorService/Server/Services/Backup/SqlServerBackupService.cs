@@ -107,7 +107,7 @@ public sealed class SqlServerBackupService : IBackupService
             {
                 using var scope = _services.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<ErrorServiceDbContext>();
-                db.BackupHistories.Add(new BackupHistory
+                var history = new BackupHistory
                 {
                     FileName = fileName,
                     FilePath = filePath,
@@ -116,7 +116,22 @@ public sealed class SqlServerBackupService : IBackupService
                     ErrorMessage = ex.Message,
                     IsManual = isManual,
                     CreatedAt = DateTimeOffset.UtcNow
-                });
+                };
+                db.BackupHistories.Add(history);
+                await db.SaveChangesAsync(ct);
+
+                var notifier = scope.ServiceProvider.GetRequiredService<NotificationEventService>();
+                await notifier.NotifyAsync(
+                    eventType: "backup.failed",
+                    values: new Dictionary<string, string?>
+                    {
+                        ["Error"] = ex.Message
+                    },
+                    idempotencyKey: $"backup.failed:{history.Id}",
+                    fallbackSeverity: NotificationSeverity.Critical,
+                    fallbackTitle: "پشتیبان‌گیری ناموفق بود",
+                    fallbackBody: $"پشتیبان‌گیری پایگاه داده با خطا مواجه شد: {ex.Message}",
+                    fallbackUrl: "/admin/backup");
                 await db.SaveChangesAsync(ct);
             }
             catch (Exception logEx)

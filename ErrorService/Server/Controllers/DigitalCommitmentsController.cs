@@ -17,15 +17,17 @@ public sealed class DigitalCommitmentsController : ControllerBase
     private readonly ErrorServiceDbContext _db;
     private readonly ISmsService _sms;
     private readonly IMemoryCache _cache;
+    private readonly NotificationEventService _notificationEvents;
     private const int WorkshopIdForOtp = 1;
     private const int OtpTemplateId = 969320;
     private static readonly TimeSpan OtpExpiry = TimeSpan.FromMinutes(2);
 
-    public DigitalCommitmentsController(ErrorServiceDbContext db, ISmsService sms, IMemoryCache cache)
+    public DigitalCommitmentsController(ErrorServiceDbContext db, ISmsService sms, IMemoryCache cache, NotificationEventService notificationEvents)
     {
         _db = db;
         _sms = sms;
         _cache = cache;
+        _notificationEvents = notificationEvents;
     }
 
     [Authorize(Policy = "perm:admin.receipts.manage")]
@@ -102,6 +104,21 @@ public sealed class DigitalCommitmentsController : ControllerBase
         _db.DigitalCommitments.Add(entity);
         await _db.SaveChangesAsync();
 
+        await _notificationEvents.NotifyAsync(
+            eventType: "commitment.created",
+            values: new Dictionary<string, string?>
+            {
+                ["CustomerName"] = customerFullName,
+                ["CommitmentId"] = entity.Id.ToString()
+            },
+            idempotencyKey: $"commitment.created:{entity.Id}",
+            fallbackSeverity: NotificationSeverity.Info,
+            fallbackTitle: "تعهدنامه جدید ثبت شد",
+            fallbackBody: $"تعهدنامه {customerFullName} ثبت شد و در انتظار امضا است.",
+            fallbackUrl: "/commitment",
+            workshopId: entity.WorkshopId);
+        await _db.SaveChangesAsync();
+
         return Ok(MapDto(entity));
     }
 
@@ -174,6 +191,21 @@ public sealed class DigitalCommitmentsController : ControllerBase
         if (!string.IsNullOrEmpty(cachedLine))
             commitment.SenderLineNumber = cachedLine;
 
+        await _db.SaveChangesAsync();
+
+        await _notificationEvents.NotifyAsync(
+            eventType: "commitment.signed",
+            values: new Dictionary<string, string?>
+            {
+                ["CustomerName"] = commitment.CustomerFullName,
+                ["CommitmentId"] = commitment.Id.ToString()
+            },
+            idempotencyKey: $"commitment.signed:{commitment.Id}",
+            fallbackSeverity: NotificationSeverity.Success,
+            fallbackTitle: "تعهدنامه امضا شد",
+            fallbackBody: $"تعهدنامه {commitment.CustomerFullName} امضا و نهایی شد.",
+            fallbackUrl: "/commitment",
+            workshopId: commitment.WorkshopId);
         await _db.SaveChangesAsync();
 
         _cache.Remove($"commitment_otp:{request.Mobile}");

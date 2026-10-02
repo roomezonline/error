@@ -70,6 +70,7 @@ public sealed class SiteSettingsDto
     public string? ChatAiModel { get; set; }
     public string? ChatAiApiKey { get; set; }
     public string? ChatAiSystemPrompt { get; set; }
+    public bool RequireReviewApproval { get; set; } = true;
 
     public List<SiteHomeModuleDto> HomeModules { get; set; } = new();
 }

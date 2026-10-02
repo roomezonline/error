@@ -4,6 +4,8 @@
 @attribute [Authorize(Policy = "perm:admin.academy.comments.manage")]
 @inject NavigationManager Nav
 
+<PageTitle>نظرات مقالات آکادمی | ارورسرویس</PageTitle>
+
 @code {
     protected override async Task OnInitializedAsync()
     {

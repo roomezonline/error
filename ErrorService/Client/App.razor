@@ -2,9 +2,12 @@
 <CascadingAuthenticationState>
 @using ErrorService.Shared
 @using ErrorService.Client.Helpers
+@using ErrorService.Client.Services
+@implements IDisposable
 @inject HttpClient Http
     @inject NavigationManager NavigationManager
     @inject IJSRuntime JS
+    @inject LocalStorageService LocalStorage
 
     @if (isMaintenance && !IsAdminPath())
     {
@@ -30,6 +33,9 @@
 
     @code {
         private bool isMaintenance = false;
+        private string _lastTrackedPath = "";
+        private string _firstReferrer = "";
+        private bool _initialTrackDone = false;
 
         protected override async Task OnInitializedAsync()
         {
@@ -47,6 +53,79 @@
             catch
             {
                 isMaintenance = false;
+            }
+
+            try
+            {
+                _firstReferrer = await JS.InvokeAsync<string>("getDocReferrer") ?? "";
+            }
+            catch
+            {
+                _firstReferrer = "";
+            }
+
+            // ثبت بازدید صفحه اول بارگذاری
+            if (!_initialTrackDone)
+            {
+                _initialTrackDone = true;
+                _ = TrackVisitAsync(NavigationManager.Uri, isFirst: true);
+            }
+
+            NavigationManager.LocationChanged += OnLocationChanged;
+        }
+
+        private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        {
+            _ = TrackVisitAsync(e.Location, isFirst: false);
+        }
+
+        public void Dispose()
+        {
+            NavigationManager.LocationChanged -= OnLocationChanged;
+        }
+
+        private async Task TrackVisitAsync(string uri, bool isFirst)
+        {
+            try
+            {
+                if (isMaintenance) return;
+
+                var baseUri = NavigationManager.BaseUri;
+                if (!uri.StartsWith(baseUri, StringComparison.OrdinalIgnoreCase)) return;
+
+                var path = uri.Substring(baseUri.Length);
+                if (string.IsNullOrEmpty(path)) path = "/";
+
+                // حذف پارامتر کوئری/هش — یک صفحه با query متفاوت نباید چند بار شمرده شود
+                var queryStart = path.IndexOfAny(new[] { '?', '#' });
+                if (queryStart >= 0) path = path[..queryStart];
+                if (string.IsNullOrEmpty(path)) path = "/";
+
+                if (path[0] != '/') path = "/" + path;
+                if (path.StartsWith("/admin") || path.StartsWith("/login") || path.StartsWith("/api")) return;
+                if (path == _lastTrackedPath) return;
+                _lastTrackedPath = path;
+
+                var visitorId = await LocalStorage.GetAsync("es_vid");
+                if (string.IsNullOrWhiteSpace(visitorId))
+                {
+                    visitorId = Guid.NewGuid().ToString("N");
+                    await LocalStorage.SetAsync("es_vid", visitorId);
+                }
+
+                var referrer = isFirst ? _firstReferrer : "";
+
+                // ارسال بدون انتظارِ ناوبری — ردیابی هرگز نباید کاربر را معطل کند
+                await Http.PostAsJsonAsync("api/visits/track", new VisitTrackRequest
+                {
+                    Path = path,
+                    Referrer = referrer ?? "",
+                    VisitorId = visitorId
+                });
+            }
+            catch
+            {
+                // ردیابی سکوت‌محور است
             }
         }
 

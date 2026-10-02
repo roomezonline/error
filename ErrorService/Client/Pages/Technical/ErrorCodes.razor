@@ -2,12 +2,14 @@
 @using ErrorService.Shared.Models
 @using System.Text.Json
 @inject HttpClient Http
+@inject NavigationManager Nav
 @inject ErrorService.Client.Services.ThemeService Theme
 
 <SeoHeader 
     Title="بانک کدهای خطا | عیب‌یابی هوشمند لوازم خانگی" 
     Description="جستجو و مشاهده لیست کامل کدهای خطای یخچال، ماشین لباسشویی، ظرفشویی و پکیج برندهای سامسونگ، ال‌جی، بوش و..."
     Keywords="کد خطا، ارور یخچال، ارور لباسشویی، لیست کدهای خطا، تعمیرات لوازم خانگی"
+    CanonicalUrl="https://errorservice.ir/technical/error-codes"
     JsonLd="@errorCodesJsonLd" />
 
 <div class="container py-4">
@@ -16,11 +18,35 @@
         <p class="text-muted">عیب‌یابی سریع لوازم خانگی و بردهای الکترونیکی</p>
     </div>
 
+    @if (!hasSearched && featuredErrors.Any())
+    {
+        <section class="mb-4" aria-labelledby="popular-error-codes-title">
+            <div class="mb-3">
+                <h2 id="popular-error-codes-title" class="h4 fw-bold mb-1">کدهای خطای پرکاربرد</h2>
+                <p class="text-muted small mb-0">راهنمای سریع خطاهای ثبت‌شده برای برندها و دستگاه‌های مختلف</p>
+            </div>
+            <div class="row g-3">
+                @foreach (var error in featuredErrors)
+                {
+                    <div class="col-12 col-md-6 col-lg-4">
+                        <a href="@ErrorUrl(error)" class="featured-error-link d-flex align-items-center gap-3 p-3 rounded-4 text-decoration-none">
+                            <span class="featured-error-code">@error.Code</span>
+                            <span class="min-w-0">
+                                <strong class="d-block text-truncate">@error.Brand - @error.DeviceType</strong>
+                                <span class="small text-muted d-block text-truncate">@error.Description</span>
+                            </span>
+                        </a>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
     <div class="search-card p-4 rounded-4 shadow-sm mb-4">
         <div class="row g-3">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label fw-bold">برند دستگاه</label>
-                <select class="form-select custom-input" @bind="selectedBrand">
+                <select class="form-select custom-input" value="@selectedBrand" @onchange="OnBrandChanged">
                     <option value="">همه برندها</option>
                     @foreach (var brand in brands)
                     {
@@ -32,26 +58,66 @@
                     <div class="small text-danger mt-2">انتخاب برند الزامی است.</div>
                 }
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label fw-bold">نوع دستگاه</label>
-                <select class="form-select custom-input" @bind="selectedDevice">
-                    <option value="">همه دستگاه‌ها</option>
-                    @foreach (var device in devices)
+                <select class="form-select custom-input" value="@selectedDevice" @onchange="OnDeviceChanged" disabled="@(string.IsNullOrEmpty(selectedBrand))">
+                    <option value="">@(string.IsNullOrEmpty(selectedBrand) ? "ابتدا برند را انتخاب کنید" : "همه دستگاه‌ها")</option>
+                    @foreach (var device in devicesForBrand)
                     {
                         <option value="@device">@device</option>
                     }
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">دسته‌بندی</label>
+                <select class="form-select custom-input" value="@selectedCategory" @onchange="OnCategoryChanged">
+                    <option value="">همه دسته‌ها</option>
+                    @foreach (var cat in categories)
+                    {
+                        <option value="@cat">@cat</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
                 <label class="form-label fw-bold">کد خطا</label>
                 <div class="input-group">
-                    <input type="text" class="form-control custom-input" placeholder="مثلاً: E01 یا F1" @bind="searchCode" @bind:event="oninput" />
+                    <input type="text" class="form-control custom-input" placeholder="مثلاً: E01 یا F1" value="@searchCode" @oninput="OnSearchCodeInput" />
                     <button class="btn btn-primary px-4" @onclick="SearchErrors">
                         <span class="oi oi-magnifying-glass"></span>
                     </button>
                 </div>
             </div>
         </div>
+        @if (!string.IsNullOrEmpty(selectedBrand) || !string.IsNullOrEmpty(selectedDevice) || !string.IsNullOrEmpty(selectedCategory) || !string.IsNullOrEmpty(searchCode))
+        {
+            <div class="mt-3 d-flex flex-wrap gap-2 align-items-center">
+                <span class="small text-muted">فیلترهای فعال:</span>
+                @if (!string.IsNullOrEmpty(selectedBrand))
+                {
+                    <button type="button" class="badge rounded-pill bg-primary border-0" @onclick="() => ClearFilter(nameof(selectedBrand))">
+                        @selectedBrand ✕
+                    </button>
+                }
+                @if (!string.IsNullOrEmpty(selectedDevice))
+                {
+                    <button type="button" class="badge rounded-pill bg-success border-0" @onclick="() => ClearFilter(nameof(selectedDevice))">
+                        @selectedDevice ✕
+                    </button>
+                }
+                @if (!string.IsNullOrEmpty(selectedCategory))
+                {
+                    <button type="button" class="badge rounded-pill bg-warning border-0 text-dark" @onclick="() => ClearFilter(nameof(selectedCategory))">
+                        @selectedCategory ✕
+                    </button>
+                }
+                @if (!string.IsNullOrEmpty(searchCode))
+                {
+                    <button type="button" class="badge rounded-pill bg-secondary border-0" @onclick="() => ClearFilter(nameof(searchCode))">
+                        @searchCode ✕
+                    </button>
+                }
+            </div>
+        }
     </div>
 
     @if (isLoading)
@@ -71,60 +137,71 @@
     }
     else if (filteredErrors.Any())
     {
-        <div class="row g-4">
-            @foreach (var error in filteredErrors)
-            {
-                <div class="col-md-6 col-lg-4">
-                    <a href="@($"/technical/error-codes/{Uri.EscapeDataString(error.Brand)}/{Uri.EscapeDataString(error.DeviceType)}/{Uri.EscapeDataString(error.Code)}")" class="text-decoration-none">
-                    <div class="error-card h-100 p-4 rounded-4 shadow-sm border-0 position-relative overflow-hidden">
-                        <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
-                            <div class="d-flex flex-wrap gap-2">
-                                <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">@error.Brand</span>
-                                <span class="badge bg-success-subtle text-success rounded-pill px-3 py-2">@error.DeviceType</span>
-                            </div>
-                            <div class="error-badge p-3 bg-primary text-white fw-black">
-                                @error.Code
-                            </div>
-                        </div>
-                        @if (!string.IsNullOrEmpty(error.ImageUrl))
-                        {
-                            <div class="error-image-wrapper mb-3">
-                                <img src="@error.ImageUrl" alt="@error.Code" class="error-image" />
-                            </div>
-                        }
-                        <h5 class="fw-bold mb-3">@error.Description</h5>
-                        <div class="solution-box p-3 rounded-3 bg-light mt-3">
-                            <label class="fw-bold text-success d-block mb-1">راه حل پیشنهادی:</label>
-                            <p class="small mb-0 text-dark">@error.Solution</p>
-                        </div>
-                        @if (!string.IsNullOrEmpty(error.TechnicalNotes))
-                        {
-                            <div class="mt-3">
-                                <label class="fw-bold text-muted small d-block">نکات فنی:</label>
-                                <p class="small mb-0 text-muted italic">@error.TechnicalNotes</p>
-                            </div>
-                        }
-
-                        @if (error.Documents != null && error.Documents.Any())
-                        {
-                            <div class="docs-box mt-3 p-3 rounded-3">
-                                <div class="fw-bold text-muted small mb-2">مستندات مرتبط:</div>
-                                <div class="d-flex flex-wrap gap-2">
-                                    @foreach (var doc in error.Documents.OrderBy(d => d.SortOrder))
-                                    {
-                                        <a class="doc-chip" href="@doc.Url" target="_blank" rel="noopener noreferrer" title="@doc.Title">
-                                            <span class="oi oi-document me-1"></span>
-                                            @doc.Title
-                                        </a>
-                                    }
-                                </div>
-                            </div>
-                        }
-                    </div>
-                    </a>
+        @foreach (var catGroup in filteredErrors
+            .GroupBy(e => string.IsNullOrWhiteSpace(e.Category) ? "سایر" : e.Category.Trim(), StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            <div class="mb-4">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2 fw-bold">@catGroup.Key</span>
+                    <span class="text-muted small">@catGroup.Count() کد خطا</span>
                 </div>
-            }
-        </div>
+                <div class="row g-4">
+                    @foreach (var error in catGroup.OrderBy(e => e.Brand, StringComparer.OrdinalIgnoreCase).ThenBy(e => e.DeviceType, StringComparer.OrdinalIgnoreCase).ThenBy(e => e.Code, StringComparer.OrdinalIgnoreCase))
+                    {
+                        <div class="col-md-6 col-lg-4">
+                            <a href="@($"/technical/error-codes/{Uri.EscapeDataString(error.Brand.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(error.DeviceType.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(error.Code.Trim().ToLowerInvariant())}")" class="text-decoration-none">
+                            <div class="error-card h-100 p-4 rounded-4 shadow-sm border-0 position-relative overflow-hidden">
+                                <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">@error.Brand</span>
+                                        <span class="badge bg-success-subtle text-success rounded-pill px-3 py-2">@error.DeviceType</span>
+                                    </div>
+                                    <div class="error-badge p-3 bg-primary text-white fw-black">
+                                        @error.Code
+                                    </div>
+                                </div>
+                                @if (!string.IsNullOrEmpty(error.ImageUrl))
+                                {
+                                    <div class="error-image-wrapper mb-3">
+                                        <img src="@error.ImageUrl" alt="@error.Code" class="error-image" />
+                                    </div>
+                                }
+                                <h5 class="fw-bold mb-3">@error.Description</h5>
+                                <div class="solution-box p-3 rounded-3 bg-light mt-3">
+                                    <label class="fw-bold text-success d-block mb-1">راه حل پیشنهادی:</label>
+                                    <p class="small mb-0 text-dark">@error.Solution</p>
+                                </div>
+                                @if (!string.IsNullOrEmpty(error.TechnicalNotes))
+                                {
+                                    <div class="mt-3">
+                                        <label class="fw-bold text-muted small d-block">نکات فنی:</label>
+                                        <p class="small mb-0 text-muted italic">@error.TechnicalNotes</p>
+                                    </div>
+                                }
+
+                                @if (error.Documents != null && error.Documents.Any())
+                                {
+                                    <div class="docs-box mt-3 p-3 rounded-3">
+                                        <div class="fw-bold text-muted small mb-2">مستندات مرتبط:</div>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            @foreach (var doc in error.Documents.OrderBy(d => d.SortOrder))
+                                            {
+                                                <a class="doc-chip" href="@doc.Url" target="_blank" rel="noopener noreferrer" title="@doc.Title">
+                                                    <span class="oi oi-document me-1"></span>
+                                                    @doc.Title
+                                                </a>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                            </a>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
     }
     else
     {
@@ -137,6 +214,34 @@
 </div>
 
 <style>
+    .featured-error-link {
+        background: var(--app-surface);
+        border: 1px solid var(--app-border);
+        color: var(--app-text);
+        transition: transform .15s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+
+    .featured-error-link:hover {
+        transform: translateY(-2px);
+        border-color: rgba(37, 99, 235, .35);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, .08);
+    }
+
+    .featured-error-code {
+        display: grid;
+        place-items: center;
+        flex: 0 0 52px;
+        width: 52px;
+        height: 42px;
+        border-radius: 12px;
+        background: rgba(37, 99, 235, .1);
+        color: var(--app-primary);
+        font-weight: 900;
+        direction: ltr;
+    }
+
+    .min-w-0 { min-width: 0; }
+
     .search-card {
         background: var(--app-surface);
         border: 1px solid var(--app-border);
@@ -223,20 +328,149 @@
     private string? errorCodesJsonLd;
     private List<ErrorCode> allErrors = new();
     private List<ErrorCode> filteredErrors = new();
+    private List<ErrorCode> featuredErrors = new();
     private List<string> brands = new();
     private List<string> devices = new();
-    
+    private List<string> devicesForBrand = new();
+    private List<string> categories = new();
+
     private string selectedBrand = "";
     private string selectedDevice = "";
+    private string selectedCategory = "";
     private string searchCode = "";
     private bool isLoading = true;
     private bool hasSearched = false;
     private bool brandRequired = false;
+    private bool initializedFromQuery = false;
 
     protected override async Task OnInitializedAsync()
     {
         errorCodesJsonLd = BuildErrorCodesJsonLd();
         await LoadBrands();
+        await LoadFeaturedErrors();
+        await TryInitFromQueryAsync();
+    }
+
+    private async Task TryInitFromQueryAsync()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+
+        var brand = query["brand"];
+        var device = query["deviceType"];
+        var code = query["code"];
+
+        if (string.IsNullOrWhiteSpace(brand) && string.IsNullOrWhiteSpace(device) && string.IsNullOrWhiteSpace(code))
+            return;
+
+        if (!string.IsNullOrWhiteSpace(brand))
+            selectedBrand = brand.Trim();
+        if (!string.IsNullOrWhiteSpace(device))
+            selectedDevice = device.Trim();
+        if (!string.IsNullOrWhiteSpace(code))
+            searchCode = code.Trim();
+        var category = query["category"];
+        if (!string.IsNullOrWhiteSpace(category))
+            selectedCategory = category.Trim();
+
+        initializedFromQuery = true;
+        await RefreshDevicesForBrandAsync();
+        await SearchErrors();
+    }
+
+    private async Task OnBrandChanged(ChangeEventArgs e)
+    {
+        selectedBrand = e.Value?.ToString() ?? "";
+        selectedDevice = "";
+        brandRequired = false;
+        await RefreshDevicesForBrandAsync();
+        UpdateUrl();
+        if (initializedFromQuery || hasSearched)
+            await SearchErrors();
+    }
+
+    private async Task OnDeviceChanged(ChangeEventArgs e)
+    {
+        selectedDevice = e.Value?.ToString() ?? "";
+        UpdateUrl();
+        if (initializedFromQuery || hasSearched)
+            await SearchErrors();
+    }
+
+    private async Task OnCategoryChanged(ChangeEventArgs e)
+    {
+        selectedCategory = e.Value?.ToString() ?? "";
+        UpdateUrl();
+        if (initializedFromQuery || hasSearched)
+            await SearchErrors();
+    }
+
+    private void OnSearchCodeInput(ChangeEventArgs e)
+    {
+        searchCode = e.Value?.ToString() ?? "";
+    }
+
+    private void ClearFilter(string field)
+    {
+        if (field == nameof(selectedBrand))
+        {
+            selectedBrand = "";
+            selectedDevice = "";
+            devicesForBrand = new();
+        }
+        else if (field == nameof(selectedDevice))
+            selectedDevice = "";
+        else if (field == nameof(selectedCategory))
+            selectedCategory = "";
+        else if (field == nameof(searchCode))
+            searchCode = "";
+
+        UpdateUrl();
+        _ = SearchErrors();
+    }
+
+    private void UpdateUrl()
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(selectedBrand))
+            parts.Add($"brand={Uri.EscapeDataString(selectedBrand)}");
+        if (!string.IsNullOrWhiteSpace(selectedDevice))
+            parts.Add($"deviceType={Uri.EscapeDataString(selectedDevice)}");
+        if (!string.IsNullOrWhiteSpace(selectedCategory))
+            parts.Add($"category={Uri.EscapeDataString(selectedCategory)}");
+        if (!string.IsNullOrWhiteSpace(searchCode))
+            parts.Add($"code={Uri.EscapeDataString(searchCode)}");
+
+        var url = parts.Count > 0
+            ? $"/technical/error-codes?{string.Join("&", parts)}"
+            : "/technical/error-codes";
+
+        Nav.NavigateTo(url, forceLoad: false);
+    }
+
+    private async Task RefreshDevicesForBrandAsync()
+    {
+        if (string.IsNullOrWhiteSpace(selectedBrand))
+        {
+            devicesForBrand = new();
+            return;
+        }
+
+        try
+        {
+            var brandKey = Uri.EscapeDataString(selectedBrand);
+            var list = await Http.GetFromJsonAsync<List<ErrorCode>>($"api/technical/error-codes?brand={brandKey}") ?? new();
+            devicesForBrand = list
+                .Select(x => x.DeviceType)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch
+        {
+            devicesForBrand = new();
+        }
     }
 
     private string BuildErrorCodesJsonLd()
@@ -293,16 +527,33 @@
         {
             brands = await Http.GetFromJsonAsync<List<string>>("api/technical/error-codes/brands") ?? new();
             devices = await Http.GetFromJsonAsync<List<string>>("api/technical/error-codes/devices") ?? new();
+            categories = await Http.GetFromJsonAsync<List<string>>("api/technical/error-codes/categories") ?? new();
             filteredErrors = new();
         }
         catch
         {
             brands = new();
             devices = new();
+            categories = new();
             filteredErrors = new();
         }
         isLoading = false;
     }
+
+    private async Task LoadFeaturedErrors()
+    {
+        try
+        {
+            featuredErrors = await Http.GetFromJsonAsync<List<ErrorCode>>("api/technical/error-codes/recent?take=12") ?? new();
+        }
+        catch
+        {
+            featuredErrors = new();
+        }
+    }
+
+    private static string ErrorUrl(ErrorCode error) =>
+        $"/technical/error-codes/{Uri.EscapeDataString(error.Brand.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(error.DeviceType.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(error.Code.Trim().ToLowerInvariant())}";
 
     private async Task SearchErrors()
     {
@@ -315,8 +566,19 @@
         }
 
         isLoading = true;
-        var search = string.IsNullOrWhiteSpace(searchCode) ? "" : searchCode;
-        var query = $"api/technical/error-codes?brand={selectedBrand}&deviceType={selectedDevice}&search={search}";
+        var parts = new List<string>
+        {
+            $"brand={Uri.EscapeDataString(selectedBrand)}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(selectedDevice))
+            parts.Add($"deviceType={Uri.EscapeDataString(selectedDevice)}");
+        if (!string.IsNullOrWhiteSpace(selectedCategory))
+            parts.Add($"category={Uri.EscapeDataString(selectedCategory)}");
+        if (!string.IsNullOrWhiteSpace(searchCode))
+            parts.Add($"search={Uri.EscapeDataString(searchCode.Trim())}");
+
+        var query = $"api/technical/error-codes?{string.Join("&", parts)}";
         filteredErrors = await Http.GetFromJsonAsync<List<ErrorCode>>(query) ?? new();
         isLoading = false;
         BuildFaqJsonLd();

@@ -9,6 +9,7 @@ public sealed class AdminSiteUserDto
     public string PhoneNumber { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public bool IsVip { get; set; }
+    public string? PasswordPlain { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
 

@@ -1,5 +1,26 @@
 @import url('open-iconic/font/css/open-iconic-bootstrap.min.css');
 
+/* Custom truck icon (open-iconic has no truck) */
+.oi.oi-truck:before {
+    content: '';
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    background-color: currentColor;
+    -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M0 3.5A1.5 1.5 0 0 1 1.5 2H9v7H0V3.5zM10 5h2.586l2.415 2.414V12H10V5zM1.5 10H5v4H1.5A1.5 1.5 0 0 1 0 12.5V10h1.5zm7.5 0h5v4H9v-4zm-6 3a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 3 13zm7 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 10 13z'/></svg>");
+    mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M0 3.5A1.5 1.5 0 0 1 1.5 2H9v7H0V3.5zM10 5h2.586l2.415 2.414V12H10V5zM1.5 10H5v4H1.5A1.5 1.5 0 0 1 0 12.5V10h1.5zm7.5 0h5v4H9v-4zm-6 3a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 3 13zm7 0a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 10 13z'/></svg>");
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    vertical-align: -0.125em;
+}
+
+/* Alias missing open-iconic names already used in the app */
+.oi.oi-package:before { content: '\e03c'; } /* box glyph fallback */
+
 @font-face {
     font-family: 'Vazirmatn';
     src: url('../fonts/vazirmatn/Vazirmatn-Regular.woff2') format('woff2');

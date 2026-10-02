@@ -16,13 +16,15 @@ public sealed class CustomerReceiptsController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly IConfiguration _configuration;
     private readonly ISmsService _smsService;
+    private readonly NotificationEventService _notificationEvents;
 
-    public CustomerReceiptsController(ErrorServiceDbContext db, IWebHostEnvironment env, IConfiguration configuration, ISmsService smsService)
+    public CustomerReceiptsController(ErrorServiceDbContext db, IWebHostEnvironment env, IConfiguration configuration, ISmsService smsService, NotificationEventService notificationEvents)
     {
         _db = db;
         _env = env;
         _configuration = configuration;
         _smsService = smsService;
+        _notificationEvents = notificationEvents;
     }
 
     [Authorize(Policy = "perm:admin.receipts.view")]
@@ -166,8 +168,11 @@ public sealed class CustomerReceiptsController : ControllerBase
 
         if (entity == null) return NotFound();
 
+        var previousStatus = entity.Status;
         entity.Status = normalizedStatus;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
+        if (!string.Equals(previousStatus, entity.Status, StringComparison.OrdinalIgnoreCase))
+            await _notificationEvents.NotifyReceiptChangedAsync(entity, previousStatus, entity.TechnicianId);
         await _db.SaveChangesAsync();
 
         return NoContent();
@@ -488,6 +493,8 @@ public sealed class CustomerReceiptsController : ControllerBase
 
         _db.CustomerReceipts.Add(entity);
         await _db.SaveChangesAsync();
+        await _notificationEvents.NotifyReceiptCreatedAsync(entity);
+        await _db.SaveChangesAsync();
 
         var workshop = await _db.Workshops.AsNoTracking().FirstOrDefaultAsync(w => w.Id == entity.WorkshopId);
 
@@ -707,6 +714,8 @@ public sealed class CustomerReceiptsController : ControllerBase
             savedUrl = $"/uploads/customer-receipts/{targetWorkshopId}/{fileName}";
         }
 
+        var previousStatus = entity.Status;
+        var previousTechnicianId = entity.TechnicianId;
         entity.CustomerId = customerId;
         entity.DeviceTypeId = deviceTypeId;
         entity.DeviceBrandId = deviceBrandId;
@@ -717,6 +726,7 @@ public sealed class CustomerReceiptsController : ControllerBase
         entity.ReceiptImageUrl = savedUrl;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
 
+        await _notificationEvents.NotifyReceiptChangedAsync(entity, previousStatus, previousTechnicianId);
         await _db.SaveChangesAsync();
 
         var brandName = entity.DeviceBrandId.HasValue

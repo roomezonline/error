@@ -1,0 +1,1910 @@
+@page "/admin/notifications"
+@layout AdminLayout
+@using ErrorService.Shared
+@using ErrorService.Client.Utils
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.notifications.view")]
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>مدیریت اعلان‌ها | ارورسرویس</PageTitle>
+
+<div class="ntf-page">
+
+    @* ═══ Header ═══ *@
+    <div class="ntf-head">
+        <div>
+            <div class="ntf-head__eyebrow">مرکز اعلان داخلی</div>
+            <h1 class="ntf-head__title"><span class="oi oi-bell"></span> اعلان‌ها</h1>
+        </div>
+        <div class="ntf-head__actions">
+            <button class="ntf-btn ntf-btn--ghost" @onclick="() => showGuide = !showGuide">
+                <span class="oi oi-info"></span> راهنما
+            </button>
+            <AuthorizeView Policy="perm:admin.notifications.manage">
+                <Authorized>
+                    <button class="ntf-btn ntf-btn--primary" @onclick="OpenComposer">
+                        <span class="oi oi-plus"></span> اعلان جدید
+                    </button>
+                </Authorized>
+            </AuthorizeView>
+        </div>
+    </div>
+
+    @* ═══ Tabs ═══ *@
+    <div class="ntf-tabs ntf-anim">
+        <button type="button" class="ntftab @(activeTab == "list" ? "on" : "")" @onclick="OpenListTab">
+            <span class="oi oi-list"></span> اعلان‌ها
+            <span class="ntftab__n">@(items?.Count ?? 0)</span>
+        </button>
+        <button type="button" class="ntftab @(activeTab == "rules" ? "on" : "")" @onclick="OpenRulesTab">
+            <span class="oi oi-cog"></span> تنظیمات خودکار
+            <span class="ntftab__n @(rules != null && rules.All(x => x.IsEnabled) ? "ntftab__n--ok" : "")">
+                @(rules == null ? "—" : rules.Count(x => x.IsEnabled) + "/" + rules.Count)
+            </span>
+        </button>
+    </div>
+
+    @if (activeTab != "rules")
+    {
+    @if (showGuide)
+    {
+        <div class="ntf-card ntf-anim">
+            <div class="gd-title"><span class="oi oi-info"></span> سطوح ارسال — از سوپر ادمین تا کاربران سایت</div>
+            <div class="gd-grid">
+                <div class="gd-item"><span class="gd-n" style="background:#8b5cf618;color:#8b5cf6;">۱</span><div><b>سوپر ادمین</b><p>ارسال مستقیم به حساب سوپر ادمین</p></div></div>
+                <div class="gd-item"><span class="gd-n" style="background:#0d6efd18;color:#0d6efd;">۲</span><div><b>مدیران مجاز</b><p>دارندگان دسترسی «مشاهده اعلان‌ها»</p></div></div>
+                <div class="gd-item"><span class="gd-n" style="background:#16a34a18;color:#16a34a;">۳</span><div><b>پرسنل کارگاه</b><p>کاربران فعال کارگاه انتخابی</p></div></div>
+                <div class="gd-item"><span class="gd-n" style="background:#f59e0b18;color:#f59e0b;">۴</span><div><b>کاربران سایت</b><p>همه اعضای فعال + خریداران محصولات</p></div></div>
+            </div>
+            <div class="gd-note"><span class="oi oi-check"></span> همه تیک‌ها قابل ترکیب‌اند؛ گیرنده تکراری حذف می‌شود. فقط اعلان درون‌برنامه‌ای (زنگ هدر + پروفایل).</div>
+        </div>
+    }
+
+    @* ═══ Stats ═══ *@
+    @if (summary != null)
+    {
+        <div class="ntf-stats ntf-anim">
+            <div class="ntf-stat"><span class="ntf-stat__ic" style="background:#0d6efd15;color:#0d6efd"><span class="oi oi-bell"></span></span><div><b>@summary.TodayCount</b><i>امروز</i></div></div>
+            <div class="ntf-stat"><span class="ntf-stat__ic" style="background:#f59e0b15;color:#f59e0b"><span class="oi oi-clock"></span></span><div><b>@summary.PendingDeliveryCount</b><i>در انتظار تحویل</i></div></div>
+            <div class="ntf-stat"><span class="ntf-stat__ic" style="background:#dc262615;color:#dc2626"><span class="oi oi-warning"></span></span><div><b>@summary.FailedDeliveryCount</b><i>ناموفق</i></div></div>
+            <div class="ntf-stat"><span class="ntf-stat__ic" style="background:#16a34a15;color:#16a34a"><span class="oi oi-envelope-open"></span></span><div><b>@summary.UnreadCount</b><i>خوانده‌نشده</i></div></div>
+        </div>
+    }
+
+    @* ═══ Composer Wizard ═══ *@
+    @if (composerStep > 0)
+    {
+        <AuthorizeView Policy="perm:admin.notifications.manage">
+            <Authorized>
+                <div class="ntf-card ntf-anim">
+
+                    <div class="wz-head">
+                        <div class="wz-head__text">
+                            <div class="wz-head__title">ارسال اعلان جدید</div>
+                            <div class="wz-head__sub">سه گام ساده: مخاطبین ← محتوا ← بازبینی</div>
+                        </div>
+                        <button class="ntf-icon-btn" title="بستن" @onclick="CancelComposer"><span class="oi oi-x"></span></button>
+                    </div>
+
+                    <div class="wz-bar">
+                        <div class="wz-node @(composerStep == 1 ? "current" : composerStep > 1 ? "done" : "")">
+                            <span class="wz-node__n">@(composerStep > 1 ? "✓" : "1")</span><span class="wz-node__t">مخاطبین</span>
+                        </div>
+                        <span class="wz-sep @(composerStep > 1 ? "done" : "")"></span>
+                        <div class="wz-node @(composerStep == 2 ? "current" : composerStep > 2 ? "done" : "")">
+                            <span class="wz-node__n">@(composerStep > 2 ? "✓" : "2")</span><span class="wz-node__t">محتوا</span>
+                        </div>
+                        <span class="wz-sep @(composerStep > 2 ? "done" : "")"></span>
+                        <div class="wz-node @(composerStep == 3 ? "current" : "")">
+                            <span class="wz-node__n">3</span><span class="wz-node__t">بازبینی و ارسال</span>
+                        </div>
+                    </div>
+
+                    @* ── Step 1: Audience ── *@
+                    @if (composerStep == 1)
+                    {
+                        <div class="wz-body ntf-anim">
+                            <div class="wz-label">چه کسانی اعلان را ببینند؟ <span>گروه‌ها را از دسته‌های زیر انتخاب کنید؛ چند گروه هم‌زمان مجاز است</span></div>
+
+                            @if (SelectedSegmentCount > 0)
+                            {
+                                <div class="sel-sum ntf-anim">
+                                    <span class="sel-sum__ic"><span class="oi oi-check"></span></span>
+                                    <span>انتخاب شما:</span>
+                                    @if (segAllUsers) { <span class="sel-sum__chip" style="--c:#0d6efd">کاربران سایت</span> }
+                                    @if (segAdmins) { <span class="sel-sum__chip" style="--c:#6366f1">مدیران مجاز</span> }
+                                    @if (segSuperAdmin) { <span class="sel-sum__chip" style="--c:#8b5cf6">سوپر ادمین</span> }
+                                    @if (segWorkshop) { <span class="sel-sum__chip" style="--c:#16a34a">پرسنل کارگاه</span> }
+                                    @if (segBuyers) { <span class="sel-sum__chip" style="--c:#f59e0b">خریداران محصول</span> }
+                                    @if (segManual && ParsePhones(recipientText).Count > 0) { <span class="sel-sum__chip" style="--c:#64748b">@ParsePhones(recipientText).Count شماره موبایل</span> }
+                                </div>
+                            }
+
+                            <div class="seg-grp" style="--acc:#0d6efd">
+                                <div class="seg-grp__h"><span class="seg-grp__ic"><span class="oi oi-people"></span></span><b>گروه‌های عمومی سامانه</b><i>ارسال به همه کاربران یا تیم مدیریت</i></div>
+                                <div class="wz-segs">
+                                    <div class="seg @(segAllUsers ? "on" : "")" @onclick="() => ToggleSeg(ref segAllUsers)">
+                                        <span class="seg__ck">@(segAllUsers ? "✓" : "")</span>
+                                        <span class="seg__ic" style="background:#0d6efd15;color:#0d6efd"><span class="oi oi-people"></span></span>
+                                        <div class="seg__tx"><b>کاربران سایت</b><p>همه اعضای فعال سامانه</p></div>
+                                    </div>
+                                    <div class="seg @(segAdmins ? "on" : "")" @onclick="() => ToggleSeg(ref segAdmins)">
+                                        <span class="seg__ck">@(segAdmins ? "✓" : "")</span>
+                                        <span class="seg__ic" style="background:#6366f115;color:#6366f1"><span class="oi oi-shield"></span></span>
+                                        <div class="seg__tx"><b>مدیران مجاز</b><p>دارندگان دسترسی پنل مدیریت</p></div>
+                                    </div>
+                                    <div class="seg @(segSuperAdmin ? "on" : "")" @onclick="() => ToggleSeg(ref segSuperAdmin)">
+                                        <span class="seg__ck">@(segSuperAdmin ? "✓" : "")</span>
+                                        <span class="seg__ic" style="background:#8b5cf615;color:#8b5cf6"><span class="oi oi-star"></span></span>
+                                        <div class="seg__tx"><b>سوپر ادمین</b><p>مدیر ارشد سامانه</p></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="seg-grp" style="--acc:#16a34a">
+                                <div class="seg-grp__h"><span class="seg-grp__ic"><span class="oi oi-wrench"></span></span><b>کارگاه</b><i>پرسنل داخلی یک کارگاه مشخص</i></div>
+                                <div class="wz-segs wz-segs--narrow">
+                                    <div class="seg @(segWorkshop ? "on" : "")" @onclick="() => ToggleSeg(ref segWorkshop)">
+                                        <span class="seg__ck">@(segWorkshop ? "✓" : "")</span>
+                                        <span class="seg__ic" style="background:#16a34a15;color:#16a34a"><span class="oi oi-wrench"></span></span>
+                                        <div class="seg__tx"><b>پرسنل کارگاه</b><p>کاربران فعال یک کارگاه</p></div>
+                                    </div>
+                                </div>
+
+                                @if (segWorkshop)
+                                {
+                                    <div class="cfg ntf-anim" style="--acc:#16a34a">
+                                        <div class="cfg__h"><span class="oi oi-cog"></span> پیکربندی کارگاه مقصد <span>الزامی</span></div>
+                                        @if (workshops.Count > 0)
+                                        {
+                                            <select class="form-select" @bind="workshopIdSel">
+                                                <option value="">انتخاب کارگاه...</option>
+                                                @foreach (var w in workshops) { <option value="@w.Id">@w.Id — @w.WorkshopName</option> }
+                                            </select>
+                                        }
+                                        else
+                                        {
+                                            <input class="form-control" type="number" min="1" @bind="workshopIdText" placeholder="شناسه کارگاه" />
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="seg-grp" style="--acc:#d97706">
+                                <div class="seg-grp__h"><span class="seg-grp__ic"><span class="oi oi-list"></span></span><b>هدف‌گیری پیشرفته</b><i>محدود به خریداران یا شماره‌های مشخص</i></div>
+                                <div class="wz-segs">
+                                    <div class="seg @(segBuyers ? "on" : "")" @onclick="() => ToggleSeg(ref segBuyers)">
+                                        <span class="seg__ck">@(segBuyers ? "✓" : "")</span>
+                                        <span class="seg__ic" style="background:#f59e0b15;color:#f59e0b"><span class="oi oi-basket"></span></span>
+                                        <div class="seg__tx"><b>خریداران محصول</b><p>مشتریان کالای خاص</p></div>
+                                    </div>
+                                    <div class="seg @(segManual ? "on" : "")" @onclick="() => ToggleSeg(ref segManual)">
+                                        <span class="seg__ck">@(segManual ? "✓" : "")</span>
+                                        <span class="seg__ic" style="background:#64748b15;color:#64748b"><span class="oi oi-phone"></span></span>
+                                        <div class="seg__tx"><b>شماره موبایل</b><p>کاربران با شماره مشخص</p></div>
+                                    </div>
+                                </div>
+
+                                @if (segBuyers)
+                                {
+                                    <div class="cfg ntf-anim" style="--acc:#d97706">
+                                        <div class="cfg__h"><span class="oi oi-basket"></span> محصولات هدف <span>خریداران هر کدام (منطق «یا»)</span></div>
+                                        <div class="psearch">
+                                            <span class="oi oi-magnifying-glass"></span>
+                                            <input value="@productQuery" placeholder="جستجوی نام محصول..." @oninput="OnProductQueryInput" />
+                                        </div>
+                                        @if (productResults is { Count: > 0 })
+                                        {
+                                            <div class="pres">
+                                                @foreach (var p in productResults)
+                                                {
+                                                    <button type="button" class="pres__item" @onclick="() => AddProduct(p)">
+                                                        <span class="pres__name">@p.Name</span>
+                                                        <span class="pres__price">@p.Price.ToString("N0") تومان</span>
+                                                        <span class="oi oi-check"></span>
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                        else if (productQuery.Length >= 2 && productResults != null && productResults.Count == 0)
+                                        {
+                                            <div class="pres__none">محصولی یافت نشد.</div>
+                                        }
+                                        @if (selectedProducts.Count > 0)
+                                        {
+                                            <div class="pchips">
+                                                @foreach (var p in selectedProducts)
+                                                {
+                                                    <span class="pchip"><span class="oi oi-basket"></span> @p.Name <button type="button" @onclick="() => RemoveProduct(p)">×</button></span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                                @if (segManual)
+                                {
+                                    <div class="cfg ntf-anim" style="--acc:#64748b">
+                                        <div class="cfg__h"><span class="oi oi-phone"></span> شماره موبایل گیرندگان <span>الزامی — جدا شده با کاما یا خط جدید</span></div>
+                                        <textarea class="form-control" rows="2" @bind="recipientText" @bind:event="oninput" placeholder="09123456789, 09351234567"></textarea>
+                                        @if (recipientText.Trim().Length > 0)
+                                        {
+                                            <div class="ph-chips">
+                                                @foreach (var ph in ParsePhones(recipientText).Take(12))
+                                                {
+                                                    <span class="ph-chip"><span class="oi oi-phone"></span> @ph</span>
+                                                }
+                                                @if (ParsePhones(recipientText).Count > 12)
+                                                {
+                                                    <span class="ph-chip ph-chip--more">+@(ParsePhones(recipientText).Count - 12)</span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="wz-foot">
+                            <div class="wz-foot__right">
+                                @if (previewCount.HasValue)
+                                {
+                                    <span class="rc-pill @(previewCount == 0 ? "rc-zero" : "")"><span class="oi oi-people"></span> @previewCount.Value.ToString("N0") گیرنده</span>
+                                }
+                                <button type="button" class="ntf-btn ntf-btn--soft" disabled="@previewLoading" @onclick="LoadPreviewAsync">
+                                    @(previewLoading ? "در حال محاسبه..." : "محاسبه تعداد گیرنده")
+                                </button>
+                            </div>
+                            <button class="ntf-btn ntf-btn--primary" @onclick="GoStep2">مرحله بعد: محتوا <span class="oi oi-chevron-left"></span></button>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(error)) { <div class="ntf-alert ntf-alert--error"><span class="oi oi-warning"></span> @error</div> }
+                    }
+
+                    @* ── Step 2: Content ── *@
+                    @if (composerStep == 2)
+                    {
+                        <div class="wz-body ntf-anim">
+                            <div class="wbox" style="--acc:@SevColor(request.Severity)">
+                                <div class="wbox__h"><span class="oi oi-bell"></span> شدت اعلان <i>رنگ نوار و برچسب کارت را مشخص می‌کند</i></div>
+                                <div class="wz-sevs" style="margin-bottom:0;">
+                                    @foreach (var s in severities)
+                                    {
+                                        <button type="button" class="wz-sev @(request.Severity == s.Value ? "on" : "")" style="--sev:@s.Color" @onclick="() => request.Severity = s.Value">
+                                            <span class="wz-sev__dot"></span> @s.Label
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="wbox" style="--acc:#6366f1">
+                                <div class="wbox__h"><span class="oi oi-pencil"></span> متن اعلان <i>چیزی که کاربر در زنگ هدر می‌بیند</i></div>
+                                <div class="row g-3">
+                                    <div class="col-md-8">
+                                        <label class="form-label">عنوان</label>
+                                        <input class="form-control" @bind="request.Title" maxlength="250" placeholder="مثلاً: کد تخفیف ویژه شما فعال شد" />
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">لینک مقصد (اختیاری)</label>
+                                        <input class="form-control" dir="ltr" @bind="request.ActionUrl" maxlength="500" placeholder="/products/12" />
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">متن اعلان</label>
+                                        <textarea class="form-control" rows="3" maxlength="4000" @bind="request.Body" placeholder="متن کوتاه و شفاف..."></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="wbox" style="--acc:@SevColor(request.Severity)">
+                                <div class="wbox__h"><span class="oi oi-eye"></span> پیش‌نمایش <i>دقیقاً همان‌طور که در زنگ هدر دیده می‌شود</i></div>
+                                <div class="pv">
+                                    <span class="pv__dot" style="background:@SevColor(request.Severity)"></span>
+                                    <div>
+                                        <div class="pv__t">@(string.IsNullOrWhiteSpace(request.Title) ? "عنوان اعلان" : request.Title)</div>
+                                        <div class="pv__b">@(string.IsNullOrWhiteSpace(request.Body) ? "متن اعلان اینجا نمایش داده می‌شود." : request.Body)</div>
+                                        <div class="pv__time">همین حالا</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="wz-foot">
+                            <button class="ntf-btn ntf-btn--ghost" @onclick="() => composerStep = 1"><span class="oi oi-chevron-right"></span> بازگشت</button>
+                            <button class="ntf-btn ntf-btn--primary" @onclick="GoStep3">مرحله بعد: بازبینی <span class="oi oi-chevron-left"></span></button>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(error)) { <div class="ntf-alert ntf-alert--error"><span class="oi oi-warning"></span> @error</div> }
+                    }
+
+                    @* ── Step 3: Review & Send ── *@
+                    @if (composerStep == 3)
+                    {
+                        <div class="wz-body ntf-anim">
+                            <div class="wz-label">بازبینی نهایی <span>پیش از ارسال بررسی کنید</span></div>
+
+                            <div class="rv-grid">
+                                <div class="rv-box" style="--acc:#0d6efd">
+                                    <div class="rv-box__h"><span class="oi oi-people"></span> مخاطبین</div>
+                                    <div class="rv-chips">
+                                        @if (segAllUsers) { <span class="rv-chip" style="--c:#0d6efd">کاربران سایت</span> }
+                                        @if (segAdmins) { <span class="rv-chip" style="--c:#6366f1">مدیران مجاز</span> }
+                                        @if (segSuperAdmin) { <span class="rv-chip" style="--c:#8b5cf6">سوپر ادمین</span> }
+                                        @if (segWorkshop) { <span class="rv-chip" style="--c:#16a34a">پرسنل کارگاه @(workshopIdSel?.ToString() ?? (string.IsNullOrWhiteSpace(workshopIdText) ? "?" : workshopIdText))</span> }
+                                        @if (segBuyers)
+                                        {
+                                            <span class="rv-chip" style="--c:#f59e0b">خریداران @selectedProducts.Count محصول</span>
+                                            @foreach (var p in selectedProducts) { <span class="rv-chip rv-chip--sub" style="--c:#f59e0b">@p.Name</span> }
+                                        }
+                                        @if (segManual && manualPhones.Count > 0) { <span class="rv-chip" style="--c:#64748b">@manualPhones.Count شماره موبایل</span>
+                                            @foreach (var ph in manualPhones.Take(4)) { <span class="rv-chip rv-chip--sub" style="--c:#64748b">@ph</span> }
+                                            @if (manualPhones.Count > 4) { <span class="rv-chip rv-chip--sub" style="--c:#64748b">+@(manualPhones.Count - 4)</span> } }
+                                    </div>
+                                    <div class="rv-count">
+                                        @if (previewCount.HasValue)
+                                        {
+                                            <b class="@(previewCount == 0 ? "zero" : "")">@previewCount.Value.ToString("N0")</b>
+                                            <span>گیرنده نهایی (بدون تکرار)</span>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="ntf-btn ntf-btn--soft" disabled="@previewLoading" @onclick="LoadPreviewAsync">
+                                                @(previewLoading ? "در حال محاسبه..." : "محاسبه تعداد گیرنده")
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="rv-box" style="--acc:@SevColor(request.Severity)">
+                                    <div class="rv-box__h"><span class="oi oi-pencil"></span> محتوا</div>
+                                    <div class="rv-sev" style="--sev:@SevColor(request.Severity)"><span class="wz-sev__dot"></span> @SevLabel(request.Severity)</div>
+                                    <div class="rv-title">@(string.IsNullOrWhiteSpace(request.Title) ? "—" : request.Title)</div>
+                                    <div class="rv-body">@(string.IsNullOrWhiteSpace(request.Body) ? "—" : request.Body)</div>
+                                    @if (!string.IsNullOrWhiteSpace(request.ActionUrl))
+                                    {
+                                        <div class="rv-url" dir="ltr"><span class="oi oi-external-link"></span> @request.ActionUrl</div>
+                                    }
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(error)) { <div class="ntf-alert ntf-alert--error"><span class="oi oi-warning"></span> @error</div> }
+                            @if (!string.IsNullOrWhiteSpace(success)) { <div class="ntf-alert ntf-alert--success"><span class="oi oi-check"></span> @success</div> }
+                        </div>
+
+                        <div class="wz-foot">
+                            <button class="ntf-btn ntf-btn--ghost" disabled="@saving" @onclick="() => composerStep = 2"><span class="oi oi-chevron-right"></span> بازگشت</button>
+                            <button class="ntf-btn ntf-btn--primary ntf-btn--send" disabled="@saving" @onclick="Create">
+                                @(saving ? "در حال ارسال..." : "ارسال نهایی")
+                                <span class="oi oi-envelope-closed"></span>
+                            </button>
+                        </div>
+                    }
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    }
+
+    @* ═══ List ═══ *@
+    @if (!string.IsNullOrWhiteSpace(pageSuccess))
+    {
+        <div class="ntf-alert ntf-alert--success ntf-anim" style="margin-top:0;margin-bottom:16px;">
+            <span class="oi oi-check"></span> @pageSuccess
+            <button type="button" class="ntf-icon-btn" style="margin-inline-start:auto;width:26px;height:26px;" @onclick="() => pageSuccess = null"><span class="oi oi-x"></span></button>
+        </div>
+    }
+    <div class="ntf-card ntf-anim">
+        <div class="lst-top">
+            <div class="lst-title"><span class="oi oi-list"></span> اعلان‌ها <span class="lst-count">@filteredItems.Count()</span></div>
+            <div class="lst-tools">
+                <select class="lst-select" @bind="activeSeverity">
+                    <option value="-1">همه سطوح</option>
+                    @foreach (var s in severities) { <option value="@s.Value">@s.Label</option> }
+                </select>
+                <div class="lst-search">
+                    <span class="oi oi-magnifying-glass"></span>
+                    <input placeholder="جستجو در عنوان و متن..." @bind="searchText" @bind:event="oninput" />
+                    @if (!string.IsNullOrWhiteSpace(searchText))
+                    {
+                        <button type="button" class="lst-search__x" @onclick="() => searchText = string.Empty"><span class="oi oi-x"></span></button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="lst-seg">
+            @foreach (var c in categories)
+            {
+                var n = CategoryCount(c.Key);
+                <button type="button" class="lseg @(activeCategory == c.Key ? "on" : "")" @onclick="() => activeCategory = c.Key">
+                    @c.Label <span class="lseg__n">@n</span>
+                </button>
+            }
+        </div>
+
+        @if (items == null)
+        {
+            <div class="lst-empty"><span class="oi oi-loop"></span>در حال دریافت...</div>
+        }
+        else if (!filteredItems.Any())
+        {
+            <div class="lst-empty"><span class="oi oi-bell"></span>اعلانی با این فیلترها یافت نشد.</div>
+        }
+        else
+        {
+            @foreach (var day in filteredItems.GroupBy(x => PersianDate.ToJalaliDate(x.CreatedAt)))
+            {
+                <div class="lst-day">
+                    <span class="lst-day__t"><span class="oi oi-calendar"></span> @day.Key</span>
+                    <i>@day.Count() مورد</i>
+                </div>
+                @foreach (var item in day)
+                {
+                    <div class="lcard ntf-anim" style="--sev:@SevColor(item.Severity)">
+                        <span class="lcard__ic"><span class="oi @CategoryIcon(item.EventType)"></span></span>
+                        <div class="lcard__main">
+                            <div class="lcard__head">
+                                <b class="lcard__title">@item.Title</b>
+                                <span class="lcard__sev">@SevLabel(item.Severity)</span>
+                                @if (item.IsBroadcast)
+                                {
+                                    <span class="lcard__bc"><span class="oi oi-bullhorn"></span> پخش سراسری</span>
+                                }
+                            </div>
+                            <p class="lcard__body">@item.Body</p>
+                            <div class="lcard__meta">
+                                <span class="lcard__meta-i"><span class="oi oi-clock"></span> @PersianDate.ToJalaliDateTime(item.CreatedAt)</span>
+                                @if (item.RecipientCount > 0)
+                                {
+                                    <span class="lcard__meta-i"><span class="oi oi-people"></span> @item.RecipientCount.ToString("N0") گیرنده</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(item.CreatedByName))
+                                {
+                                    <span class="lcard__meta-i"><span class="oi oi-person"></span> @item.CreatedByName</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(item.ActionUrl))
+                                {
+                                    <a class="lcard__link" href="@item.ActionUrl" target="_blank"><span class="oi oi-external-link"></span> نمایش مقصد</a>
+                                }
+                            </div>
+                        </div>
+                        <AuthorizeView Policy="perm:admin.notifications.manage">
+                            <Authorized>
+                                <div class="lcard__acts">
+                                    <button type="button" class="lcard__act" title="ویرایش اعلان" @onclick="() => OpenEdit(item)"><span class="oi oi-pencil"></span></button>
+                                    <button type="button" class="lcard__act lcard__act--danger" title="حذف اعلان" @onclick="() => AskDelete(item)"><span class="oi oi-trash"></span></button>
+                                </div>
+                            </Authorized>
+                        </AuthorizeView>
+                    </div>
+                }
+            }
+        }
+    </div>
+    }
+
+    @* ═══ Auto Rules ═══ *@
+    @if (activeTab == "rules")
+    {
+        <div class="ntf-card ntf-anim">
+            <div class="lst-top">
+                <div class="lst-title"><span class="oi oi-cog"></span> تنظیمات خودکار اعلان‌ها <span class="lst-count">@(rules?.Count ?? 0)</span></div>
+                <div class="lst-tools">
+                    <button type="button" class="ntf-btn ntf-btn--ghost" disabled="@rulesLoading" @onclick="LoadRules">
+                        <span class="oi oi-reload"></span> @(rulesLoading ? "در حال دریافت..." : "بروزرسانی")
+                    </button>
+                </div>
+            </div>
+
+            <div class="rl-note">
+                <span class="oi oi-info"></span>
+                با فعال‌سازی هر رویداد، اعلان درون‌برنامه‌ای با همین قالب ساخته می‌شود. متغیرها داخل آکولاد {…} در لحظه ارسال جایگزین می‌شوند.
+                <b>پویا</b> یعنی شدت اعلان را خود رویداد تعیین می‌کند؛ غیرفعال کردن یک رویداد یعنی اعلانی برای آن ساخته نشود.
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(rulesError))
+            {
+                <div class="ntf-alert ntf-alert--error"><span class="oi oi-warning"></span> @rulesError</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(rulesSuccess))
+            {
+                <div class="ntf-alert ntf-alert--success"><span class="oi oi-check"></span> @rulesSuccess</div>
+            }
+
+            @if (rules == null)
+            {
+                <div class="lst-empty"><span class="oi oi-loop"></span>در حال دریافت تنظیمات...</div>
+            }
+            else
+            {
+                @foreach (var grp in rules.GroupBy(x => x.Group))
+                {
+                    <div class="rl-grp" style="--acc:@GroupColor(grp.Key)">
+                        <div class="rl-grp__h">
+                            <span class="rl-grp__ic"><span class="oi @GroupIcon(grp.Key)"></span></span>
+                            <b>@grp.Key</b>
+                            <i>@grp.Count(x => x.IsEnabled) فعال از @grp.Count()</i>
+                        </div>
+
+                        @foreach (var rule in grp)
+                        {
+                            <div class="rl-card @(rule.IsEnabled ? "on" : "") @(IsRuleDirty(rule) ? "dirty" : "")">
+                                <div class="rl-head">
+                                    <button type="button" class="rl-sw @(rule.IsEnabled ? "on" : "")" disabled="@(!canManageRules || IsRuleSaving(rule.EventType))" @onclick="() => ToggleRule(rule)" title="فعال/غیرفعال">
+                                        <span class="rl-sw__knob"></span>
+                                    </button>
+                                    <div class="rl-head__t">
+                                        <b>@rule.Label</b>
+                                        <code dir="ltr">@rule.EventType</code>
+                                    </div>
+                                    <div class="rl-head__sev">
+                                        <span class="rl-sevl">شدت</span>
+                                        <button type="button" class="wz-sev rl-sevp @(rule.Severity == null ? "on" : "")" style="--sev:#64748b" disabled="@(!canManageRules)" @onclick="() => rule.Severity = null">
+                                            <span class="wz-sev__dot"></span> پویا
+                                        </button>
+                                        @foreach (var s in severities)
+                                        {
+                                            <button type="button" class="wz-sev rl-sevp @(rule.Severity == s.Value ? "on" : "")" style="--sev:@s.Color" disabled="@(!canManageRules)" @onclick="() => rule.Severity = s.Value">
+                                                <span class="wz-sev__dot"></span> @s.Label
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="rl-grid">
+                                    <div class="rl-f">
+                                        <label class="rl-lab">عنوان قالب</label>
+                                        <input class="form-control" maxlength="250" placeholder="عنوان اعلان" disabled="@(!canManageRules)"
+                                               @bind="rule.TitleTemplate" @bind:event="oninput" @onfocus='() => FocusedField(rule, "title")' />
+                                    </div>
+                                    <div class="rl-f">
+                                        <label class="rl-lab">متن قالب</label>
+                                        <textarea class="form-control" rows="3" maxlength="4000" placeholder="متن اعلان" disabled="@(!canManageRules)"
+                                                  @bind="rule.BodyTemplate" @bind:event="oninput" @onfocus='() => FocusedField(rule, "body")'></textarea>
+                                    </div>
+                                    <div class="rl-f">
+                                        <label class="rl-lab">لینک مقصد (اختیاری)</label>
+                                        <input class="form-control" dir="ltr" maxlength="500" placeholder="/my-orders/{OrderId}" disabled="@(!canManageRules)"
+                                               @bind="rule.ActionUrlTemplate" @bind:event="oninput" @onfocus='() => FocusedField(rule, "url")' />
+                                    </div>
+                                </div>
+
+                                @if (rule.Placeholders.Count > 0)
+                                {
+                                    <div class="rl-ph">
+                                        <span class="rl-ph__l">متغیرها:</span>
+                                        @foreach (var ph in rule.Placeholders)
+                                        {
+                                            <button type="button" class="rl-ph__c" title="درج در فیلد انتخاب‌شده" disabled="@(!canManageRules)" @onclick="() => InsertPlaceholder(rule, ph)">@("{" + ph + "}")</button>
+                                        }
+                                        <span class="rl-ph__h">برای درج، ابتدا فیلد مقصد را انتخاب کنید؛ پیش‌فرض «متن قالب».</span>
+                                    </div>
+                                }
+
+                                <div class="rl-pv">
+                                    <span class="rl-pv__l"><span class="oi oi-eye"></span> پیش‌نمایش با داده نمونه</span>
+                                    <b>@RenderPreview(rule, rule.TitleTemplate)</b>
+                                    <p>@RenderPreview(rule, rule.BodyTemplate)</p>
+                                    @if (!string.IsNullOrWhiteSpace(rule.ActionUrlTemplate))
+                                    {
+                                        <code dir="ltr">@RenderPreview(rule, rule.ActionUrlTemplate)</code>
+                                    }
+                                </div>
+
+                                <div class="rl-foot">
+                                    <label class="rl-bc" title="ارسال هم‌زمان به دارندگان دسترسی مشاهده اعلان‌ها">
+                                        <input type="checkbox" disabled="@(!canManageRules)" @bind="rule.BroadcastToAdmins" />
+                                        <span>ارسال هم‌زمان به مدیران مجاز</span>
+                                    </label>
+                                    <span class="rl-upd">آخرین ویرایش: @(rule.UpdatedAt == default ? "—" : PersianDate.ToJalaliDateTime(rule.UpdatedAt))</span>
+                                    @if (IsRuleDirty(rule))
+                                    {
+                                        <span class="rl-dirty"><span class="oi oi-pencil"></span> تغییرات ذخیره‌نشده</span>
+                                    }
+                                    @if (ruleErrors.TryGetValue(rule.EventType, out var rerr))
+                                    {
+                                        <span class="rl-err"><span class="oi oi-warning"></span> @rerr</span>
+                                    }
+                                    <button type="button" class="ntf-btn ntf-btn--primary rl-save" disabled="@(!canManageRules || !IsRuleDirty(rule) || IsRuleSaving(rule.EventType))"
+                                            @onclick="() => SaveRule(rule)">
+                                        @(IsRuleSaving(rule.EventType) ? "در حال ذخیره..." : "ذخیره")
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+
+    @* ═══ Edit Modal ═══ *@
+    @if (editing != null)
+    {
+        <div class="nmodal" @onclick="CloseEdit">
+            <div class="nmodal__box" @onclick:stopPropagation>
+                <div class="nmodal__head">
+                    <div><div class="nmodal__eyebrow">ویرایش اعلان #@editing.Id</div><h3 class="nmodal__title"><span class="oi oi-pencil"></span> ویرایش محتوا</h3></div>
+                    <button type="button" class="ntf-icon-btn" @onclick="CloseEdit"><span class="oi oi-x"></span></button>
+                </div>
+                <div class="nmodal__body">
+                    <label class="form-label">شدت اعلان</label>
+                    <div class="wz-sevs">
+                        @foreach (var s in severities)
+                        {
+                            <button type="button" class="wz-sev @(editReq.Severity == s.Value ? "on" : "")" style="--sev:@s.Color" @onclick="() => editReq.Severity = s.Value">
+                                <span class="wz-sev__dot"></span> @s.Label
+                            </button>
+                        }
+                    </div>
+                    <label class="form-label">عنوان</label>
+                    <input class="form-control" @bind="editReq.Title" maxlength="250" placeholder="عنوان اعلان" />
+                    <label class="form-label" style="margin-top:12px;">متن اعلان</label>
+                    <textarea class="form-control" rows="4" maxlength="4000" @bind="editReq.Body" placeholder="متن اعلان"></textarea>
+                    <label class="form-label" style="margin-top:12px;">لینک مقصد (اختیاری)</label>
+                    <input class="form-control" dir="ltr" @bind="editReq.ActionUrl" maxlength="500" placeholder="/products/12" />
+                    @if (!string.IsNullOrWhiteSpace(editError)) { <div class="ntf-alert ntf-alert--error"><span class="oi oi-warning"></span> @editError</div> }
+                </div>
+                <div class="nmodal__foot">
+                    <button type="button" class="ntf-btn ntf-btn--ghost" disabled="@editSaving" @onclick="CloseEdit">انصراف</button>
+                    <button type="button" class="ntf-btn ntf-btn--primary" disabled="@editSaving" @onclick="SaveEdit">
+                        @(editSaving ? "در حال ذخیره..." : "ذخیره تغییرات")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ═══ Delete Confirm ═══ *@
+    @if (deleting != null)
+    {
+        <div class="nmodal" @onclick="() => deleting = null">
+            <div class="nmodal__box nmodal__box--sm" @onclick:stopPropagation>
+                <div class="nmodal__head">
+                    <div><div class="nmodal__eyebrow nmodal__eyebrow--danger">حذف اعلان</div><h3 class="nmodal__title"><span class="oi oi-warning"></span> حذف قطعی؟</h3></div>
+                    <button type="button" class="ntf-icon-btn" @onclick="() => deleting = null"><span class="oi oi-x"></span></button>
+                </div>
+                <div class="nmodal__body">
+                    <div class="del-box">
+                        <b>@deleting.Title</b>
+                        <p>@deleting.Body</p>
+                    </div>
+                    <div class="del-note"><span class="oi oi-warning"></span> اعلان برای همه @deleting.RecipientCount.ToString("N0") گیرنده حذف می‌شود و از لیست آن‌ها نیز خارج خواهد شد. این عملیات قابل بازگشت نیست.</div>
+                    @if (!string.IsNullOrWhiteSpace(deleteError)) { <div class="ntf-alert ntf-alert--error"><span class="oi oi-warning"></span> @deleteError</div> }
+                </div>
+                <div class="nmodal__foot">
+                    <button type="button" class="ntf-btn ntf-btn--ghost" disabled="@deleteSaving" @onclick="() => deleting = null">انصراف</button>
+                    <button type="button" class="ntf-btn ntf-btn--danger" disabled="@deleteSaving" @onclick="ConfirmDelete">
+                        @(deleteSaving ? "در حال حذف..." : "حذف اعلان")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .ntf-page { color: var(--bs-body-color); }
+    .ntf-anim { animation: ntfFade .2s ease-out; }
+    @@keyframes ntfFade { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+    /* ── Head ── */
+    .ntf-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 18px; }
+    .ntf-head__eyebrow { font-size: .76rem; color: var(--bs-secondary-color); }
+    .ntf-head__title { font-size: 1.45rem; font-weight: 900; margin: 2px 0 0; display: flex; align-items: center; gap: 9px; }
+    .ntf-head__title .oi { color: #dc2626; }
+    .ntf-head__actions { display: flex; gap: 10px; }
+
+    .ntf-btn {
+        display: inline-flex; align-items: center; gap: 8px;
+        border: 1px solid transparent; border-radius: 12px;
+        padding: 9px 17px; font-size: .86rem; font-weight: 700;
+        font-family: inherit; cursor: pointer; transition: all .15s; white-space: nowrap;
+    }
+    .ntf-btn--primary { background: #0d6efd; color: #fff; box-shadow: 0 4px 12px rgba(13,110,253,.25); }
+    .ntf-btn--primary:hover { background: #0b5ed7; }
+    .ntf-btn--primary:disabled { opacity: .6; box-shadow: none; }
+    .ntf-btn--soft { background: #0d6efd12; color: #0d6efd; border-color: #0d6efd33; }
+    .ntf-btn--soft:hover { background: #0d6efd1f; }
+    .ntf-btn--soft:disabled { opacity: .6; }
+    .ntf-btn--ghost { background: var(--bs-body-bg); border-color: var(--bs-border-color); color: var(--bs-body-color); }
+    .ntf-btn--ghost:hover { border-color: #0d6efd; color: #0d6efd; }
+    .ntf-btn--send { background: #16a34a; box-shadow: 0 4px 12px rgba(22,163,74,.28); }
+    .ntf-btn--send:hover { background: #15803d; }
+
+    .ntf-icon-btn {
+        border: none; background: transparent; width: 34px; height: 34px;
+        border-radius: 10px; color: var(--bs-secondary-color); cursor: pointer;
+        display: flex; align-items: center; justify-content: center; transition: .15s;
+    }
+    .ntf-icon-btn:hover { background: rgba(220,53,69,.1); color: #dc2626; }
+
+    .ntf-card {
+        background: var(--bs-body-bg);
+        border: 1px solid var(--bs-border-color);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    }
+
+    /* ── Guide ── */
+    .gd-title { font-weight: 800; font-size: .92rem; display: flex; align-items: center; gap: 8px; margin-bottom: 13px; }
+    .gd-title .oi { color: #0d6efd; }
+    .gd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+    .gd-item { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--bs-border-color); border-radius: 12px; padding: 12px; }
+    .gd-n { width: 27px; height: 27px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: .8rem; }
+    .gd-item b { font-size: .84rem; }
+    .gd-item p { margin: 3px 0 0; font-size: .74rem; color: var(--bs-secondary-color); line-height: 1.6; }
+    .gd-note { margin-top: 11px; font-size: .76rem; color: var(--bs-secondary-color); display: flex; align-items: center; gap: 7px; }
+    .gd-note .oi { color: #16a34a; }
+
+    /* ── Stats ── */
+    .ntf-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .ntf-stat { display: flex; align-items: center; gap: 11px; background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: 14px; padding: 12px 14px; }
+    .ntf-stat__ic { width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .ntf-stat b { font-size: 1.2rem; font-weight: 900; display: block; line-height: 1.1; }
+    .ntf-stat i { font-style: normal; font-size: .72rem; color: var(--bs-secondary-color); }
+
+    /* ════ Wizard ════ */
+    .wz-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .wz-head__title { font-weight: 900; font-size: 1.05rem; }
+    .wz-head__sub { font-size: .78rem; color: var(--bs-secondary-color); margin-top: 2px; }
+
+    .wz-bar { display: flex; align-items: center; gap: 8px; margin: 18px 0 4px; }
+    .wz-node { display: flex; align-items: center; gap: 8px; }
+    .wz-node__n {
+        width: 28px; height: 28px; border-radius: 50%;
+        border: 2px solid var(--bs-border-color);
+        display: flex; align-items: center; justify-content: center;
+        font-size: .78rem; font-weight: 800; color: var(--bs-secondary-color);
+        transition: .2s;
+    }
+    .wz-node__t { font-size: .8rem; font-weight: 700; color: var(--bs-secondary-color); transition: .2s; }
+    .wz-node.current .wz-node__n { border-color: #0d6efd; background: #0d6efd; color: #fff; box-shadow: 0 0 0 4px #0d6efd1a; }
+    .wz-node.current .wz-node__t { color: #0d6efd; }
+    .wz-node.done .wz-node__n { border-color: #16a34a; background: #16a34a; color: #fff; }
+    .wz-node.done .wz-node__t { color: var(--bs-body-color); }
+    .wz-sep { flex: 1; height: 2px; background: var(--bs-border-color); border-radius: 2px; min-width: 20px; }
+    .wz-sep.done { background: #16a34a66; }
+
+    .wz-body { padding-top: 16px; }
+
+    /* chip-style wizard box, tinted per content via --acc */
+    .wbox {
+        border: 2px dotted color-mix(in srgb, var(--acc, #0d6efd) 45%, transparent);
+        border-radius: 18px;
+        padding: 14px;
+        margin-bottom: 13px;
+        background: color-mix(in srgb, var(--acc, #0d6efd) 4%, var(--bs-body-bg));
+    }
+    .wbox__h {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        font-weight: 800; font-size: .85rem; margin-bottom: 12px;
+        color: color-mix(in srgb, var(--acc, #0d6efd) 80%, var(--bs-body-color));
+    }
+    .wbox__h .oi { color: var(--acc, #0d6efd); }
+    .wbox__h i { font-style: normal; font-weight: 500; font-size: .71rem; color: var(--bs-secondary-color); }
+    .wbox__h i::before { content: "— "; opacity: .5; }
+
+    .wz-label { font-weight: 800; font-size: .9rem; margin-bottom: 12px; }
+    .wz-label span { font-weight: 500; font-size: .74rem; color: var(--bs-secondary-color); margin-inline-start: 6px; }
+
+    .wz-segs { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 9px; }
+    .wz-segs--narrow { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+
+    /* audience groups */
+    .sel-sum {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+        background: #16a34a0d; border: 1px solid #16a34a33;
+        border-radius: 12px; padding: 9px 13px; font-size: .8rem; font-weight: 700; color: var(--bs-body-color);
+        margin-bottom: 14px;
+    }
+    .sel-sum__ic { width: 22px; height: 22px; border-radius: 50%; background: #16a34a; color: #fff; display: flex; align-items: center; justify-content: center; font-size: .68rem; }
+    .sel-sum__chip {
+        font-size: .73rem; font-weight: 800; color: var(--c);
+        background: color-mix(in srgb, var(--c) 12%, transparent);
+        border: 1px solid color-mix(in srgb, var(--c) 38%, transparent);
+        border-radius: 999px; padding: 3px 10px;
+    }
+
+    .seg-grp {
+        border: 2px dotted color-mix(in srgb, var(--acc, #0d6efd) 45%, transparent);
+        border-radius: 18px;
+        padding: 14px;
+        margin-bottom: 13px;
+        background: color-mix(in srgb, var(--acc, #0d6efd) 4%, var(--bs-body-bg));
+        transition: border-color .15s;
+    }
+    .seg-grp__h { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 11px; }
+    .seg-grp__ic { width: 28px; height: 28px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: .85rem; flex-shrink: 0; background: color-mix(in srgb, var(--acc, #0d6efd) 13%, var(--bs-body-bg)); color: var(--acc, #0d6efd); border: 1px dotted color-mix(in srgb, var(--acc, #0d6efd) 55%, transparent); }
+    .seg-grp__h b { font-size: .87rem; font-weight: 900; color: color-mix(in srgb, var(--acc, #0d6efd) 75%, var(--bs-body-color)); }
+    .seg-grp__h i { font-style: normal; font-size: .71rem; color: var(--bs-secondary-color); }
+    .seg-grp__h i::before { content: "— "; opacity: .5; }
+
+    .cfg {
+        margin-top: 11px; padding: 12px;
+        border: 1.5px dashed color-mix(in srgb, var(--acc, #0d6efd) 55%, transparent);
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--acc, #0d6efd) 6%, var(--bs-body-bg));
+        animation: ntfFade .18s ease-out;
+    }
+    .cfg__h { display: flex; align-items: center; gap: 7px; font-size: .76rem; font-weight: 800; color: color-mix(in srgb, var(--acc, #0d6efd) 85%, var(--bs-body-color)); margin-bottom: 9px; }
+    .cfg__h span { font-weight: 600; color: var(--bs-secondary-color); font-size: .7rem; }
+    .cfg__h span::before { content: "• "; opacity: .6; }
+
+    /* phone chips */
+    .ph-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .ph-chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: .74rem; font-weight: 700; font-family: inherit;
+        color: var(--bs-body-color);
+        background: color-mix(in srgb, var(--bs-body-color) 6%, transparent);
+        border: 1.5px dotted color-mix(in srgb, var(--bs-body-color) 40%, transparent);
+        border-radius: 999px; padding: 4px 11px;
+        direction: ltr;
+    }
+    .ph-chip .oi { color: #64748b; font-size: .66rem; }
+    .ph-chip--more { color: #0d6efd; border-color: #0d6efd66; background: #0d6efd10; }
+
+    .seg {
+        display: flex; align-items: center; gap: 10px;
+        border: 1.5px dotted color-mix(in srgb, var(--bs-body-color) 30%, transparent);
+        border-radius: 15px; padding: 11px 12px;
+        cursor: pointer; user-select: none;
+        background: var(--bs-body-bg);
+        transition: .15s;
+    }
+    .seg:hover { border-color: color-mix(in srgb, var(--acc, #0d6efd) 70%, transparent); }
+    .seg.on {
+        border-color: var(--acc, #0d6efd);
+        background: color-mix(in srgb, var(--acc, #0d6efd) 9%, var(--bs-body-bg));
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc, #0d6efd) 14%, transparent);
+    }
+    .seg__ck {
+        width: 19px; height: 19px; border: 2px solid var(--bs-border-color);
+        border-radius: 6px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-size: .68rem; color: #fff; font-weight: 900; transition: .15s;
+    }
+    .seg.on .seg__ck { background: #0d6efd; border-color: #0d6efd; }
+    .seg__ic { width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .seg__tx b { font-size: .82rem; display: block; }
+    .seg__tx p { margin: 2px 0 0; font-size: .7rem; color: var(--bs-secondary-color); }
+
+    /* product picker */
+    .psearch { display: flex; align-items: center; gap: 8px; background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: 11px; padding: 9px 12px; transition: .15s; }
+    .psearch:focus-within { border-color: #0d6efd; box-shadow: 0 0 0 3px #0d6efd15; }
+    .psearch .oi { color: var(--bs-secondary-color); font-size: .85rem; }
+    .psearch input { border: none; outline: none; background: transparent; width: 100%; font-size: .84rem; color: var(--bs-body-color); }
+    .pres { margin-top: 8px; border: 1px solid var(--bs-border-color); border-radius: 11px; overflow: hidden; background: var(--bs-body-bg); }
+    .pres__item {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        border: none; border-bottom: 1px solid var(--bs-border-color);
+        background: transparent; padding: 9px 12px; cursor: pointer;
+        font-family: inherit; font-size: .82rem; color: var(--bs-body-color); text-align: right;
+        transition: background .12s;
+    }
+    .pres__item:last-child { border-bottom: none; }
+    .pres__item:hover { background: #0d6efd0d; }
+    .pres__name { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pres__price { font-size: .72rem; color: var(--bs-secondary-color); }
+    .pres__item .oi { color: #16a34a; }
+    .pres__none { margin-top: 8px; font-size: .78rem; color: var(--bs-secondary-color); padding: 8px 4px; }
+    .pchips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .pchip {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: #f59e0b14; border: 1px solid #f59e0b44; color: #b45309;
+        border-radius: 999px; padding: 5px 8px 5px 11px; font-size: .75rem; font-weight: 700;
+    }
+    .pchip button { border: none; background: transparent; color: #b45309; cursor: pointer; font-size: .95rem; line-height: 1; padding: 0 3px; }
+    .pchip button:hover { color: #dc2626; }
+
+    /* severity pills */
+    .wz-sevs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; }
+    .wz-sev {
+        display: inline-flex; align-items: center; gap: 7px;
+        border: 1.5px solid var(--bs-border-color); background: var(--bs-body-bg); color: var(--bs-body-color);
+        border-radius: 999px; padding: 7px 14px; font-size: .8rem; font-weight: 700;
+        font-family: inherit; cursor: pointer; transition: .15s;
+    }
+    .wz-sev__dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sev); }
+    .wz-sev:hover { border-color: var(--sev); }
+    .wz-sev.on { border-color: var(--sev); background: color-mix(in srgb, var(--sev) 10%, transparent); color: var(--sev); }
+
+    /* preview */
+    .pv { display: flex; gap: 11px; align-items: flex-start; background: var(--bs-body-bg); border: 1.5px dotted color-mix(in srgb, var(--acc, #0d6efd) 55%, transparent); border-radius: 15px; padding: 14px 15px; max-width: 430px; }
+    .pv__dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+    .pv__t { font-weight: 800; font-size: .86rem; }
+    .pv__b { font-size: .78rem; color: var(--bs-secondary-color); margin-top: 4px; line-height: 1.7; }
+    .pv__time { font-size: .69rem; color: var(--bs-secondary-color); opacity: .65; margin-top: 5px; }
+
+    /* review */
+    .rv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 13px; }
+    .rv-box {
+        border: 2px dotted color-mix(in srgb, var(--acc, #0d6efd) 45%, transparent);
+        border-radius: 18px; padding: 15px;
+        background: color-mix(in srgb, var(--acc, #0d6efd) 5%, var(--bs-body-bg));
+    }
+    .rv-box__h { font-weight: 800; font-size: .85rem; display: flex; align-items: center; gap: 7px; margin-bottom: 11px; color: color-mix(in srgb, var(--acc, #0d6efd) 80%, var(--bs-body-color)); }
+    .rv-box__h .oi { color: var(--acc, #0d6efd); }
+    .rv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .rv-chip { font-size: .74rem; font-weight: 800; color: var(--c); background: color-mix(in srgb, var(--c) 11%, transparent); border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); border-radius: 999px; padding: 4px 10px; }
+    .rv-chip--sub { font-weight: 600; opacity: .85; }
+    .rv-count { margin-top: 13px; padding-top: 12px; border-top: 1px dashed var(--bs-border-color); display: flex; align-items: baseline; gap: 8px; }
+    .rv-count b { font-size: 1.5rem; font-weight: 900; color: #16a34a; }
+    .rv-count b.zero { color: #dc2626; }
+    .rv-count span { font-size: .76rem; color: var(--bs-secondary-color); }
+    .rv-sev { display: inline-flex; align-items: center; gap: 7px; font-size: .76rem; font-weight: 800; color: var(--sev); background: color-mix(in srgb, var(--sev) 10%, transparent); border: 1px solid color-mix(in srgb, var(--sev) 32%, transparent); border-radius: 999px; padding: 4px 11px; }
+    .rv-title { font-weight: 800; font-size: .92rem; margin-top: 10px; }
+    .rv-body { font-size: .8rem; color: var(--bs-secondary-color); margin-top: 6px; line-height: 1.8; white-space: pre-wrap; }
+    .rv-url { margin-top: 9px; font-size: .75rem; color: #0d6efd; display: flex; align-items: center; gap: 6px; }
+
+    .rc-pill { display: inline-flex; align-items: center; gap: 7px; background: #16a34a14; border: 1px solid #16a34a44; color: #16a34a; font-size: .8rem; font-weight: 800; border-radius: 999px; padding: 7px 13px; }
+    .rc-pill.rc-zero { background: #dc262614; border-color: #dc262644; color: #dc2626; }
+
+    .wz-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bs-border-color); }
+    .wz-foot__right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+    .ntf-alert { display: flex; align-items: center; gap: 8px; border-radius: 11px; padding: 10px 13px; font-size: .82rem; font-weight: 600; margin-top: 13px; }
+    .ntf-alert--error { background: #dc262610; border: 1px solid #dc262650; color: #dc2626; }
+    .ntf-alert--success { background: #16a34a10; border: 1px solid #16a34a50; color: #16a34a; }
+
+    /* ════ List ════ */
+    .lst-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+    .lst-title { font-weight: 900; font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+    .lst-title .oi { color: #0d6efd; }
+    .lst-count { background: #0d6efd14; color: #0d6efd; font-size: .7rem; font-weight: 800; border-radius: 999px; padding: 3px 9px; }
+    .lst-tools { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+    .lst-select { border: 1px solid var(--bs-border-color); background: var(--bs-body-bg); color: var(--bs-body-color); border-radius: 11px; padding: 8px 12px; font-size: .8rem; font-family: inherit; outline: none; }
+    .lst-select:focus { border-color: #0d6efd; box-shadow: 0 0 0 3px #0d6efd15; }
+    .lst-search { display: flex; align-items: center; gap: 7px; background: color-mix(in srgb, var(--bs-body-color) 5%, transparent); border: 1px solid var(--bs-border-color); border-radius: 11px; padding: 8px 12px; width: 240px; transition: .15s; }
+    .lst-search:focus-within { border-color: #0d6efd; box-shadow: 0 0 0 3px #0d6efd15; }
+    .lst-search .oi { color: var(--bs-secondary-color); font-size: .82rem; }
+    .lst-search input { border: none; outline: none; background: transparent; width: 100%; font-size: .82rem; color: var(--bs-body-color); }
+    .lst-search__x { border: none; background: transparent; color: var(--bs-secondary-color); cursor: pointer; padding: 0; display: flex; }
+    .lst-search__x:hover { color: #dc2626; }
+
+    /* segmented category filter */
+    .lst-seg {
+        display: inline-flex; flex-wrap: wrap; gap: 3px;
+        background: color-mix(in srgb, var(--bs-body-color) 6%, transparent);
+        border: 1px solid var(--bs-border-color);
+        border-radius: 13px; padding: 4px; margin-top: 16px;
+    }
+    .lseg {
+        display: inline-flex; align-items: center; gap: 7px;
+        border: none; background: transparent;
+        border-radius: 10px; padding: 7px 13px;
+        font-size: .79rem; font-weight: 700; font-family: inherit;
+        color: var(--bs-secondary-color); cursor: pointer; transition: .15s;
+    }
+    .lseg:hover { color: var(--bs-body-color); }
+    .lseg.on { background: var(--bs-body-bg); color: #0d6efd; box-shadow: 0 1px 4px rgba(0,0,0,.10); }
+    .lseg__n {
+        font-size: .66rem; font-weight: 800;
+        background: color-mix(in srgb, currentColor 14%, transparent);
+        border-radius: 999px; padding: 1px 7px; min-width: 20px; text-align: center;
+    }
+
+    /* day group header */
+    .lst-day {
+        display: flex; align-items: center; gap: 10px;
+        margin: 18px 0 9px;
+    }
+    .lst-day__t {
+        display: inline-flex; align-items: center; gap: 7px;
+        font-size: .78rem; font-weight: 900; color: var(--bs-body-color);
+        background: color-mix(in srgb, var(--bs-body-color) 6%, transparent);
+        border: 1px solid var(--bs-border-color);
+        border-radius: 999px; padding: 5px 13px;
+    }
+    .lst-day__t .oi { color: #0d6efd; font-size: .75rem; }
+    .lst-day::after { content: ""; flex: 1; height: 1px; background: var(--bs-border-color); }
+    .lst-day i { font-style: normal; font-size: .7rem; color: var(--bs-secondary-color); order: 3; }
+
+    /* notification card — chip style, dotted border, distinct background per severity */
+    .lcard {
+        --sev: #0d6efd;
+        display: flex; gap: 13px; align-items: flex-start;
+        border: 2px dotted color-mix(in srgb, var(--sev) 65%, transparent);
+        border-radius: 18px;
+        background:
+            linear-gradient(0deg,
+                color-mix(in srgb, var(--sev) 7%, var(--bs-body-bg)),
+                color-mix(in srgb, var(--sev) 7%, var(--bs-body-bg)));
+        padding: 15px 16px;
+        margin-bottom: 12px;
+        position: relative;
+        transition: transform .15s, box-shadow .15s, border-color .15s;
+    }
+    .lcard:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px color-mix(in srgb, var(--sev) 18%, transparent);
+        border-color: var(--sev);
+    }
+    .lcard__ic {
+        width: 42px; height: 42px; border-radius: 999px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center; font-size: 1rem;
+        background: color-mix(in srgb, var(--sev) 15%, var(--bs-body-bg));
+        color: var(--sev);
+        border: 1.5px dotted color-mix(in srgb, var(--sev) 55%, transparent);
+    }
+    .lcard__main { flex: 1; min-width: 0; }
+    .lcard__head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .lcard__title { font-weight: 800; font-size: .9rem; }
+    .lcard__sev {
+        font-size: .67rem; font-weight: 800; color: var(--sev);
+        background: color-mix(in srgb, var(--sev) 16%, transparent);
+        border: 1px dotted color-mix(in srgb, var(--sev) 55%, transparent);
+        border-radius: 999px; padding: 2px 10px;
+    }
+    .lcard__bc {
+        font-size: .67rem; font-weight: 800; color: #b45309;
+        background: #f59e0b1f; border: 1px dotted #f59e0b88;
+        border-radius: 999px; padding: 2px 10px;
+        display: inline-flex; align-items: center; gap: 4px;
+    }
+    .lcard__body { font-size: .79rem; color: var(--bs-secondary-color); margin: 6px 0 0; line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .lcard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+    .lcard__meta-i {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: .7rem; color: var(--bs-body-color);
+        background: color-mix(in srgb, var(--bs-body-bg) 70%, transparent);
+        border: 1px dashed var(--bs-border-color);
+        border-radius: 999px; padding: 3px 10px;
+    }
+    .lcard__meta-i .oi { font-size: .66rem; color: var(--sev); }
+    .lcard__link {
+        color: #0d6efd; text-decoration: none; font-weight: 700; font-size: .7rem;
+        display: inline-flex; align-items: center; gap: 5px;
+        border: 1px dotted #0d6efd77; background: #0d6efd12;
+        border-radius: 999px; padding: 3px 10px;
+    }
+    .lcard__link:hover { background: #0d6efd20; text-decoration: none; }
+
+    .lcard__acts { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; opacity: 0; transition: opacity .15s; }
+    .lcard:hover .lcard__acts, .lcard:focus-within .lcard__acts { opacity: 1; }
+    .lcard__act {
+        width: 32px; height: 32px; border-radius: 9px;
+        border: 1px solid var(--bs-border-color);
+        background: var(--bs-body-bg); color: var(--bs-secondary-color);
+        cursor: pointer; display: flex; align-items: center; justify-content: center;
+        font-size: .82rem; transition: .15s;
+    }
+    .lcard__act:hover { border-color: #0d6efd; color: #0d6efd; background: #0d6efd0d; }
+    .lcard__act--danger:hover { border-color: #dc2626; color: #dc2626; background: #dc26260d; }
+    @@media (hover: none) { .lcard__acts { opacity: 1; } }
+
+    .lst-empty { text-align: center; padding: 44px 14px; color: var(--bs-secondary-color); font-size: .85rem; }
+    .lst-empty .oi { display: block; font-size: 1.9rem; opacity: .3; margin-bottom: 9px; }
+
+    /* ════ Modals ════ */
+    .nmodal {
+        position: fixed; inset: 0; z-index: 2000;
+        background: rgba(2, 6, 23, 0.55);
+        backdrop-filter: blur(4px);
+        display: grid; place-items: center; padding: 16px;
+        animation: ntfFade .15s ease-out;
+    }
+    .nmodal__box {
+        background: var(--bs-body-bg);
+        border: 1px solid var(--bs-border-color);
+        border-radius: 18px;
+        box-shadow: 0 24px 70px rgba(0,0,0,.30);
+        max-width: 520px; width: 100%;
+        max-height: 88vh; overflow: hidden;
+        display: flex; flex-direction: column;
+        animation: nmodalIn .22s ease;
+    }
+    .nmodal__box--sm { max-width: 430px; }
+    @@keyframes nmodalIn { from { opacity: 0; transform: scale(.96) translateY(12px); } to { opacity: 1; transform: none; } }
+    .nmodal__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 18px 20px 0; }
+    .nmodal__eyebrow { font-size: .72rem; color: var(--bs-secondary-color); }
+    .nmodal__eyebrow--danger { color: #dc2626; font-weight: 800; }
+    .nmodal__title { font-size: 1.05rem; font-weight: 900; margin: 3px 0 0; display: flex; align-items: center; gap: 8px; }
+    .nmodal__title .oi { color: #0d6efd; }
+    .nmodal__box--sm .nmodal__title .oi { color: #dc2626; }
+    .nmodal__body { padding: 16px 20px; overflow-y: auto; }
+    .nmodal__foot {
+        display: flex; justify-content: flex-start; gap: 10px;
+        padding: 14px 20px; border-top: 1px solid var(--bs-border-color);
+        background: color-mix(in srgb, var(--bs-body-color) 3%, transparent);
+    }
+    .ntf-btn--danger { background: #dc2626; color: #fff; box-shadow: 0 4px 12px rgba(220,53,69,.28); }
+    .ntf-btn--danger:hover { background: #b91c1c; }
+    .ntf-btn--danger:disabled { opacity: .6; box-shadow: none; }
+
+    .del-box { border: 1px solid var(--bs-border-color); border-radius: 12px; padding: 12px 14px; background: color-mix(in srgb, var(--bs-body-color) 3%, transparent); }
+    .del-box b { font-size: .88rem; display: block; }
+    .del-box p { font-size: .77rem; color: var(--bs-secondary-color); margin: 5px 0 0; line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .del-note {
+        display: flex; gap: 8px; align-items: flex-start;
+        margin-top: 12px; font-size: .77rem; font-weight: 600; color: #dc2626;
+        background: #dc262610; border: 1px solid #dc262640;
+        border-radius: 11px; padding: 10px 12px; line-height: 1.7;
+    }
+    .del-note .oi { margin-top: 2px; flex-shrink: 0; }
+
+    /* ── Tabs ── */
+    .ntf-tabs { display: inline-flex; gap: 6px; padding: 5px; border: 1px solid var(--bs-border-color); border-radius: 14px; background: color-mix(in srgb, var(--bs-body-color) 4%, transparent); margin-bottom: 16px; }
+    .ntftab {
+        display: inline-flex; align-items: center; gap: 8px;
+        border: 0; background: transparent; color: var(--bs-secondary-color);
+        font-family: inherit; font-size: .84rem; font-weight: 700;
+        padding: 9px 15px; border-radius: 11px; cursor: pointer;
+        transition: background .15s, color .15s;
+    }
+    .ntftab:hover { color: var(--bs-body-color); background: color-mix(in srgb, var(--bs-body-color) 6%, transparent); }
+    .ntftab.on { background: var(--bs-body-bg); color: var(--bs-body-color); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .ntftab__n {
+        font-size: .68rem; font-weight: 800; padding: 2px 7px; border-radius: 8px;
+        background: color-mix(in srgb, var(--bs-body-color) 8%, transparent); color: var(--bs-secondary-color);
+        direction: ltr;
+    }
+    .ntftab__n--ok { background: #16a34a18; color: #16a34a; }
+
+    /* ── Auto Rules ── */
+    .rl-note {
+        display: flex; align-items: flex-start; gap: 8px;
+        font-size: .78rem; line-height: 1.8; color: var(--bs-secondary-color);
+        background: color-mix(in srgb, #0d6efd 6%, transparent);
+        border: 1px dashed color-mix(in srgb, #0d6efd 40%, transparent);
+        border-radius: 12px; padding: 11px 13px; margin-bottom: 16px;
+    }
+    .rl-note b { color: #0d6efd; }
+    .rl-note .oi { margin-top: 3px; color: #0d6efd; flex-shrink: 0; }
+
+    .rl-grp {
+        border: 2px dotted color-mix(in srgb, var(--acc, #0d6efd) 45%, transparent);
+        border-radius: 18px; padding: 14px; margin-bottom: 14px;
+        background: color-mix(in srgb, var(--acc, #0d6efd) 4%, var(--bs-body-bg));
+    }
+    .rl-grp__h { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; }
+    .rl-grp__h b { font-size: .9rem; }
+    .rl-grp__h i { font-style: normal; font-size: .72rem; font-weight: 700; color: color-mix(in srgb, var(--bs-body-color) 55%, transparent); }
+    .rl-grp__ic {
+        width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+        background: color-mix(in srgb, var(--acc, #0d6efd) 14%, transparent); color: var(--acc, #0d6efd);
+    }
+
+    .rl-card {
+        border: 1px solid var(--bs-border-color); border-radius: 14px;
+        padding: 14px; margin-bottom: 11px; background: var(--bs-body-bg);
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .rl-card:last-child { margin-bottom: 0; }
+    .rl-card:not(.on) { opacity: .72; }
+    .rl-card.dirty { border-color: #f59e0b; box-shadow: 0 0 0 3px #f59e0b18; }
+    .rl-card.on { border-color: color-mix(in srgb, var(--acc, #0d6efd) 40%, var(--bs-border-color)); }
+
+    .rl-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 13px; }
+    .rl-head__t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .rl-head__t b { font-size: .9rem; }
+    .rl-head__t code {
+        font-size: .68rem; font-weight: 700; color: color-mix(in srgb, var(--bs-body-color) 55%, transparent);
+        background: color-mix(in srgb, var(--bs-body-color) 5%, transparent);
+        border-radius: 7px; padding: 2px 7px; direction: ltr; text-align: left;
+    }
+    .rl-head__sev { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-inline-start: auto; }
+    .rl-sevl { font-size: .7rem; font-weight: 800; color: var(--bs-secondary-color); }
+    .rl-sevp { font-size: .72rem; padding: 5px 10px; }
+    .rl-sevp:disabled { opacity: .5; cursor: not-allowed; }
+
+    .rl-sw {
+        position: relative; width: 42px; height: 24px; flex-shrink: 0;
+        border: 1px solid var(--bs-border-color); border-radius: 999px;
+        background: color-mix(in srgb, var(--bs-body-color) 12%, transparent);
+        cursor: pointer; padding: 0; transition: background .15s, border-color .15s;
+    }
+    .rl-sw:disabled { opacity: .5; cursor: not-allowed; }
+    .rl-sw__knob {
+        position: absolute; top: 2px; inset-inline-start: 2px;
+        width: 18px; height: 18px; border-radius: 50%;
+        background: var(--bs-body-bg); box-shadow: 0 1px 3px rgba(0,0,0,.25);
+        transition: transform .15s;
+    }
+    .rl-sw.on { background: #16a34a; border-color: #16a34a; }
+    .rl-sw.on .rl-sw__knob { transform: translateX(-18px); }
+    [dir="ltr"] .rl-sw.on .rl-sw__knob { transform: translateX(18px); }
+
+    .rl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 11px; }
+    .rl-f { display: flex; flex-direction: column; gap: 6px; }
+    .rl-lab { font-size: .74rem; font-weight: 800; color: var(--bs-secondary-color); }
+    .rl-f .form-control { font-size: .84rem; }
+    .rl-f textarea.form-control { resize: vertical; min-height: 74px; }
+
+    .rl-ph { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 11px; }
+    .rl-ph__l { font-size: .72rem; font-weight: 800; color: var(--bs-secondary-color); }
+    .rl-ph__c {
+        font-family: inherit; font-size: .7rem; font-weight: 800; direction: ltr;
+        border: 1px dashed color-mix(in srgb, var(--acc, #0d6efd) 55%, transparent);
+        background: color-mix(in srgb, var(--acc, #0d6efd) 7%, transparent);
+        color: var(--acc, #0d6efd); border-radius: 999px; padding: 4px 10px; cursor: pointer;
+        transition: background .15s;
+    }
+    .rl-ph__c:hover { background: color-mix(in srgb, var(--acc, #0d6efd) 16%, transparent); }
+    .rl-ph__c:disabled { opacity: .45; cursor: not-allowed; }
+    .rl-ph__h { font-size: .68rem; color: color-mix(in srgb, var(--bs-body-color) 50%, transparent); }
+
+    .rl-pv {
+        margin-top: 12px; border: 1px dashed var(--bs-border-color); border-radius: 12px;
+        padding: 11px 13px; background: color-mix(in srgb, var(--bs-body-color) 3%, transparent);
+    }
+    .rl-pv__l { display: flex; align-items: center; gap: 7px; font-size: .7rem; font-weight: 800; color: var(--bs-secondary-color); margin-bottom: 6px; }
+    .rl-pv b { display: block; font-size: .88rem; }
+    .rl-pv p { font-size: .8rem; line-height: 1.8; margin: 5px 0 0; color: color-mix(in srgb, var(--bs-body-color) 85%, transparent); }
+    .rl-pv code { display: inline-block; margin-top: 7px; font-size: .72rem; direction: ltr; color: #16a34a; background: #16a34a10; border-radius: 7px; padding: 3px 8px; }
+
+    .rl-foot { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; margin-top: 13px; padding-top: 12px; border-top: 1px dashed var(--bs-border-color); }
+    .rl-bc { display: inline-flex; align-items: center; gap: 7px; font-size: .78rem; font-weight: 700; cursor: pointer; margin: 0; }
+    .rl-bc input { width: 16px; height: 16px; accent-color: #0d6efd; }
+    .rl-upd { font-size: .7rem; color: color-mix(in srgb, var(--bs-body-color) 50%, transparent); }
+    .rl-dirty { font-size: .72rem; font-weight: 800; color: #f59e0b; display: inline-flex; align-items: center; gap: 5px; }
+    .rl-err { font-size: .74rem; font-weight: 800; color: #dc2626; display: inline-flex; align-items: center; gap: 5px; }
+    .rl-save { margin-inline-start: auto; }
+
+    @@media (max-width: 640px) {
+        .rl-head__sev { margin-inline-start: 0; width: 100%; }
+        .rl-save { margin-inline-start: 0; width: 100%; justify-content: center; }
+        .ntf-tabs { display: flex; width: 100%; }
+        .ntftab { flex: 1; justify-content: center; }
+    }
+</style>
+
+@code {
+    private List<NotificationDto>? items;
+    private NotificationSummaryDto? summary;
+    private List<WorkshopDto> workshops = new();
+
+    private int composerStep;
+    private bool showGuide;
+    private bool saving;
+    private string? error;
+    private string? success;
+    private string? pageSuccess;
+
+    private bool segAllUsers;
+    private bool segAdmins;
+    private bool segSuperAdmin;
+    private bool segWorkshop;
+    private bool segBuyers;
+    private bool segManual;
+
+    private int? workshopIdSel;
+    private string workshopIdText = string.Empty;
+    private string recipientText = string.Empty;
+    private List<string> manualPhones = new();
+
+    private string productQuery = string.Empty;
+    private List<ProductDto>? productResults;
+    private List<ProductDto> selectedProducts = new();
+    private CancellationTokenSource? _productCts;
+
+    private int? previewCount;
+    private bool previewLoading;
+
+    private NotificationCreateRequest request = new();
+
+    private string activeCategory = "all";
+    private int activeSeverity = -1;
+    private string searchText = string.Empty;
+
+    private NotificationDto? editing;
+    private NotificationUpdateRequest editReq = new();
+    private bool editSaving;
+    private string? editError;
+
+    private NotificationDto? deleting;
+    private bool deleteSaving;
+    private string? deleteError;
+
+    private string activeTab = "list";
+    private List<NotificationRuleDto>? rules;
+    private bool rulesLoading;
+    private string? rulesError;
+    private string? rulesSuccess;
+    private bool canManageRules;
+    private readonly Dictionary<string, string> ruleSnapshots = new();
+    private readonly Dictionary<string, string> ruleErrors = new();
+    private readonly HashSet<string> savingRules = new(StringComparer.OrdinalIgnoreCase);
+    private string focusedRuleKey = string.Empty;
+    private string focusedField = "body";
+
+    private int SelectedSegmentCount =>
+        (segAllUsers ? 1 : 0) + (segAdmins ? 1 : 0) + (segSuperAdmin ? 1 : 0)
+        + (segWorkshop ? 1 : 0) + (segBuyers ? 1 : 0)
+        + (segManual && ParsePhones(recipientText).Count > 0 ? 1 : 0);
+
+    private readonly (string Key, string Label, string Icon)[] categories =
+    {
+        ("all", "همه", "oi-layers"),
+        ("order", "سفارش و پرداخت", "oi-cart"),
+        ("receipt", "رسید خدمات", "oi-document"),
+        ("return", "مرجوعی", "oi-action-undo"),
+        ("manual", "دستی", "oi-bullhorn"),
+        ("other", "سایر", "oi-info")
+    };
+
+    private readonly (int Value, string Label, string Color)[] severities =
+    {
+        (0, "اطلاع", "#0d6efd"),
+        (1, "موفق", "#16a34a"),
+        (2, "هشدار", "#f59e0b"),
+        (3, "بحرانی", "#dc2626")
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var st = await AuthState.GetAuthenticationStateAsync();
+            canManageRules = st.User?.Identity?.IsAuthenticated == true
+                && (st.User.HasClaim("perm", "admin.notifications.manage") || st.User.IsInRole("super_admin"));
+        }
+        catch { canManageRules = false; }
+        await Load();
+        try
+        {
+            var list = await Http.GetFromJsonAsync<List<WorkshopDto>>("api/workshops");
+            workshops = list ?? new();
+        }
+        catch { workshops = new(); }
+    }
+
+    /* auto rules */
+    private void OpenListTab()
+    {
+        activeTab = "list";
+        rulesSuccess = null;
+    }
+
+    private async Task OpenRulesTab()
+    {
+        activeTab = "rules";
+        rulesError = null;
+        rulesSuccess = null;
+        if (rules == null) await LoadRules();
+    }
+
+    private async Task LoadRules()
+    {
+        rulesLoading = true;
+        rulesError = null;
+        try
+        {
+            var list = await Http.GetFromJsonAsync<List<NotificationRuleDto>>("api/notifications/admin/rules");
+            rules = list ?? new();
+            ruleSnapshots.Clear();
+            ruleErrors.Clear();
+            foreach (var r in rules) ruleSnapshots[r.EventType] = RuleSnapshot(r);
+        }
+        catch (Exception ex) { rulesError = $"دریافت تنظیمات خودکار انجام نشد: {ex.Message}"; }
+        finally { rulesLoading = false; }
+    }
+
+    private static string RuleSnapshot(NotificationRuleDto r) =>
+        $"{r.IsEnabled}|{r.Severity}|{r.TitleTemplate}|{r.BodyTemplate}|{r.ActionUrlTemplate}|{r.BroadcastToAdmins}";
+
+    private bool IsRuleDirty(NotificationRuleDto r) =>
+        ruleSnapshots.TryGetValue(r.EventType, out var snap) && snap != RuleSnapshot(r);
+
+    private bool IsRuleSaving(string eventType) => savingRules.Contains(eventType);
+
+    private void FocusedField(NotificationRuleDto r, string field)
+    {
+        focusedRuleKey = r.EventType;
+        focusedField = field;
+    }
+
+    private void InsertPlaceholder(NotificationRuleDto r, string name)
+    {
+        var target = focusedRuleKey == r.EventType ? focusedField : "body";
+        var token = "{" + name + "}";
+        if (target == "title") r.TitleTemplate = (r.TitleTemplate ?? string.Empty) + token;
+        else if (target == "url") r.ActionUrlTemplate = (r.ActionUrlTemplate ?? string.Empty) + token;
+        else r.BodyTemplate = (r.BodyTemplate ?? string.Empty) + token;
+    }
+
+    private static readonly Dictionary<string, string> SampleValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["OrderNumber"] = "۱۰۴۵۲",
+        ["Amount"] = "۲۵۰,۰۰۰",
+        ["OrderId"] = "۱۲",
+        ["Status"] = "تأیید شده",
+        ["Stage"] = "درحال پردازش",
+        ["ReceiptId"] = "۸۸",
+        ["ReceiptNote"] = "در کارگاه ثبت شد",
+        ["StatusTitle"] = "دستگاه تعمیر شد",
+        ["RefundAmount"] = "۱۲۰,۰۰۰",
+        ["Carrier"] = "پست پیشتاز",
+        ["TrackingNumber"] = "POST-۹۹۸۷",
+        ["Reason"] = "خارج از مهلت مرجوعی",
+        ["TicketTitle"] = "روشن نشدن دستگاه",
+        ["TicketId"] = "۳۴",
+        ["FullName"] = "علی رضایی",
+        ["Subject"] = "درخواست مشاوره",
+        ["Phone"] = "۰۹۱۲۱۲۳۴۵۶۷",
+        ["DeviceName"] = "یخچال مدل X۲۰۰",
+        ["EndDate"] = "۱۴۰۴/۰۷/۱۲",
+        ["RequestId"] = "۵۶",
+        ["Message"] = "دما بالاتر از حد مجاز است",
+        ["Balance"] = "۱۵,۰۰۰",
+        ["Error"] = "دسترسی به فایل پشتیبان ممکن نیست",
+        ["Count"] = "۳",
+        ["CustomerName"] = "مریم محمدی",
+        ["ProductTitle"] = "کولر گازی ۱۲۰۰۰",
+        ["UserName"] = "کاربر مهمان",
+        ["NewsTitle"] = "راهنمای تعمیر لوازم خانگی",
+        ["WorkType"] = "تعمیر در محل",
+        ["CommitmentId"] = "۷۱",
+        ["Rating"] = "۵",
+        ["SessionId"] = "۱۹"
+    };
+
+    private static string RenderPreview(NotificationRuleDto r, string? template)
+    {
+        if (string.IsNullOrWhiteSpace(template)) return "—";
+        var outp = template;
+        foreach (var ph in r.Placeholders)
+            if (SampleValues.TryGetValue(ph, out var v))
+                outp = outp.Replace("{" + ph + "}", v, StringComparison.OrdinalIgnoreCase);
+        return outp;
+    }
+
+    private static string GroupColor(string group) => group switch
+    {
+        "سفارش و پرداخت" => "#0d6efd",
+        "مرجوعی" => "#d97706",
+        "رسید خدمات" => "#16a34a",
+        "مراحل سفارش (استپر)" => "#8b5cf6",
+        "پشتیبانی" => "#e11d48",
+        "حساب کاربری" => "#0ea5e9",
+        "پایش دستگاه‌ها" => "#0891b2",
+        "پیامک" => "#f59e0b",
+        "پشتیبان‌گیری" => "#475569",
+        "اعلان‌ها" => "#dc2626",
+        "محتوا" => "#9333ea",
+        "پذیرش آنلاین" => "#14b8a6",
+        "تعهدنامه دیجیتال" => "#0f766e",
+        _ => "#64748b"
+    };
+
+    private static string GroupIcon(string group) => group switch
+    {
+        "سفارش و پرداخت" => "oi-cart",
+        "مرجوعی" => "oi-action-undo",
+        "رسید خدمات" => "oi-document",
+        "مراحل سفارش (استپر)" => "oi-arrow-circle-right",
+        "پشتیبانی" => "oi-comment-square",
+        "حساب کاربری" => "oi-person",
+        "پایش دستگاه‌ها" => "oi-monitor",
+        "پیامک" => "oi-envelope-closed",
+        "پشتیبان‌گیری" => "oi-package",
+        "اعلان‌ها" => "oi-bell",
+        "محتوا" => "oi-file",
+        "پذیرش آنلاین" => "oi-clipboard",
+        "تعهدنامه دیجیتال" => "oi-key",
+        _ => "oi-info"
+    };
+
+    private async Task ToggleRule(NotificationRuleDto r)
+    {
+        r.IsEnabled = !r.IsEnabled;
+        await SaveRule(r);
+    }
+
+    private async Task SaveRule(NotificationRuleDto r)
+    {
+        if (!canManageRules) return;
+        ruleErrors.Remove(r.EventType);
+        rulesSuccess = null;
+        if (string.IsNullOrWhiteSpace(r.TitleTemplate) || string.IsNullOrWhiteSpace(r.BodyTemplate))
+        {
+            ruleErrors[r.EventType] = "عنوان و متن قالب الزامی است.";
+            return;
+        }
+        savingRules.Add(r.EventType);
+        StateHasChanged();
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"api/notifications/admin/rules/{Uri.EscapeDataString(r.EventType)}",
+                new NotificationRuleUpdateRequest
+                {
+                    IsEnabled = r.IsEnabled,
+                    Severity = r.Severity,
+                    TitleTemplate = r.TitleTemplate.Trim(),
+                    BodyTemplate = r.BodyTemplate.Trim(),
+                    ActionUrlTemplate = string.IsNullOrWhiteSpace(r.ActionUrlTemplate) ? null : r.ActionUrlTemplate.Trim(),
+                    BroadcastToAdmins = r.BroadcastToAdmins
+                });
+            if (!resp.IsSuccessStatusCode)
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ruleErrors[r.EventType] = string.IsNullOrWhiteSpace(msg)
+                    ? (resp.StatusCode == System.Net.HttpStatusCode.Forbidden
+                        ? "برای این عملیات دسترسی لازم را ندارید."
+                        : "ذخیره تنظیمات انجام نشد.")
+                    : msg.Trim('"');
+                return;
+            }
+            var updated = await resp.Content.ReadFromJsonAsync<NotificationRuleDto>();
+            if (updated != null)
+            {
+                r.Id = updated.Id;
+                r.Group = updated.Group;
+                r.Label = updated.Label;
+                r.Placeholders = updated.Placeholders;
+                r.UpdatedAt = updated.UpdatedAt;
+            }
+            else r.UpdatedAt = DateTimeOffset.UtcNow;
+            ruleSnapshots[r.EventType] = RuleSnapshot(r);
+            rulesSuccess = $"تنظیمات «{r.Label}» ذخیره شد.";
+        }
+        catch { ruleErrors[r.EventType] = "ارتباط با سرور برقرار نشد."; }
+        finally { savingRules.Remove(r.EventType); }
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            var listTask = Http.GetFromJsonAsync<List<NotificationDto>>("api/notifications/admin?take=100");
+            var summaryTask = Http.GetFromJsonAsync<NotificationSummaryDto>("api/notifications/admin/summary");
+            items = await listTask ?? new();
+            summary = await summaryTask;
+        }
+        catch (Exception ex) { error = $"دریافت اعلان‌ها انجام نشد: {ex.Message}"; }
+    }
+
+    private void ToggleSeg(ref bool flag)
+    {
+        flag = !flag;
+        previewCount = null;
+        error = null;
+    }
+
+    private void OpenComposer()
+    {
+        composerStep = 1;
+        error = success = null;
+        previewCount = null;
+    }
+
+    private void CancelComposer()
+    {
+        composerStep = 0;
+        error = success = null;
+        ResetComposer();
+    }
+
+    private void ResetComposer()
+    {
+        request = new();
+        segAllUsers = segAdmins = segSuperAdmin = segWorkshop = segBuyers = segManual = false;
+        workshopIdSel = null;
+        workshopIdText = string.Empty;
+        recipientText = string.Empty;
+        manualPhones = new();
+        productQuery = string.Empty;
+        productResults = null;
+        selectedProducts = new();
+        previewCount = null;
+    }
+
+    private bool HasAnySegment =>
+        segAllUsers || segAdmins || segSuperAdmin || segWorkshop || segBuyers
+        || (segManual && ParsePhones(recipientText).Count > 0);
+
+    private NotificationCreateRequest BuildRequest()
+    {
+        var wsId = workshopIdSel;
+        if (!wsId.HasValue && int.TryParse(workshopIdText, out var w)) wsId = w;
+        return new NotificationCreateRequest
+        {
+            Title = request.Title?.Trim() ?? string.Empty,
+            Body = request.Body?.Trim() ?? string.Empty,
+            Severity = request.Severity,
+            ActionUrl = string.IsNullOrWhiteSpace(request.ActionUrl) ? null : request.ActionUrl.Trim(),
+            IncludeAllUsers = segAllUsers,
+            BroadcastToAdmins = segAdmins,
+            IncludeSuperAdmins = segSuperAdmin,
+            IncludeWorkshopUsers = segWorkshop,
+            WorkshopId = segWorkshop ? wsId : null,
+            PhoneNumbers = segManual ? ParsePhones(recipientText) : new(),
+            PurchasedProductIds = segBuyers ? selectedProducts.Select(p => p.Id).ToList() : new()
+        };
+    }
+
+    private static string NormalizeDigits(string s)
+    {
+        var chars = s.ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
+        {
+            var c = chars[i];
+            if (c >= '۰' && c <= '۹') chars[i] = (char)('0' + (c - '۰'));
+            else if (c >= '٠' && c <= '٩') chars[i] = (char)('0' + (c - '٠'));
+        }
+        return new string(chars);
+    }
+
+    private static List<string> ParsePhones(string text) =>
+        NormalizeDigits(text ?? string.Empty)
+            .Split(new[] { ',', ';', '،', '\n', '\r', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim().Trim('+', '-', '(', ')'))
+            .Where(x => x.Length >= 10 && x.Length <= 15 && x.All(char.IsDigit))
+            .Distinct()
+            .ToList();
+
+    private void GoStep2()
+    {
+        error = null;
+        manualPhones = segManual ? ParsePhones(recipientText) : new();
+        if (!HasAnySegment) { error = "حداقل یک گروه مخاطب را انتخاب کنید."; return; }
+        if (segWorkshop)
+        {
+            var wsId = workshopIdSel;
+            if (!wsId.HasValue && int.TryParse(workshopIdText, out var w)) wsId = w;
+            if (!wsId.HasValue || wsId.Value <= 0) { error = "کارگاه مقصد را انتخاب کنید."; return; }
+        }
+        if (segBuyers && selectedProducts.Count == 0) { error = "حداقل یک محصول برای «خریداران محصول» انتخاب کنید."; return; }
+        if (segManual)
+        {
+            if (manualPhones.Count == 0) { error = "حداقل یک شماره موبایل معتبر وارد کنید (مثلاً 09123456789)."; return; }
+            var validSet = new HashSet<string>(manualPhones);
+            var invalidTokens = NormalizeDigits(recipientText ?? string.Empty)
+                .Split(new[] { ',', ';', '،', '\n', '\r', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim().Trim('+', '-', '(', ')'))
+                .Where(x => x.Length > 0 && !validSet.Contains(x))
+                .Distinct()
+                .ToList();
+            if (invalidTokens.Count > 0) { error = $"این موارد شماره موبایل معتبر نیستند: {string.Join("، ", invalidTokens)}"; return; }
+        }
+        composerStep = 2;
+        previewCount = null;
+    }
+
+    private async Task GoStep3()
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Body))
+        {
+            error = "عنوان و متن اعلان الزامی است.";
+            return;
+        }
+        composerStep = 3;
+        if (!previewCount.HasValue)
+            await LoadPreviewAsync();
+    }
+
+    private async Task LoadPreviewAsync()
+    {
+        error = null;
+        previewLoading = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/notifications/admin/preview-recipients", BuildRequest());
+            if (resp.IsSuccessStatusCode)
+                previewCount = await resp.Content.ReadFromJsonAsync<int>();
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                previewCount = null;
+                error = string.IsNullOrWhiteSpace(msg)
+                    ? "محاسبه تعداد گیرنده انجام نشد."
+                    : msg.Trim('"');
+            }
+        }
+        catch { previewCount = null; error = "ارتباط با سرور برقرار نشد."; }
+        finally { previewLoading = false; }
+    }
+
+    private async Task Create()
+    {
+        error = success = null;
+        saving = true;
+        try
+        {
+            var payload = BuildRequest();
+            if (string.IsNullOrWhiteSpace(payload.Title) || string.IsNullOrWhiteSpace(payload.Body))
+            {
+                error = "عنوان و متن اعلان الزامی است.";
+                return;
+            }
+            var response = await Http.PostAsJsonAsync("api/notifications/admin/manual", payload);
+            if (!response.IsSuccessStatusCode)
+            {
+                var msg = await response.Content.ReadAsStringAsync();
+                error = string.IsNullOrWhiteSpace(msg)
+                    ? (response.StatusCode == System.Net.HttpStatusCode.Forbidden
+                        ? "برای ارسال به مدیران/سوپر ادمین/همه کاربران، دسترسی «ارسال پخشی» لازم است."
+                        : "ثبت اعلان انجام نشد.")
+                    : msg.Trim('"');
+                return;
+            }
+            success = "اعلان ثبت شد و برای مخاطبین انتخاب‌شده قرار گرفت.";
+            pageSuccess = success;
+            previewCount = null;
+            await Load();
+            composerStep = 0;
+            ResetComposer();
+        }
+        catch (Exception ex) { error = ex.Message; }
+        finally { saving = false; }
+    }
+
+    /* product picker */
+    private async Task OnProductQueryInput(ChangeEventArgs e)
+    {
+        productQuery = e.Value?.ToString() ?? string.Empty;
+        _productCts?.Cancel();
+        _productCts = new CancellationTokenSource();
+        var ct = _productCts.Token;
+        try
+        {
+            await Task.Delay(320, ct);
+            if (productQuery.Trim().Length < 2)
+            {
+                productResults = null;
+                StateHasChanged();
+                return;
+            }
+            var res = await Http.GetFromJsonAsync<List<ProductDto>>(
+                $"api/products?search={Uri.EscapeDataString(productQuery.Trim())}&take=8", ct);
+            productResults = res ?? new();
+            StateHasChanged();
+        }
+        catch (OperationCanceledException) { }
+        catch { productResults = new(); }
+    }
+
+    private void AddProduct(ProductDto p)
+    {
+        if (selectedProducts.All(x => x.Id != p.Id))
+            selectedProducts.Add(p);
+        productQuery = string.Empty;
+        productResults = null;
+        previewCount = null;
+    }
+
+    private void RemoveProduct(ProductDto p)
+    {
+        selectedProducts.Remove(p);
+        previewCount = null;
+    }
+
+    /* edit / delete */
+    private void OpenEdit(NotificationDto item)
+    {
+        editing = item;
+        editError = null;
+        editReq = new NotificationUpdateRequest
+        {
+            Title = item.Title,
+            Body = item.Body,
+            Severity = item.Severity,
+            ActionUrl = item.ActionUrl
+        };
+    }
+
+    private void CloseEdit()
+    {
+        if (editSaving) return;
+        editing = null;
+        editError = null;
+    }
+
+    private async Task SaveEdit()
+    {
+        if (editing == null) return;
+        editError = null;
+        if (string.IsNullOrWhiteSpace(editReq.Title) || string.IsNullOrWhiteSpace(editReq.Body))
+        {
+            editError = "عنوان و متن اعلان الزامی است.";
+            return;
+        }
+        editSaving = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"api/notifications/admin/{editing.Id}", editReq);
+            if (!response.IsSuccessStatusCode)
+            {
+                var msg = await response.Content.ReadAsStringAsync();
+                editError = string.IsNullOrWhiteSpace(msg) ? "ذخیره تغییرات انجام نشد." : msg.Trim('"');
+                return;
+            }
+            var updated = await response.Content.ReadFromJsonAsync<NotificationDto>();
+            if (updated != null && items != null)
+            {
+                var idx = items.FindIndex(x => x.Id == updated.Id);
+                if (idx >= 0)
+                {
+                    updated.RecipientCount = items[idx].RecipientCount;
+                    updated.CreatedByName = items[idx].CreatedByName;
+                    items[idx] = updated;
+                }
+            }
+            pageSuccess = "اعلان ویرایش شد؛ تغییرات برای همه گیرندگان اعمال شد.";
+            editing = null;
+        }
+        catch { editError = "ارتباط با سرور برقرار نشد."; }
+        finally { editSaving = false; }
+    }
+
+    private void AskDelete(NotificationDto item)
+    {
+        deleting = item;
+        deleteError = null;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (deleting == null) return;
+        deleteError = null;
+        deleteSaving = true;
+        try
+        {
+            var response = await Http.DeleteAsync($"api/notifications/admin/{deleting.Id}");
+            if (!response.IsSuccessStatusCode)
+            {
+                var msg = await response.Content.ReadAsStringAsync();
+                deleteError = string.IsNullOrWhiteSpace(msg) ? "حذف اعلان انجام نشد." : msg.Trim('"');
+                return;
+            }
+            items?.RemoveAll(x => x.Id == deleting.Id);
+            pageSuccess = $"اعلان «{deleting.Title}» حذف شد.";
+            deleting = null;
+            await Load();
+        }
+        catch { deleteError = "ارتباط با سرور برقرار نشد."; }
+        finally { deleteSaving = false; }
+    }
+
+    /* list */
+    private int CategoryCount(string key)
+    {
+        var all = items ?? new();
+        return key == "all" ? all.Count : all.Count(x => CategoryOf(x.EventType) == key);
+    }
+
+    private IEnumerable<NotificationDto> filteredItems =>
+        (items ?? new())
+        .Where(x => (activeCategory == "all" || CategoryOf(x.EventType) == activeCategory)
+            && (activeSeverity < 0 || x.Severity == activeSeverity)
+            && (string.IsNullOrWhiteSpace(searchText)
+                || x.Title.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+                || x.Body.Contains(searchText, StringComparison.OrdinalIgnoreCase)));
+
+    private static string CategoryOf(string eventType) => eventType switch
+    {
+        "manual" => "manual",
+        _ when eventType.StartsWith("order.") => "order",
+        _ when eventType.StartsWith("receipt.") => "receipt",
+        _ when eventType.StartsWith("return.") => "return",
+        _ => "other"
+    };
+
+    private static string CategoryIcon(string eventType) => CategoryOf(eventType) switch
+    {
+        "manual" => "oi-bullhorn",
+        "order" => "oi-cart",
+        "receipt" => "oi-document",
+        "return" => "oi-action-undo",
+        _ => "oi-info"
+    };
+
+    private static string SevColor(int severity) => severity switch
+    {
+        1 => "#16a34a",
+        2 => "#f59e0b",
+        3 => "#dc2626",
+        _ => "#0d6efd"
+    };
+
+    private static string SevLabel(int severity) => severity switch
+    {
+        1 => "موفق",
+        2 => "هشدار",
+        3 => "بحرانی",
+        _ => "اطلاع"
+    };
+}

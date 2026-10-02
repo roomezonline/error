@@ -49,8 +49,16 @@
             <div class="cs-row">
                 <div class="cs-field cs-field--half">
                     <label class="cs-label">نام</label>
-                    <input class="cs-input @(_replyNameError ? "cs-input--error" : "")" placeholder="نام شما" @bind="_replyForm.FullName" @bind:event="oninput" />
-                    @if (_replyNameError) { <span class="cs-error">نام الزامی است</span> }
+                    <input class="cs-input @(_replyNameError ? "cs-input--error" : "")"
+                           placeholder="نام شما"
+                           value="@_replyForm.FullName"
+                           readonly="@IsAuthenticated"
+                           @oninput="@(e => _replyForm.FullName = e.Value?.ToString() ?? "")" />
+                    @if (IsAuthenticated)
+                    {
+                        <span class="cs-hint">نام شما از حساب کاربری درج شده و قابل تغییر نیست.</span>
+                    }
+                    else if (_replyNameError) { <span class="cs-error">نام الزامی است</span> }
                 </div>
             </div>
             <div class="cs-field">
@@ -81,7 +89,9 @@
                 <CommentNode Comment="reply"
                              ReplyFormVisible="false"
                              OnReply="OnReply"
-                             OnSubmitReply="OnSubmitReply" />
+                             OnSubmitReply="OnSubmitReply"
+                             IsAuthenticated="IsAuthenticated"
+                             AuthUserName="AuthUserName" />
             }
         </div>
     }
@@ -93,6 +103,8 @@
     [Parameter] public EventCallback ToggleReply { get; set; }
     [Parameter] public EventCallback<CommentRequest> OnReply { get; set; }
     [Parameter] public EventCallback<CommentRequest> OnSubmitReply { get; set; }
+    [Parameter] public bool IsAuthenticated { get; set; }
+    [Parameter] public string? AuthUserName { get; set; }
 
     private CommentRequest _replyForm = new();
     private bool _replyNameError, _replyContentError;
@@ -101,6 +113,16 @@
 
     private bool IsReply => Comment.ParentId.HasValue;
     private string Initial => string.IsNullOrEmpty(Comment.FullName) ? "?" : Comment.FullName[..1];
+
+    protected override void OnParametersSet()
+    {
+        if (IsAuthenticated && !string.IsNullOrWhiteSpace(AuthUserName)
+            && string.IsNullOrWhiteSpace(_replyForm.FullName))
+        {
+            _replyForm.FullName = AuthUserName;
+        }
+        base.OnParametersSet();
+    }
 
     private void CancelReply()
     {
@@ -113,6 +135,9 @@
         _replyContentError = false;
         _replyError = null;
 
+        if (IsAuthenticated && !string.IsNullOrWhiteSpace(AuthUserName))
+            _replyForm.FullName = AuthUserName;
+
         if (string.IsNullOrWhiteSpace(_replyForm.FullName)) _replyNameError = true;
         if (string.IsNullOrWhiteSpace(_replyForm.Content)) _replyContentError = true;
         if (_replyNameError || _replyContentError) return;
@@ -121,11 +146,17 @@
         try
         {
             await OnSubmitReply.InvokeAsync(_replyForm);
-            _replyForm = new();
+            _replyForm = new CommentRequest
+            {
+                FullName = IsAuthenticated ? AuthUserName ?? "" : ""
+            };
         }
-        catch
+        catch (Exception ex)
         {
-            _replyError = "خطا در ارسال پاسخ.";
+            var msg = ex.Message;
+            if (ex.InnerException != null && !string.IsNullOrWhiteSpace(ex.InnerException.Message))
+                msg = ex.InnerException.Message;
+            _replyError = string.IsNullOrWhiteSpace(msg) ? "خطا در ارسال پاسخ." : msg;
         }
         finally
         {

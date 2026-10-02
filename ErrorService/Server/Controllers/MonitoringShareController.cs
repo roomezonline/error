@@ -250,7 +250,10 @@ public class MonitoringShareController : ControllerBase
                 CreatedByUserName = connection.CreatedByUserName ?? "",
                 connection.EndedAt,
                 EndReason = connection.EndReason ?? "",
-                GracePeriodEndAt = connection.GracePeriodEndAt?.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                GracePeriodEndAt = connection.GracePeriodEndAt?.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                MonitoringDurationHours = connection.Workshop != null && connection.Workshop.MonitoringDurationHours >= 1
+                    ? connection.Workshop.MonitoringDurationHours
+                    : 72
             });
     }
 

@@ -39,6 +39,7 @@ builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<ISmsService, SmsService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<SystemEventService>();
+builder.Services.AddScoped<NotificationEventService>();
 builder.Services.AddSingleton<MonitoringCacheService>();
 builder.Services.AddScoped<MonitoringAuthorizationService>();
 builder.Services.AddHttpClient();
@@ -48,6 +49,18 @@ builder.Services.AddScoped<ErrorService.Server.Services.Payment.IPaymentGatewayF
 builder.Services.AddScoped<ErrorService.Server.Services.Backup.IBackupService, ErrorService.Server.Services.Backup.SqlServerBackupService>();
 builder.Services.AddSingleton<ErrorService.Server.Services.IEmailService, ErrorService.Server.Services.SmtpEmailService>();
 builder.Services.AddHostedService<ErrorService.Server.Services.Backup.BackupBackgroundService>();
+builder.Services.AddHostedService<ErrorService.Server.Services.PendingOrderCleanupService>();
+builder.Services.AddHostedService<ErrorService.Server.Services.MonitoringExpiryNotificationService>();
+builder.Services.AddHostedService<ErrorService.Server.Services.NotificationMaintenanceService>();
+
+// آمار بازدید — صف غیرمسدودکننده + نوشتن دسته‌ای + نگهداری/پاک‌سازی
+builder.Services.AddSingleton<ErrorService.Server.Services.Visits.VisitTrackingService>();
+builder.Services.AddHostedService<ErrorService.Server.Services.Visits.VisitLogWriterService>();
+builder.Services.AddHostedService<ErrorService.Server.Services.Visits.VisitMaintenanceService>();
+
+// تحلیلگر فضای هاست — اسکن پس‌زمینه با کش
+builder.Services.AddSingleton<ErrorService.Server.Services.HostInfoService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ErrorService.Server.Services.HostInfoService>());
 var redisConnection = builder.Configuration.GetSection("Redis")["ConnectionString"];
 if (!string.IsNullOrEmpty(redisConnection))
 {
@@ -299,6 +312,16 @@ if (applyMigrationsOnStartup)
             {
                 logger.LogError(ex, "Failed to seed roles/permissions.");
             }
+        }
+
+        try
+        {
+            var ruleLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("NotificationRuleSeeder");
+            await NotificationRuleSeeder.SeedAsync(db, ruleLogger);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to seed notification rules.");
         }
 
         // همیشه چک می‌کنیم، اگر جداول لوکیشن خالی بودند پر می‌کنیم (بدون وابستگی به کانفیگ خارجی برای اطمینان بیشتر)

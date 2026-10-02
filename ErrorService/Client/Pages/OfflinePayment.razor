@@ -8,6 +8,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject ErrorService.Client.Services.ToastService ToastService
+@inject ErrorService.Client.Services.CartService CartService
 
 <HeadContent>
     <meta name="robots" content="noindex, nofollow" />
@@ -18,7 +19,7 @@
 <div class="payment-page" dir="rtl">
     <div class="container py-4">
         <div class="d-flex align-items-center gap-3 mb-5 px-1">
-            <a href="/checkout" class="btn-back">
+            <a href="/" class="btn-back">
                 <span class="oi oi-arrow-right"></span>
             </a>
             <h1 class="page-title">پرداخت و تایید نهایی</h1>
@@ -60,6 +61,100 @@
                             <div class="order-banner-code">
                                 <span class="order-banner-code-label">شماره سفارش</span>
                                 <span class="order-banner-code-val">@order.OrderNumber</span>
+                            </div>
+                        </div>
+
+                        <div class="order-detail-card">
+                            <div class="order-detail-header">
+                                <span class="oi oi-document"></span>
+                                <span>جزئیات سفارش</span>
+                            </div>
+
+                            <div class="order-detail-section">
+                                <div class="order-detail-title"><span class="oi oi-person"></span> اطلاعات خریدار</div>
+                                <div class="order-detail-grid">
+                                    <div class="order-detail-row">
+                                        <span class="order-detail-label">نام</span>
+                                        <span class="order-detail-val">@order.FullName</span>
+                                    </div>
+                                    <div class="order-detail-row">
+                                        <span class="order-detail-label">موبایل</span>
+                                        <span class="order-detail-val ltr" dir="ltr">@order.PhoneNumber</span>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(order.Email))
+                                    {
+                                        <div class="order-detail-row">
+                                            <span class="order-detail-label">ایمیل</span>
+                                            <span class="order-detail-val ltr" dir="ltr">@order.Email</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(order.Address))
+                            {
+                                <div class="order-detail-section">
+                                    <div class="order-detail-title"><span class="oi oi-location"></span> آدرس تحویل</div>
+                                    <div class="order-detail-address">
+                                        @order.Address
+                                        @if (!string.IsNullOrEmpty(order.CityName) || !string.IsNullOrEmpty(order.ProvinceName))
+                                        {
+                                            <span class="order-detail-location">@order.ProvinceName@(string.IsNullOrEmpty(order.CityName) ? "" : $"، {order.CityName}")</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(order.PostalCode))
+                                        {
+                                            <span class="order-detail-postal">کد پستی: <span class="ltr" dir="ltr">@order.PostalCode</span></span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="order-detail-section">
+                                <div class="order-detail-title"><span class="oi oi-cart"></span> اقلام سفارش</div>
+                                <div class="order-items-list">
+                                    @foreach (var item in order.Items)
+                                    {
+                                        <div class="order-items-row">
+                                            <div class="order-items-info">
+                                                <span class="order-items-qty">@item.Quantity×</span>
+                                                <span class="order-items-name">@item.ProductName</span>
+                                            </div>
+                                            <span class="order-items-price">@((item.Price * item.Quantity).ToString("N0")) تومان</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="order-detail-section">
+                                <div class="order-detail-title"><span class="oi oi-calculator"></span> خلاصه مبالغ</div>
+                                <div class="order-summary-rows">
+                                    <div class="order-summary-row">
+                                        <span>جمع کالاها</span>
+                                        <span>@order.Items.Sum(x => x.Price * x.Quantity).ToString("N0") تومان</span>
+                                    </div>
+                                    <div class="order-summary-row">
+                                        <span>هزینه ارسال (@(order.ShippingMethodName ?? "—"))</span>
+                                        @if (order.ShippingCost == 0)
+                                        {
+                                            <span class="text-success">رایگان</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@order.ShippingCost.ToString("N0") تومان</span>
+                                        }
+                                    </div>
+                                    @if ((order.DiscountAmount ?? 0) > 0)
+                                    {
+                                        <div class="order-summary-row order-summary-row--discount">
+                                            <span>تخفیف (@order.CouponCode)</span>
+                                            <span>-@order.DiscountAmount!.Value.ToString("N0") تومان</span>
+                                        </div>
+                                    }
+                                    <div class="order-summary-row order-summary-row--total">
+                                        <span>مبلغ نهایی</span>
+                                        <span>@((order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0")) تومان</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -274,6 +369,50 @@
     .order-banner-code-val {
         font-size: 0.9rem; font-weight: 800; background: rgba(255,255,255,0.2);
         padding: 6px 16px; border-radius: 10px; letter-spacing: 0.5px;
+    }
+
+    .order-detail-card {
+        background: #fff; border: 1px solid #f1f5f9; border-radius: 16px;
+        margin-bottom: 24px; overflow: hidden;
+    }
+    .order-detail-header {
+        display: flex; align-items: center; gap: 8px; padding: 14px 20px;
+        background: #f8fafc; border-bottom: 1px solid #f1f5f9;
+        font-weight: 800; font-size: 0.88rem; color: #1e293b;
+    }
+    .order-detail-header .oi { color: var(--shop-primary, #4f46e5); }
+    .order-detail-section { padding: 16px 20px; border-bottom: 1px solid #f8fafc; }
+    .order-detail-section:last-child { border-bottom: none; }
+    .order-detail-title {
+        display: flex; align-items: center; gap: 6px; font-size: 0.8rem;
+        font-weight: 700; color: #64748b; margin-bottom: 10px;
+    }
+    .order-detail-title .oi { font-size: 0.72rem; color: #94a3b8; }
+    .order-detail-grid { display: flex; flex-direction: column; gap: 6px; }
+    .order-detail-row { display: flex; justify-content: space-between; font-size: 0.82rem; }
+    .order-detail-label { color: #94a3b8; }
+    .order-detail-val { font-weight: 700; color: #1e293b; }
+    .order-detail-address { font-size: 0.82rem; color: #475569; line-height: 1.8; }
+    .order-detail-location { display: block; font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+    .order-detail-postal { display: block; font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+    .order-items-list { display: flex; flex-direction: column; gap: 6px; }
+    .order-items-row {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 8px 10px; background: #f8fafc; border-radius: 8px;
+    }
+    .order-items-info { display: flex; align-items: center; gap: 6px; }
+    .order-items-qty { font-size: 0.75rem; font-weight: 800; color: var(--shop-primary, #4f46e5); }
+    .order-items-name { font-size: 0.82rem; font-weight: 600; color: #1e293b; }
+    .order-items-price { font-size: 0.8rem; font-weight: 700; color: #475569; white-space: nowrap; }
+    .order-summary-rows { display: flex; flex-direction: column; gap: 6px; }
+    .order-summary-row {
+        display: flex; justify-content: space-between; font-size: 0.82rem; color: #64748b;
+    }
+    .order-summary-row--discount { color: #dc2626; font-weight: 600; }
+    .order-summary-row--total {
+        display: flex; justify-content: space-between; align-items: center;
+        padding-top: 8px; border-top: 1px dashed #e2e8f0; margin-top: 4px;
+        font-size: 0.95rem; font-weight: 900; color: #0f172a;
     }
 
     .section-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 24px; }
@@ -553,9 +692,16 @@
             var response = await Http.PostAsync($"api/orders/{OrderId}/receipt", content);
             if (response.IsSuccessStatusCode)
             {
-                ToastService.ShowSuccess(order?.Status == OrderStatus.ReceiptUploaded ? "رسید جدید ثبت شد" : "رسید پرداخت با موفقیت ثبت شد");
+                await CartService.ClearCartAsync();
+                var wasPending = order?.Status == OrderStatus.PendingPayment;
+                ToastService.ShowSuccess(wasPending ? "رسید پرداخت با موفقیت ثبت شد" : "رسید جدید ثبت شد");
                 order = await Http.GetFromJsonAsync<OrderDto>(OrderUrl());
                 selectedFiles.Clear();
+                if (wasPending)
+                {
+                    await Task.Delay(1200);
+                    Nav.NavigateTo("/");
+                }
             }
             else
             {

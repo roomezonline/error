@@ -256,6 +256,7 @@ public class NewsController : ControllerBase
 
         _context.News.Add(news);
         await _context.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
 
         return Ok(new NewsDto { Id = news.Id, Title = news.Title, Slug = news.Slug });
     }
@@ -286,6 +287,7 @@ public class NewsController : ControllerBase
         news.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _context.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 
@@ -298,6 +300,7 @@ public class NewsController : ControllerBase
 
         _context.News.Remove(news);
         await _context.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 

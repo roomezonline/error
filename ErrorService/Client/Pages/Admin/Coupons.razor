@@ -10,10 +10,72 @@
 @inject ToastService ToastService
 @inject IJSRuntime JS
 
+<PageTitle>کدهای تخفیف | ارورسرویس</PageTitle>
+
 <ConfirmDialog IsVisible="showConfirm"
                Title="حذف کد تخفیف"
                Message="آیا از حذف این کد تخفیف اطمینان دارید؟"
                OnResult="HandleDeleteResult" />
+
+@if (showUserPicker)
+{
+    <div class="coupon-modal-overlay" @onclick="CloseUserPicker">
+        <div class="coupon-modal" @onclick:stopPropagation>
+            <div class="coupon-modal__header">
+                <h6 class="m-0 fw-bold"><span class="oi oi-person me-1"></span> انتخاب کاربر</h6>
+                <button class="btn-close" @onclick="CloseUserPicker"></button>
+            </div>
+            <div class="coupon-modal__search">
+                <input type="text" class="form-control rounded-3" placeholder="جستجو بر اساس نام یا شماره موبایل..."
+                       @bind="_pickerSearch" @bind:event="oninput" @bind:after="OnPickerSearchInput" autofocus />
+            </div>
+            <div class="coupon-modal__body">
+                @if (_pickerLoading)
+                {
+                    <div class="text-center py-4"><div class="spinner-border text-primary"></div></div>
+                }
+                else if (!_pickerUsers.Any())
+                {
+                    <div class="text-center py-4 text-muted small">
+                        @if (string.IsNullOrWhiteSpace(_pickerSearch))
+                        {
+                            <span>برای جستجو تایپ کنید...</span>
+                        }
+                        else
+                        {
+                            <span>کاربری یافت نشد</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    @foreach (var u in _pickerUsers)
+                    {
+                        <div class="coupon-modal__user" @onclick="() => PickUser(u)">
+                            <div class="coupon-modal__avatar">
+                                <span class="oi oi-person"></span>
+                            </div>
+                            <div class="coupon-modal__info">
+                                <div class="coupon-modal__name">@u.FullName</div>
+                                <div class="coupon-modal__phone" dir="ltr">@u.PhoneNumber</div>
+                            </div>
+                            <span class="coupon-modal__check">
+                                @if (u.Id == editModel.AssignedToUserId)
+                                {
+                                    <span class="oi oi-circle-check text-primary"></span>
+                                }
+                                else
+                                {
+                                    <span class="oi oi-chevron-left text-muted"></span>
+                                }
+                            </span>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+}
 
 <div class="admin-container" dir="rtl">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -83,6 +145,29 @@
                                 <label class="form-check-label fw-bold" for="isActive">فعال</label>
                             </div>
                         </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">تخصیص به کاربر <small class="text-muted">(اختیاری)</small></label>
+                            @if (editModel.AssignedToUserId.HasValue)
+                            {
+                                <div class="d-flex align-items-center gap-2 p-2 border rounded-3 bg-light">
+                                    <span class="oi oi-person text-primary"></span>
+                                    <div class="flex-grow-1">
+                                        <span class="fw-bold small">@editModel.AssignedToUserName</span>
+                                        <span class="text-muted small ltr ms-1" dir="ltr">@editModel.AssignedToUserPhone</span>
+                                    </div>
+                                    <button type="button" class="btn btn-sm text-danger p-1" @onclick="ClearAssignedUser" title="حذف انتخاب">
+                                        <span class="oi oi-x"></span>
+                                    </button>
+                                </div>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-outline-primary rounded-3 w-100 py-2" @onclick="OpenUserPicker">
+                                    <span class="oi oi-person me-1"></span> انتخاب کاربر
+                                </button>
+                            }
+                            <div class="coupon-hint">اگر انتخاب نشود کد تخفیف برای همه کاربران قابل استفاده است</div>
+                        </div>
                     </div>
                     <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
                         <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseEditor">انصراف</button>
@@ -104,6 +189,7 @@
                         <th class="ps-4">کد</th>
                         <th>توضیحات</th>
                         <th>نوع تخفیف</th>
+                        <th>تخصیص</th>
                         <th>مصرف</th>
                         <th>تاریخ انقضا</th>
                         <th class="text-center">وضعیت</th>
@@ -113,11 +199,11 @@
                 <tbody>
                     @if (coupons == null)
                     {
-                        <tr><td colspan="7" class="text-center py-5"><div class="spinner-border text-primary border-2"></div></td></tr>
+                        <tr><td colspan="8" class="text-center py-5"><div class="spinner-border text-primary border-2"></div></td></tr>
                     }
                     else if (!coupons.Any())
                     {
-                        <tr><td colspan="7" class="text-center py-5 text-muted">هیچ کد تخفیفی ثبت نشده است.</td></tr>
+                        <tr><td colspan="8" class="text-center py-5 text-muted">هیچ کد تخفیفی ثبت نشده است.</td></tr>
                     }
                     else
                     {
@@ -136,6 +222,18 @@
                                     else if (c.DiscountAmount.HasValue)
                                     {
                                         <span class="badge bg-info rounded-pill">@c.DiscountAmount.Value.ToString("N0") تومان</span>
+                                    }
+                                </td>
+                                <td class="small">
+                                    @if (c.AssignedToUserId.HasValue)
+                                    {
+                                        <span class="badge bg-primary-subtle text-primary rounded-pill px-2 py-1">
+                                            <span class="oi oi-person me-1"></span>@(c.AssignedToUserName ?? "---")
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">همه</span>
                                     }
                                 </td>
                                 <td class="small">
@@ -194,6 +292,13 @@
         el.dataset.raw = raw;
         return raw;
     };
+    window.__setNumberValue = (el, value) => {
+        if (!el) return;
+        const num = parseInt(value, 10);
+        if (isNaN(num) || num === 0) { el.value = ''; el.dataset.raw = ''; return; }
+        el.value = num.toLocaleString('en-US');
+        el.dataset.raw = num.toString();
+    };
     window.__initCouponEditor = (expiryEl, amountEl, minOrderEl) => {
         if (expiryEl && window.jalaliDatepicker) {
             window.jalaliDatepicker.startWatch({
@@ -226,6 +331,44 @@
     .btn-delete:hover { background: #ef4444; color: #fff; border-color: #ef4444; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(239,68,68,0.25); }
     .action-btns .oi { font-size: 1rem; }
     input[data-jdp] { cursor: pointer; }
+
+    /* ═══ User Picker Modal ═══ */
+    .coupon-modal-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 1050; animation: fadeIn 0.15s;
+    }
+    .coupon-modal {
+        background: #fff; border-radius: 16px; width: 92%; max-width: 460px;
+        max-height: 70vh; display: flex; flex-direction: column;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.2); animation: slideUp 0.2s;
+    }
+    .coupon-modal__header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 16px 20px 12px; border-bottom: 1px solid #f1f5f9;
+    }
+    .coupon-modal__search { padding: 12px 20px; }
+    .coupon-modal__body {
+        flex: 1; overflow-y: auto; padding: 0 8px 8px;
+    }
+    .coupon-modal__user {
+        display: flex; align-items: center; gap: 12px;
+        padding: 12px; border-radius: 12px; cursor: pointer; transition: all 0.15s;
+    }
+    .coupon-modal__user:hover { background: #f1f5f9; }
+    .coupon-modal__avatar {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: #eef2ff; color: #4f46e5;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1rem; flex-shrink: 0;
+    }
+    .coupon-modal__info { flex: 1; min-width: 0; }
+    .coupon-modal__name { font-weight: 700; font-size: 0.88rem; }
+    .coupon-modal__phone { font-size: 0.78rem; color: #94a3b8; }
+    .coupon-modal__check { font-size: 1.1rem; flex-shrink: 0; }
+
+    @@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 </style>
 
 @code {
@@ -268,7 +411,9 @@
             MinOrderAmount = c.MinOrderAmount,
             MaxUsageCount = c.MaxUsageCount,
             IsActive = c.IsActive,
-            ExpiryDate = c.ExpiryDate
+            ExpiryDate = c.ExpiryDate,
+            AssignedToUserId = c.AssignedToUserId,
+            AssignedToUserName = c.AssignedToUserName
         };
         _expiryDateText = c.ExpiryDate.HasValue ? PersianDate.ToJalaliDate(c.ExpiryDate.Value) : "";
         showEditor = true;
@@ -282,6 +427,13 @@
             try
             {
                 await JS.InvokeVoidAsync("window.__initCouponEditor", _expiryRef, _amountRef, _minOrderRef);
+                if (editingId != 0)
+                {
+                    if (editModel.DiscountAmount.HasValue && editModel.DiscountAmount.Value > 0)
+                        await JS.InvokeVoidAsync("window.__setNumberValue", _amountRef, editModel.DiscountAmount.Value);
+                    if (editModel.MinOrderAmount.HasValue && editModel.MinOrderAmount.Value > 0)
+                        await JS.InvokeVoidAsync("window.__setNumberValue", _minOrderRef, editModel.MinOrderAmount.Value);
+                }
             }
             catch { }
         }
@@ -345,6 +497,12 @@
     private int _deleteId;
     private bool showConfirm;
 
+    private bool showUserPicker;
+    private string _pickerSearch = "";
+    private List<AdminSiteUserDto> _pickerUsers = new();
+    private bool _pickerLoading;
+    private System.Timers.Timer? _pickerDebounce;
+
     private void DeleteCoupon(int id)
     {
         _deleteId = id;
@@ -361,5 +519,59 @@
             ToastService.ShowSuccess("کد تخفیف حذف شد");
             await LoadCoupons();
         }
+    }
+
+    private void SelectUser(AdminSiteUserDto user)
+    {
+        editModel.AssignedToUserId = user.Id;
+        editModel.AssignedToUserName = user.FullName;
+        editModel.AssignedToUserPhone = user.PhoneNumber;
+    }
+
+    private void ClearAssignedUser()
+    {
+        editModel.AssignedToUserId = null;
+        editModel.AssignedToUserName = null;
+        editModel.AssignedToUserPhone = null;
+    }
+
+    private void OpenUserPicker()
+    {
+        _pickerSearch = "";
+        _pickerUsers = new();
+        showUserPicker = true;
+    }
+
+    private void CloseUserPicker()
+    {
+        showUserPicker = false;
+        _pickerSearch = "";
+        _pickerUsers = new();
+    }
+
+    private async Task PickUser(AdminSiteUserDto user)
+    {
+        editModel.AssignedToUserId = user.Id;
+        editModel.AssignedToUserName = user.FullName;
+        editModel.AssignedToUserPhone = user.PhoneNumber;
+        CloseUserPicker();
+    }
+
+    private async Task OnPickerSearchInput()
+    {
+        var term = _pickerSearch?.Trim() ?? "";
+        if (term.Length < 2)
+        {
+            _pickerUsers = new();
+            return;
+        }
+        _pickerLoading = true;
+        StateHasChanged();
+        try
+        {
+            _pickerUsers = await Http.GetFromJsonAsync<List<AdminSiteUserDto>>($"api/admin-users?search={Uri.EscapeDataString(term)}&take=20") ?? new();
+        }
+        catch { _pickerUsers = new(); }
+        _pickerLoading = false;
     }
 }

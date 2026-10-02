@@ -7,6 +7,7 @@ public class SearchResultItemDto
     public string Title { get; set; } = string.Empty;
     public string? Subtitle { get; set; }
     public string Url { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
 }
 
 public class SearchResponseDto

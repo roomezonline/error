@@ -1,0 +1,198 @@
+<div class="stype" @onfocusin="Open" @onfocusout="OnFocusOut">
+    <input class="form-control stype-input"
+           value="@Value"
+           placeholder="@Placeholder"
+           autocomplete="off"
+           disabled="@Disabled"
+           @oninput="OnInput"
+           @onkeydown="OnKeyDown" />
+
+    @if (_open && (FilteredItems.Count > 0 || CanCreate))
+    {
+        <div class="stype-panel" @onmousedown:preventDefault>
+            @foreach (var item in FilteredItems)
+            {
+                <button type="button" class="stype-item" @onclick="() => Select(item)">
+                    @item
+                </button>
+            }
+            @if (CanCreate)
+            {
+                <button type="button" class="stype-item stype-item--create" @onclick="Create">
+                    <span class="oi oi-plus"></span>
+                    ایجاد «@(_draft.Trim())»
+                </button>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .stype {
+        position: relative;
+        width: 100%;
+    }
+    .stype-input {
+        width: 100%;
+        padding: 11px 14px;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        color: #1e293b;
+        background: #f8fafc;
+        outline: none;
+        transition: border-color 0.2s, background 0.2s;
+        font-family: inherit;
+    }
+    .stype-input:focus {
+        border-color: #6366f1;
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+    .stype-input:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    .stype-panel {
+        position: absolute;
+        z-index: 3100;
+        top: calc(100% + 6px);
+        right: 0;
+        left: 0;
+        max-height: 260px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .stype-item {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 6px;
+        width: 100%;
+        text-align: right;
+        padding: 9px 12px;
+        border: none;
+        border-radius: 9px;
+        background: transparent;
+        color: #0f172a;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+    }
+    .stype-item:hover {
+        background: #f1f5f9;
+    }
+    .stype-item--create {
+        color: #4f46e5;
+        border-top: 1px dashed #e2e8f0;
+        border-radius: 0 0 9px 9px;
+        font-weight: 800;
+    }
+    .stype-item--create:hover {
+        background: #eef2ff;
+    }
+</style>
+
+@code {
+    [Parameter] public IReadOnlyList<string> Items { get; set; } = Array.Empty<string>();
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "تایپ یا انتخاب کنید";
+    [Parameter] public bool AllowCreate { get; set; } = true;
+    [Parameter] public bool Disabled { get; set; }
+
+    private bool _open;
+    private string _draft = string.Empty;
+
+    private string DisplayValue => Value ?? string.Empty;
+
+    private List<string> FilteredItems
+    {
+        get
+        {
+            var q = _draft.Trim();
+            var source = Items ?? Array.Empty<string>();
+            if (string.IsNullOrEmpty(q))
+                return source.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+
+            return source
+                .Where(x => !string.IsNullOrEmpty(x) && x.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
+
+    private bool CanCreate =>
+        AllowCreate &&
+        !Disabled &&
+        !string.IsNullOrWhiteSpace(_draft) &&
+        !Items.Any(x => string.Equals(x?.Trim(), _draft.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private void Open()
+    {
+        if (Disabled) return;
+        _draft = Value ?? string.Empty;
+        _open = true;
+    }
+
+    private void OnFocusOut(FocusEventArgs e)
+    {
+        // Delay so option click (mousedown preventDefault + click) can run
+        _ = Task.Delay(150).ContinueWith(_ =>
+        {
+            _open = false;
+            _ = InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _draft = e.Value?.ToString() ?? string.Empty;
+        _open = true;
+        // Free typing updates value immediately so validation/dupe-check sees it
+        Value = _draft;
+        await ValueChanged.InvokeAsync(_draft);
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _open = false;
+        }
+        else if (e.Key == "Enter" && _open)
+        {
+            var first = FilteredItems.FirstOrDefault();
+            if (first != null)
+                await Select(first);
+            else if (CanCreate)
+                await Create();
+        }
+    }
+
+    private async Task Select(string item)
+    {
+        _open = false;
+        _draft = item;
+        Value = item;
+        await ValueChanged.InvokeAsync(item);
+    }
+
+    private async Task Create()
+    {
+        var text = _draft.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+        _open = false;
+        Value = text;
+        await ValueChanged.InvokeAsync(text);
+    }
+}

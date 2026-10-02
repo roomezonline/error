@@ -85,6 +85,21 @@ public class ProductDto : IDiscountInfo
     public int ViewCount { get; set; }
 }
 
+public class ProductAvailabilityCheckItem
+{
+    public int ProductId { get; set; }
+    public int Quantity { get; set; } = 1;
+}
+
+public class ProductAvailabilityDto
+{
+    public int ProductId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool IsAvailable { get; set; }
+    public int StockQuantity { get; set; }
+    public bool HasSufficientStock { get; set; }
+}
+
 public class ProductUpsertRequest
 {
     [Required(ErrorMessage = "نام محصول الزامی است")]

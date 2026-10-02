@@ -2,6 +2,7 @@
 @using System.Net.Http.Json
 @inject HttpClient Http
 @inject ErrorService.Client.Services.ToastService ToastService
+@inject ErrorService.Client.Services.CustomerSearchCacheService CustomerCache
 
 @if (Visible)
 {
@@ -112,15 +113,31 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Visible && _allLoaded.Count == 0 && !_isLoading)
+        if (Visible)
         {
-            _isLoading = true;
-            await LoadAllAsync();
-            _isLoading = false;
-            StateHasChanged();
+            // Hydrate from shared cache on every open (including after close).
+            if (CustomerCache.TryGet(WorkshopId, out var cached))
+            {
+                _allLoaded = cached;
+                _isLoading = false;
+            }
+            else if (!_isLoading)
+            {
+                _isLoading = true;
+                try
+                {
+                    await LoadAllAsync();
+                }
+                finally
+                {
+                    _isLoading = false;
+                    StateHasChanged();
+                }
+            }
         }
-        else if (!Visible)
+        else
         {
+            // Keep shared cache; only reset modal-local UI state.
             _allLoaded = new List<WorkshopCustomerDto>();
             _isLoading = false;
             SearchTerm = string.Empty;
@@ -129,7 +146,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (Visible && !_isLoading && _allLoaded.Count > 0)
+        if (Visible && !_isLoading)
         {
             await Task.Delay(50);
             try { await searchInput.FocusAsync(); } catch { }
@@ -140,11 +157,7 @@
     {
         try
         {
-            var url = WorkshopId.HasValue
-                ? $"api/workshop-customers/search?q=&workshopId={WorkshopId.Value}&limit=0"
-                : "api/workshop-customers/search?q=&limit=0";
-            _allLoaded = await Http.GetFromJsonAsync<List<WorkshopCustomerDto>>(url)
-                ?? new List<WorkshopCustomerDto>();
+            _allLoaded = await CustomerCache.GetOrLoadAsync(WorkshopId);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {

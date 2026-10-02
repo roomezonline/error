@@ -10,6 +10,8 @@
 @inject AdminWorkshopSelectionService AdminWorkshopSelection
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
 
+<PageTitle>پنل مدیریت | ارورسرویس</PageTitle>
+
 @code {
     private bool showUserMenu = false;
     private DotNetObjectReference<AdminLayout>? _dotNetRef;
@@ -45,6 +47,7 @@
     private string? currentWorkshopOwner;
     private bool isSuperAdmin;
     private bool _hasAnySmsPerm;
+    private bool _hasNotificationPerm;
 
     private List<WorkshopDto>? workshops;
     private string? selectedWorkshopId;
@@ -93,6 +96,42 @@
                 };
             ");
             await SetupHeaderScrollBehavior();
+            await SetupHeaderPaddingSync();
+        }
+    }
+
+    private async Task SetupHeaderPaddingSync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                (function() {
+                    'use strict';
+                    var header = document.querySelector('.admin-header-wrapper');
+                    var main = document.querySelector('.admin-main-wrapper');
+                    if (!header || !main) return;
+
+                    function sync() {
+                        var h = header.offsetHeight;
+                        main.style.paddingTop = (h + 16) + 'px';
+                    }
+
+                    sync();
+                    window.addEventListener('resize', sync);
+
+                    if (window.ResizeObserver) {
+                        new ResizeObserver(sync).observe(header);
+                    }
+
+                    if (window.MutationObserver) {
+                        new MutationObserver(sync).observe(header, { childList: true, subtree: true, characterData: true });
+                    }
+                })();
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error setting up header padding sync: {ex.Message}");
         }
     }
 
@@ -235,6 +274,10 @@
                 user.HasClaim("perm", "workshop.sms.charge.request") ||
                 user.HasClaim("perm", "workshop.sms.charge.history") ||
                 user.HasClaim("perm", "workshop.sms.logs.view");
+
+            _hasNotificationPerm = isSuperAdmin ||
+                user.HasClaim("perm", "admin.notifications.view") ||
+                user.HasClaim("perm", "admin.notifications.manage");
 
             if (isSuperAdmin)
             {
@@ -673,6 +716,16 @@
                         </div>
                     </AuthorizeView>
 
+                    <AuthorizeView Policy="perm:admin.shipping.manage">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">ارسال</div>
+                            <a href="/admin/shipping-methods" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-location"></span>
+                                <span>روش‌های ارسال</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
                     <AuthorizeView Policy="perm:admin.news.view">
                         <div class="admin-drawer__section">
                             <div class="admin-drawer__title">محتوا</div>
@@ -779,6 +832,24 @@
                         </div>
                     </AuthorizeView>
 
+                    <AuthorizeView Policy="perm:admin.analytics.view">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">آمار و پایش</div>
+                            <a href="/admin/analytics" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-people"></span>
+                                <span>آمار بازدید سایت</span>
+                            </a>
+                            <AuthorizeView Policy="perm:admin.hostinfo.view">
+                                <ChildContent Context="hostDrawerItem">
+                                    <a href="/admin/hostinfo" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                        <span class="oi oi-hard-drive"></span>
+                                        <span>تحلیلگر فضای هاست</span>
+                                    </a>
+                                </ChildContent>
+                            </AuthorizeView>
+                        </div>
+                    </AuthorizeView>
+
                     @if (_hasAnySmsPerm)
                     {
                         <div class="admin-drawer__section">
@@ -786,6 +857,17 @@
                             <a href="/admin/sms" class="admin-drawer__item" @onclick="ToggleNavDrawer">
                                 <span class="oi oi-envelope-closed"></span>
                                 <span>پنل پیامک</span>
+                            </a>
+                        </div>
+                    }
+
+                    @if (_hasNotificationPerm)
+                    {
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">اعلان‌ها</div>
+                            <a href="/admin/notifications" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-bell"></span>
+                                <span>مدیریت اعلان‌ها</span>
                             </a>
                         </div>
                     }
@@ -847,7 +929,7 @@
         right: 0;
         min-height: 64px;
         background: transparent;
-        z-index: 1000;
+        z-index: 1030;
         will-change: opacity;
     }
 
@@ -880,8 +962,11 @@
         left: 0 !important;
         right: auto !important;
         top: 100% !important;
-        z-index: 9999 !important;
+        z-index: 1060 !important;
         min-width: 260px;
+        background: #fff;
+        list-style: none;
+        margin-top: 8px !important;
     }
 
     .admin-header__bottom {

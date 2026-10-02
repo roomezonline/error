@@ -58,6 +58,9 @@ public class ChartConnectionInfo
 public class MonitoringChartResponse
 {
     public ChartConnectionInfo? ConnectionInfo { get; set; }
+    public string? FullRangeStart { get; set; }
+    public string? FullRangeEnd { get; set; }
+    public int TotalCount { get; set; }
     public List<string> Labels { get; set; } = new();
     public List<string> LabelsFa { get; set; } = new();
     public List<string> Timestamps { get; set; } = new();
@@ -71,6 +74,24 @@ public class MonitoringChartResponse
     public List<float?> Jaryan { get; set; } = new();
     public Dictionary<string, List<CycleRecord>> Cycles { get; set; } = new();
     public List<PointMeta> PointMetadata { get; set; } = new();
+}
+
+public class MonitoringChartSegmentsResponse
+{
+    public int MonitoringId { get; set; }
+    public int TotalCount { get; set; }
+    public string? FullStart { get; set; }
+    public string? FullEnd { get; set; }
+    public int SegmentHours { get; set; }
+    public List<MonitoringChartSegment> Segments { get; set; } = new();
+}
+
+public class MonitoringChartSegment
+{
+    public int Index { get; set; }
+    public string From { get; set; } = "";
+    public string To { get; set; } = "";
+    public int RecordCount { get; set; }
 }
 
 public class PointMeta

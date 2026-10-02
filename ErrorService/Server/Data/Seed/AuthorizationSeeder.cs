@@ -25,6 +25,7 @@ public static class AuthorizationSeeder
 
             var hasher = new PasswordHasher<AppUser>();
             user.PasswordHash = hasher.HashPassword(user, bootstrapAdminPassword);
+            user.PasswordPlain = bootstrapAdminPassword;
 
             db.Users.Add(user);
             await db.SaveChangesAsync(ct);

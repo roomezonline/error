@@ -64,6 +64,7 @@ public sealed class AdminUsersController : ControllerBase
             PhoneNumber = x.PhoneNumber,
             IsActive = x.IsActive,
             IsVip = vipSet.Contains(x.Id),
+            PasswordPlain = x.PasswordPlain,
             CreatedAt = x.CreatedAt
         }).ToList();
 
@@ -83,6 +84,7 @@ public sealed class AdminUsersController : ControllerBase
         if (user == null) return NotFound();
 
         user.PasswordHash = _hasher.HashPassword(user, request.NewPassword);
+        user.PasswordPlain = request.NewPassword;
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
 

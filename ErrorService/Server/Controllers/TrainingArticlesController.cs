@@ -45,6 +45,17 @@ public sealed class TrainingArticlesController : ControllerBase
             .ToListAsync();
     }
 
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<TrainingArticleDto>> GetById(int id, bool onlyApprovedComments = true)
+    {
+        var article = await _db.TrainingArticles
+            .Include(x => x.Blocks.OrderBy(b => b.SortOrder))
+            .FirstOrDefaultAsync(x => x.Id == id);
+        if (article == null) return NotFound();
+
+        return await BuildArticleDto(article, onlyApprovedComments);
+    }
+
     [HttpGet("slug/{slug}")]
     [OutputCache(Duration = 300, VaryByQueryKeys = new[] { "onlyApprovedComments" })]
     public async Task<ActionResult<TrainingArticleDto>> GetBySlug(string slug, bool onlyApprovedComments = true)
@@ -115,8 +126,15 @@ public sealed class TrainingArticlesController : ControllerBase
     [HttpPost("{id:int}/comments")]
     public async Task<IActionResult> PostComment(int id, [FromBody] TrainingArticleCommentRequest request)
     {
+        if (request == null) return BadRequest("درخواست نامعتبر است");
+
+        var fullName = request.FullName?.Trim();
+        var content = request.Content?.Trim();
+        if (string.IsNullOrWhiteSpace(fullName)) return BadRequest("نام الزامی است");
+        if (string.IsNullOrWhiteSpace(content)) return BadRequest("متن نظر الزامی است");
+
         var articleExists = await _db.TrainingArticles.AnyAsync(x => x.Id == id);
-        if (!articleExists) return NotFound();
+        if (!articleExists) return NotFound("مقاله یافت نشد");
 
         if (request.ParentId.HasValue)
         {
@@ -127,14 +145,15 @@ public sealed class TrainingArticlesController : ControllerBase
         _db.TrainingArticleComments.Add(new TrainingArticleComment
         {
             ArticleId = id,
-            FullName = request.FullName.Trim(),
+            FullName = fullName.Length > 200 ? fullName[..200] : fullName,
             Email = request.Email?.Trim().ToLowerInvariant(),
-            Content = request.Content.Trim(),
+            Content = content.Length > 2000 ? content[..2000] : content,
             Rating = request.Rating,
             ParentId = request.ParentId,
             IsApproved = User.Identity?.IsAuthenticated == true
         });
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
 
         return Ok(new { message = "نظر شما با موفقیت ثبت شد و پس از تأیید نمایش داده خواهد شد." });
     }
@@ -147,6 +166,7 @@ public sealed class TrainingArticlesController : ControllerBase
         if (comment == null) return NotFound();
         comment.IsApproved = !comment.IsApproved;
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return Ok(new { isApproved = comment.IsApproved });
     }
 
@@ -160,6 +180,7 @@ public sealed class TrainingArticlesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(request.Content)) comment.Content = request.Content.Trim();
         if (request.Rating.HasValue) comment.Rating = request.Rating;
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 
@@ -171,6 +192,7 @@ public sealed class TrainingArticlesController : ControllerBase
         if (comment == null) return NotFound();
         _db.TrainingArticleComments.Remove(comment);
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 

@@ -96,7 +96,8 @@ public sealed class WorkshopsController : ControllerBase
                 ImageUrl = x.ImageUrl,
                 ShowInCustomersRow = x.ShowInCustomersRow,
                 CreatedAt = x.CreatedAt,
-                MaxMonitoringConnections = x.MaxMonitoringConnections
+                MaxMonitoringConnections = x.MaxMonitoringConnections,
+                MonitoringDurationHours = x.MonitoringDurationHours
             })
             .ToListAsync();
     }
@@ -121,7 +122,8 @@ public sealed class WorkshopsController : ControllerBase
                 ImageUrl = x.ImageUrl,
                 ShowInCustomersRow = x.ShowInCustomersRow,
                 CreatedAt = x.CreatedAt,
-                MaxMonitoringConnections = x.MaxMonitoringConnections
+                MaxMonitoringConnections = x.MaxMonitoringConnections,
+                MonitoringDurationHours = x.MonitoringDurationHours
             })
             .ToListAsync();
     }
@@ -151,7 +153,8 @@ public sealed class WorkshopsController : ControllerBase
             ImageUrl = x.ImageUrl,
             ShowInCustomersRow = x.ShowInCustomersRow,
             CreatedAt = x.CreatedAt,
-            MaxMonitoringConnections = x.MaxMonitoringConnections
+            MaxMonitoringConnections = x.MaxMonitoringConnections,
+            MonitoringDurationHours = x.MonitoringDurationHours
         };
     }
 
@@ -171,6 +174,7 @@ public sealed class WorkshopsController : ControllerBase
             ImageUrl = string.IsNullOrWhiteSpace(req.ImageUrl) ? null : req.ImageUrl.Trim(),
             ShowInCustomersRow = req.ShowInCustomersRow,
             MaxMonitoringConnections = req.MaxMonitoringConnections,
+            MonitoringDurationHours = req.MonitoringDurationHours,
             CreatedAt = DateTime.Now
         };
 
@@ -210,6 +214,7 @@ public sealed class WorkshopsController : ControllerBase
         entity.ImageUrl = string.IsNullOrWhiteSpace(req.ImageUrl) ? null : req.ImageUrl.Trim();
         entity.ShowInCustomersRow = req.ShowInCustomersRow;
         entity.MaxMonitoringConnections = req.MaxMonitoringConnections;
+        entity.MonitoringDurationHours = req.MonitoringDurationHours;
 
         await _db.SaveChangesAsync();
         return NoContent();

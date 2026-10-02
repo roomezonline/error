@@ -1,0 +1,334 @@
+@using ErrorService.Shared
+@using ErrorService.Client.Utils
+
+<div class="oss-wrap" dir="rtl">
+    @if (ShowExceptionBanner && Status is OrderStatus.Rejected or OrderStatus.Cancelled)
+    {
+        <div class="oss-exception @(Status == OrderStatus.Rejected ? "rejected" : "cancelled")">
+            <span class="oi @(Status == OrderStatus.Rejected ? "oi-x" : "oi-ban")"></span>
+            <strong>@(Status == OrderStatus.Rejected ? "سفارش رد شده" : "سفارش لغو شده")</strong>
+        </div>
+    }
+
+    <div class="oss-track @(IsInactive ? "inactive" : "")">
+        @for (var i = 0; i < OrderStageInfo.Flow.Length; i++)
+        {
+            var stage = OrderStageInfo.Flow[i];
+            var isLast = i == OrderStageInfo.Flow.Length - 1;
+            var state = GetState(stage, i);
+            var color = OrderStageInfo.Color(stage);
+            <div class="oss-node @state" style="--oss-color: @color;">
+                <div class="oss-circle">
+                    @if (state == "done")
+                    {
+                        @if (IsTruckStage(stage))
+                        {
+                            @TruckSvg(stage, "oss-svg")
+                        }
+                        else
+                        {
+                            <span class="oi oi-check"></span>
+                        }
+                    }
+                    else if (state == "current")
+                    {
+                        @if (IsTruckStage(stage))
+                        {
+                            @TruckSvg(stage, "oss-svg")
+                        }
+                        else
+                        {
+                            <span class="oss-dot"></span>
+                        }
+                    }
+                    else
+                    {
+                        <span class="oss-num">@(i + 1)</span>
+                    }
+                </div>
+                <div class="oss-label">
+                    @if (IsTruckStage(stage))
+                    {
+                        <span class="oss-label-truck">@TruckSvg(stage, "oss-svg oss-svg--label")</span>
+                    }
+                    @OrderStageInfo.Label(stage)
+                </div>
+                @{
+                    var date = GetStageDate(stage, i);
+                }
+                @if (!string.IsNullOrEmpty(date))
+                {
+                    <div class="oss-date">@date</div>
+                }
+            </div>
+            @if (!isLast)
+            {
+                <div class="oss-line @((IsDoneOrPast(stage, i) && !IsInactive) ? "done" : "")"></div>
+            }
+        }
+    </div>
+
+    @if (IsInactive && Status is OrderStatus.PendingPayment or OrderStatus.ReceiptUploaded && ShowExceptionBanner)
+    {
+        <div class="oss-exception pending">
+            <span class="oi oi-clock"></span>
+            <span>@(Status == OrderStatus.PendingPayment ? "مراحل پس از پرداخت و تایید سفارش فعال می‌شوند" : "پس از تایید رسید پرداخت، مراحل فعال می‌شوند")</span>
+        </div>
+    }
+</div>
+
+<style>
+    .oss-wrap { width: 100%; max-width: 100%; }
+    .oss-track {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        justify-content: safe center;
+        gap: 0;
+        padding: 8px 4px 4px;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+    .oss-track::-webkit-scrollbar { display: none; }
+    .oss-track.inactive .oss-circle { filter: grayscale(1); opacity: 0.55; }
+    .oss-track.inactive .oss-label { color: #94a3b8 !important; }
+
+    .oss-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-width: 0;
+        flex-shrink: 0;
+        width: 92px;
+        text-align: center;
+    }
+
+    .oss-circle {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.78rem;
+        font-weight: 800;
+        transition: all 0.25s;
+        flex-shrink: 0;
+        background: #f1f5f9;
+        color: #94a3b8;
+        border: 2px solid #e2e8f0;
+    }
+
+    .oss-node.done .oss-circle {
+        background: var(--oss-color);
+        border-color: var(--oss-color);
+        color: #fff;
+        box-shadow: 0 2px 8px color-mix(in srgb, var(--oss-color) 35%, transparent);
+    }
+
+    .oss-node.current .oss-circle {
+        background: #fff;
+        border: 3px solid var(--oss-color);
+        color: var(--oss-color);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--oss-color) 18%, transparent);
+    }
+
+    .oss-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--oss-color);
+        display: block;
+    }
+
+    .oss-num { font-size: 0.72rem; }
+
+    .oss-svg {
+        width: 18px;
+        height: 18px;
+        display: block;
+        fill: currentColor;
+    }
+
+    .oss-svg--label {
+        width: 12px;
+        height: 12px;
+        display: inline-block;
+        vertical-align: -0.12em;
+        margin-inline-end: 3px;
+    }
+
+    .oss-label-truck {
+        display: inline-flex;
+        align-items: center;
+        margin-inline-end: 2px;
+    }
+
+    .oss-label {
+        font-size: 0.68rem;
+        font-weight: 700;
+        margin-top: 8px;
+        color: #334155;
+        line-height: 1.35;
+        white-space: normal;
+        min-height: 2.4em;
+    }
+
+    .oss-node.done .oss-label { color: var(--oss-color); }
+    .oss-node.current .oss-label { color: var(--oss-color); font-weight: 900; }
+
+    .oss-date {
+        font-size: 0.62rem;
+        color: #94a3b8;
+        margin-top: 3px;
+        font-weight: 600;
+    }
+
+    .oss-line {
+        width: 28px;
+        height: 3px;
+        background: #e2e8f0;
+        margin-top: 17px;
+        border-radius: 2px;
+        flex-shrink: 0;
+        align-self: flex-start;
+    }
+
+    .oss-line.done { background: #86efac; }
+
+    .oss-exception {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        margin-bottom: 10px;
+        font-weight: 700;
+    }
+    .oss-exception.rejected { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .oss-exception.cancelled { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .oss-exception.pending { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; margin-top: 10px; margin-bottom: 0; }
+
+    @@media (max-width: 640px) {
+        .oss-node { width: 78px; }
+        .oss-label { font-size: 0.6rem; }
+        .oss-line { width: 16px; }
+        .oss-circle { width: 30px; height: 30px; }
+    }
+    @@media (max-width: 576px) {
+        .oss-track { justify-content: flex-start; padding: 8px 6px 4px; }
+        .oss-node { width: 76px; }
+        .oss-line { width: 14px; }
+        .oss-label { font-size: 0.58rem; min-height: 2.2em; }
+    }
+</style>
+
+@code {
+    [Parameter] public OrderStatus Status { get; set; }
+    [Parameter] public OrderStage? Stage { get; set; }
+    [Parameter] public Dictionary<string, DateTimeOffset>? StageDates { get; set; }
+    [Parameter] public DateTimeOffset CreatedAt { get; set; }
+    [Parameter] public DateTimeOffset? PaymentDate { get; set; }
+    [Parameter] public DateTimeOffset? UpdatedAt { get; set; }
+    [Parameter] public bool ShowExceptionBanner { get; set; } = true;
+
+    private bool IsInactive => Status is OrderStatus.PendingPayment or OrderStatus.ReceiptUploaded
+        or OrderStatus.Rejected or OrderStatus.Cancelled;
+
+    private OrderStage? EffectiveStage
+    {
+        get
+        {
+            if (Status is OrderStatus.Rejected or OrderStatus.Cancelled
+                or OrderStatus.PendingPayment or OrderStatus.ReceiptUploaded)
+                return null;
+
+            if (Stage.HasValue) return Stage.Value;
+            return Status == OrderStatus.Completed ? OrderStage.Resolved : OrderStage.PaymentConfirmed;
+        }
+    }
+
+    private string GetState(OrderStage stage, int index)
+    {
+        var current = EffectiveStage;
+        if (current == null) return "future";
+
+        var currentIndex = Array.IndexOf(OrderStageInfo.Flow, current.Value);
+        if (currentIndex < 0) return "future";
+
+        if (index < currentIndex) return "done";
+        if (index == currentIndex) return Status == OrderStatus.Completed && stage != OrderStage.Resolved ? "done" : "current";
+        return "future";
+    }
+
+    private bool IsDoneOrPast(OrderStage stage, int index)
+    {
+        var state = GetState(stage, index);
+        return state == "done" || state == "current";
+    }
+
+    private static bool IsTruckStage(OrderStage stage)
+        => stage is OrderStage.SentToUnit or OrderStage.Resolved;
+
+    private static RenderFragment TruckSvg(OrderStage stage, string cssClass) => builder =>
+    {
+        builder.OpenElement(0, "svg");
+        builder.AddAttribute(1, "class", cssClass);
+        builder.AddAttribute(2, "viewBox", "0 0 24 24");
+        builder.AddAttribute(3, "aria-hidden", "true");
+
+        if (stage == OrderStage.SentToUnit)
+        {
+            // Truck with inbound arrow — "sending to transport unit"
+            builder.OpenElement(4, "path");
+            builder.AddAttribute(5, "d", "M3 6h11v9H3V6zm12 3h3.2l2.8 3v3h-6V9zM6.5 17.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm10 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM1 10h5v2H1v-2zm-0.5 4h5.5v1.5H.5V14z");
+            builder.CloseElement();
+        }
+        else
+        {
+            // Moving truck with speed lines — "in transit / transported"
+            builder.OpenElement(4, "path");
+            builder.AddAttribute(5, "d", "M14 6h5.5a1.5 1.5 0 0 1 1.2.6l2.3 3V15h-2.5M14 6v9H3V6h11zm-2 11.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm8 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM1 8h6v1.5H1V8zm-0.5 3H7v1.5H.5V11zM1.5 14H5v1.5H1.5V14z");
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private string GetStageDate(OrderStage stage, int index)
+    {
+        var state = GetState(stage, index);
+        if (state == "future") return string.Empty;
+
+        if (StageDates != null && StageDates.TryGetValue(stage.ToString(), out var at))
+        {
+            var s = PersianDate.ToJalaliDate(at);
+            if (!string.IsNullOrEmpty(s)) return s;
+        }
+
+        if (stage == OrderStage.PaymentConfirmed)
+        {
+            var s = PersianDate.ToJalaliDate(PaymentDate ?? CreatedAt);
+            if (!string.IsNullOrEmpty(s)) return s;
+        }
+
+        if (state == "current" && UpdatedAt.HasValue)
+        {
+            var s = PersianDate.ToJalaliDate(UpdatedAt.Value);
+            if (!string.IsNullOrEmpty(s)) return s;
+        }
+
+        if (state is "done" or "current")
+        {
+            var s = PersianDate.ToJalaliDate(CreatedAt);
+            if (!string.IsNullOrEmpty(s)) return s;
+        }
+
+        return string.Empty;
+    }
+}

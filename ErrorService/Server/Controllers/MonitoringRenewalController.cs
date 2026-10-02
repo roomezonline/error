@@ -14,12 +14,14 @@ public sealed class MonitoringRenewalController : ControllerBase
     private readonly ErrorServiceDbContext _db;
     private readonly IWebHostEnvironment _env;
     private readonly IConfiguration _configuration;
+    private readonly NotificationEventService _notificationEvents;
 
-    public MonitoringRenewalController(ErrorServiceDbContext db, IWebHostEnvironment env, IConfiguration configuration)
+    public MonitoringRenewalController(ErrorServiceDbContext db, IWebHostEnvironment env, IConfiguration configuration, NotificationEventService notificationEvents)
     {
         _db = db;
         _env = env;
         _configuration = configuration;
+        _notificationEvents = notificationEvents;
     }
 
     [Authorize(Policy = "perm:admin.monitoring.view")]
@@ -86,6 +88,21 @@ public sealed class MonitoringRenewalController : ControllerBase
         };
 
         _db.MonitoringRenewalRequests.Add(entity);
+        await _db.SaveChangesAsync();
+
+        var deviceName = assignment.MonitoringDevice.Title;
+        await _notificationEvents.NotifyAsync(
+            eventType: "renewal.requested",
+            values: new Dictionary<string, string?>
+            {
+                ["DeviceName"] = deviceName,
+                ["RequestId"] = entity.Id.ToString()
+            },
+            idempotencyKey: $"renewal.requested:{entity.Id}",
+            fallbackSeverity: NotificationSeverity.Info,
+            fallbackTitle: "درخواست تمدید پایش ثبت شد",
+            fallbackBody: $"درخواست تمدید سرویس پایش {deviceName} ثبت شد و در انتظار بررسی است.",
+            fallbackUrl: "/admin/monitoring/renewal-requests");
         await _db.SaveChangesAsync();
 
         return Ok(new RenewalRequestDto
@@ -203,7 +220,7 @@ public sealed class MonitoringRenewalController : ControllerBase
     public async Task<ActionResult<RenewalRequestDto>> HandleRenewalRequest(int id, [FromBody] RenewalRequestActionDto action)
     {
         var entity = await _db.MonitoringRenewalRequests
-            .Include(x => x.Assignment)
+            .Include(x => x.Assignment).ThenInclude(a => a.MonitoringDevice)
             .Include(x => x.MonitoringPlan)
             .FirstOrDefaultAsync(x => x.Id == id);
 
@@ -211,6 +228,8 @@ public sealed class MonitoringRenewalController : ControllerBase
 
         if (!Enum.TryParse<RenewalRequestStatus>(action.Status, true, out var newStatus))
             return BadRequest("وضعیت معتبر نیست");
+
+        var previousStatus = entity.Status;
 
         if (newStatus == RenewalRequestStatus.Approved)
         {
@@ -244,6 +263,32 @@ public sealed class MonitoringRenewalController : ControllerBase
 
         entity.Status = newStatus;
         entity.AdminNote = action.AdminNote;
+
+        if (previousStatus != newStatus && newStatus is RenewalRequestStatus.Approved or RenewalRequestStatus.Rejected)
+        {
+            var approved = newStatus == RenewalRequestStatus.Approved;
+            var deviceName = entity.Assignment?.MonitoringDevice?.Title ?? $"دستگاه #{entity.AssignmentId}";
+            var endDate = entity.Assignment?.EndAt.HasValue == true
+                ? PersianDateHelper.ToPersianDateTimeString(entity.Assignment.EndAt!.Value, false)
+                : "—";
+
+            await _notificationEvents.NotifyAsync(
+                eventType: approved ? "renewal.approved" : "renewal.rejected",
+                values: new Dictionary<string, string?>
+                {
+                    ["DeviceName"] = deviceName,
+                    ["EndDate"] = endDate,
+                    ["Reason"] = string.IsNullOrWhiteSpace(action.AdminNote) ? "—" : action.AdminNote!
+                },
+                idempotencyKey: approved ? $"renewal.approved:{entity.Id}" : $"renewal.rejected:{entity.Id}",
+                fallbackSeverity: approved ? NotificationSeverity.Success : NotificationSeverity.Warning,
+                fallbackTitle: approved ? "تمدید سرویس پایش تأیید شد" : "درخواست تمدید پایش رد شد",
+                fallbackBody: approved
+                    ? $"تمدید سرویس پایش {deviceName} تأیید شد و تا تاریخ {endDate} فعال است."
+                    : $"درخواست تمدید سرویس پایش {deviceName} رد شد.",
+                fallbackUrl: approved ? "/admin/monitoring/my-devices" : "/admin/monitoring/renewal-requests",
+                workshopId: entity.WorkshopId);
+        }
 
         await _db.SaveChangesAsync();
 

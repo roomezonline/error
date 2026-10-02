@@ -31,6 +31,7 @@ public sealed class WorkshopDto
     public bool ShowInCustomersRow { get; set; }
     public DateTime CreatedAt { get; set; }
     public int MaxMonitoringConnections { get; set; } = 2;
+    public int MonitoringDurationHours { get; set; } = 72;
 }
 
 public sealed class WorkshopUpsertRequest
@@ -67,6 +68,9 @@ public sealed class WorkshopUpsertRequest
 
     [Range(1, 100, ErrorMessage = "تعداد مجاز مانیتورینگ باید بین ۱ تا ۱۰۰ باشد")]
     public int MaxMonitoringConnections { get; set; } = 2;
+
+    [Range(1, 8760, ErrorMessage = "مدت مانیتورینگ باید بین ۱ تا ۸۷۶۰ ساعت (۱ سال) باشد")]
+    public int MonitoringDurationHours { get; set; } = 72;
 }
 
 public sealed class UpdateBadPayerRequest

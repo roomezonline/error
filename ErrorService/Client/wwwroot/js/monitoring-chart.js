@@ -63,9 +63,12 @@ Chart.plugins.register({
             { index: 5, name: 'برق دستگاه', color: 'rgba(19, 19, 20, 1)' }
         ];
         datasets.forEach(function (dataset) {
+            var target = chart.data.datasets[dataset.index];
+            if (!target || !target.data) return;
             var meta = chart.getDatasetMeta(dataset.index);
             if (meta.hidden) return;
-            var data = chart.data.datasets[dataset.index].data;
+            if (!chart.scales['y-axis-1']) return;
+            var data = target.data;
             var operationTimes = calculateOperationTime(data, timeLabels);
             operationTimes.forEach(function (opTime) {
                 var startIndex = opTime.startIndex;

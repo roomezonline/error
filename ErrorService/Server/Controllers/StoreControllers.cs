@@ -190,6 +190,47 @@ public class ProductsController : ControllerBase
         _configuration = configuration;
     }
 
+    [HttpPost("check-availability")]
+    [AllowAnonymous]
+    public async Task<ActionResult<List<ProductAvailabilityDto>>> CheckAvailability([FromBody] List<ProductAvailabilityCheckItem>? items)
+    {
+        if (items == null || items.Count == 0)
+            return Ok(new List<ProductAvailabilityDto>());
+
+        var ids = items.Select(x => x.ProductId).Distinct().ToList();
+        var products = await _context.Products
+            .Where(p => ids.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id);
+
+        var result = new List<ProductAvailabilityDto>();
+        foreach (var item in items)
+        {
+            if (!products.TryGetValue(item.ProductId, out var p))
+            {
+                result.Add(new ProductAvailabilityDto
+                {
+                    ProductId = item.ProductId,
+                    IsAvailable = false,
+                    StockQuantity = 0,
+                    HasSufficientStock = false
+                });
+                continue;
+            }
+
+            var qty = Math.Max(1, item.Quantity);
+            result.Add(new ProductAvailabilityDto
+            {
+                ProductId = p.Id,
+                Name = p.Name,
+                IsAvailable = p.IsAvailable,
+                StockQuantity = p.StockQuantity,
+                HasSufficientStock = p.IsAvailable && p.StockQuantity >= qty
+            });
+        }
+
+        return Ok(result);
+    }
+
     [Authorize(Policy = "perm:admin.products.manage")]
     [HttpPost("upload")]
     [RequestSizeLimit(15_000_000)]
@@ -512,6 +553,7 @@ public class ProductsController : ControllerBase
 
         _context.Products.Add(product);
         await _context.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
 
         return Ok(new ProductDto { Id = product.Id, Name = product.Name, Slug = product.Slug });
     }
@@ -559,6 +601,7 @@ public class ProductsController : ControllerBase
         product.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _context.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 
@@ -574,6 +617,7 @@ public class ProductsController : ControllerBase
 
         _context.Products.Remove(product);
         await _context.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 }

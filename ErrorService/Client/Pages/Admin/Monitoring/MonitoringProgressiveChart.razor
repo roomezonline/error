@@ -7,8 +7,12 @@
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@implements IDisposable
 
-<PageTitle>@_pageTitle</PageTitle>
+@if (!IsOverlay)
+{
+    <PageTitle>@_pageTitle</PageTitle>
+}
 
 <div class="dpc-page" dir="ltr">
     <div class="dpc-header">
@@ -43,12 +47,6 @@
     }
     else if (_data != null)
     {
-        @* Loading indicator *@
-        <div class="dpc-loading" id="dpc-loading" style="display:none;">
-            <div class="dpc-loading__spinner"></div>
-            <span>در حال بارگذاری داده‌های دقیق‌تر…</span>
-        </div>
-
         @* Client Info *@
         @if (_data.ConnectionInfo != null)
         {
@@ -88,14 +86,41 @@
 
         @* Controls *@
         <div class="dpc-controls">
-            <button class="dpc-btn" @onclick="ResetZoom" title="بازگشت به نمای کلی">
+            <div class="dpc-mode-switch" role="tablist" aria-label="حالت نمایش چارت">
+                <button id="dpc-mode-overview" class="dpc-mode-btn is-active" type="button" data-chart-mode="overview">نمای کلی + زوم</button>
+                <button id="dpc-mode-progressive" class="dpc-mode-btn" type="button" data-chart-mode="progressive">نمایش تدریجی</button>
+            </div>
+            <button id="dpc-reset-zoom" class="dpc-btn" @onclick="ResetZoom" title="ریست زوم / بازگشت به بازه کامل">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                نمای کلی
+                ریست
             </button>
+            <button id="dpc-span-tool" class="dpc-btn" type="button" title="اندازه‌گیری بازه: کلیک نگه‌دار و بکش">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20"/><path d="M6 8v8"/><path d="M10 9v6"/><path d="M14 8v8"/><path d="M18 9v6"/><path d="M22 10v4"/></svg>
+                بازه زمانی
+            </button>
+            <div class="dpc-live" id="dpc-live">
+                <label class="dpc-live-switch" title="بروزرسانی زنده هر ۱۰ ثانیه">
+                    <input type="checkbox" id="dpc-live-toggle" />
+                    <span class="dpc-live-slider"></span>
+                </label>
+                <span class="dpc-live-label">بروزرسانی زنده</span>
+                <span class="dpc-live-count" id="dpc-live-countdown" hidden></span>
+            </div>
             <div class="dpc-hint">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                اسکرول برای زوم · کشیدن برای پیمایش
+                دسکتاپ: Ctrl + کشیدن برای انتخاب · ابزار بازه: کلیک نگه‌دار و بکش
             </div>
+        </div>
+        <div id="dpc-progressive-nav" class="dpc-progressive-nav" hidden>
+            <button id="dpc-segment-next" class="dpc-segment-btn dpc-segment-btn--next" type="button" title="بازه بعدی (+۱۲ ساعت)">
+                <svg class="dpc-seg-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                +۱۲ ساعت
+            </button>
+            <span id="dpc-segment-status">بازه —</span>
+            <button id="dpc-segment-prev" class="dpc-segment-btn dpc-segment-btn--prev" type="button" title="بازه قبلی (−۱۲ ساعت)">
+                <svg class="dpc-seg-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                −۱۲ ساعت
+            </button>
         </div>
 
         @* Legend + Equipment Navigation *@
@@ -126,11 +151,17 @@
             </span>
             @* Power items (no nav) *@
             <button class="dpc-legend-item dpc-legend-item--off" type="button" data-ds-idx="6" style="--dpc-c:#8b5cf6">توان</button>
-            <button class="dpc-legend-item dpc-legend-item--off" type="button" data-ds-idx="7" style="--dpc-c:#14b8a6">جریان</button>
+            <button class="dpc-legend-item dpc-legend-item--off" type="button" data-ds-idx="7" style="--dpc-c:#ec4899">جریان</button>
         </div>
 
         @* Chart - JS builds everything inside this container *@
-        <div id="dpc-chart-root"></div>
+        <div class="dpc-chart-stage">
+            <div id="dpc-chart-root"></div>
+            <div id="dpc-span-hud" class="dpc-span-hud" hidden>
+                <div class="dpc-span-hud__meta" id="dpc-span-meta"></div>
+                <button type="button" id="dpc-span-clear" class="dpc-span-hud__clear" title="پاک کردن بازه">پاک</button>
+            </div>
+        </div>
     }
 </div>
 
@@ -196,6 +227,40 @@
     }
     @@keyframes dpc-spin { to { transform: rotate(360deg); } }
 
+    .dpc-chart-loading {
+        display: none; position: absolute; z-index: 20; top: 50%; left: 50%;
+        transform: translate(-50%, -50%); pointer-events: none;
+        align-items: center; justify-content: center; width: min(310px, calc(100vw - 36px));
+    }
+    .dpc-chart-loading__card {
+        display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box;
+        padding: 13px 16px; border: 1px solid rgba(255,255,255,.82); border-radius: 16px;
+        background: rgba(255,255,255,.82); box-shadow: 0 12px 34px rgba(15,23,42,.16),
+            0 2px 8px rgba(14,165,233,.10); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    }
+    .dpc-chart-loading__icon {
+        display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px;
+        border-radius: 11px; background: linear-gradient(135deg, #0ea5e9, #6366f1);
+        box-shadow: 0 5px 12px rgba(14,165,233,.28); position: relative;
+    }
+    .dpc-chart-loading__icon::before, .dpc-chart-loading__icon::after,
+    .dpc-chart-loading__icon span {
+        content: ''; position: absolute; bottom: 9px; width: 3px; border-radius: 3px;
+        background: rgba(255,255,255,.95); transform-origin: bottom; animation: dpc-bars 1s ease-in-out infinite;
+    }
+    .dpc-chart-loading__icon::before { height: 9px; left: 9px; animation-delay: -.2s; }
+    .dpc-chart-loading__icon span { height: 15px; left: 15px; animation-delay: -.05s; }
+    .dpc-chart-loading__icon::after { height: 11px; left: 21px; animation-delay: .12s; }
+    @@keyframes dpc-bars { 0%, 100% { transform: scaleY(.55); opacity: .65; } 50% { transform: scaleY(1); opacity: 1; } }
+    .dpc-chart-loading__copy { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; text-align: right; }
+    .dpc-chart-loading__copy strong { color: #0f172a; font-size: 12px; font-weight: 900; }
+    .dpc-chart-loading__copy small { color: #64748b; font-size: 10px; font-weight: 600; white-space: nowrap; }
+    .dpc-chart-loading__dots { display: flex; align-items: center; gap: 3px; direction: ltr; }
+    .dpc-chart-loading__dots i { width: 4px; height: 4px; border-radius: 50%; background: #0ea5e9; animation: dpc-dot 1.1s infinite ease-in-out; }
+    .dpc-chart-loading__dots i:nth-child(2) { animation-delay: .15s; background: #6366f1; }
+    .dpc-chart-loading__dots i:nth-child(3) { animation-delay: .3s; background: #a855f7; }
+    @@keyframes dpc-dot { 0%, 60%, 100% { transform: translateY(0); opacity: .35; } 30% { transform: translateY(-4px); opacity: 1; } }
+
     .dpc-client {
         margin: 12px 20px 0; background: #fff; border-radius: 14px;
         padding: 14px 18px; border: 1px solid #e2e8f0;
@@ -220,6 +285,59 @@
         display: flex; align-items: center; gap: 12px;
         padding: 10px 20px; direction: rtl;
     }
+    .dpc-mode-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f1f5f9; }
+    .dpc-mode-btn { border: 0; border-radius: 9px; padding: 7px 11px; background: transparent; color: #64748b; font: 800 11px Vazirmatn, sans-serif; cursor: pointer; white-space: nowrap; }
+    .dpc-mode-btn.is-active { color: #fff; background: linear-gradient(135deg, #2563eb, #4f46e5); box-shadow: 0 3px 8px rgba(37,99,235,.2); }
+    .dpc-progressive-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 0 20px 8px; padding: 10px; border: 1px solid #dbeafe; border-radius: 12px; background: #eff6ff; color: #1e40af; direction: rtl; font-size: 12px; font-weight: 900; }
+    .dpc-segment-btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+        border: 2px solid transparent; border-radius: 10px;
+        padding: 11px 20px; background: #fff;
+        font: 900 14px Vazirmatn, sans-serif; cursor: pointer;
+        min-height: 42px; min-width: 124px;
+        transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s, filter 0.15s;
+    }
+    .dpc-segment-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
+    .dpc-segment-btn:active:not(:disabled) { transform: translateY(0); }
+    .dpc-segment-btn:disabled { cursor: not-allowed; opacity: .4; transform: none; filter: none; }
+    .dpc-segment-btn--next {
+        border-color: #16a34a; color: #fff;
+        background: linear-gradient(180deg, #22c55e, #16a34a);
+        box-shadow: 0 3px 10px rgba(22, 163, 74, 0.35);
+    }
+    .dpc-segment-btn--next:hover:not(:disabled) { background: linear-gradient(180deg, #16a34a, #15803d); border-color: #15803d; }
+    .dpc-segment-btn--prev {
+        border-color: #dc2626; color: #fff;
+        background: linear-gradient(180deg, #ef4444, #dc2626);
+        box-shadow: 0 3px 10px rgba(220, 38, 38, 0.35);
+    }
+    .dpc-segment-btn--prev:hover:not(:disabled) { background: linear-gradient(180deg, #dc2626, #b91c1c); border-color: #b91c1c; }
+    .dpc-seg-arrow { flex-shrink: 0; color: #fff; }
+    .dpc-segment-btn--next .dpc-seg-arrow { color: #fff; }
+    .dpc-segment-btn--prev .dpc-seg-arrow { color: #fff; }
+    #dpc-segment-status {
+        flex: 1; text-align: center; min-width: 220px;
+        display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+        flex-wrap: wrap; padding: 8px 14px; border-radius: 10px;
+        background: #fff; border: 1.5px solid #bfdbfe;
+        box-shadow: 0 1px 4px rgba(30, 64, 175, 0.08);
+        color: #1e3a8a; font-weight: 900; font-size: 14px;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.1px; line-height: 1.5;
+    }
+    #dpc-segment-status .dpc-seg-chunk {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 3px 10px; border-radius: 8px;
+        background: #eff6ff; color: #1d4ed8;
+        border: 1px solid #bfdbfe;
+        white-space: nowrap;
+    }
+    #dpc-segment-status .dpc-seg-chunk--records {
+        background: #f0fdf4; color: #15803d; border-color: #bbf7d0;
+    }
+    #dpc-segment-status .dpc-seg-dot {
+        color: #94a3b8; font-weight: 900; font-size: 16px; line-height: 1;
+    }
     .dpc-btn {
         display: inline-flex; align-items: center; gap: 6px;
         padding: 6px 14px; border: 1px solid #e2e8f0; border-radius: 10px;
@@ -227,6 +345,69 @@
         cursor: pointer; font-family: Vazirmatn, sans-serif;
     }
     .dpc-btn:hover { background: #f1f5f9; }
+    .dpc-btn.is-on {
+        border-color: #fcd34d; background: #fffbeb; color: #b45309;
+        box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18);
+    }
+
+    .dpc-live {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 5px 12px; border: 1px solid #e2e8f0; border-radius: 12px;
+        background: #fff; direction: rtl;
+    }
+    .dpc-live.is-on { border-color: #a7f3d0; background: #ecfdf5; }
+    .dpc-live-switch { position: relative; width: 40px; height: 22px; display: inline-block; flex-shrink: 0; cursor: pointer; }
+    .dpc-live-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .dpc-live-slider {
+        position: absolute; inset: 0; background: #cbd5e1; border-radius: 22px;
+        transition: background 0.2s; cursor: pointer;
+    }
+    .dpc-live-slider::before {
+        content: ''; position: absolute; width: 16px; height: 16px;
+        left: 3px; top: 3px; background: #fff; border-radius: 50%;
+        transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .dpc-live-switch input:checked + .dpc-live-slider { background: #10b981; }
+    .dpc-live-switch input:checked + .dpc-live-slider::before { transform: translateX(18px); }
+    .dpc-live-switch input:focus-visible + .dpc-live-slider { outline: 2px solid #2563eb; outline-offset: 2px; }
+    .dpc-live-label { font-size: 11px; font-weight: 800; color: #64748b; white-space: nowrap; }
+    .dpc-live.is-on .dpc-live-label { color: #059669; }
+    .dpc-live-count {
+        font-size: 10px; font-weight: 800; color: #059669;
+        background: #d1fae5; border: 1px solid #6ee7b7;
+        padding: 2px 8px; border-radius: 20px; white-space: nowrap;
+        min-width: 52px; text-align: center; direction: rtl;
+        font-variant-numeric: tabular-nums;
+    }
+    .dpc-live-count[hidden] { display: none !important; }
+
+    .dpc-chart-stage { position: relative; }
+    .dpc-span-hud {
+        position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+        z-index: 30; display: flex; align-items: center; gap: 10px;
+        padding: 8px 14px; border-radius: 14px;
+        background: rgba(15, 23, 42, 0.92); color: #f8fafc;
+        border: 1px solid rgba(251, 191, 36, 0.45);
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.28);
+        direction: rtl; font-family: Vazirmatn, sans-serif;
+        pointer-events: auto; max-width: calc(100% - 24px);
+    }
+    .dpc-span-hud[hidden] { display: none !important; }
+    .dpc-span-hud__meta {
+        font-size: 12px; font-weight: 800; color: #fcd34d;
+        white-space: nowrap; direction: rtl;
+        font-variant-numeric: tabular-nums;
+    }
+    .dpc-span-hud__clear {
+        border: 1px solid rgba(148, 163, 184, 0.45); border-radius: 8px;
+        background: rgba(30, 41, 59, 0.9); color: #e2e8f0;
+        font: 800 11px Vazirmatn, sans-serif; padding: 4px 10px;
+        cursor: pointer;
+    }
+    .dpc-span-hud__clear:hover { background: #334155; }
+    #dpc-chart-root.is-span { cursor: crosshair; }
+    #dpc-canvas.is-span { cursor: crosshair; }
+
     .dpc-hint {
         font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 4px;
     }
@@ -269,7 +450,8 @@
     .dpc-eq-nav-btn:hover { background: #f1f5f9; color: #475569; }
     .dpc-eq-nav-btn:active { background: #e2e8f0; transform: scale(0.88); }
 
-    #dpc-chart-root { min-width: 0; }
+    #dpc-chart-root { min-width: 0; position: relative; }
+    #dpc-chart-root.dpc-chart-root--loading { pointer-events: none; }
 
     body.has-dpc-page .admin-content-container {
         max-width: none !important;
@@ -293,8 +475,31 @@
     .dpc-chart-scroll::-webkit-scrollbar { height: 6px; }
     .dpc-chart-scroll::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 4px; }
     .dpc-chart-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+    .dpc-chart-scroll--locked { overflow: hidden !important; touch-action: none !important; }
     .dpc-chart-wrapper { height: 460px; position: relative; width: 100%; }
     #dpc-canvas { width: 100%; height: 100%; display: block; will-change: auto; }
+
+    .dpc-range-selector {
+        display: none; margin: 0 12px 18px; padding: 12px 14px 10px; border: 1px solid #e2e8f0;
+        border-radius: 16px; background: rgba(255,255,255,.86); box-shadow: 0 5px 18px rgba(15,23,42,.06);
+        direction: rtl;
+    }
+    .dpc-range-selector__head, .dpc-range-selector__labels { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .dpc-range-selector__head strong { color: #334155; font-size: 11px; font-weight: 900; }
+    .dpc-range-selector__head span { color: #94a3b8; font-size: 10px; font-weight: 700; }
+    .dpc-range-selector__labels { margin-top: 8px; color: #64748b; font-size: 10px; font-weight: 800; direction: ltr; }
+    .dpc-range-selector--hidden { display: none !important; }
+    .dpc-range-selector__track { position: relative; height: 30px; margin: 2px 0 0; cursor: crosshair; touch-action: none; user-select: none; }
+    .dpc-range-selector__track::before { content: ''; position: absolute; left: 0; right: 0; top: 14px; height: 5px; border-radius: 5px; background: #e2e8f0; }
+    .dpc-range-selector__fill { position: absolute; top: 10px; left: 0; width: 100%; height: 13px; border-radius: 8px; background: linear-gradient(90deg, #2563eb, #6366f1); box-shadow: 0 2px 8px rgba(37,99,235,.22); }
+    .dpc-range-selector__fill::before, .dpc-range-selector__fill::after { content: ''; position: absolute; top: -4px; width: 21px; height: 21px; border: 3px solid #fff; border-radius: 50%; background: #2563eb; box-shadow: 0 2px 7px rgba(37,99,235,.35); }
+    .dpc-range-selector__fill::before { left: -3px; }
+    .dpc-range-selector__fill::after { right: -3px; background: #4f46e5; }
+    .dpc-range-selector input[type=range] { position: absolute; left: 0; top: 6px; width: 100%; height: 20px; margin: 0; pointer-events: none; appearance: none; background: transparent; }
+    .dpc-range-selector input[type=range]::-webkit-slider-thumb { pointer-events: auto; appearance: none; width: 20px; height: 20px; border: 3px solid #fff; border-radius: 50%; background: #2563eb; box-shadow: 0 2px 7px rgba(37,99,235,.35); }
+    .dpc-range-selector input[type=range]::-moz-range-thumb { pointer-events: auto; width: 15px; height: 15px; border: 3px solid #fff; border-radius: 50%; background: #2563eb; box-shadow: 0 2px 7px rgba(37,99,235,.35); }
+    .dpc-range-selector input[data-range-left] { z-index: 3; }
+    .dpc-range-selector input[data-range-right] { z-index: 2; }
 
     @@media (max-width: 700px) {
         .dpc-header { padding: 10px 14px; flex-wrap: wrap; }
@@ -309,65 +514,29 @@
         .dpc-chart-scroll { padding: 0 0 40px 0; overscroll-behavior-x: contain; min-width: 0; -webkit-overflow-scrolling: touch; will-change: scroll-position; }
         .dpc-chart-wrapper { height: min(340px, calc(100vh - 380px)); }
         #dpc-canvas { will-change: auto; }
+        .dpc-range-selector { display: block; }
+        .dpc-controls { padding: 8px 10px; flex-wrap: wrap; gap: 7px; }
+        .dpc-mode-switch { order: -2; width: 100%; }
+        .dpc-mode-btn { flex: 1; }
+        .dpc-live { order: -1; flex: 1; justify-content: center; min-height: 40px; padding: 6px 10px; }
+        .dpc-live-label { font-size: 12px; }
+        .dpc-live-count { font-size: 11px; min-width: 58px; }
+        .dpc-span-hud {
+            bottom: 8px; gap: 8px; padding: 7px 10px; border-radius: 12px;
+            flex-wrap: wrap; justify-content: center;
+        }
+        .dpc-span-hud__meta { font-size: 11px; white-space: normal; text-align: center; }
+        .dpc-progressive-nav { margin: 0 10px 8px; gap: 8px; flex-wrap: wrap; padding: 8px; }
+        .dpc-segment-btn { padding: 10px 14px; min-width: 108px; min-height: 40px; font-size: 13px; gap: 6px; }
+        #dpc-segment-status { order: 3; flex: 1 1 100%; min-width: 0; font-size: 13px; gap: 6px; padding: 7px 10px; }
+        #dpc-segment-status .dpc-seg-chunk { font-size: 12px; padding: 2px 8px; white-space: normal; text-align: center; }
     }
 </style>
 
-<script>
-    window.resetProgressiveChartZoom = function() {
-        window.monitoringProgressiveChart.resetZoom();
-    };
-
-    (function() {
-        // Body class for full-width layout (replaces :has() selector)
-        var el = document.querySelector('.dpc-page');
-        if (el) document.body.classList.add('has-dpc-page');
-    })();
-
-    document.addEventListener('keydown', function(e) {
-        if (e.target.closest('input, textarea, select, [contenteditable]')) return;
-        var chart = window.monitoringProgressiveChart;
-        if (!chart) return;
-        if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            chart.navPrev();
-        } else if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            chart.navNext();
-        }
-    });
-
-    document.addEventListener('click', function(e) {
-        var btn = e.target.closest('.dpc-legend-item[data-ds-idx]');
-        if (btn) {
-            var idx = parseInt(btn.getAttribute('data-ds-idx'), 10);
-            var isVisible = window.monitoringProgressiveChart.toggleDataset(idx);
-            btn.classList.toggle('dpc-legend-item--off', !isVisible);
-            // Disable nav buttons when hidden
-            var set = btn.closest('.dpc-eq-set');
-            if (set) {
-                set.querySelectorAll('.dpc-eq-nav-btn').forEach(function(nb) {
-                    nb.style.opacity = isVisible ? '1' : '0.3';
-                });
-            }
-            return;
-        }
-        var navBtn = e.target.closest('.dpc-eq-nav-btn');
-        if (navBtn) {
-            var set = navBtn.closest('.dpc-eq-set');
-            if (!set) return;
-            var ds = parseInt(set.getAttribute('data-eq-ds'), 10);
-            var dir = navBtn.getAttribute('data-dir');
-            // Check if dataset is visible before navigating
-            if (window.monitoringProgressiveChart.isDatasetVisible) {
-                if (!window.monitoringProgressiveChart.isDatasetVisible(ds)) return;
-            }
-            window.monitoringProgressiveChart.navToTransition(ds, dir);
-        }
-    });
-</script>
-
 @code {
     [Parameter] public int MonitoringConnectionId { get; set; }
+    [Parameter] public bool IsOverlay { get; set; }
+    [Parameter] public EventCallback OnOverlayClose { get; set; }
 
     private MonitoringChartResponse? _data;
     private bool _loading = true;
@@ -391,6 +560,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender && !IsOverlay)
+        {
+            await JS.InvokeVoidAsync("dpcApplyBodyClass");
+        }
+
         if (_needsChartInit && _data != null)
         {
             _needsChartInit = false;
@@ -421,7 +595,7 @@
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var data = await Http
                 .GetFromJsonAsync<MonitoringChartResponse>(
-                    $"api/monitoring/chart/{MonitoringConnectionId}/progressive-records?maxPoints=3000")
+                    $"api/monitoring/chart/{MonitoringConnectionId}/progressive-records?maxPoints=1200")
                 .WaitAsync(cts.Token);
 
             if (data == null)
@@ -431,7 +605,7 @@
             }
 
             _data = data;
-            _dataCount = data.Labels?.Count ?? 0;
+            _dataCount = data.TotalCount > 0 ? data.TotalCount : (data.Labels?.Count ?? 0);
             _pageTitle = $"چارت با جزییات - {data.ConnectionInfo?.DeviceName ?? "اتصال " + MonitoringConnectionId}";
             _needsChartInit = true;
         }
@@ -455,8 +629,23 @@
         await JS.InvokeVoidAsync("resetProgressiveChartZoom");
     }
 
-    private void GoBack()
+    private async Task GoBack()
     {
+        if (IsOverlay)
+        {
+            await OnOverlayClose.InvokeAsync();
+            return;
+        }
+
         Navigation.NavigateTo("/admin/monitoring/details?Id=" + MonitoringConnectionId);
+    }
+
+    public void Dispose()
+    {
+        try { _ = JS.InvokeVoidAsync("window.monitoringProgressiveChart.setLiveMode", false); } catch { }
+        if (!IsOverlay)
+        {
+            try { _ = JS.InvokeVoidAsync("dpcClearBodyClass"); } catch { }
+        }
     }
 }

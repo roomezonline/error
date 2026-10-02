@@ -17,17 +17,19 @@ public sealed class OnlineAdmissionController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly ISmsService _sms;
     private readonly IMemoryCache _cache;
+    private readonly NotificationEventService _notificationEvents;
     private const int WorkshopIdForOtp = 1;
     private const int OtpTemplateId = 969320;
     private const int TechnicianSmsTemplateId = 532056;
     private static readonly TimeSpan OtpExpiry = TimeSpan.FromMinutes(2);
 
-    public OnlineAdmissionController(ErrorServiceDbContext db, IWebHostEnvironment env, ISmsService sms, IMemoryCache cache)
+    public OnlineAdmissionController(ErrorServiceDbContext db, IWebHostEnvironment env, ISmsService sms, IMemoryCache cache, NotificationEventService notificationEvents)
     {
         _db = db;
         _env = env;
         _sms = sms;
         _cache = cache;
+        _notificationEvents = notificationEvents;
     }
 
     [HttpGet("settings")]
@@ -126,6 +128,22 @@ public sealed class OnlineAdmissionController : ControllerBase
         };
 
         _db.OnlineAdmissionRequests.Add(entity);
+        await _db.SaveChangesAsync();
+
+        var workType = entity.Type == OnlineAdmissionTypes.Expertise ? "کارشناسی" : "تعمیر در محل";
+        await _notificationEvents.NotifyAsync(
+            eventType: "admission.created",
+            values: new Dictionary<string, string?>
+            {
+                ["CustomerName"] = entity.CustomerFullName,
+                ["WorkType"] = workType,
+                ["Phone"] = entity.CustomerMobile
+            },
+            idempotencyKey: $"admission.created:{entity.Id}",
+            fallbackSeverity: NotificationSeverity.Info,
+            fallbackTitle: "درخواست پذیرش آنلاین جدید",
+            fallbackBody: $"{entity.CustomerFullName} درخواست «{workType}» با شماره {entity.CustomerMobile} ثبت کرده است.",
+            fallbackUrl: "/admin/online-admission");
         await _db.SaveChangesAsync();
 
         if (smsSettings?.OtpEnabled != false)

@@ -27,12 +27,17 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<BankAccount> BankAccounts { get; set; }
     public DbSet<Order> Orders { get; set; }
     public DbSet<OrderItem> OrderItems { get; set; }
+    public DbSet<OrderShipment> OrderShipments { get; set; }
+    public DbSet<OrderEvent> OrderEvents { get; set; }
+    public DbSet<ShippingMethod> ShippingMethods { get; set; }
+    public DbSet<OrderReturn> OrderReturns { get; set; }
     public DbSet<CartItem> CartItems { get; set; }
     public DbSet<Coupon> Coupons { get; set; }
     public DbSet<PaymentGateway> PaymentGateways { get; set; }
     public DbSet<AppUser> Users { get; set; }
     public DbSet<ErrorCode> ErrorCodes { get; set; }
     public DbSet<ErrorCodeDocument> ErrorCodeDocuments { get; set; }
+    public DbSet<ErrorCodeCatalogItem> ErrorCodeCatalogItems { get; set; }
     public DbSet<ConsultationTicket> ConsultationTickets { get; set; }
     public DbSet<TicketReply> TicketReplies { get; set; }
     public DbSet<Testimonial> Testimonials { get; set; }
@@ -116,8 +121,66 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<ProjectSection> ProjectSections { get; set; }
     public DbSet<ProjectSectionItem> ProjectSectionItems { get; set; }
 
+    public DbSet<VisitLog> VisitLogs { get; set; }
+    public DbSet<VisitSession> VisitSessions { get; set; }
+    public DbSet<DailyVisitStat> DailyVisitStats { get; set; }
+    public DbSet<DailyPagePathStat> DailyPagePathStats { get; set; }
+
+    public DbSet<Notification> Notifications { get; set; }
+    public DbSet<NotificationRecipient> NotificationRecipients { get; set; }
+    public DbSet<NotificationDelivery> NotificationDeliveries { get; set; }
+    public DbSet<NotificationRule> NotificationRules { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.EventType).IsRequired().HasMaxLength(120);
+            entity.Property(x => x.Title).IsRequired().HasMaxLength(250);
+            entity.Property(x => x.Body).IsRequired().HasMaxLength(4000);
+            entity.Property(x => x.ActionUrl).HasMaxLength(500);
+            entity.Property(x => x.IdempotencyKey).HasMaxLength(200);
+            entity.HasIndex(x => x.CreatedAt);
+            entity.HasIndex(x => new { x.WorkshopId, x.CreatedAt });
+            entity.HasIndex(x => x.IdempotencyKey).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<NotificationRecipient>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.AppUserId, x.IsRead, x.HiddenAt });
+            entity.HasIndex(x => x.NotificationId);
+            entity.HasOne(x => x.Notification)
+                .WithMany(x => x.Recipients)
+                .HasForeignKey(x => x.NotificationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NotificationDelivery>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ExternalMessageId).HasMaxLength(200);
+            entity.Property(x => x.ErrorMessage).HasMaxLength(2000);
+            entity.HasIndex(x => new { x.Status, x.LastAttemptAt });
+            entity.HasOne(x => x.Notification)
+                .WithMany(x => x.Deliveries)
+                .HasForeignKey(x => x.NotificationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NotificationRule>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.EventType).IsRequired().HasMaxLength(120);
+            entity.Property(x => x.Group).IsRequired().HasMaxLength(250);
+            entity.Property(x => x.Label).IsRequired().HasMaxLength(250);
+            entity.Property(x => x.TitleTemplate).IsRequired().HasMaxLength(250);
+            entity.Property(x => x.BodyTemplate).IsRequired().HasMaxLength(4000);
+            entity.Property(x => x.ActionUrlTemplate).HasMaxLength(500);
+            entity.HasIndex(x => x.EventType).IsUnique();
+        });
+
         modelBuilder.Entity<MonitoringDevice>(entity =>
         {
             entity.HasKey(x => x.Id);
@@ -878,6 +941,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.ReceiptImageUrlsJson).HasMaxLength(2000);
             entity.HasIndex(x => x.OrderNumber).IsUnique();
             entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => x.Stage);
             entity.HasIndex(x => x.CreatedAt);
 
             entity.HasOne(x => x.User)
@@ -902,6 +966,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.FullName).IsRequired().HasMaxLength(200);
             entity.Property(x => x.PhoneNumber).IsRequired().HasMaxLength(20);
             entity.Property(x => x.PasswordHash).IsRequired().HasMaxLength(500);
+            entity.Property(x => x.PasswordPlain).HasMaxLength(100);
             entity.HasIndex(x => x.PhoneNumber).IsUnique();
         });
 
@@ -912,7 +977,8 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.DeviceType).IsRequired().HasMaxLength(100);
             entity.Property(x => x.Code).IsRequired().HasMaxLength(50);
             entity.Property(x => x.ImageUrl).HasMaxLength(500);
-            entity.HasIndex(x => new { x.Brand, x.DeviceType, x.Code });
+            entity.Property(x => x.Category).HasMaxLength(100);
+            entity.HasIndex(x => new { x.Brand, x.DeviceType, x.Code }).IsUnique();
 
             entity.HasMany(x => x.Documents)
                 .WithOne()
@@ -926,6 +992,13 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.Title).IsRequired().HasMaxLength(200);
             entity.Property(x => x.Url).IsRequired().HasMaxLength(1000);
             entity.HasIndex(x => new { x.ErrorCodeId, x.SortOrder });
+        });
+
+        modelBuilder.Entity<ErrorCodeCatalogItem>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).IsRequired().HasMaxLength(100);
+            entity.HasIndex(x => new { x.Kind, x.Name }).IsUnique();
         });
 
         modelBuilder.Entity<ConsultationTicket>(entity =>
@@ -1197,6 +1270,114 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.MediaUrl).HasMaxLength(500);
             entity.HasIndex(x => new { x.SectionId, x.SortOrder });
             entity.HasOne(x => x.Section).WithMany(x => x.Items).HasForeignKey(x => x.SectionId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OrderShipment>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Carrier).IsRequired().HasMaxLength(100);
+            entity.Property(x => x.TrackingNumber).HasMaxLength(100);
+            entity.Property(x => x.FailureReason).HasMaxLength(500);
+            entity.Property(x => x.Notes).HasMaxLength(1000);
+            entity.Property(x => x.CreatedBy).HasMaxLength(200);
+            entity.HasIndex(x => new { x.OrderId, x.AttemptNumber }).IsUnique();
+            entity.HasIndex(x => x.TrackingNumber);
+            entity.HasOne(x => x.Order).WithMany(x => x.Shipments).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OrderEvent>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.EventType).IsRequired().HasMaxLength(80);
+            entity.Property(x => x.Message).HasMaxLength(1000);
+            entity.Property(x => x.CreatedBy).HasMaxLength(200);
+            entity.HasIndex(x => new { x.OrderId, x.CreatedAt });
+            entity.HasOne(x => x.Order).WithMany(x => x.Events).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ShippingMethod>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).IsRequired().HasMaxLength(100);
+            entity.Property(x => x.Description).HasMaxLength(500);
+            entity.Property(x => x.EstimatedDays).HasMaxLength(50);
+            entity.HasIndex(x => new { x.IsActive, x.SortOrder });
+        });
+
+        modelBuilder.Entity<ShippingMethod>().HasData(
+            new ShippingMethod { Id = 1, Name = "پست پیشتاز", Description = "ارسال از طریق پست جمهوری اسلامی - سرویس پیشتاز", Price = 35000, EstimatedDays = "۲ تا ۳ روز کاری", IsActive = true, SortOrder = 1, CreatedAt = DateTimeOffset.UtcNow },
+            new ShippingMethod { Id = 2, Name = "پست سفارشی", Description = "ارسال از طریق پست جمهوری اسلامی - سرویس سفارشی", Price = 20000, EstimatedDays = "۴ تا ۷ روز کاری", IsActive = true, SortOrder = 2, CreatedAt = DateTimeOffset.UtcNow },
+            new ShippingMethod { Id = 3, Name = "تیپاکس", Description = "ارسال سریع از طریق تیپاکس", Price = 45000, EstimatedDays = "۱ تا ۲ روز کاری", IsActive = true, SortOrder = 3, CreatedAt = DateTimeOffset.UtcNow },
+            new ShippingMethod { Id = 4, Name = "اسنپ‌باکس", Description = "ارسال فوری با اسنپ‌باکس (فقط تهران)", Price = 25000, EstimatedDays = "همان روز", IsActive = true, SortOrder = 4, CreatedAt = DateTimeOffset.UtcNow },
+            new ShippingMethod { Id = 5, Name = "ارسال رایگان", Description = "ارسال رایگان برای سفارش‌های بالای ۵۰۰ هزار تومان", Price = 0, EstimatedDays = "۳ تا ۵ روز کاری", IsActive = true, SortOrder = 5, CreatedAt = DateTimeOffset.UtcNow }
+        );
+
+        modelBuilder.Entity<OrderReturn>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.RefundCardNumber).HasMaxLength(100);
+            entity.Property(x => x.RefundBankName).HasMaxLength(200);
+            entity.Property(x => x.ReturnReason).HasMaxLength(500);
+            entity.Property(x => x.AdminNotes).HasMaxLength(1000);
+            entity.Property(x => x.CreatedBy).HasMaxLength(200);
+            entity.HasIndex(x => x.OrderId);
+            entity.HasOne(x => x.Order).WithMany(x => x.Returns).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VisitLog>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.VisitedAtUtc).HasColumnType("datetime2(3)");
+            entity.Property(x => x.VisitDate).HasColumnType("date");
+            entity.Property(x => x.Ip).IsRequired().HasMaxLength(45);
+            entity.Property(x => x.Path).IsRequired().HasMaxLength(300);
+            entity.Property(x => x.Referrer).HasMaxLength(500);
+            entity.Property(x => x.UserAgent).HasMaxLength(400);
+            entity.Property(x => x.VisitorId).IsRequired().HasMaxLength(36);
+
+            entity.HasIndex(x => x.VisitDate);
+            entity.HasIndex(x => x.VisitedAtUtc);
+            entity.HasIndex(x => x.VisitorId);
+            entity.HasIndex(x => new { x.VisitDate, x.IsBot });
+        });
+
+        modelBuilder.Entity<DailyVisitStat>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Date).HasColumnType("date");
+            entity.HasIndex(x => x.Date).IsUnique();
+        });
+
+        modelBuilder.Entity<DailyPagePathStat>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Date).HasColumnType("date");
+            entity.Property(x => x.Path).IsRequired().HasMaxLength(300);
+            entity.HasIndex(x => new { x.Date, x.Path }).IsUnique();
+            entity.HasIndex(x => x.Path);
+        });
+
+        modelBuilder.Entity<VisitSession>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.StartedAtUtc).HasColumnType("datetime2(3)");
+            entity.Property(x => x.EndedAtUtc).HasColumnType("datetime2(3)");
+            entity.Property(x => x.VisitDate).HasColumnType("date");
+            entity.Property(x => x.VisitorId).IsRequired().HasMaxLength(36);
+            entity.Property(x => x.IdentityKey).IsRequired().HasMaxLength(64);
+            entity.Property(x => x.UserName).HasMaxLength(200);
+            entity.Property(x => x.Ip).IsRequired().HasMaxLength(45);
+            entity.Property(x => x.UserAgent).HasMaxLength(400);
+            entity.Property(x => x.Referrer).HasMaxLength(500);
+            entity.Property(x => x.EntryPath).IsRequired().HasMaxLength(300);
+            entity.Property(x => x.LastPath).HasMaxLength(300);
+
+            entity.HasIndex(x => x.VisitDate);
+            entity.HasIndex(x => new { x.VisitDate, x.IsBot });
+            entity.HasIndex(x => x.IdentityKey);
+            entity.HasIndex(x => x.VisitorId);
+            entity.HasIndex(x => x.StartedAtUtc);
+            entity.HasIndex(x => x.EndedAtUtc);
         });
     }
 }

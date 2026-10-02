@@ -1,5 +1,6 @@
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
+using ErrorService.Server.Services;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -35,6 +36,14 @@ public class CouponsController : ControllerBase
         if (coupon.MaxUsageCount.HasValue && coupon.CurrentUsageCount >= coupon.MaxUsageCount.Value)
             return Ok(new CouponApplyResult { IsValid = false, Message = "تعداد استفاده از این کد تخفیف به پایان رسیده است." });
 
+        if (coupon.AssignedToUserId.HasValue)
+        {
+            int? currentUserId = null;
+            try { currentUserId = ClaimsHelper.GetUserId(User); } catch { }
+            if (currentUserId == null || currentUserId.Value != coupon.AssignedToUserId.Value)
+                return Ok(new CouponApplyResult { IsValid = false, Message = "این کد تخفیف متعلق به شما نیست." });
+        }
+
         if (coupon.MinOrderAmount.HasValue && request.OrderAmount < coupon.MinOrderAmount.Value)
             return Ok(new CouponApplyResult { IsValid = false, Message = $"حداقل مبلغ سفارش برای این کد تخفیف {coupon.MinOrderAmount.Value:N0} تومان است." });
 
@@ -59,18 +68,49 @@ public class CouponsController : ControllerBase
         });
     }
 
+    [Authorize]
+    [HttpGet("my")]
+    public async Task<ActionResult<List<CouponDto>>> GetMyCoupons()
+    {
+        var userId = ClaimsHelper.GetUserId(User);
+
+        var usedCouponIds = await _db.Orders
+            .Where(o => o.UserId == userId && o.CouponId != null)
+            .Select(o => o.CouponId!.Value)
+            .Distinct()
+            .ToListAsync();
+
+        var coupons = await _db.Coupons
+            .AsNoTracking()
+            .Where(c => c.AssignedToUserId == userId || usedCouponIds.Contains(c.Id))
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync();
+
+        return Ok(coupons.Select(c =>
+        {
+            var dto = MapDto(c);
+            dto.IsUsedByMe = usedCouponIds.Contains(c.Id);
+            return dto;
+        }).ToList());
+    }
+
     [Authorize(Policy = "perm:admin.settings.manage")]
     [HttpGet]
     public async Task<ActionResult<List<CouponDto>>> GetAll()
     {
-        return await _db.Coupons.OrderByDescending(c => c.CreatedAt).Select(c => MapDto(c)).ToListAsync();
+        var coupons = await _db.Coupons
+            .Include(c => c.AssignedToUser)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync();
+
+        return Ok(coupons.Select(MapDto).ToList());
     }
 
     [Authorize(Policy = "perm:admin.settings.manage")]
     [HttpGet("{id:int}")]
     public async Task<ActionResult<CouponDto>> GetById(int id)
     {
-        var coupon = await _db.Coupons.FindAsync(id);
+        var coupon = await _db.Coupons.Include(c => c.AssignedToUser).FirstOrDefaultAsync(c => c.Id == id);
         if (coupon == null) return NotFound();
         return MapDto(coupon);
     }
@@ -91,7 +131,8 @@ public class CouponsController : ControllerBase
             MinOrderAmount = dto.MinOrderAmount,
             MaxUsageCount = dto.MaxUsageCount,
             IsActive = dto.IsActive,
-            ExpiryDate = dto.ExpiryDate
+            ExpiryDate = dto.ExpiryDate,
+            AssignedToUserId = dto.AssignedToUserId
         };
 
         _db.Coupons.Add(coupon);
@@ -117,6 +158,7 @@ public class CouponsController : ControllerBase
         coupon.MaxUsageCount = dto.MaxUsageCount;
         coupon.IsActive = dto.IsActive;
         coupon.ExpiryDate = dto.ExpiryDate;
+        coupon.AssignedToUserId = dto.AssignedToUserId;
 
         await _db.SaveChangesAsync();
         return NoContent();
@@ -146,6 +188,9 @@ public class CouponsController : ControllerBase
         CurrentUsageCount = c.CurrentUsageCount,
         IsActive = c.IsActive,
         ExpiryDate = c.ExpiryDate,
-        CreatedAt = c.CreatedAt
+        CreatedAt = c.CreatedAt,
+        AssignedToUserId = c.AssignedToUserId,
+        AssignedToUserName = c.AssignedToUser?.FullName,
+        AssignedToUserPhone = c.AssignedToUser?.PhoneNumber
     };
 }

@@ -34,8 +34,8 @@
         }
         else
         {
-            <div class="row g-4">
-                <div class="col-lg-7">
+            <div class="checkout-grid">
+                <div class="checkout-main">
                     <div class="section-card animate__animated animate__fadeInUp">
                         <div class="section-header">
                             <div class="step-num">۱</div>
@@ -45,7 +45,7 @@
                             </div>
                         </div>
 
-                        <EditForm Model="request" OnValidSubmit="HandleSubmit">
+                        <EditForm EditContext="editContext">
                             <DataAnnotationsValidator />
                             <div class="row g-3">
                                 <div class="col-12">
@@ -77,48 +77,87 @@
                                 </div>
                                 <div class="col-12">
                                     <div class="field-group">
-                                        <label class="field-label">روش پرداخت</label>
-                                        <div class="pm-grid">
-                                            <button type="button" class="pm-option pm-option--active" @onclick="SelectManual">
-                                                <span class="oi oi-credit-card pm-option__ico"></span>
-                                                <span>
-                                                    <span class="pm-option__title d-block">کارت‌به‌کارت</span>
-                                                    <span class="pm-option__desc d-block">واریز و آپلود رسید</span>
-                                                </span>
-                                                <span class="pm-option__check pm-option__check--on"><span class="oi oi-check"></span></span>
-                                            </button>
-                                            @foreach (var g in _gateways)
+                                        <label class="field-label">روش ارسال</label>
+                                        <div class="ship-grid">
+                                            @foreach (var m in _shippingMethods)
                                             {
-                                                <button type="button" class="pm-option @(_selectedGatewayId == g.Id ? "pm-option--active" : "")" @onclick="() => SelectGateway(g.Id)">
-                                                    <span class="oi oi-globe pm-option__ico pm-option__ico--online"></span>
-                                                    <span>
-                                                        <span class="pm-option__title d-block">@g.Title</span>
-                                                        <span class="pm-option__desc d-block">پرداخت آنلاین</span>
+                                                <button type="button" class="ship-option @(_selectedShippingMethodId == m.Id ? "ship-option--active" : "")" @onclick="() => SelectShippingMethod(m.Id)">
+                                                    <div class="ship-option__body">
+                                                        <span class="ship-option__name">@m.Name</span>
+                                                        @if (!string.IsNullOrEmpty(m.EstimatedDays))
+                                                        {
+                                                            <span class="ship-option__days">@m.EstimatedDays</span>
+                                                        }
+                                                    </div>
+                                                    <span class="ship-option__price">
+                                                        @if (m.Price == 0)
+                                                        {
+                                                            <span class="text-success fw-bold">رایگان</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>@m.Price.ToString("N0") <small>تومان</small></span>
+                                                        }
                                                     </span>
-                                                    <span class="pm-option__check @(_selectedGatewayId == g.Id ? "pm-option__check--on" : "")"><span class="oi oi-check"></span></span>
+                                                    <span class="ship-option__check @(_selectedShippingMethodId == m.Id ? "ship-option__check--on" : "")"><span class="oi oi-check"></span></span>
                                                 </button>
                                             }
                                         </div>
-                                        @if (_gateways.Count == 0)
+                                        @if (!_shippingMethods.Any())
                                         {
-                                            <div class="field-hint">در حال حاضر درگاه پرداخت آنلاین فعال نیست.</div>
+                                            <div class="field-hint">روش ارسالی فعال نیست</div>
                                         }
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="mt-5">
-                                <button type="submit" class="btn btn-primary-custom py-3 w-100" disabled="@isProcessing">
-                                    @if (isProcessing) { <span class="spinner-border spinner-border-sm me-2"></span> }
-                                    تایید و پرداخت نهایی
-                                </button>
-                            </div>
+                            <div class="checkout-form-end-spacer"></div>
                         </EditForm>
+                    </div>
+
+                    <!-- Payment method (outside form) -->
+                    <div class="section-card animate__animated animate__fadeInUp checkout-section-payment">
+                        <div class="field-group">
+                            <label class="field-label">روش پرداخت</label>
+                            <div class="pm-grid">
+                                <button type="button" class="pm-option pm-option--active" @onclick="SelectManual">
+                                    <span class="oi oi-credit-card pm-option__ico"></span>
+                                    <span>
+                                        <span class="pm-option__title d-block">کارت‌به‌کارت</span>
+                                        <span class="pm-option__desc d-block">واریز و آپلود رسید</span>
+                                    </span>
+                                    <span class="pm-option__check pm-option__check--on"><span class="oi oi-check"></span></span>
+                                </button>
+                                @foreach (var g in _gateways)
+                                {
+                                    <button type="button" class="pm-option @(_selectedGatewayId == g.Id ? "pm-option--active" : "")" @onclick="() => SelectGateway(g.Id)">
+                                        <span class="oi oi-globe pm-option__ico pm-option__ico--online"></span>
+                                        <span>
+                                            <span class="pm-option__title d-block">@g.Title</span>
+                                            <span class="pm-option__desc d-block">پرداخت آنلاین</span>
+                                        </span>
+                                        <span class="pm-option__check @(_selectedGatewayId == g.Id ? "pm-option__check--on" : "")"><span class="oi oi-check"></span></span>
+                                    </button>
+                                }
+                            </div>
+                            @if (_gateways.Count == 0)
+                            {
+                                <div class="field-hint">در حال حاضر درگاه پرداخت آنلاین فعال نیست.</div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Submit button (always last) -->
+                    <div class="checkout-submit-section">
+                        <button type="button" class="btn btn-primary-custom py-3 w-100" @onclick="TriggerFormSubmit" disabled="@isProcessing">
+                            @if (isProcessing) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                            تایید و پرداخت نهایی
+                        </button>
                     </div>
                 </div>
 
-                <div class="col-lg-5">
-                    <div class="summary-card sticky-top animate__animated animate__fadeInRight">
+                <div class="checkout-sidebar">
+                    <div class="summary-card animate__animated animate__fadeInRight">
                         <div class="section-header">
                             <div class="step-num step-num--ok">۲</div>
                             <h2 class="section-title">خلاصه سفارش</h2>
@@ -137,14 +176,59 @@
                             }
                         </div>
 
+                        @if (!string.IsNullOrWhiteSpace(request.FullName) || !string.IsNullOrWhiteSpace(request.PhoneNumber))
+                        {
+                            <div class="summary-info">
+                                @if (!string.IsNullOrWhiteSpace(request.FullName))
+                                {
+                                    <div class="summary-info-row">
+                                        <span class="summary-info-label"><span class="oi oi-person"></span> نام</span>
+                                        <span class="summary-info-val">@request.FullName</span>
+                                    </div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+                                {
+                                    <div class="summary-info-row">
+                                        <span class="summary-info-label"><span class="oi oi-phone"></span> موبایل</span>
+                                        <span class="summary-info-val ltr" dir="ltr">@request.PhoneNumber</span>
+                                    </div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(request.Address) && request.Address.Length > 5)
+                                {
+                                    <div class="summary-info-row">
+                                        <span class="summary-info-label"><span class="oi oi-location"></span> آدرس</span>
+                                        <span class="summary-info-val summary-info-val--addr">@request.Address</span>
+                                    </div>
+                                }
+                                @if (_selectedShippingMethodId.HasValue)
+                                {
+                                    <div class="summary-info-row">
+                                        <span class="summary-info-label"><span class="oi oi-truck"></span> ارسال</span>
+                                        <span class="summary-info-val">@_shippingName</span>
+                                    </div>
+                                }
+                                <div class="summary-info-row">
+                                    <span class="summary-info-label"><span class="oi oi-credit-card"></span> پرداخت</span>
+                                    <span class="summary-info-val">@(_selectedGatewayId.HasValue ? "پرداخت آنلاین" : "کارت‌به‌کارت")</span>
+                                </div>
+                            </div>
+                        }
+
                         <div class="price-breakdown">
                             <div class="price-row">
                                 <span>جمع کل</span>
                                 <span>@CartService.GetTotalAmount().ToString("N0") <small>تومان</small></span>
                             </div>
                             <div class="price-row price-row--ship">
-                                <span>ارسال</span>
-                                <span class="text-success">رایگان</span>
+                                <span>ارسال (@_shippingName)</span>
+                                @if (_shippingCost == 0)
+                                {
+                                    <span class="text-success">رایگان</span>
+                                }
+                                else
+                                {
+                                    <span>@_shippingCost.ToString("N0") <small>تومان</small></span>
+                                }
                             </div>
                             @if (_couponDiscount > 0)
                             {
@@ -152,12 +236,19 @@
                                     <span>تخفیف (<span class="ltr">@_couponCode</span>)</span>
                                     <span class="text-danger">-@_couponDiscount.ToString("N0") <small>تومان</small></span>
                                 </div>
+                                @if (_couponPercent.HasValue && _couponPercent.Value > 0)
+                                {
+                                    <div class="price-row" style="font-size:0.72rem;color:#94a3b8;">
+                                        <span>@($"(%{_couponPercent.Value} درصد)")</span>
+                                    </div>
+                                }
                             }
                         </div>
 
                         <div class="coupon-section">
                             <div class="coupon-row">
-                                <input type="text" class="coupon-input" placeholder="کد تخفیف دارید؟" @bind="_couponInput" disabled="@_couponApplied" />
+                                <input type="text" class="coupon-input" placeholder="کد تخفیف دارید؟" value="@_couponInput"
+                                       @oninput="OnCouponInputChanged" disabled="@(_couponApplied || _couponLoading)" />
                                 @if (_couponApplied)
                                 {
                                     <button type="button" class="coupon-btn coupon-btn--remove" @onclick="RemoveCoupon">
@@ -166,8 +257,16 @@
                                 }
                                 else
                                 {
-                                    <button type="button" class="coupon-btn" @onclick="ApplyCoupon" disabled="@string.IsNullOrWhiteSpace(_couponInput) || _couponLoading">
-                                        @if (_couponLoading) { <span class="spinner-border spinner-border-sm"></span> } else { <span>اعمال</span> }
+                                    <button type="button" class="coupon-btn @(_couponLoading ? "coupon-btn--loading" : "")"
+                                            @onclick="ApplyCoupon" disabled="@(_couponLoading || string.IsNullOrWhiteSpace(_couponInput))">
+                                        @if (_couponLoading)
+                                        {
+                                            <span class="coupon-spinner"></span> <span>در حال بررسی...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>اعمال</span>
+                                        }
                                     </button>
                                 }
                             </div>
@@ -175,32 +274,29 @@
                             {
                                 <div class="coupon-message @(_couponApplied ? "coupon-ok" : "coupon-err")">@_couponMessage</div>
                             }
+                            @if (_couponApplied && _couponDiscount > 0)
+                            {
+                                <div class="coupon-applied-detail">
+                                    <span class="coupon-applied-check"><span class="oi oi-circle-check"></span></span>
+                                    <div class="coupon-applied-info">
+                                        <span class="coupon-applied-code ltr">@_couponCode</span>
+                                        @if (_couponPercent.HasValue && _couponPercent.Value > 0)
+                                        {
+                                            <span class="coupon-applied-desc">@_couponPercent.Value٪ تخفیف — @(_couponDiscount.ToString("N0")) تومان</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="coupon-applied-desc">@(_couponDiscount.ToString("N0")) تومان تخفیف</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
                         </div>
 
                         <div class="price-total">
                             <span>مبلغ نهایی</span>
-                            <span class="price-total-amount">@((CartService.GetTotalAmount() - _couponDiscount).ToString("N0")) <small>تومان</small></span>
+                            <span class="price-total-amount">@((CartService.GetTotalAmount() + _shippingCost - _couponDiscount).ToString("N0")) <small>تومان</small></span>
                         </div>
-
-                        <div class="info-note">
-                            <span class="oi oi-info"></span>
-                            <p>در مرحله بعد اطلاعات کارت بانکی جهت واریز و آپلود فیش نمایش داده می‌شود.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bottom-bar d-none d-lg-block">
-                <div class="bottom-bar-inner">
-                    <div class="d-flex align-items-center justify-content-between gap-3 w-100">
-                        <div>
-                            <div class="bottom-bar-label">مبلغ نهایی</div>
-                            <div class="bottom-bar-price">@((CartService.GetTotalAmount() - _couponDiscount).ToString("N0")) <small>تومان</small></div>
-                        </div>
-                        <button type="button" class="btn btn-primary-custom px-5 py-3" @onclick="TriggerFormSubmit" disabled="@isProcessing">
-                            @if (isProcessing) { <span class="spinner-border spinner-border-sm me-2"></span> }
-                            تایید و ادامه
-                        </button>
                     </div>
                 </div>
             </div>
@@ -227,6 +323,16 @@
     .empty-icon { width: 80px; height: 80px; margin: 0 auto 20px; background: #fef3c7; border-radius: 24px; display: grid; place-items: center; font-size: 2rem; color: #f59e0b; }
     .empty-title { font-size: 1.1rem; font-weight: 800; margin-bottom: 8px; }
     .empty-desc { font-size: 0.85rem; color: #94a3b8; margin-bottom: 28px; }
+
+    .checkout-grid {
+        display: flex; flex-direction: column; gap: 16px;
+    }
+
+    .checkout-main { display: flex; flex-direction: column; gap: 16px; }
+    .checkout-sidebar { order: -1; }
+    .checkout-section-payment { margin: 0; }
+    .checkout-form-end-spacer { height: 0; }
+    .checkout-submit-section { margin-top: 0; }
 
     .section-card {
         background: var(--shop-surface, #fff); border: 1px solid var(--shop-border, #f1f5f9);
@@ -288,18 +394,40 @@
     .coupon-row { display: flex; gap: 8px; }
     .coupon-input {
         flex: 1; padding: 10px 14px; font-size: 0.82rem; direction: ltr;
-        border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc;
+        border: 1.5px solid #e2e8f0; border-radius: 10px; background: #f8fafc;
         outline: none; transition: border-color 0.15s;
     }
-    .coupon-input:focus { border-color: var(--shop-primary, #4f46e5); background: #fff; }
-    .coupon-input:disabled { opacity: 0.6; }
+    .coupon-input:focus { border-color: #4f46e5; background: #fff; }
+    .coupon-input:disabled { opacity: 0.6; background: #f1f5f9; }
     .coupon-btn {
         padding: 10px 18px; border: none; border-radius: 10px;
-        background: var(--shop-primary, #4f46e5); color: #fff;
+        background: #4f46e5; color: #fff;
         font-weight: 700; font-size: 0.82rem; cursor: pointer; white-space: nowrap;
+        transition: all 0.2s;
     }
-    .coupon-btn:disabled { opacity: 0.5; }
+    .coupon-btn:hover:not(:disabled) { background: #4338ca; transform: translateY(-1px); }
+    .coupon-btn:disabled { background: #c7d2fe; color: #6366f1; cursor: not-allowed; opacity: 0.7; }
+    .coupon-btn--loading { background: #94a3b8 !important; cursor: wait !important; }
     .coupon-btn--remove { background: #fee2e2; color: #dc2626; }
+    .coupon-btn--remove:hover { background: #fecaca; }
+
+    .coupon-spinner {
+        display: inline-block; width: 14px; height: 14px;
+        border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
+        border-radius: 50%; animation: couponSpin 0.6s linear infinite;
+    }
+    @@keyframes couponSpin { to { transform: rotate(360deg); } }
+
+    .coupon-applied-detail {
+        display: flex; align-items: center; gap: 10px; margin-top: 10px;
+        padding: 10px 12px; background: #f0fdf4; border: 1px solid #bbf7d0;
+        border-radius: 10px; animation: fadeIn 0.2s;
+    }
+    .coupon-applied-check { color: #16a34a; font-size: 1.1rem; flex-shrink: 0; }
+    .coupon-applied-info { display: flex; flex-direction: column; }
+    .coupon-applied-code { font-weight: 800; font-size: 0.82rem; color: #16a34a; letter-spacing: 0.5px; }
+    .coupon-applied-desc { font-size: 0.75rem; color: #15803d; }
+
     .coupon-message { font-size: 0.75rem; margin-top: 6px; font-weight: 600; }
     .coupon-ok { color: #16a34a; }
     .coupon-err { color: #dc2626; }
@@ -312,13 +440,22 @@
     .price-total-amount { font-size: 1.25rem; font-weight: 900; color: var(--shop-primary, #4f46e5); }
     .price-total-amount small { font-size: 0.65rem; font-weight: 600; opacity: 0.7; }
 
-    .info-note {
-        display: flex; align-items: flex-start; gap: 10px; padding: 14px;
-        background: #f0f4ff; border-radius: 12px; margin-top: 20px; font-size: 0.78rem;
-        color: var(--shop-primary, #4f46e5); line-height: 1.6;
+    .btn-primary-custom {
+        background: linear-gradient(135deg, var(--shop-primary, #4f46e5), var(--shop-primary-2, #6366f1));
+        color: #fff; border: none; border-radius: 14px; font-weight: 800; font-size: 0.88rem;
+        transition: transform 0.15s, box-shadow 0.15s; text-decoration: none;
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     }
-    .info-note span { margin-top: 2px; flex-shrink: 0; }
-    .info-note p { margin: 0; }
+    .btn-primary-custom:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(79,70,229,0.25); color: #fff; }
+    .btn-primary-custom:active { transform: scale(0.98); }
+    .btn-primary-custom:disabled { opacity: 0.6; transform: none; box-shadow: none; }
+
+    .summary-info { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-top: 1px solid #f1f5f9; }
+    .summary-info-row { display: flex; align-items: flex-start; gap: 8px; font-size: 0.78rem; }
+    .summary-info-label { display: flex; align-items: center; gap: 4px; color: #94a3b8; white-space: nowrap; flex-shrink: 0; min-width: 60px; font-weight: 600; }
+    .summary-info-label .oi { font-size: 0.72rem; }
+    .summary-info-val { color: #334155; font-weight: 600; word-break: break-word; }
+    .summary-info-val--addr { font-size: 0.72rem; color: #64748b; line-height: 1.6; }
 
     .pm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
     .pm-option { display: flex; align-items: center; gap: 10px; text-align: right; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; cursor: pointer; font-family: inherit; transition: all .15s; }
@@ -331,24 +468,23 @@
     .pm-option__check { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #e2e8f0; color: transparent; font-size: 0.6rem; margin-inline-start: auto; flex-shrink: 0; }
     .pm-option__check--on { background: var(--shop-primary, #4f46e5); border-color: var(--shop-primary, #4f46e5); color: #fff; }
 
-    .bottom-bar {
-        background: var(--shop-surface, #fff); border-top: 1px solid #e2e8f0;
+    .ship-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+    .ship-option {
+        display: flex; align-items: center; gap: 10px; text-align: right;
+        background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px;
+        padding: 12px 14px; cursor: pointer; font-family: inherit; transition: all .15s;
     }
-    .bottom-bar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 16px; }
-
-    .btn-primary-custom {
-        background: linear-gradient(135deg, var(--shop-primary, #4f46e5), var(--shop-primary-2, #6366f1));
-        color: #fff; border: none; border-radius: 14px; font-weight: 800; font-size: 0.88rem;
-        transition: transform 0.15s, box-shadow 0.15s; text-decoration: none;
-        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    .ship-option:hover { border-color: #c7d2fe; }
+    .ship-option--active { border-color: var(--shop-primary, #4f46e5); background: rgba(79,70,229,.05); }
+    .ship-option__body { flex: 1; display: flex; flex-direction: column; }
+    .ship-option__name { font-size: 0.85rem; font-weight: 700; color: var(--shop-text, #1e293b); }
+    .ship-option__days { font-size: 0.72rem; color: #94a3b8; margin-top: 2px; }
+    .ship-option__price { font-size: 0.82rem; font-weight: 700; color: var(--shop-primary, #4f46e5); white-space: nowrap; }
+    .ship-option__check {
+        display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+        border: 1.5px solid #e2e8f0; color: transparent; font-size: 0.6rem; flex-shrink: 0;
     }
-    .btn-primary-custom:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(79,70,229,0.25); color: #fff; }
-    .btn-primary-custom:active { transform: scale(0.98); }
-    .btn-primary-custom:disabled { opacity: 0.6; transform: none; box-shadow: none; }
-
-    .bottom-bar-label { font-size: 0.75rem; color: #94a3b8; }
-    .bottom-bar-price { font-size: 1.1rem; font-weight: 900; color: var(--shop-primary, #4f46e5); }
-    .bottom-bar-price small { font-size: 0.65rem; font-weight: 600; }
+    .ship-option__check--on { background: var(--shop-primary, #4f46e5); border-color: var(--shop-primary, #4f46e5); color: #fff; }
 
     @@media (max-width: 768px) {
         .section-card { padding: 16px 14px; }
@@ -370,21 +506,30 @@
         .coupon-btn { padding: 8px 14px; font-size: 0.76rem; }
         .info-note { padding: 10px 12px; margin-top: 14px; font-size: 0.72rem; }
         .pm-grid { grid-template-columns: 1fr; }
-        .bottom-bar {
+        .checkout-submit-section {
             position: fixed; bottom: 0; left: 0; right: 0; z-index: 1200;
             padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+            background: var(--shop-surface, #fff);
+            border-top: 1px solid #e2e8f0;
             box-shadow: 0 -4px 20px rgba(0,0,0,0.06);
         }
-        .bottom-bar-price { font-size: 1rem; }
-        .btn-primary-custom { font-size: 0.82rem; padding: 12px 20px !important; border-radius: 12px; }
+        .checkout-submit-section .btn-primary-custom {
+            font-size: 0.82rem; padding: 12px 20px !important; border-radius: 12px;
+        }
+        .checkout-main { padding-bottom: 80px; }
     }
 
     @@media (min-width: 769px) {
-        .bottom-bar {
-            position: relative; bottom: auto; margin-top: 20px;
-            border-radius: 16px; border: 1px solid #e2e8f0; background: var(--shop-surface, #fff);
+        .checkout-grid {
+            flex-direction: row; align-items: flex-start; gap: 24px;
         }
-        .bottom-bar-inner { padding: 16px 24px; }
+        .checkout-main { flex: 0 0 58%; max-width: 58%; order: 1; }
+        .checkout-sidebar { flex: 0 0 40%; max-width: 40%; order: 2; position: sticky; top: 90px; }
+        .checkout-submit-section { margin-top: 0; border-radius: 16px; border: 1px solid #e2e8f0; background: var(--shop-surface, #fff); padding: 16px 24px; }
+
+        .section-card { padding: 28px; }
+        .summary-card { padding: 24px; }
+        .section-header { margin-bottom: 28px; }
     }
 </style>
 
@@ -396,6 +541,7 @@
     private string _couponInput = "";
     private string _couponCode = "";
     private decimal _couponDiscount;
+    private decimal? _couponPercent;
     private bool _couponApplied;
     private bool _couponLoading;
     private string _couponMessage = "";
@@ -403,12 +549,25 @@
     private List<PaymentGatewayListItemDto> _gateways = new();
     private int? _selectedGatewayId;
 
+    private List<ShippingMethodDto> _shippingMethods = new();
+    private int? _selectedShippingMethodId;
+    private decimal _shippingCost => _shippingMethods.FirstOrDefault(m => m.Id == _selectedShippingMethodId)?.Price ?? 0;
+    private string _shippingName => _shippingMethods.FirstOrDefault(m => m.Id == _selectedShippingMethodId)?.Name ?? "رایگان";
+
     private void SelectManual() => _selectedGatewayId = null;
     private void SelectGateway(int id) => _selectedGatewayId = id;
 
     protected override async Task OnInitializedAsync()
     {
         editContext = new EditContext(request);
+
+        try
+        {
+            _shippingMethods = await Http.GetFromJsonAsync<List<ShippingMethodDto>>("api/shippingmethods") ?? new();
+            if (_shippingMethods.Any() && _selectedShippingMethodId == null)
+                _selectedShippingMethodId = _shippingMethods.First().Id;
+        }
+        catch { }
 
         try
         {
@@ -438,6 +597,18 @@
         catch { _gateways = new(); }
     }
 
+    private void SelectShippingMethod(int id)
+    {
+        _selectedShippingMethodId = id;
+        request.ShippingMethodId = id;
+    }
+
+    private void OnCouponInputChanged(ChangeEventArgs e)
+    {
+        _couponInput = e.Value?.ToString() ?? "";
+        StateHasChanged();
+    }
+
     private async Task ApplyCoupon()
     {
         _couponLoading = true;
@@ -457,6 +628,7 @@
                     _couponApplied = true;
                     _couponCode = _couponInput.Trim();
                     _couponDiscount = data.DiscountAmount ?? 0;
+                    _couponPercent = data.Coupon?.DiscountPercent;
                     _couponMessage = data.Message ?? "کد تخفیف اعمال شد";
                 }
                 else
@@ -474,6 +646,7 @@
         _couponApplied = false;
         _couponCode = "";
         _couponDiscount = 0;
+        _couponPercent = null;
         _couponInput = "";
         _couponMessage = "";
     }
@@ -493,6 +666,7 @@
         {
             request.Items = CartService.GetItems().Select(x => new OrderItemDto { ProductId = x.ProductId, ProductName = x.Name, Price = x.Price, Quantity = x.Quantity }).ToList();
             request.CouponCode = _couponApplied ? _couponCode : null;
+            request.ShippingMethodId = _selectedShippingMethodId;
             var response = await Http.PostAsJsonAsync("api/orders", request);
             if (response.IsSuccessStatusCode)
             {

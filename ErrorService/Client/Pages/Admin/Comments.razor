@@ -9,6 +9,8 @@
 @inject HttpClient Http
 @inject ToastService ToastService
 
+<PageTitle>نظرات | ارورسرویس</PageTitle>
+
 <ConfirmDialog IsVisible="_showConfirm"
                Title="حذف نظر"
                Message="آیا از حذف این نظر اطمینان دارید؟"
@@ -20,9 +22,16 @@
             <h1 class="cu-title">مدیریت نظرات</h1>
             <span class="cu-badge">@_totalPending در انتظار تایید</span>
         </div>
-        <button class="cu-mobile-filter-btn" @onclick="() => _showMobileFilter = !_showMobileFilter">
-            <span class="oi oi-list"></span>
-        </button>
+        <div class="cu-header-left">
+            <label class="cu-approval-toggle" title="نظرات جدید پس از تایید مدیر روی سایت نمایش داده شوند">
+                <input type="checkbox" checked="@_requireApproval" @onchange="OnRequireApprovalChanged" disabled="@_savingSettings" />
+                <span class="cu-approval-slider"></span>
+                <span class="cu-approval-text">تایید قبل از انتشار</span>
+            </label>
+            <button class="cu-mobile-filter-btn" @onclick="() => _showMobileFilter = !_showMobileFilter">
+                <span class="oi oi-list"></span>
+            </button>
+        </div>
     </div>
 
     <div class="cu-tabs">
@@ -106,6 +115,10 @@
                                     </div>
                                 </div>
                                 <div class="cu-card-status">
+                                    @if (node.Item.SourceType == SECTION_PRODUCTS && !node.Item.IsAdminRead)
+                                    {
+                                        <span class="cu-badge-new">جدید</span>
+                                    }
                                     @if (node.Item.IsApproved)
                                     {
                                         <span class="cu-badge-success">تایید شده</span>
@@ -239,9 +252,18 @@
 </div>
 
 <style>
-    .comments-unified { min-height: 100vh; background: #f1f5f9; font-family: 'Vazirmatn','IRANSans',sans-serif; }
-    .cu-header { background: #fff; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(0,0,0,.06); position: sticky; top: 0; z-index: 100; }
+    .comments-unified { min-height: 100vh; background: #f1f5f9; font-family: 'Vazirmatn','IRANSans',sans-serif; padding-top: 24px; }
+    .cu-header { background: #fff; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(0,0,0,.06); position: sticky; top: 124px; z-index: 100; }
     .cu-header-right { display: flex; align-items: center; gap: 12px; }
+    .cu-header-left { display: flex; align-items: center; gap: 12px; }
+    .cu-approval-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: .75rem; font-weight: 700; color: #475569; }
+    .cu-approval-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .cu-approval-slider { width: 38px; height: 22px; background: #cbd5e1; border-radius: 999px; position: relative; transition: background .2s; flex-shrink: 0; }
+    .cu-approval-slider::after { content: ''; position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+    .cu-approval-toggle input:checked + .cu-approval-slider { background: #2563eb; }
+    .cu-approval-toggle input:checked + .cu-approval-slider::after { transform: translateX(-16px); }
+    .cu-approval-toggle input:disabled + .cu-approval-slider { opacity: .6; }
+    .cu-approval-text { white-space: nowrap; }
     .cu-title { font-size: 1.05rem; font-weight: 900; color: #0f172a; margin: 0; }
     .cu-badge { background: rgba(245,158,11,.12); color: #d97706; padding: 4px 12px; border-radius: 20px; font-size: .7rem; font-weight: 800; }
     .cu-mobile-filter-btn { display: none; width: 42px; height: 42px; border-radius: 12px; border: 1px solid rgba(0,0,0,.08); background: #fff; font-size: 1.2rem; color: #475569; cursor: pointer; }
@@ -251,8 +273,8 @@
     .cu-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
     .cu-tab-count { background: rgba(0,0,0,.06); padding: 1px 8px; border-radius: 10px; font-size: .65rem; font-weight: 800; }
     .cu-tab.active .cu-tab-count { background: rgba(37,99,235,.12); color: #2563eb; }
-    .cu-body { display: grid; grid-template-columns: 270px 1fr; min-height: calc(100vh - 110px); }
-    .cu-sidebar { background: #fff; border-left: 1px solid rgba(0,0,0,.06); padding: 20px; position: sticky; top: 110px; height: calc(100vh - 110px); overflow-y: auto; }
+    .cu-body { display: grid; grid-template-columns: 270px 1fr; min-height: calc(100vh - 200px); }
+    .cu-sidebar { background: #fff; border-left: 1px solid rgba(0,0,0,.06); padding: 20px; position: sticky; top: 186px; height: calc(100vh - 186px); overflow-y: auto; }
     .cu-sidebar-header { display: none; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid rgba(0,0,0,.06); }
     .cu-sidebar-close { background: none; border: none; font-size: 1.5rem; color: #64748b; cursor: pointer; }
     .cu-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 20px; }
@@ -287,6 +309,8 @@
     .cu-date { font-size: .7rem; color: #94a3b8; margin-top: 1px; }
     .cu-badge-success { background: rgba(16,185,129,.1); color: #10b981; padding: 3px 10px; border-radius: 20px; font-size: .65rem; font-weight: 800; }
     .cu-badge-pending { background: rgba(245,158,11,.1); color: #d97706; padding: 3px 10px; border-radius: 20px; font-size: .65rem; font-weight: 800; }
+    .cu-badge-new { background: rgba(239,68,68,.12); color: #ef4444; padding: 3px 10px; border-radius: 20px; font-size: .65rem; font-weight: 800; animation: cuNewPulse 1.6s ease-in-out infinite; }
+    @@keyframes cuNewPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .65; transform: scale(1.05); } }
     .cu-badge-reply { background: rgba(124,58,237,.1); color: #7c3aed; padding: 3px 10px; border-radius: 20px; font-size: .65rem; font-weight: 800; margin-right: 4px; }
     .cu-card-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
     .cu-meta-link { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: #f1f5f9; border-radius: 8px; font-size: .72rem; font-weight: 700; color: #475569; text-decoration: none; transition: all .2s; }
@@ -334,6 +358,7 @@
     @@media (max-width: 768px) {
         .cu-mobile-filter-btn { display: grid; place-items: center; }
         .cu-body { grid-template-columns: 1fr; }
+        .cu-header { top: 0; }
         .cu-sidebar { position: fixed; top: 0; right: -300px; width: 300px; height: 100vh; z-index: 1000; border-left: 1px solid rgba(0,0,0,.1); box-shadow: -4px 0 30px rgba(0,0,0,.15); transition: right .3s ease; }
         .cu-sidebar.open { right: 0; }
         .cu-sidebar-header { display: flex; }
@@ -368,6 +393,9 @@
     private int _productPending, _academyPending, _testimonialPending, _newsPending, _totalPending;
     private int _currentTotal, _currentApproved, _currentPending;
 
+    private bool _requireApproval = true;
+    private bool _savingSettings;
+
     private List<FlatNode> _flatFiltered => BuildFlatList();
 
     private string EmptyMessage => _activeSection switch
@@ -391,7 +419,52 @@
     private int? _editRating;
     private bool _isEditing;
 
-    protected override async Task OnInitializedAsync() => await LoadAll();
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(LoadAll(), LoadModerationSettings());
+    }
+
+    private async Task LoadModerationSettings()
+    {
+        try
+        {
+            var s = await Http.GetFromJsonAsync<ReviewModerationSettingsDto>("api/products/0/reviews/moderation-settings");
+            if (s != null) _requireApproval = s.RequireApproval;
+        }
+        catch { }
+    }
+
+    private async Task OnRequireApprovalChanged(ChangeEventArgs e)
+    {
+        var next = e.Value is bool b && b;
+        var prev = _requireApproval;
+        _requireApproval = next;
+        _savingSettings = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync("api/products/0/reviews/moderation-settings", new ReviewModerationSettingsDto { RequireApproval = next });
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(next
+                    ? "نظرات جدید پس از تایید مدیر روی سایت نمایش داده می‌شوند"
+                    : "نظرات جدید بدون تایید مستقیم روی سایت منتشر می‌شوند");
+            }
+            else
+            {
+                _requireApproval = prev;
+                ToastService.ShowError("خطا در ذخیره تنظیمات");
+            }
+        }
+        catch
+        {
+            _requireApproval = prev;
+            ToastService.ShowError("خطا در ذخیره تنظیمات");
+        }
+        finally
+        {
+            _savingSettings = false;
+        }
+    }
 
     private async Task LoadAll()
     {
@@ -418,6 +491,7 @@
                     Initial = r.FullName.Length > 0 ? r.FullName[0].ToString() : "?",
                     Content = r.Content,
                     IsApproved = r.IsApproved,
+                    IsAdminRead = r.IsAdminRead,
                     DateText = r.CreatedAtFa,
                     Rating = r.Rating,
                     ParentId = r.ParentId,
@@ -428,6 +502,11 @@
                 }).ToList();
                 ResolveParents(_productReviews);
                 _productPending = _productReviews.Count(r => !r.IsApproved);
+                if (data.Any(r => !r.IsAdminRead))
+                {
+                    try { await Http.PostAsync("api/products/0/reviews/read-admin-all", null); }
+                    catch { }
+                }
             }
         }
         catch { }
@@ -623,6 +702,7 @@
             if (resp.IsSuccessStatusCode)
             {
                 item.IsApproved = !item.IsApproved;
+                if (item.SourceType == SECTION_PRODUCTS) item.IsAdminRead = true;
                 RecalcCounts();
                 ToastService.ShowSuccess(item.IsApproved ? "نظر تایید شد" : "تایید نظر لغو شد");
             }
@@ -657,19 +737,31 @@
                 RemoveFromList(GetCurrentList(), _deleteItem);
                 RecalcCounts();
                 ToastService.ShowSuccess("نظر حذف شد");
+                await InvokeAsync(StateHasChanged);
+            }
+            else
+            {
+                ToastService.ShowError("خطا در حذف نظر");
             }
         }
         catch { ToastService.ShowError("خطا در حذف"); }
+        finally { _deleteItem = null; }
     }
 
     private void RemoveFromList(List<CommentItem> list, CommentItem item)
     {
-        list.Remove(item);
-        if (item._children != null)
+        var ids = new HashSet<int>();
+        void Collect(CommentItem i)
         {
-            foreach (var child in item._children.ToList())
-                RemoveFromList(list, child);
+            ids.Add(i.Id);
+            if (i._children != null)
+                foreach (var c in i._children) Collect(c);
         }
+        Collect(item);
+
+        list.RemoveAll(x => ids.Contains(x.Id));
+        foreach (var p in list)
+            p._children?.RemoveAll(c => ids.Contains(c.Id));
     }
 
     private async Task ApproveAllShown()
@@ -859,6 +951,7 @@
         public string Initial { get; set; } = "";
         public string Content { get; set; } = "";
         public bool IsApproved { get; set; }
+        public bool IsAdminRead { get; set; }
         public string DateText { get; set; } = "";
         public int? Rating { get; set; }
         public int? ParentId { get; set; }

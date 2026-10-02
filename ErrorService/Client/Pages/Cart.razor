@@ -1,12 +1,15 @@
 @page "/cart"
+@implements IDisposable
 @using ErrorService.Client.Services
 @using ErrorService.Shared
 @inject CartService CartService
 @inject NavigationManager Nav
 @inject HttpClient Http
 @inject AuthService AuthService
+@inject ToastService ToastService
 @using ErrorService.Client.Shared
 @using Microsoft.AspNetCore.Components.Authorization
+@using System.Net.Http.Json
 
 <HeadContent>
     <meta name="robots" content="noindex, nofollow" />
@@ -39,6 +42,17 @@
         }
         else
         {
+            @if (UnavailableCount > 0)
+            {
+                <div class="cart-alert animate__animated animate__fadeIn">
+                    <span class="oi oi-alert"></span>
+                    <div>
+                        <strong>@UnavailableCount کالا ناموجود شده است</strong>
+                        <p>این کالاها غیرفعال شده‌اند و هنگام ادامه با تایید شما از سبد حذف می‌شوند.</p>
+                    </div>
+                </div>
+            }
+
             <div class="row g-4">
                 <div class="col-lg-8">
                     <div class="d-flex justify-content-between align-items-center mb-3 px-1">
@@ -50,7 +64,16 @@
                     <div class="items-list">
                         @foreach (var item in CartService.GetItems())
                         {
-                            <div class="item-card animate__animated animate__fadeInUp">
+                            var avail = GetAvailability(item.ProductId);
+                            var isUnavailable = avail != null && !avail.HasSufficientStock;
+                            <div class="item-card @(isUnavailable ? "item-card--unavailable" : "") animate__animated animate__fadeInUp">
+                                @if (isUnavailable)
+                                {
+                                    <div class="item-unavailable-badge">
+                                        <span class="oi oi-ban"></span>
+                                        @(avail!.StockQuantity <= 0 || !avail.IsAvailable ? "ناموجود" : $"موجودی: فقط {avail.StockQuantity} عدد")
+                                    </div>
+                                }
                                 <div class="d-flex align-items-center gap-3">
                                     <div class="item-img">
                                         <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-product.svg" : item.ImageUrl)" alt="@item.Name" />
@@ -61,6 +84,7 @@
                                     </div>
                                     <div class="item-qty">
                                         <QuantityControl Quantity="@item.Quantity"
+                                                         Disabled="@isUnavailable"
                                                          OnAdd="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity + 1)"
                                                          OnIncrease="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity + 1)"
                                                          OnDecrease="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity - 1)" />
@@ -108,24 +132,19 @@
                         </div>
                         <div class="summary-row">
                             <span class="summary-label">مجموع کالاها</span>
-                            <span class="summary-value">@CartService.GetTotalAmount().ToString("N0") <small>تومان</small></span>
+                            <span class="summary-value">@GetAvailableTotalAmount().ToString("N0") <small>تومان</small></span>
                         </div>
-                        <div class="coupon-row">
-                            <div class="input-group">
-                                <input class="form-control form-control-sm" placeholder="کد تخفیف" @bind="couponCode" />
-                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3" @onclick="ApplyCoupon" disabled="@string.IsNullOrWhiteSpace(couponCode)">
-                                    اعمال
-                                </button>
+                        @if (UnavailableCount > 0)
+                        {
+                            <div class="summary-row summary-row--warn">
+                                <span class="summary-label">کالای ناموجود</span>
+                                <span class="summary-value">@UnavailableCount مورد (حذف در ادامه)</span>
                             </div>
-                            @if (!string.IsNullOrEmpty(couponMessage))
-                            {
-                                <div class="small mt-1 @(couponSuccess ? "text-success" : "text-danger")">@couponMessage</div>
-                            }
-                        </div>
+                        }
                         <div class="summary-divider"></div>
                         <div class="summary-total">
                             <span>مبلغ قابل پرداخت</span>
-                            <div class="total-amount">@CartService.GetTotalAmount().ToString("N0") <span class="total-currency">تومان</span></div>
+                            <div class="total-amount">@GetAvailableTotalAmount().ToString("N0") <span class="total-currency">تومان</span></div>
                         </div>
 
                         <div class="d-grid gap-2 mt-4">
@@ -141,6 +160,13 @@
         }
     </div>
 </div>
+
+<ConfirmDialog IsVisible="showRemoveUnavailableConfirm"
+               Title="حذف کالاهای ناموجود"
+               Message="@($"{UnavailableCount} کالا ناموجود شده و قابل خرید نیست. برای ادامه از سبد حذف شوند؟")"
+               ConfirmText="حذف و ادامه"
+               IsDanger="true"
+               OnResult="HandleRemoveUnavailableResult" />
 
 <style>
     .cart-page {
@@ -159,6 +185,15 @@
     .page-title { font-size: 1.25rem; font-weight: 800; margin: 0; color: var(--shop-text, #0f172a); }
     .page-subtitle { font-size: 0.8rem; color: #94a3b8; margin: 2px 0 0; }
 
+    .cart-alert {
+        display: flex; align-items: flex-start; gap: 12px;
+        background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c;
+        border-radius: 16px; padding: 14px 16px; margin-bottom: 16px;
+    }
+    .cart-alert .oi { font-size: 1.2rem; margin-top: 2px; }
+    .cart-alert strong { display: block; font-size: 0.9rem; margin-bottom: 2px; }
+    .cart-alert p { margin: 0; font-size: 0.8rem; opacity: 0.9; }
+
     .empty-state {
         text-align: center; padding: 60px 24px;
         background: var(--shop-surface, #fff); border: 1px solid var(--shop-border, #e2e8f0);
@@ -175,6 +210,26 @@
         border-radius: 16px; padding: 16px; transition: box-shadow 0.2s;
     }
     .item-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.04); }
+
+    .item-card--unavailable {
+        border-color: #fecaca;
+        background: #fffafa;
+        opacity: 0.92;
+    }
+    .item-card--unavailable .item-img,
+    .item-card--unavailable .item-name,
+    .item-card--unavailable .item-price {
+        opacity: 0.55;
+        filter: grayscale(0.6);
+    }
+
+    .item-unavailable-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: #fee2e2; color: #b91c1c;
+        border-radius: 8px; padding: 4px 10px;
+        font-size: 0.72rem; font-weight: 800;
+        margin-bottom: 10px;
+    }
 
     .item-img {
         width: 72px; height: 72px; flex-shrink: 0; background: #f8fafc;
@@ -203,22 +258,10 @@
     .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
     .summary-label { font-size: 0.82rem; color: #94a3b8; }
     .summary-value { font-size: 0.85rem; font-weight: 700; color: var(--shop-text, #1e293b); }
+    .summary-row--warn .summary-label,
+    .summary-row--warn .summary-value { color: #dc2626; }
 
     .summary-divider { height: 1px; background: var(--shop-border, #f1f5f9); margin: 12px 0; }
-
-    .coupon-row {
-        padding: 10px 0;
-        border-bottom: 1px solid var(--shop-border, #f1f5f9);
-    }
-    .coupon-row .input-group {
-        border: 1px solid var(--shop-border, #e2e8f0);
-        border-radius: 10px;
-        overflow: hidden;
-    }
-    .coupon-row .form-control {
-        border: 0;
-        font-size: 0.85rem;
-    }
 
     .summary-total { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
     .summary-total span:first-child { font-size: 0.85rem; font-weight: 700; color: var(--shop-text, #0f172a); }
@@ -255,17 +298,123 @@
 </style>
 
 @code {
-    protected override void OnInitialized()
+    private Dictionary<int, ProductAvailabilityDto> _availability = new();
+    private bool showRemoveUnavailableConfirm;
+    private bool _checkingAvailability;
+
+    private IEnumerable<int> UnavailableProductIds =>
+        CartService.GetItems()
+            .Where(i => _availability.TryGetValue(i.ProductId, out var a) && !a.HasSufficientStock)
+            .Select(i => i.ProductId);
+
+    private int UnavailableCount => UnavailableProductIds.Count();
+
+    private ProductAvailabilityDto? GetAvailability(int productId)
+        => _availability.TryGetValue(productId, out var a) ? a : null;
+
+    private decimal GetAvailableTotalAmount()
+        => CartService.GetItems()
+            .Where(i => !_availability.TryGetValue(i.ProductId, out var a) || a.HasSufficientStock)
+            .Sum(i => i.Price * i.Quantity);
+
+    protected override async Task OnInitializedAsync()
     {
-        CartService.OnChange += StateHasChanged;
+        CartService.OnChange += OnCartChanged;
+        await CheckAvailabilityAsync();
     }
 
     public void Dispose()
     {
-        CartService.OnChange -= StateHasChanged;
+        CartService.OnChange -= OnCartChanged;
+    }
+
+    private async void OnCartChanged()
+    {
+        await InvokeAsync(() =>
+        {
+            StateHasChanged();
+            _ = CheckAvailabilityAsync();
+        });
+    }
+
+    private async Task CheckAvailabilityAsync()
+    {
+        var items = CartService.GetItems().ToList();
+        if (items.Count == 0)
+        {
+            if (_availability.Count > 0)
+            {
+                _availability.Clear();
+                StateHasChanged();
+            }
+            return;
+        }
+
+        if (_checkingAvailability) return;
+        _checkingAvailability = true;
+        try
+        {
+            var req = items.Select(i => new ProductAvailabilityCheckItem
+            {
+                ProductId = i.ProductId,
+                Quantity = i.Quantity
+            }).ToList();
+
+            var resp = await Http.PostAsJsonAsync("api/products/check-availability", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<List<ProductAvailabilityDto>>();
+                if (result != null)
+                {
+                    var newMap = result.ToDictionary(x => x.ProductId);
+                    var becameUnavailable = newMap.Count(kvp =>
+                        kvp.Value.HasSufficientStock == false &&
+                        (!_availability.TryGetValue(kvp.Key, out var old) || old.HasSufficientStock));
+
+                    _availability = newMap;
+
+                    if (becameUnavailable > 0)
+                        ToastService.ShowWarning($"{becameUnavailable} کالا در سبد شما ناموجود شده است.");
+
+                    StateHasChanged();
+                }
+            }
+        }
+        catch { }
+        finally { _checkingAvailability = false; }
     }
 
     private async Task ProceedToCheckout()
+    {
+        await CheckAvailabilityAsync();
+
+        if (UnavailableCount > 0)
+        {
+            showRemoveUnavailableConfirm = true;
+            StateHasChanged();
+            return;
+        }
+
+        await ContinueToCheckoutAsync();
+    }
+
+    private async Task HandleRemoveUnavailableResult(bool confirmed)
+    {
+        showRemoveUnavailableConfirm = false;
+        if (!confirmed)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        foreach (var pid in UnavailableProductIds.ToList())
+            await CartService.RemoveItemAsync(pid);
+
+        ToastService.ShowSuccess("کالاهای ناموجود از سبد حذف شدند.");
+        await ContinueToCheckoutAsync();
+    }
+
+    private async Task ContinueToCheckoutAsync()
     {
         var allowGuest = true;
 
@@ -297,43 +446,5 @@
         }
 
         Nav.NavigateTo("/checkout");
-    }
-
-    private string couponCode = "";
-    private string couponMessage = "";
-    private bool couponSuccess = false;
-
-    private async Task ApplyCoupon()
-    {
-        if (string.IsNullOrWhiteSpace(couponCode)) return;
-        couponMessage = "";
-        try
-        {
-            var resp = await Http.PostAsJsonAsync("api/coupons/apply", new CouponApplyRequest { Code = couponCode.Trim(), OrderAmount = CartService.GetTotalAmount() });
-            if (resp.IsSuccessStatusCode)
-            {
-                var result = await resp.Content.ReadFromJsonAsync<CouponApplyResult>();
-                if (result?.IsValid == true)
-                {
-                    couponSuccess = true;
-                    couponMessage = result.Message;
-                }
-                else
-                {
-                    couponSuccess = false;
-                    couponMessage = result?.Message ?? "کد تخفیف نامعتبر است.";
-                }
-            }
-            else
-            {
-                couponSuccess = false;
-                couponMessage = "کد تخفیف نامعتبر است.";
-            }
-        }
-        catch
-        {
-            couponSuccess = false;
-            couponMessage = "خطا در بررسی کد تخفیف.";
-        }
     }
 }

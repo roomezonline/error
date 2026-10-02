@@ -10,6 +10,7 @@
     Keywords="@pageKeywords"
     OgType="article"
     OgImage="@errorCode?.ImageUrl"
+    CanonicalUrl="@canonicalUrl"
     JsonLd="@jsonLd" />
 
 <div class="ecd-page" dir="rtl">
@@ -136,7 +137,7 @@
                 <div class="ecd-related-grid">
                     @foreach (var rel in relatedCodes)
                     {
-                        <a href="/technical/error-codes/@Uri.EscapeDataString(rel.Brand)/@Uri.EscapeDataString(rel.DeviceType)/@Uri.EscapeDataString(rel.Code)" class="ecd-related-card">
+                        <a href="/technical/error-codes/@Uri.EscapeDataString(rel.Brand.Trim().ToLowerInvariant())/@Uri.EscapeDataString(rel.DeviceType.Trim().ToLowerInvariant())/@Uri.EscapeDataString(rel.Code.Trim().ToLowerInvariant())" class="ecd-related-card">
                             <div class="ecd-related-code">@rel.Code</div>
                             <div class="ecd-related-desc">@Truncate(rel.Description, 60)</div>
                         </a>
@@ -294,6 +295,7 @@
     private string pageDescription = "";
     private string pageKeywords = "";
     private string? jsonLd;
+    private string? canonicalUrl;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -309,14 +311,9 @@
             var deviceDecoded = Uri.UnescapeDataString(DeviceType);
             var codeDecoded = Uri.UnescapeDataString(Code);
 
-            var all = await Http.GetFromJsonAsync<List<ErrorCode>>(
-                $"api/technical/error-codes?brand={Uri.EscapeDataString(brandDecoded)}&deviceType={Uri.EscapeDataString(deviceDecoded)}&search={Uri.EscapeDataString(codeDecoded)}"
-            ) ?? new();
-
-            errorCode = all.FirstOrDefault(e =>
-                e.Brand.Equals(brandDecoded, StringComparison.OrdinalIgnoreCase) &&
-                e.DeviceType.Equals(deviceDecoded, StringComparison.OrdinalIgnoreCase) &&
-                e.Code.Equals(codeDecoded, StringComparison.OrdinalIgnoreCase));
+            errorCode = await Http.GetFromJsonAsync<ErrorCode>(
+                $"api/technical/error-codes/detail?brand={Uri.EscapeDataString(brandDecoded)}&deviceType={Uri.EscapeDataString(deviceDecoded)}&code={Uri.EscapeDataString(codeDecoded)}"
+            );
 
             if (errorCode == null)
             {
@@ -329,6 +326,10 @@
             pageKeywords = $"کد خطا {errorCode.Code}, ارور {errorCode.Brand}, {errorCode.DeviceType}, {errorCode.Description}, تعمیرات {errorCode.Brand}";
 
             BuildJsonLd();
+            var b = errorCode.Brand.Trim().ToLowerInvariant();
+            var d = errorCode.DeviceType.Trim().ToLowerInvariant();
+            var c = errorCode.Code.Trim().ToLowerInvariant();
+            canonicalUrl = $"https://errorservice.ir/technical/error-codes/{Uri.EscapeDataString(b)}/{Uri.EscapeDataString(d)}/{Uri.EscapeDataString(c)}";
 
             try
             {
@@ -350,7 +351,7 @@
         if (errorCode == null) return;
 
         var baseUrl = "https://errorservice.ir";
-        var url = $"{baseUrl}/technical/error-codes/{Uri.EscapeDataString(errorCode.Brand)}/{Uri.EscapeDataString(errorCode.DeviceType)}/{Uri.EscapeDataString(errorCode.Code)}";
+        var url = $"{baseUrl}/technical/error-codes/{Uri.EscapeDataString(errorCode.Brand.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(errorCode.DeviceType.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(errorCode.Code.Trim().ToLowerInvariant())}";
 
         var techArticle = new Dictionary<string, object?>
         {

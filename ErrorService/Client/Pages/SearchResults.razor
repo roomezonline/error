@@ -49,7 +49,14 @@
                 {
                     <div class="col-md-6 col-lg-4">
                         <a href="@item.Url" class="search-result-card p-3 rounded-4 shadow-sm border bg-white d-flex align-items-center gap-3 text-decoration-none text-dark">
-                            <div class="icon-box bg-success-subtle text-success rounded-3"><span class="oi oi-box"></span></div>
+                            @if (!string.IsNullOrEmpty(item.ImageUrl))
+                            {
+                                <img class="search-thumb" src="@item.ImageUrl" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <div class="icon-box bg-success-subtle text-success rounded-3"><span class="oi oi-box"></span></div>
+                            }
                             <div class="flex-grow-1 overflow-hidden">
                                 <h6 class="fw-bold mb-1 text-truncate">@item.Title</h6>
                                 <span class="smaller text-muted">در دسته: @item.Subtitle</span>
@@ -66,7 +73,14 @@
                 {
                     <div class="col-md-6 col-lg-4">
                         <a href="@item.Url" class="search-result-card p-3 rounded-4 shadow-sm border bg-white d-flex align-items-center gap-3 text-decoration-none text-dark">
-                            <div class="icon-box bg-primary-subtle text-primary rounded-3"><span class="oi oi-magnifying-glass"></span></div>
+                            @if (!string.IsNullOrEmpty(item.ImageUrl))
+                            {
+                                <img class="search-thumb" src="@item.ImageUrl" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <div class="icon-box bg-primary-subtle text-primary rounded-3"><span class="oi oi-warning"></span></div>
+                            }
                             <div class="flex-grow-1 overflow-hidden">
                                 <h6 class="fw-bold mb-1 text-truncate">@item.Title</h6>
                                 <p class="smaller text-muted text-truncate mb-0">@item.Subtitle</p>
@@ -83,7 +97,14 @@
                 {
                     <div class="col-md-6 col-lg-4">
                         <a href="@item.Url" class="search-result-card p-3 rounded-4 shadow-sm border bg-white d-flex align-items-center gap-3 text-decoration-none text-dark">
-                            <div class="icon-box bg-warning-subtle text-warning rounded-3"><span class="oi oi-book"></span></div>
+                            @if (!string.IsNullOrEmpty(item.ImageUrl))
+                            {
+                                <img class="search-thumb" src="@item.ImageUrl" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <div class="icon-box bg-warning-subtle text-warning rounded-3"><span class="oi oi-book"></span></div>
+                            }
                             <div class="flex-grow-1 overflow-hidden">
                                 <h6 class="fw-bold mb-1 text-truncate">@item.Title</h6>
                                 <p class="smaller text-muted text-truncate mb-0">@item.Subtitle</p>
@@ -100,7 +121,14 @@
                 {
                     <div class="col-md-6 col-lg-4">
                         <a href="@item.Url" class="search-result-card p-3 rounded-4 shadow-sm border bg-white d-flex align-items-center gap-3 text-decoration-none text-dark">
-                            <div class="icon-box bg-danger-subtle text-danger rounded-3"><span class="oi oi-list"></span></div>
+                            @if (!string.IsNullOrEmpty(item.ImageUrl))
+                            {
+                                <img class="search-thumb" src="@item.ImageUrl" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <div class="icon-box bg-danger-subtle text-danger rounded-3"><span class="oi oi-list"></span></div>
+                            }
                             <div class="flex-grow-1 overflow-hidden">
                                 <h6 class="fw-bold mb-1 text-truncate">@item.Title</h6>
                                 <p class="smaller text-muted text-truncate mb-0">@item.Subtitle</p>
@@ -118,6 +146,7 @@
     .fw-black { font-weight: 900; }
     .smaller { font-size: 0.75rem; }
     .icon-box { width: 48px; height: 48px; display: grid; place-items: center; font-size: 1.25rem; flex-shrink: 0; }
+    .search-thumb { width: 52px; height: 52px; object-fit: cover; border-radius: 14px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.06); background: #f8fafc; }
     .search-result-card { transition: all 0.2s ease; }
     .search-result-card:hover { transform: translateY(-3px); border-color: var(--app-primary) !important; box-shadow: 0 10px 25px rgba(0,0,0,0.08) !important; }
     .bg-primary-subtle { background: rgba(37, 99, 235, 0.1); }
@@ -146,7 +175,7 @@
         isLoading = true;
         try
         {
-            results = await Http.GetFromJsonAsync<SearchResponseDto>($"api/search?q={Uri.EscapeDataString(Query)}");
+            results = await Http.GetFromJsonAsync<SearchResponseDto>($"api/search?q={Uri.EscapeDataString(Query)}&take=15");
         }
         catch { results = new(); }
         isLoading = false;

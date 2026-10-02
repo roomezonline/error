@@ -27,5 +27,6 @@ public sealed class ProductReview
     public string Content { get; set; } = string.Empty;
 
     public bool IsApproved { get; set; } = false;
+    public bool IsAdminRead { get; set; } = false;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

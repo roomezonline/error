@@ -31,6 +31,7 @@ public sealed class ProductReviewDto
     public int Rating { get; set; }
     public string Content { get; set; } = string.Empty;
     public bool IsApproved { get; set; }
+    public bool IsAdminRead { get; set; }
     public string CreatedAtFa { get; set; } = string.Empty;
     public List<ProductReviewDto> Replies { get; set; } = new();
 }
@@ -40,4 +41,9 @@ public sealed class ProductReviewSummaryDto
     public double AverageRating { get; set; }
     public int TotalCount { get; set; }
     public List<ProductReviewDto> Reviews { get; set; } = new();
+}
+
+public sealed class ReviewModerationSettingsDto
+{
+    public bool RequireApproval { get; set; } = true;
 }

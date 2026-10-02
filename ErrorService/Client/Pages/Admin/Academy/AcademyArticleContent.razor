@@ -10,6 +10,8 @@
 @inject ToastService ToastService
 @inject HttpClient Http
 
+<PageTitle>محتوای مقاله آکادمی | ارورسرویس</PageTitle>
+
 <ConfirmDialog IsVisible="showConfirm"
                Title="حذف بلوک"
                Message="آیا از حذف این بلوک اطمینان دارید؟"
@@ -347,10 +349,12 @@
         try
         {
             article = await Http.GetFromJsonAsync<TrainingArticleDto>($"api/trainingarticles/{ArticleId}");
+            if (article == null)
+                ToastService.ShowError("مقاله یافت نشد");
         }
-        catch
+        catch (Exception ex)
         {
-            ToastService.ShowError("خطا در بارگذاری مقاله");
+            ToastService.ShowError($"خطا در بارگذاری مقاله: {ex.Message}");
         }
     }
 

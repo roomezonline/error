@@ -4,6 +4,8 @@
 @attribute [Authorize(Policy = "perm:admin.monitoring.details.view")]
 @using ErrorService.Client.Shared.Components
 
+<PageTitle>جزئیات مانیتورینگ | ارورسرویس</PageTitle>
+
 <MonitoringDetailsView
     Id="@Id"
     CustomerReceiptId="@CustomerReceiptId"

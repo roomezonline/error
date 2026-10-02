@@ -23,6 +23,51 @@ public class MonitoringChartController : ControllerBase
         _monitoringCache = monitoringCache;
     }
 
+    [HttpGet("{monitoringId}/segments")]
+    public async Task<ActionResult<MonitoringChartSegmentsResponse>> GetSegments(
+        int monitoringId,
+        [FromQuery] int hours = 12)
+    {
+        if (monitoringId <= 0) return BadRequest("Invalid monitoringId");
+        hours = Math.Clamp(hours, 1, 24);
+
+        var query = _db.MonitoringDataRecords
+            .AsNoTracking()
+            .Where(x => x.MonitoringId == monitoringId);
+        var totalCount = await query.CountAsync();
+        var start = await query.Select(x => (DateTime?)x.Timestamp).MinAsync();
+        var end = await query.Select(x => (DateTime?)x.Timestamp).MaxAsync();
+        var result = new MonitoringChartSegmentsResponse
+        {
+            MonitoringId = monitoringId,
+            TotalCount = totalCount,
+            FullStart = start?.ToString("O"),
+            FullEnd = end?.ToString("O"),
+            SegmentHours = hours
+        };
+
+        if (!start.HasValue || !end.HasValue) return Ok(result);
+
+        var buckets = await query
+            .GroupBy(x => EF.Functions.DateDiffHour(start.Value, x.Timestamp) / hours)
+            .Select(g => new { Bucket = g.Key, Count = g.Count() })
+            .OrderBy(x => x.Bucket)
+            .ToListAsync();
+        for (var i = 0; i < buckets.Count; i++)
+        {
+            var bucket = buckets[i];
+            var from = start.Value.AddHours(bucket.Bucket * hours);
+            var boundary = from.AddHours(hours);
+            var to = boundary > end.Value ? end.Value.AddTicks(1) : boundary;
+            result.Segments.Add(new MonitoringChartSegment
+            {
+                Index = i, From = from.ToString("O"), To = to.ToString("O"), RecordCount = bucket.Count
+            });
+        }
+
+        return Ok(result);
+    }
+
     [HttpGet("{monitoringId}/records")]
     public async Task<ActionResult<MonitoringChartResponse>> GetRecords(
         int monitoringId,
@@ -473,6 +518,14 @@ public class MonitoringChartController : ControllerBase
 
         string? gracePeriodEndAt = connection?.GracePeriodEndAt?.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
+        int? monitoringDurationHours = connection != null
+            ? await _db.Workshops
+                .Where(w => w.Id == connection.WorkshopId)
+                .Select(w => (int?)w.MonitoringDurationHours)
+                .FirstOrDefaultAsync()
+            : null;
+        if (monitoringDurationHours is < 1) monitoringDurationHours = 72;
+
         return Ok(new
         {
             deviceCode,
@@ -489,7 +542,8 @@ public class MonitoringChartController : ControllerBase
             endReason,
             createdAtFa,
             createdAt,
-            gracePeriodEndAt
+            gracePeriodEndAt,
+            monitoringDurationHours
         });
     }
 
@@ -784,12 +838,23 @@ public class MonitoringChartController : ControllerBase
             query = query.Where(x => x.Timestamp <= toTime.Value);
 
         var totalCount = await query.CountAsync();
-        var records = await query
-            .OrderBy(x => x.Timestamp)
-            .ToListAsync();
+        var fullRangeStart = await query.Select(x => (DateTime?)x.Timestamp).MinAsync();
+        var fullRangeEnd = await query.Select(x => (DateTime?)x.Timestamp).MaxAsync();
+        var records = await LoadProgressiveRecordsAsync(
+            monitoringId, fromTime, toTime, maxPoints, totalCount, query);
 
         if (records.Count == 0)
             return Ok(new MonitoringChartResponse());
+
+        // For the progressive chart only, a missing current reading is shown
+        // as zero. This does not update the database; it only makes the chart
+        // contract explicit and lets decimation preserve NULL/zero -> current
+        // start and current -> NULL/zero stop boundaries.
+        foreach (var record in records)
+        {
+            if (!record.Jaryan.HasValue)
+                record.Jaryan = 0f;
+        }
 
         // Parse client-side note indices (indices within the full records list)
         var clientNotes = new HashSet<int>();
@@ -804,7 +869,12 @@ public class MonitoringChartController : ControllerBase
 
         var selectedIndices = SmartDecimate(records, maxPoints, clientNotes);
 
-        var response = new MonitoringChartResponse();
+        var response = new MonitoringChartResponse
+        {
+            TotalCount = totalCount,
+            FullRangeStart = fullRangeStart?.ToString("O"),
+            FullRangeEnd = fullRangeEnd?.ToString("O")
+        };
         var timestamps = new List<DateTime>();
 
         if (connection != null)
@@ -887,6 +957,79 @@ public class MonitoringChartController : ControllerBase
         return Ok(response);
     }
 
+    private async Task<List<MonitoringDataRecord>> LoadProgressiveRecordsAsync(
+        int monitoringId,
+        DateTime? fromTime,
+        DateTime? toTime,
+        int maxPoints,
+        int totalCount,
+        IQueryable<MonitoringDataRecord> fallbackQuery)
+    {
+        // Initial view: let SQL Server reduce the dataset before it reaches
+        // application memory. Four representatives per time bucket preserve
+        // the shape (first/last/min/max) without loading 100k rows in .NET.
+        // Zoom requests keep using the exact range query below.
+        if (maxPoints > 0 &&
+            (!fromTime.HasValue && !toTime.HasValue || totalCount > maxPoints * 4L))
+        {
+            var bucketCount = Math.Clamp(maxPoints, 200, 1500);
+            var overview = await _db.MonitoringDataRecords
+                .FromSqlInterpolated($"""
+                    WITH bucketed AS
+                    (
+                        SELECT r.*,
+                               NTILE({bucketCount}) OVER (ORDER BY r.Timestamp, r.Id) AS BucketNo,
+                               LAG(r.MotorState) OVER (ORDER BY r.Timestamp, r.Id) AS PrevMotorState,
+                               LAG(r.Bargh) OVER (ORDER BY r.Timestamp, r.Id) AS PrevBargh,
+                               LAG(r.Element1) OVER (ORDER BY r.Timestamp, r.Id) AS PrevElement1,
+                               LAG(r.Element2) OVER (ORDER BY r.Timestamp, r.Id) AS PrevElement2,
+                               LAG(r.Fdc1) OVER (ORDER BY r.Timestamp, r.Id) AS PrevFdc1,
+                               LAG(r.Fac1) OVER (ORDER BY r.Timestamp, r.Id) AS PrevFac1
+                        FROM MonitoringDataRecords AS r
+                        WHERE r.MonitoringId = {monitoringId}
+                          AND ({fromTime} IS NULL OR r.Timestamp >= {fromTime})
+                          AND ({toTime} IS NULL OR r.Timestamp <= {toTime})
+                    ), ranked AS
+                    (
+                        SELECT b.*,
+                               ROW_NUMBER() OVER (PARTITION BY BucketNo ORDER BY Timestamp, Id) AS FirstRow,
+                               ROW_NUMBER() OVER (PARTITION BY BucketNo ORDER BY Timestamp DESC, Id DESC) AS LastRow,
+                               ROW_NUMBER() OVER (PARTITION BY BucketNo ORDER BY Jaryan ASC, Timestamp, Id) AS CurrentMinRow,
+                               ROW_NUMBER() OVER (PARTITION BY BucketNo ORDER BY Jaryan DESC, Timestamp, Id) AS CurrentMaxRow,
+                               ROW_NUMBER() OVER (PARTITION BY BucketNo ORDER BY Power ASC, Timestamp, Id) AS PowerMinRow,
+                               ROW_NUMBER() OVER (PARTITION BY BucketNo ORDER BY Power DESC, Timestamp, Id) AS PowerMaxRow
+                        FROM bucketed AS b
+                    )
+                    SELECT Id, DeviceCode, MonitoringId, CustomerReceiptId,
+                           TemperatureRef, TemperatureFreez, TemperatureEnv,
+                           MotorState, Bargh, Element1, Element2, Fdc1, Fac1,
+                           Jaryan, Power, Kw, SumKw, State, Note, Timestamp, TimestampFa
+                    FROM ranked
+                    WHERE FirstRow = 1 OR LastRow = 1
+                       OR CurrentMinRow = 1 OR CurrentMaxRow = 1
+                       OR PowerMinRow = 1 OR PowerMaxRow = 1
+                       OR MotorState <> PrevMotorState OR Bargh <> PrevBargh
+                       OR Element1 <> PrevElement1 OR Element2 <> PrevElement2
+                       OR Fdc1 <> PrevFdc1 OR Fac1 <> PrevFac1
+                    """)
+                .AsNoTracking()
+                .ToListAsync();
+
+            overview.Sort((a, b) =>
+            {
+                var result = a.Timestamp.CompareTo(b.Timestamp);
+                return result != 0 ? result : a.Id.CompareTo(b.Id);
+            });
+            return overview;
+        }
+
+        // Detail/Zoom: only the requested time range is materialized.
+        return await fallbackQuery
+            .OrderBy(x => x.Timestamp)
+            .ThenBy(x => x.Id)
+            .ToListAsync();
+    }
+
     private static List<int> SmartDecimate(List<MonitoringDataRecord> records, int maxPoints, HashSet<int> clientNoteIndices)
     {
         var n = records.Count;
@@ -919,6 +1062,11 @@ public class MonitoringChartController : ControllerBase
         {
             var prevJ = records[i - 1].Jaryan;
             var curJ = records[i].Jaryan;
+            if (IsActiveTransition(prevJ, curJ))
+            {
+                mustKeep.Add(i - 1);
+                mustKeep.Add(i);
+            }
             if (prevJ.HasValue && curJ.HasValue && prevJ.Value > 0)
             {
                 if (Math.Abs((curJ.Value - prevJ.Value) / prevJ.Value) > 0.10)
@@ -927,12 +1075,22 @@ public class MonitoringChartController : ControllerBase
 
             var prevP = records[i - 1].Power;
             var curP = records[i].Power;
+            if (IsActiveTransition(prevP, curP))
+            {
+                mustKeep.Add(i - 1);
+                mustKeep.Add(i);
+            }
             if (prevP.HasValue && curP.HasValue && prevP.Value > 0)
             {
                 if (Math.Abs((curP.Value - prevP.Value) / prevP.Value) > 0.10)
                     mustKeep.Add(i);
             }
         }
+
+        // Keep meaningful current/power peaks and valleys so short load-draw
+        // pulses are not lost between evenly spaced samples.
+        CollectSignalExtrema(records, r => r.Jaryan, mustKeep);
+        CollectSignalExtrema(records, r => r.Power, mustKeep);
 
         // Priority 3: Temperature changes > 2°C
         float? lastSelectedRef = null, lastSelectedFreez = null;
@@ -1002,6 +1160,45 @@ public class MonitoringChartController : ControllerBase
 
         return sorted;
     }
+
+    private static bool IsActiveTransition(float? previous, float? current)
+    {
+        // NULL means that the telemetry field was absent. It is not a zero
+        // reading, so a missing-value boundary must not be treated as a
+        // current start/stop transition.
+        if (!previous.HasValue || !current.HasValue)
+            return false;
+
+        return (previous.GetValueOrDefault() > 0) != (current.GetValueOrDefault() > 0);
+    }
+
+    private static void CollectSignalExtrema(
+        List<MonitoringDataRecord> records,
+        Func<MonitoringDataRecord, float?> selector,
+        SortedSet<int> keep)
+    {
+        if (records.Count < 3) return;
+
+        var max = records.Max(r => selector(r).GetValueOrDefault());
+        var prominence = Math.Max(max * 0.02f, 0.01f);
+
+        for (var i = 1; i < records.Count - 1; i++)
+        {
+            var previous = selector(records[i - 1]);
+            var current = selector(records[i]);
+            var next = selector(records[i + 1]);
+            if (!previous.HasValue || !current.HasValue || !next.HasValue) continue;
+
+            var isPeak = current.Value >= previous.Value && current.Value >= next.Value;
+            var isValley = current.Value <= previous.Value && current.Value <= next.Value;
+            var neighborDelta = Math.Min(
+                Math.Abs(current.Value - previous.Value),
+                Math.Abs(current.Value - next.Value));
+
+            if ((isPeak || isValley) && neighborDelta >= prominence)
+                keep.Add(i);
+        }
+    }
 }
 
 public class MonitoringDetailedChartResponse
@@ -1025,5 +1222,3 @@ public class MonitoringDetailedChartResponse
     public List<string?> Note { get; set; } = new();
     public int TotalCount { get; set; }
 }
-
-

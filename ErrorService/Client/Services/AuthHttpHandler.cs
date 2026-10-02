@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 
 namespace ErrorService.Client.Services;
 
@@ -13,6 +14,15 @@ public class AuthHttpHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        if (request.Headers.Authorization == null)
+        {
+            var token = await _storage.GetAsync("auth_token");
+            if (string.IsNullOrWhiteSpace(token))
+                token = await _storage.GetAsync("workshop_token");
+            if (!string.IsNullOrWhiteSpace(token))
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
         var response = await base.SendAsync(request, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)

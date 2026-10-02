@@ -70,47 +70,187 @@
                             }
 
                             <div class="lesson-content-blocks">
-                                @foreach (var block in lesson.Blocks.OrderBy(x => x.SortOrder))
+                                @foreach (var group in BuildBlockGroups(lesson.Blocks))
                                 {
-                                    <div class="content-block mb-5">
-                                        @if (!string.IsNullOrEmpty(block.Title))
+                                    var first = group.Blocks[0];
+                                    <div class="content-block mb-5" @key="group.Key">
+                                        @if (group.Type == TrainingBlockTypeDto.Text && !string.IsNullOrEmpty(first.Title))
                                         {
-                                            <h4 class="fw-bold mb-3 content-block__title">@block.Title</h4>
+                                            <h4 class="fw-bold mb-3 content-block__title">@first.Title</h4>
                                         }
 
-                                        @switch (block.BlockType)
+                                        @switch (group.Type)
                                         {
                                             case TrainingBlockTypeDto.Text:
-                                                <div class="text-content fs-6 leading-loose">@((MarkupString)(block.Content?.Replace("\n", "<br/>") ?? ""))</div>
+                                                foreach (var block in group.Blocks)
+                                                {
+                                                    if (!string.IsNullOrEmpty(block.Title) && block.Id != first.Id)
+                                                    {
+                                                        <h4 class="fw-bold mb-3 content-block__title">@block.Title</h4>
+                                                    }
+                                                    <div class="text-content fs-6 leading-loose">@((MarkupString)(block.Content?.Replace("\n", "<br/>") ?? ""))</div>
+                                                }
                                                 break;
 
                                             case TrainingBlockTypeDto.Image:
-                                                <div class="lesson-gallery">
-                                                    <button type="button" class="lesson-gallery__item" data-lightbox-src="@block.Url" aria-label="Open image">
-                                                        <img src="@block.Url" class="lesson-gallery__img" alt="@block.Title" />
-                                                    </button>
+                                                <div class="media-card media-card--image">
+                                                    <div class="media-card__header">
+                                                        <span class="media-card__badge">
+                                                            <span class="oi oi-image"></span>
+                                                            @(group.Blocks.Count > 1 ? $"گالری تصاویر ({group.Blocks.Count})" : "تصویر")
+                                                        </span>
+                                                        @if (!string.IsNullOrEmpty(first.Title))
+                                                        {
+                                                            <span class="media-card__title">@first.Title</span>
+                                                        }
+                                                    </div>
+                                                    <div class="media-card__body">
+                                                        <div class="lesson-gallery">
+                                                            @foreach (var block in group.Blocks)
+                                                            {
+                                                                <button type="button" class="lesson-gallery__item" data-lightbox-src="@block.Url" aria-label="بزرگ‌نمایی تصویر" title="برای بزرگ‌نمایی کلیک کنید">
+                                                                    <img src="@block.Url" class="lesson-gallery__img" alt="@(block.Title ?? "تصویر آموزش")" loading="lazy" />
+                                                                </button>
+                                                            }
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 break;
 
                                             case TrainingBlockTypeDto.Video:
-                                                <div class="video-content rounded-4 overflow-hidden shadow mb-4">
-                                                    <video class="js-plyr lazy-video" playsinline controls data-poster="@block.ThumbnailUrl" data-src="@GetPlayableUrl(block.Url)">
-                                                        <source src="" type="@GetVideoMime(block.Url)" />
-                                                    </video>
+                                                <div class="media-card media-card--video">
+                                                    <div class="media-card__header">
+                                                        <span class="media-card__badge">
+                                                            <span class="oi oi-video"></span>
+                                                            @(group.Blocks.Count > 1 ? $"ویدیوها ({group.Blocks.Count})" : "ویدیو")
+                                                        </span>
+                                                        @if (group.Blocks.Count == 1 && !string.IsNullOrEmpty(first.Url))
+                                                        {
+                                                            <a href="@first.Url" class="media-card__dl" download title="دانلود ویدیو">
+                                                                <span class="oi oi-cloud-download"></span> دانلود
+                                                            </a>
+                                                        }
+                                                    </div>
+                                                    <div class="media-card__body">
+                                                        <div class="media-grid @(group.Blocks.Count > 1 ? "media-grid--multi" : "")">
+                                                            @foreach (var block in group.Blocks)
+                                                            {
+                                                                <div class="media-grid__cell">
+                                                                    @if (!string.IsNullOrEmpty(block.Title))
+                                                                    {
+                                                                        <div class="media-cell__title">@block.Title</div>
+                                                                    }
+                                                                    <div class="video-content rounded-4 overflow-hidden shadow">
+                                                                        <video class="js-plyr lazy-video" playsinline controls data-poster="@block.ThumbnailUrl" data-src="@GetPlayableUrl(block.Url)">
+                                                                            <source src="" type="@GetVideoMime(block.Url)" />
+                                                                        </video>
+                                                                    </div>
+                                                                    @if (!string.IsNullOrEmpty(block.Url))
+                                                                    {
+                                                                        <a href="@block.Url" class="media-cell__dl" download>
+                                                                            <span class="oi oi-cloud-download"></span> دانلود ویدیو
+                                                                        </a>
+                                                                    }
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 break;
 
                                             case TrainingBlockTypeDto.Audio:
-                                                <div class="audio-content mb-4 shadow-sm rounded-4">
-                                                    <audio class="js-plyr" controls>
-                                                        <source src="@GetPlayableUrl(block.Url)" type="@GetAudioMime(block.Url)" />
-                                                    </audio>
+                                                <div class="media-card media-card--audio">
+                                                    <div class="media-card__header">
+                                                        <span class="media-card__badge">
+                                                            <span class="oi oi-volume-high"></span>
+                                                            @(group.Blocks.Count > 1 ? $"فایل‌های صوتی ({group.Blocks.Count})" : "صوت")
+                                                        </span>
+                                                        @if (group.Blocks.Count == 1 && !string.IsNullOrEmpty(first.Url))
+                                                        {
+                                                            <a href="@first.Url" class="media-card__dl" download title="دانلود صوت">
+                                                                <span class="oi oi-cloud-download"></span> دانلود
+                                                            </a>
+                                                        }
+                                                    </div>
+                                                    <div class="media-card__body">
+                                                        <div class="media-stack">
+                                                            @foreach (var block in group.Blocks)
+                                                            {
+                                                                <div class="media-stack__item">
+                                                                    @if (!string.IsNullOrEmpty(block.Title))
+                                                                    {
+                                                                        <div class="media-cell__title">@block.Title</div>
+                                                                    }
+                                                                    <div class="audio-content shadow-sm rounded-4">
+                                                                        <audio class="js-plyr" controls>
+                                                                            <source src="@GetPlayableUrl(block.Url)" type="@GetAudioMime(block.Url)" />
+                                                                        </audio>
+                                                                    </div>
+                                                                    @if (!string.IsNullOrEmpty(block.Url))
+                                                                    {
+                                                                        <a href="@block.Url" class="media-cell__dl" download>
+                                                                            <span class="oi oi-cloud-download"></span> دانلود صوت
+                                                                        </a>
+                                                                    }
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                break;
+
+                                            case TrainingBlockTypeDto.File:
+                                                <div class="media-card media-card--file">
+                                                    <div class="media-card__header">
+                                                        <span class="media-card__badge">
+                                                            <span class="oi oi-file"></span>
+                                                            @(group.Blocks.Count > 1 ? $"فایل‌ها ({group.Blocks.Count})" : "فایل")
+                                                        </span>
+                                                    </div>
+                                                    <div class="media-card__body media-card__body--stack">
+                                                        @foreach (var block in group.Blocks)
+                                                        {
+                                                            <a href="@block.Url" target="_blank" class="lesson-file-tile">
+                                                                <span class="lesson-file-tile__icon"><span class="oi oi-data-transfer-download"></span></span>
+                                                                <span class="lesson-file-tile__info">
+                                                                    <strong>@(string.IsNullOrEmpty(block.Title) ? "فایل ضمیمه" : block.Title)</strong>
+                                                                    <small>@(string.IsNullOrEmpty(block.Content) ? "دانلود فایل" : block.Content)</small>
+                                                                </span>
+                                                                <span class="lesson-file-tile__btn">دانلود</span>
+                                                            </a>
+                                                        }
+                                                    </div>
                                                 </div>
                                                 break;
 
                                             case TrainingBlockTypeDto.Embed:
-                                                <div class="embed-content rounded-4 overflow-hidden shadow">
-                                                    @((MarkupString)(block.Content ?? ""))
+                                                <div class="media-card media-card--embed">
+                                                    <div class="media-card__header">
+                                                        <span class="media-card__badge">
+                                                            <span class="oi oi-code"></span>
+                                                            @(group.Blocks.Count > 1 ? $"کدهای جاسازی ({group.Blocks.Count})" : "کد Embed")
+                                                        </span>
+                                                        @if (!string.IsNullOrEmpty(first.Url))
+                                                        {
+                                                            <a href="@first.Url" target="_blank" class="media-card__dl" title="باز کردن لینک">
+                                                                <span class="oi oi-external-link"></span> باز کردن
+                                                            </a>
+                                                        }
+                                                    </div>
+                                                    <div class="media-card__body">
+                                                        <div class="media-stack">
+                                                            @foreach (var block in group.Blocks)
+                                                            {
+                                                                @if (!string.IsNullOrEmpty(block.Title))
+                                                                {
+                                                                    <div class="media-cell__title">@block.Title</div>
+                                                                }
+                                                                <div class="embed-content rounded-4 overflow-hidden shadow">
+                                                                    @((MarkupString)(block.Content ?? ""))
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 break;
                                         }
@@ -283,6 +423,140 @@
         object-fit: cover;
         display: block;
     }
+
+    .media-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: 0 2px 14px rgba(15, 23, 42, 0.06);
+    }
+    .media-card__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        padding: 0.65rem 1rem;
+        color: #fff;
+    }
+    .media-card--image .media-card__header { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+    .media-card--video .media-card__header { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+    .media-card--audio .media-card__header { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+    .media-card--file .media-card__header { background: linear-gradient(135deg, #d97706, #b45309); }
+    .media-card--embed .media-card__header { background: linear-gradient(135deg, #0f766e, #115e59); }
+    .media-card__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.85rem;
+        font-weight: 700;
+    }
+    .media-card__badge .oi { font-size: 0.95rem; }
+    .media-card__title {
+        font-size: 0.8rem;
+        font-weight: 500;
+        opacity: 0.92;
+        max-width: 60%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .media-card__dl {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        color: #fff;
+        background: rgba(255, 255, 255, 0.18);
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        border-radius: 0.65rem;
+        padding: 0.3rem 0.7rem;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-decoration: none;
+        transition: background 0.2s ease;
+    }
+    .media-card__dl:hover { background: rgba(255, 255, 255, 0.3); color: #fff; }
+    .media-card__body { padding: 1rem; background: #f8fafc; }
+    .media-card__body--stack { display: flex; flex-direction: column; gap: 1rem; }
+    .media-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+    .media-grid--multi { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+    .media-stack { display: flex; flex-direction: column; gap: 1.25rem; }
+    .media-cell__title {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin-bottom: 0.5rem;
+    }
+    .media-cell__dl {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        margin-top: 0.5rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #2563eb;
+        text-decoration: none;
+    }
+    .media-cell__dl:hover { text-decoration: underline; color: #1d4ed8; }
+    .lesson-file-tile {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.85rem 1rem;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.85rem;
+        text-decoration: none;
+        color: inherit;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+    .lesson-file-tile:hover {
+        border-color: #fcd34d;
+        box-shadow: 0 6px 18px rgba(217, 119, 6, 0.12);
+        transform: translateY(-1px);
+        color: inherit;
+        text-decoration: none;
+    }
+    .lesson-file-tile__icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        background: #fef3c7;
+        color: #b45309;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+    .lesson-file-tile__info {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+    .lesson-file-tile__info strong {
+        font-size: 0.9rem;
+        color: #0f172a;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .lesson-file-tile__info small {
+        font-size: 0.75rem;
+        color: #64748b;
+    }
+    .lesson-file-tile__btn {
+        flex-shrink: 0;
+        background: #d97706;
+        color: #fff;
+        border-radius: 0.6rem;
+        padding: 0.4rem 0.85rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+    .lesson-file-tile:hover .lesson-file-tile__btn { background: #b45309; }
 </style>
 
 @code {
@@ -397,6 +671,36 @@
         if (string.IsNullOrWhiteSpace(url)) return string.Empty;
         var clean = url.Split('?', '#')[0];
         return Path.GetExtension(clean).ToLowerInvariant();
+    }
+
+    private static List<LessonBlockGroup> BuildBlockGroups(IEnumerable<TrainingBlockDto> blocks)
+    {
+        var groups = new List<LessonBlockGroup>();
+        foreach (var block in blocks.OrderBy(x => x.SortOrder))
+        {
+            if (block.BlockType == TrainingBlockTypeDto.Text
+                || groups.Count == 0
+                || groups[^1].Type != block.BlockType)
+            {
+                groups.Add(new LessonBlockGroup
+                {
+                    Type = block.BlockType,
+                    Blocks = new List<TrainingBlockDto> { block }
+                });
+            }
+            else
+            {
+                groups[^1].Blocks.Add(block);
+            }
+        }
+        return groups;
+    }
+
+    private sealed class LessonBlockGroup
+    {
+        public TrainingBlockTypeDto Type { get; set; }
+        public List<TrainingBlockDto> Blocks { get; set; } = new();
+        public int Key => Blocks.Count > 0 ? Blocks[0].Id : 0;
     }
 
     private void BuildLessonJsonLd()

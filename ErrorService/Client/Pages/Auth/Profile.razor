@@ -1,16 +1,23 @@
 @page "/profile"
+@implements IDisposable
 @using ErrorService.Shared
 @using ErrorService.Shared.Models
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using ErrorService.Client.Utils
+@using ErrorService.Client.Services
 @attribute [Authorize]
 @inject ErrorService.Client.Services.AuthService Auth
 @inject ErrorService.Client.Services.JwtAuthStateProvider AuthStateProvider
 @inject NavigationManager Nav
 @inject HttpClient Http
 @inject ErrorService.Client.Services.ToastService Toast
+@inject ErrorService.Client.Services.WishlistService Ws
+@inject ErrorService.Client.Services.CartService Cart
+@inject ErrorService.Client.Services.NotificationCenterService Notifs
 @inject IJSRuntime JS
+
+<PageTitle>پروفایل کاربری | ارورسرویس</PageTitle>
 
 <div class="profile-page" dir="rtl">
     <div class="container py-4">
@@ -49,10 +56,6 @@
                                 <span class="oi oi-grid-large"></span>
                             </span>
                             <span class="pf-menu-text">پیشخوان</span>
-                            @if (myOrders.Any())
-                            {
-                                <span class="pf-menu-badge">@myOrders.Count</span>
-                            }
                         </button>
 
                         <button class="pf-menu-item @(activeTab == "orders" ? "active" : "")" @onclick='() => SwitchTab("orders")'>
@@ -60,6 +63,10 @@
                                 <span class="oi oi-cart"></span>
                             </span>
                             <span class="pf-menu-text">سفارشات من</span>
+                            @if (ActiveOrdersCount > 0)
+                            {
+                                <span class="pf-menu-badge pf-badge-red">@ActiveOrdersCount</span>
+                            }
                         </button>
 
                         <button class="pf-menu-item @(activeTab == "tickets" ? "active" : "")" @onclick='() => SwitchTab("tickets")'>
@@ -67,17 +74,28 @@
                                 <span class="oi oi-chat"></span>
                             </span>
                             <span class="pf-menu-text">تیکت‌ها</span>
-                            @if (myTickets.Any(t => !t.IsUserRead))
+                            @if (ActiveTicketsCount > 0)
                             {
-                                <span class="pf-menu-badge pf-badge-red">@myTickets.Count(t => !t.IsUserRead)</span>
+                                <span class="pf-menu-badge pf-badge-red">@ActiveTicketsCount</span>
                             }
                         </button>
 
-                        <button class="pf-menu-item @(activeTab == "wishlist" ? "active" : "")" @onclick='() => Nav.NavigateTo("/wishlist")'>
+                        <button class="pf-menu-item @(activeTab == "wishlist" ? "active" : "")" @onclick='() => SwitchTab("wishlist")'>
                             <span class="pf-menu-icon" style="background: rgba(220,53,69,0.1); color: #dc3545;">
                                 <span class="oi oi-heart"></span>
                             </span>
                             <span class="pf-menu-text">علاقمندی‌ها</span>
+                        </button>
+
+                        <button class="pf-menu-item @(activeTab == "cart" ? "active" : "")" @onclick='() => SwitchTab("cart")'>
+                            <span class="pf-menu-icon" style="background: rgba(220,53,69,0.1); color: #dc3545;">
+                                <span class="oi oi-basket"></span>
+                            </span>
+                            <span class="pf-menu-text">سبد خرید</span>
+                            @if (Cart.GetTotalCount() > 0)
+                            {
+                                <span class="pf-menu-badge pf-badge-red">@Cart.GetTotalCount()</span>
+                            }
                         </button>
 
                         <button class="pf-menu-item @(activeTab == "edit" ? "active" : "")" @onclick='() => SwitchTab("edit")'>
@@ -92,6 +110,17 @@
                                 <span class="oi oi-lock-locked"></span>
                             </span>
                             <span class="pf-menu-text">تغییر رمز عبور</span>
+                        </button>
+
+                        <button class="pf-menu-item @(activeTab == "coupons" ? "active" : "")" @onclick='() => SwitchTab("coupons")'>
+                            <span class="pf-menu-icon" style="background: rgba(220,53,69,0.1); color: #dc3545;">
+                                <span class="oi oi-badge"></span>
+                            </span>
+                            <span class="pf-menu-text">کدهای تخفیف</span>
+                            @if (ActiveCouponsCount > 0)
+                            {
+                                <span class="pf-menu-badge pf-badge-red">@ActiveCouponsCount</span>
+                            }
                         </button>
                     </div>
 
@@ -149,7 +178,7 @@
 
                                 <!-- Stat Cards -->
                                 <div class="pf-stats-grid">
-                                    <div class="pf-stat-card">
+                                    <div class="pf-stat-card pf-stat-clickable" @onclick='() => SwitchTab("orders")'>
                                         <div class="pf-stat-icon" style="background: rgba(220,53,69,0.1); color: #dc3545;">
                                             <span class="oi oi-cart"></span>
                                         </div>
@@ -158,16 +187,16 @@
                                             <div class="pf-stat-label">سفارش‌ها</div>
                                         </div>
                                     </div>
-                                    <div class="pf-stat-card">
+                                    <div class="pf-stat-card pf-stat-clickable" @onclick='() => SwitchTab("orders")'>
                                         <div class="pf-stat-icon" style="background: rgba(255,193,7,0.15); color: #e67700;">
                                             <span class="oi oi-credit-card"></span>
                                         </div>
                                         <div class="pf-stat-info">
                                             <div class="pf-stat-number">@myOrders.Count(o => o.Status == OrderStatus.PendingPayment)</div>
-                                            <div class="pf-stat-label">بن خرید</div>
+                                            <div class="pf-stat-label">در انتظار پرداخت</div>
                                         </div>
                                     </div>
-                                    <div class="pf-stat-card">
+                                    <div class="pf-stat-card pf-stat-clickable" @onclick='() => SwitchTab("tickets")'>
                                         <div class="pf-stat-icon" style="background: rgba(220,53,69,0.1); color: #dc3545;">
                                             <span class="oi oi-chat"></span>
                                         </div>
@@ -176,43 +205,73 @@
                                             <div class="pf-stat-label">تیکت‌ها</div>
                                         </div>
                                     </div>
-                                    <div class="pf-stat-card">
+                                    <div class="pf-stat-card pf-stat-clickable" @onclick='() => SwitchTab("wishlist")'>
                                         <div class="pf-stat-icon" style="background: rgba(220,53,69,0.1); color: #dc3545;">
                                             <span class="oi oi-heart"></span>
                                         </div>
                                         <div class="pf-stat-info">
-                                            <div class="pf-stat-number">0</div>
+                                            <div class="pf-stat-number">@wishlistItems.Count</div>
                                             <div class="pf-stat-label">علاقه‌مندی‌ها</div>
+                                        </div>
+                                    </div>
+                                    <div class="pf-stat-card pf-stat-clickable" @onclick='() => SwitchTab("cart")'>
+                                        <div class="pf-stat-icon" style="background: rgba(220,53,69,0.1); color: #dc3545;">
+                                            <span class="oi oi-basket"></span>
+                                        </div>
+                                        <div class="pf-stat-info">
+                                            <div class="pf-stat-number">@Cart.GetTotalCount()</div>
+                                            <div class="pf-stat-label">سبد خرید</div>
                                         </div>
                                     </div>
                                 </div>
 
                                 <!-- Notifications -->
-                                <div class="pf-section mt-4">
+                                <div class="pf-section mt-4" id="notifications">
                                     <div class="pf-section-header">
                                         <div class="pf-section-title">
                                             <span class="oi oi-bell" style="color: #dc3545;"></span>
                                             اعلان‌ها
+                                            @if (notifUnreadCount > 0)
+                                            {
+                                                <span class="pf-section-badge">@notifUnreadCount خوانده‌نشده</span>
+                                            }
                                         </div>
-                                        <span class="pf-section-badge">جدید</span>
+                                        @if (notifUnreadCount > 0)
+                                        {
+                                            <button type="button" class="pf-notif-readall" @onclick="MarkAllNotificationsReadAsync">خواندن همه</button>
+                                        }
                                     </div>
                                     <div class="pf-notifications-list">
-                                        <div class="pf-notification-item">
-                                            <div class="pf-notif-dot"></div>
-                                            <div class="pf-notif-content">
-                                                <div class="pf-notif-title">بروزرسانی داشبورد کاربری فروشگاه ارورسرویس</div>
-                                                <div class="pf-notif-desc">صفحه داشبورد کاربری فروشگاه ارورسرویس با طراحی جدید و امکانات کاربردی بروزرسانی شده است.</div>
-                                                <div class="pf-notif-date">۱۴ تیر ۱۴۰۴</div>
-                                            </div>
-                                        </div>
-                                        <div class="pf-notification-item">
-                                            <div class="pf-notif-dot"></div>
-                                            <div class="pf-notif-content">
-                                                <div class="pf-notif-title">بروزرسانی مرکز خدمات و پشتیبانی ارورسرویس</div>
-                                                <div class="pf-notif-desc">مرکز خدمات و پشتیبانی ارورسرویس بروزرسانی شده است تا پشتیبانی دریافت خدمات بهتر و سریع‌تر انجام شود.</div>
-                                                <div class="pf-notif-date">۱۰ خرداد ۱۴۰۴</div>
-                                            </div>
-                                        </div>
+                                        @if (notifsLoading)
+                                        {
+                                            <div class="pf-notif-empty">در حال بارگذاری اعلان‌ها...</div>
+                                        }
+                                        else if (notifications.Count == 0)
+                                        {
+                                            <div class="pf-notif-empty">اعلانی برای نمایش وجود ندارد.</div>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var n in notifications)
+                                            {
+                                                <div class="pf-notification-item @(n.IsRead ? "is-read" : "")" @onclick="() => OpenNotificationAsync(n)">
+                                                    <div class="pf-notif-dot" style="@NotifDotStyle(n.Severity)"></div>
+                                                    <div class="pf-notif-content">
+                                                        <div class="pf-notif-title">@n.Title</div>
+                                                        <div class="pf-notif-desc">@n.Body</div>
+                                                        <div class="pf-notif-date">@ErrorService.Client.Services.NotificationCenterService.RelativeTime(n.CreatedAt)</div>
+                                                    </div>
+                                                    <div class="pf-notif-actions">
+                                                        <button type="button" class="pf-notif-btn" title="مشاهده" @onclick:stopPropagation @onclick="() => OpenNotificationAsync(n)">
+                                                            <span class="oi oi-external-link"></span>
+                                                        </button>
+                                                        <button type="button" class="pf-notif-btn" title="بستن" @onclick:stopPropagation @onclick="() => HideNotificationAsync(n)">
+                                                            <span class="oi oi-x"></span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            }
+                                        }
                                     </div>
                                 </div>
 
@@ -227,44 +286,18 @@
                                                 وضعیت آخرین سفارش شما
                                             </div>
                                             <span class="pf-order-number">#@latest.OrderNumber</span>
+                                            @if (OrderDisplayHelper.IsReturned(latest))
+                                            {
+                                                <span class="pf-status-badge" style="@OrderDisplayHelper.SoftBadgeStyle(latest)">@OrderDisplayHelper.Label(latest)</span>
+                                            }
                                         </div>
                                         <div class="pf-order-progress">
-                                            <div class="pf-progress-steps">
-                                                @{
-                                                    var steps = new[] {
-                                                        ("آماده سازی", "۱۴۰۴/۰۴/۲۴", latest.Status >= OrderStatus.Approved),
-                                                        ("در حال پردازش", "۱۴۰۴/۰۴/۲۴", latest.Status >= OrderStatus.Approved),
-                                                        ("پرداخت تایید شده", "۱۴۰۴/۰۴/۲۴", latest.Status >= OrderStatus.Approved),
-                                                        ("در انتظار تایید", "", latest.Status == OrderStatus.PendingPayment || latest.Status == OrderStatus.ReceiptUploaded)
-                                                    };
-                                                    int idx = 0;
-                                                }
-                                                @foreach (var (label, date, isActive) in steps)
-                                                {
-                                                    idx++;
-                                                    <div class="pf-progress-step @(isActive ? "active" : "") @(idx == steps.Length ? "last" : "")">
-                                                        <div class="pf-step-dot">
-                                                            @if (isActive)
-                                                            {
-                                                                <span class="oi oi-check"></span>
-                                                            }
-                                                            else
-                                                            {
-                                                                <span>@idx</span>
-                                                            }
-                                                        </div>
-                                                        <div class="pf-step-label">@label</div>
-                                                        @if (!string.IsNullOrEmpty(date))
-                                                        {
-                                                            <div class="pf-step-date">@date</div>
-                                                        }
-                                                    </div>
-                                                    @if (idx < steps.Length)
-                                                    {
-                                                        <div class="pf-step-line @(isActive ? "active" : "")"></div>
-                                                    }
-                                                }
-                                            </div>
+                                            <OrderStageStepper Status="latest.Status"
+                                                               Stage="latest.Stage"
+                                                               StageDates="latest.StageDates"
+                                                               CreatedAt="latest.CreatedAt"
+                                                               PaymentDate="latest.PaymentDate"
+                                                               UpdatedAt="latest.UpdatedAt" />
                                         </div>
                                     </div>
                                 }
@@ -304,9 +337,9 @@
                                                         <tr>
                                                             <td class="fw-bold">#@o.OrderNumber</td>
                                                             <td>@PersianDate.ToJalaliDate(o.CreatedAt)</td>
-                                                            <td><span class="pf-status-badge @GetOrderStatusClass(o.Status)">@GetOrderStatusLabel(o.Status)</span></td>
+                                                            <td><span class="pf-status-badge" style="@OrderDisplayHelper.SoftBadgeStyle(o)">@OrderDisplayHelper.Label(o)</span></td>
                                                             <td class="fw-bold">@o.TotalAmount.ToString("N0") ریال</td>
-                                                            <td><button class="pf-view-btn" @onclick="() => ToggleOrder(o.Id)">مشاهده</button></td>
+                                                            <td><button class="pf-view-btn" @onclick="() => GoToOrderDetail(o.Id)">مشاهده</button></td>
                                                         </tr>
                                                     }
                                                 </tbody>
@@ -345,6 +378,10 @@
                                         <span class="oi oi-ban"></span>
                                         لغو شده (@myOrders.Count(o => o.Status == OrderStatus.Cancelled))
                                     </button>
+                                    <button class="pf-filter-tab @(orderFilter == "completed" ? "active" : "")" @onclick='() => orderFilter = "completed"'>
+                                        <span class="oi oi-check"></span>
+                                        تکمیل شده (@myOrders.Count(o => o.Status == OrderStatus.Completed))
+                                    </button>
                                 </div>
 
                                 @if (isLoadingOrders)
@@ -359,6 +396,7 @@
                                     {
                                         "pending" => myOrders.Where(o => o.Status == OrderStatus.PendingPayment).ToList(),
                                         "cancelled" => myOrders.Where(o => o.Status == OrderStatus.Cancelled).ToList(),
+                                        "completed" => myOrders.Where(o => o.Status == OrderStatus.Completed).ToList(),
                                         _ => myOrders
                                     };
 
@@ -388,9 +426,9 @@
                                                         <tr class="cursor-pointer" @onclick="() => ToggleOrder(o.Id)">
                                                             <td class="fw-bold">#@o.OrderNumber</td>
                                                             <td>@PersianDate.ToJalaliDate(o.CreatedAt)</td>
-                                                            <td><span class="pf-status-badge @GetOrderStatusClass(o.Status)">@GetOrderStatusLabel(o.Status)</span></td>
+                                                            <td><span class="pf-status-badge" style="@OrderDisplayHelper.SoftBadgeStyle(o)">@OrderDisplayHelper.Label(o)</span></td>
                                                             <td class="fw-bold">@o.TotalAmount.ToString("N0") ریال</td>
-                                                            <td><button class="pf-view-btn" @onclick="() => ToggleOrder(o.Id)" @onclick:stopPropagation>مشاهده</button></td>
+                                                            <td><button class="pf-view-btn" @onclick="() => GoToOrderDetail(o.Id)" @onclick:stopPropagation>مشاهده</button></td>
                                                         </tr>
 
                                                         @if (expandedOrders.Contains(o.Id))
@@ -425,6 +463,75 @@
                                                                             </div>
                                                                         </div>
 
+                                                                        @if (o.PaymentDate.HasValue || (o.ReceiptImageUrls?.Count ?? 0) > 0 || (o.Returns?.Count ?? 0) > 0)
+                                                                        {
+                                                                            <div class="pf-detail-box" style="grid-column:1/-1;background:#f8fafc;border-left:3px solid #2563eb;">
+                                                                                <div class="pf-detail-label" style="color:#2563eb;">اطلاعات واریزی و مرجوعی</div>
+
+                                                                                <div style="display:flex;flex-wrap:wrap;gap:8px 24px;margin-top:8px;">
+                                                                                    <div><span class="text-muted">تاریخ واریز:</span> <span class="fw-bold">@(o.PaymentDate.HasValue ? PersianDate.ToJalaliDateTime(o.PaymentDate.Value) : "---")</span></div>
+                                                                                    <div><span class="text-muted">مبلغ کل:</span> <span class="fw-bold">@o.TotalAmount.ToString("N0") تومان</span></div>
+                                                                                    <div><span class="text-muted">وضعیت پرداخت:</span> <span class="fw-bold">@OrderDisplayHelper.Label(o)</span></div>
+                                                                                </div>
+
+                                                                                @if ((o.ReceiptImageUrls?.Count ?? 0) > 0)
+                                                                                {
+                                                                                    <div style="margin-top:10px;">
+                                                                                        <div class="pf-detail-label mb-2">تصاویر رسید واریز</div>
+                                                                                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                                                                            @foreach (var img in o.ReceiptImageUrls)
+                                                                                            {
+                                                                                                <a href="@img" target="_blank" rel="noopener">
+                                                                                                    <img src="@img" class="pf-receipt-img" />
+                                                                                                </a>
+                                                                                            }
+                                                                                        </div>
+                                                                                    </div>
+                                                                                }
+
+                                                                                @if ((o.Returns?.Count ?? 0) > 0)
+                                                                                {
+                                                                                    <div style="margin-top:12px;border-top:1px dashed #cbd5e1;padding-top:10px;">
+                                                                                        <div class="pf-detail-label mb-2" style="color:#dc2626;">اطلاعات مرجوعی ثبت شده</div>
+                                                                                        @foreach (var r in o.Returns)
+                                                                                        {
+                                                                                            <div style="background:#fef2f2;border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+                                                                                                <div style="display:flex;flex-wrap:wrap;gap:6px 18px;font-size:0.85rem;">
+                                                                                                    <div><span class="text-muted">مبلغ مرجوعی:</span> <span class="fw-bold text-danger">@r.RefundAmount.ToString("N0") تومان</span></div>
+                                                                                                    @if (!string.IsNullOrWhiteSpace(r.RefundCardNumber))
+                                                                                                    {
+                                                                                                        <div><span class="text-muted">به کارت:</span> <span class="fw-bold" dir="ltr">@r.RefundCardNumber</span></div>
+                                                                                                    }
+                                                                                                    @if (!string.IsNullOrWhiteSpace(r.RefundBankName))
+                                                                                                    {
+                                                                                                        <div><span class="text-muted">بانک:</span> <span class="fw-bold">@r.RefundBankName</span></div>
+                                                                                                    }
+                                                                                                    @if (r.RefundDate.HasValue)
+                                                                                                    {
+                                                                                                        <div><span class="text-muted">تاریخ واریز:</span> <span class="fw-bold">@PersianDate.ToJalaliDateTime(r.RefundDate.Value)</span></div>
+                                                                                                    }
+                                                                                                    <div><span class="text-muted">وضعیت:</span> <span class="fw-bold" style="color:@(r.IsRefunded ? "#16a34a" : "#f59e0b");">@(r.IsRefunded ? "واریز شده" : "در انتظار واریز")</span></div>
+                                                                                                </div>
+                                                                                                @if (!string.IsNullOrWhiteSpace(r.ReturnReason))
+                                                                                                {
+                                                                                                    <div style="margin-top:6px;font-size:0.8rem;color:#64748b;">دلیل مرجوعی: @r.ReturnReason</div>
+                                                                                                }
+                                                                                                @if (!string.IsNullOrEmpty(r.RefundReceiptImageUrl))
+                                                                                                {
+                                                                                                    <div style="margin-top:8px;">
+                                                                                                        <span class="text-muted" style="font-size:0.8rem;">رسید واریز مرجوعی:</span>
+                                                                                                        <a href="@r.RefundReceiptImageUrl" target="_blank" rel="noopener" style="margin-inline-start:8px;color:#2563eb;font-weight:700;font-size:0.85rem;">
+                                                                                                            <span class="oi oi-external-link"></span> مشاهده تصویر
+                                                                                                        </a>
+                                                                                                    </div>
+                                                                                                }
+                                                                                            </div>
+                                                                                        }
+                                                                                    </div>
+                                                                                }
+                                                                            </div>
+                                                                        }
+
                                                                         @if (!string.IsNullOrWhiteSpace(o.Address))
                                                                         {
                                                                             <div class="pf-detail-address">
@@ -433,35 +540,90 @@
                                                                             </div>
                                                                         }
 
-                                                                        @if (!string.IsNullOrWhiteSpace(o.AdminNotes))
-                                                                        {
-                                                                            <div class="pf-detail-note">
-                                                                                <span class="oi oi-info"></span>
-                                                                                <strong>یادداشت مدیر:</strong> @o.AdminNotes
-                                                                            </div>
-                                                                        }
+                                                                         @if (!string.IsNullOrWhiteSpace(o.AdminNotes))
+                                                                         {
+                                                                             <div class="pf-detail-note" dir="rtl">
+                                                                                 <span class="oi oi-info"></span>
+                                                                                 <strong>یادداشت مدیر:</strong>
+                                                                                 <div class="pf-detail-note-text" style="margin-top:8px">
+                                                                                     <AdminNotesList Notes="@o.AdminNotes" />
+                                                                                 </div>
+                                                                             </div>
+                                                                         }
 
-                                                                        @if (!string.IsNullOrEmpty(o.ReceiptImageUrl))
-                                                                        {
-                                                                            <div class="pf-detail-receipt">
-                                                                                <div class="pf-detail-label mb-2">رسید پرداخت</div>
-                                                                                <a href="@o.ReceiptImageUrl" target="_blank">
-                                                                                    <img src="@o.ReceiptImageUrl" class="pf-receipt-img" />
-                                                                                </a>
-                                                                            </div>
-                                                                        }
+                                                                         @if (!string.IsNullOrEmpty(o.ShippingMethodName))
+                                                                         {
+                                                                             <div class="pf-detail-box" style="grid-column:1/-1;background:#f0fdf4;border-left:3px solid #16a34a;">
+                                                                                 <div class="pf-detail-label" style="color:#059669;">روش ارسال</div>
+                                                                                 <div class="pf-detail-value">
+                                                                                     @o.ShippingMethodName
+                                                                                     @if (o.ShippingCost == 0)
+                                                                                     {
+                                                                                         <span class="badge bg-success ms-2">رایگان</span>
+                                                                                     }
+                                                                                     else
+                                                                                     {
+                                                                                         <span class="text-muted ms-2">— هزینه: @o.ShippingCost.ToString("N0") تومان</span>
+                                                                                     }
+                                                                                 </div>
+                                                                             </div>
+                                                                         }
+
+                                                                         @if (!string.IsNullOrEmpty(o.ReceiptImageUrl))
+                                                                         {
+                                                                             <div class="pf-detail-receipt">
+                                                                                 <div class="pf-detail-label mb-2">رسید پرداخت</div>
+                                                                                 <a href="@o.ReceiptImageUrl" target="_blank">
+                                                                                     <img src="@o.ReceiptImageUrl" class="pf-receipt-img" />
+                                                                                 </a>
+                                                                             </div>
+                                                                         }
+
+                                                                         @if (o.Shipments.Any())
+                                                                         {
+                                                                             <div style="grid-column:1/-1;">
+                                                                                 <div class="pf-detail-label mb-2">مرسولات پستی</div>
+                                                                                 @foreach (var s in o.Shipments)
+                                                                                 {
+                                                                                     <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f8fafc;border-radius:8px;margin-bottom:6px;flex-wrap:wrap;">
+                                                                                         <span class="fw-bold small">@s.Carrier</span>
+                                                                                         @if (!string.IsNullOrEmpty(s.TrackingNumber))
+                                                                                         {
+                                                                                             <span class="text-muted small">کد رهگیری:</span>
+                                                                                             <span class="fw-bold small ltr" dir="ltr">@s.TrackingNumber</span>
+                                                                                             <a href="@GetTrackingUrl(s.Carrier, s.TrackingNumber)" target="_blank" rel="noopener"
+                                                                                                style="display:inline-flex;align-items:center;gap:4px;background:#eff6ff;color:#2563eb;padding:2px 10px;border-radius:16px;font-size:0.72rem;font-weight:700;text-decoration:none;">
+                                                                                                 <span class="oi oi-external-link"></span> رهگیری
+                                                                                             </a>
+                                                                                         }
+                                                                                     </div>
+                                                                                 }
+                                                                             </div>
+                                                                         }
 
                                                                         <div class="pf-order-items">
                                                                             @foreach (var it in o.Items)
                                                                             {
-                                                                                <div class="pf-order-item">
-                                                                                    <div class="pf-item-name">@it.ProductName</div>
-                                                                                    <div class="pf-item-meta">
-                                                                                        <span>تعداد: @it.Quantity</span>
-                                                                                        <span>قیمت واحد: @it.Price.ToString("N0")</span>
-                                                                                        <span class="fw-bold">جمع: @((it.Price * it.Quantity).ToString("N0"))</span>
+                                                                                <a href="/products/@it.ProductId" class="pf-order-item">
+                                                                                    <div class="pf-order-item-img">
+                                                                                        @if (!string.IsNullOrEmpty(it.ImageUrl))
+                                                                                        {
+                                                                                            <img src="@it.ImageUrl" alt="@it.ProductName" />
+                                                                                        }
+                                                                                        else
+                                                                                        {
+                                                                                            <img src="/images/placeholder-product.svg" alt="@it.ProductName" />
+                                                                                        }
                                                                                     </div>
-                                                                                </div>
+                                                                                    <div class="pf-order-item-body">
+                                                                                        <div class="pf-item-name">@it.ProductName</div>
+                                                                                        <div class="pf-item-meta">
+                                                                                            <span class="pf-item-qty">@it.Quantity × @it.Price.ToString("N0") تومان</span>
+                                                                                            <span class="pf-item-line-total">@((it.Price * it.Quantity).ToString("N0")) تومان</span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <span class="oi oi-chevron-right pf-order-item-arrow"></span>
+                                                                                </a>
                                                                             }
                                                                         </div>
 
@@ -742,6 +904,306 @@
                                 </div>
                             </div>
                         }
+
+                        <!-- ══════════ COUPONS ══════════ -->
+                        else if (activeTab == "coupons")
+                        {
+                            <div class="pf-tab-content animate__animated animate__fadeIn">
+                                <div class="pf-tab-header">
+                                    <h5 class="pf-tab-title">
+                                        <span class="oi oi-badge"></span>
+                                        کدهای تخفیف من
+                                    </h5>
+                                    <button class="pf-refresh-btn" @onclick="LoadCouponsAsync">
+                                        <span class="oi oi-reload"></span>
+                                    </button>
+                                </div>
+
+                                @if (isLoadingCoupons)
+                                {
+                                    <div class="text-center py-4">
+                                        <div class="spinner-border spinner-border-sm text-danger"></div>
+                                    </div>
+                                }
+                                else if (!myCoupons.Any())
+                                {
+                                    <div class="pf-empty-state">
+                                        <span class="oi oi-badge"></span>
+                                        <p>هنوز کد تخفیفی ندارید.</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="pf-coupons-grid">
+                                        @foreach (var c in myCoupons)
+                                        {
+                                            var isExpired = c.ExpiryDate.HasValue && c.ExpiryDate < DateTimeOffset.UtcNow;
+                                            var isExhausted = c.MaxUsageCount.HasValue && c.CurrentUsageCount >= c.MaxUsageCount.Value;
+                                            var isUsed = c.IsUsedByMe;
+                                            var effectiveStatus = isUsed ? "used" : isExpired ? "expired" : isExhausted ? "exhausted" : c.IsActive ? "active" : "inactive";
+
+                                            <div class="pf-coupon-card @(effectiveStatus)">
+                                                <div class="pf-coupon-top">
+                                                    <div class="pf-coupon-badge @(effectiveStatus)">
+                                                        @if (effectiveStatus == "active")
+                                                        {
+                                                            <span class="oi oi-check"></span>
+                                                        }
+                                                        else if (effectiveStatus == "used")
+                                                        {
+                                                            <span class="oi oi-circle-check"></span>
+                                                        }
+                                                        else if (effectiveStatus == "expired")
+                                                        {
+                                                            <span class="oi oi-clock"></span>
+                                                        }
+                                                        else if (effectiveStatus == "exhausted")
+                                                        {
+                                                            <span class="oi oi-ban"></span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="oi oi-x"></span>
+                                                        }
+                                                    </div>
+                                                    <div class="pf-coupon-info">
+                                                        <div class="pf-coupon-code" dir="ltr">@c.Code</div>
+                                                        @if (!string.IsNullOrWhiteSpace(c.Description))
+                                                        {
+                                                            <div class="pf-coupon-desc">@c.Description</div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                                <div class="pf-coupon-value">
+                                                    @if (c.DiscountPercent.HasValue)
+                                                    {
+                                                        <span class="pf-coupon-discount">@c.DiscountPercent% تخفیف</span>
+                                                    }
+                                                    else if (c.DiscountAmount.HasValue)
+                                                    {
+                                                        <span class="pf-coupon-discount">@c.DiscountAmount.Value.ToString("N0") تومان تخفیف</span>
+                                                    }
+                                                </div>
+                                                <div class="pf-coupon-meta">
+                                                    @if (c.ExpiryDate.HasValue)
+                                                    {
+                                                        <span>انقضا: @PersianDate.ToJalaliDate(c.ExpiryDate.Value)</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>بدون انقضا</span>
+                                                    }
+                                                    <span class="pf-coupon-status @(effectiveStatus)">
+                                                        @(effectiveStatus switch {
+                                                            "active" => "قابل استفاده",
+                                                            "used" => "استفاده شده",
+                                                            "expired" => "منقضی شده",
+                                                            "exhausted" => "تمام شده",
+                                                            _ => "غیرفعال"
+                                                        })
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <!-- ══════════ WISHLIST ══════════ -->
+                        else if (activeTab == "wishlist")
+                        {
+                            <div class="pf-tab-content animate__animated animate__fadeIn">
+                                <div class="pf-tab-header">
+                                    <h5 class="pf-tab-title">
+                                        <span class="oi oi-heart"></span>
+                                        علاقمندی‌ها
+                                    </h5>
+                                    @if (wishlistItems.Any())
+                                    {
+                                        <button class="pf-refresh-btn text-danger" @onclick="ClearWishlist" title="حذف همه">
+                                            <span class="oi oi-trash"></span>
+                                        </button>
+                                    }
+                                </div>
+
+                                @if (!wishlistItems.Any())
+                                {
+                                    <div class="pf-empty-state">
+                                        <span class="oi oi-heart"></span>
+                                        <p>لیست علاقمندی‌ها خالی است</p>
+                                        <a href="/products" class="btn btn-primary btn-sm rounded-pill px-4 mt-2">مشاهده محصولات</a>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="pf-wishlist-grid">
+                                        @foreach (var item in wishlistItems)
+                                        {
+                                            <div class="pf-wishlist-card">
+                                                <a href="/products/@item.ProductId" class="pf-wishlist-img">
+                                                    @if (!string.IsNullOrEmpty(item.ImageUrl))
+                                                    {
+                                                        <img src="@item.ImageUrl" alt="@item.Name" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="d-flex align-items-center justify-content-center h-100 text-muted">
+                                                            <span class="oi oi-image fs-3"></span>
+                                                        </div>
+                                                    }
+                                                </a>
+                                                <div class="pf-wishlist-body">
+                                                    <a href="/products/@item.ProductId" class="pf-wishlist-name">@item.Name</a>
+                                                    <div class="pf-wishlist-price">
+                                                        @{
+                                                            var displayPrice = item.DiscountPrice.HasValue && item.DiscountPrice.Value > 0 ? item.DiscountPrice.Value : item.Price;
+                                                        }
+                                                        <span class="fw-bold">@displayPrice.ToString("N0")</span>
+                                                        <small class="text-muted">تومان</small>
+                                                    </div>
+                                                    <div class="pf-wishlist-actions">
+                                                        <a href="/products/@item.ProductId" class="pf-wishlist-btn-view">
+                                                            <span class="oi oi-eye"></span> مشاهده
+                                                        </a>
+                                                        <button class="pf-wishlist-btn-remove" @onclick="() => RemoveFromWishlist(item.ProductId)">
+                                                            <span class="oi oi-heart"></span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- ══════════ CART ══════════ -->
+                    @if (activeTab == "cart")
+                    {
+                        <div class="pf-tab-content animate__animated animate__fadeIn">
+                            <div class="pf-tab-header">
+                                <h5 class="pf-tab-title">
+                                    <span class="oi oi-basket"></span>
+                                    سبد خرید
+                                </h5>
+                                @if (cartItems.Any())
+                                {
+                                    <button class="pf-refresh-btn text-danger" @onclick="ClearCart" title="خالی کردن سبد">
+                                        <span class="oi oi-trash"></span>
+                                    </button>
+                                }
+                            </div>
+
+                            @if (isCartLoading)
+                            {
+                                <div class="text-center py-4">
+                                    <div class="spinner-border spinner-border-sm text-danger"></div>
+                                </div>
+                            }
+                            else if (!cartItems.Any())
+                            {
+                                <div class="pf-empty-state">
+                                    <span class="oi oi-basket"></span>
+                                    <p>سبد خرید شما خالی است</p>
+                                    <a href="/products" class="btn btn-primary btn-sm rounded-pill px-4 mt-2">مشاهده محصولات</a>
+                                </div>
+                            }
+                            else
+                            {
+                                @if (UnavailableCartCount > 0)
+                                {
+                                    <div class="pf-cart-alert">
+                                        <span class="oi oi-alert"></span>
+                                        <div>
+                                            <strong>@UnavailableCartCount کالا ناموجود شده است</strong>
+                                            <p>این کالاها قابل خرید نیستند و هنگام تکمیل خرید با تایید شما حذف می‌شوند.</p>
+                                        </div>
+                                    </div>
+                                }
+
+                                <div class="pf-cart-list">
+                                    @foreach (var item in cartItems)
+                                    {
+                                        var avail = GetCartAvailability(item.ProductId);
+                                        var isUnavailable = avail != null && !avail.HasSufficientStock;
+                                        <div class="pf-cart-card @(isUnavailable ? "pf-cart-card--unavailable" : "")">
+                                            @if (isUnavailable)
+                                            {
+                                                <div class="pf-cart-unavailable-badge">
+                                                    <span class="oi oi-ban"></span>
+                                                    @(avail!.StockQuantity <= 0 || !avail.IsAvailable ? "ناموجود" : $"موجودی: فقط {avail.StockQuantity} عدد")
+                                                </div>
+                                            }
+                                            <a href="/products/@item.ProductId" class="pf-cart-img">
+                                                @if (!string.IsNullOrEmpty(item.ImageUrl))
+                                                {
+                                                    <img src="@item.ImageUrl" alt="@item.Name" />
+                                                }
+                                                else
+                                                {
+                                                    <div class="d-flex align-items-center justify-content-center h-100 text-muted">
+                                                        <span class="oi oi-image fs-3"></span>
+                                                    </div>
+                                                }
+                                            </a>
+                                            <div class="pf-cart-body">
+                                                <a href="/products/@item.ProductId" class="pf-cart-name">@item.Name</a>
+                                                <div class="pf-cart-price">@item.Price.ToString("N0") تومان</div>
+                                                <div class="pf-cart-qty-row">
+                                                    <div class="pf-cart-qty-controls">
+                                                        <button class="pf-cart-qty-btn" @onclick="() => DecreaseQty(item.ProductId)" disabled="@(item.Quantity <= 1 || isUnavailable)">
+                                                            <span class="oi oi-minus"></span>
+                                                        </button>
+                                                        <span class="pf-cart-qty-val">@item.Quantity</span>
+                                                        <button class="pf-cart-qty-btn" @onclick="() => IncreaseQty(item.ProductId)" disabled="@isUnavailable">
+                                                            <span class="oi oi-plus"></span>
+                                                        </button>
+                                                    </div>
+                                                    <button class="pf-cart-remove-btn" @onclick="() => RemoveCartItem(item.ProductId)">
+                                                        <span class="oi oi-trash"></span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+
+                                <div class="pf-cart-summary">
+                                    <div class="pf-cart-summary-row">
+                                        <span>تعداد اقلام</span>
+                                        <span class="fw-bold">@cartItems.Count</span>
+                                    </div>
+                                    <div class="pf-cart-summary-row">
+                                        <span>جمع تعداد</span>
+                                        <span class="fw-bold">@cartItems.Sum(x => x.Quantity)</span>
+                                    </div>
+                                    @if (UnavailableCartCount > 0)
+                                    {
+                                        <div class="pf-cart-summary-row pf-cart-summary-warn">
+                                            <span>کالای ناموجود</span>
+                                            <span class="fw-bold">@UnavailableCartCount مورد (حذف در ادامه)</span>
+                                        </div>
+                                    }
+                                    <div class="pf-cart-summary-row pf-cart-summary-total">
+                                        <span>جمع کل</span>
+                                        <span class="fw-bold">@AvailableCartTotal.ToString("N0") تومان</span>
+                                    </div>
+                                </div>
+
+                                <div class="pf-cart-actions">
+                                    <a href="/products" class="pf-outline-btn">
+                                        <span class="oi oi-plus"></span>
+                                        ادامه خرید
+                                    </a>
+                                    <button type="button" class="pf-primary-btn" @onclick="ProceedFromProfileCart">
+                                        <span class="oi oi-credit-card"></span>
+                                        تکمیل خرید
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
                     }
                 </div>
             </div>
@@ -749,11 +1211,17 @@
     </div>
 </div>
 
-<!-- Mobile Sidebar Overlay -->
 @if (showMobileSidebar)
 {
     <div class="pf-sidebar-overlay" @onclick="() => showMobileSidebar = false"></div>
 }
+
+<ConfirmDialog IsVisible="showRemoveUnavailableConfirm"
+               Title="حذف کالاهای ناموجود"
+               Message="@($"{UnavailableCartCount} کالا ناموجود شده و قابل خرید نیست. برای ادامه از سبد حذف شوند؟")"
+               ConfirmText="حذف و ادامه"
+               IsDanger="true"
+               OnResult="HandleProfileRemoveUnavailableResult" />
 
 <style>
     /* ═══════════════ VARIABLES ═══════════════ */
@@ -1014,6 +1482,15 @@
         box-shadow: 0 4px 16px rgba(0,0,0,0.08);
     }
 
+    .pf-stat-clickable {
+        cursor: pointer;
+        user-select: none;
+    }
+    .pf-stat-clickable:active {
+        transform: scale(0.97);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+
     .pf-stat-icon {
         width: 48px;
         height: 48px;
@@ -1121,6 +1598,54 @@
         color: var(--pf-text-muted);
     }
 
+    .pf-notification-item { cursor: pointer; }
+    .pf-notification-item.is-read { opacity: 0.55; }
+
+    .pf-notif-empty {
+        text-align: center;
+        color: var(--pf-text-muted);
+        font-size: 0.85rem;
+        padding: 26px 12px;
+    }
+
+    .pf-notif-readall {
+        border: none;
+        background: transparent;
+        color: var(--pf-red);
+        font-weight: 700;
+        font-size: 0.8rem;
+        cursor: pointer;
+        font-family: inherit;
+        padding: 4px 8px;
+        border-radius: 8px;
+    }
+    .pf-notif-readall:hover { background: var(--pf-red-light); }
+
+    .pf-notif-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        opacity: 0;
+        transition: opacity 0.15s;
+        flex-shrink: 0;
+    }
+    .pf-notification-item:hover .pf-notif-actions { opacity: 1; }
+
+    .pf-notif-btn {
+        border: none;
+        background: transparent;
+        color: var(--pf-text-muted);
+        cursor: pointer;
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s, color 0.15s;
+    }
+    .pf-notif-btn:hover { background: var(--pf-red-light); color: var(--pf-red); }
+
     .pf-order-number {
         background: var(--pf-red-light);
         color: var(--pf-red);
@@ -1169,6 +1694,10 @@
         background: #198754;
         color: #fff;
     }
+    .pf-progress-step.rejected .pf-step-dot {
+        background: #dc3545;
+        color: #fff;
+    }
 
     .pf-step-label {
         font-size: 0.72rem;
@@ -1193,6 +1722,7 @@
         min-width: 20px;
     }
     .pf-step-line.active { background: #198754; }
+    .pf-step-line.rejected { background: #dc3545; }
 
     /* ═══════════════ TABLE ═══════════════ */
     .pf-table-responsive {
@@ -1323,6 +1853,7 @@
         border: 1px solid var(--pf-border);
         background: rgba(220,53,69,0.03);
     }
+    .pf-detail-note-text { white-space: pre-wrap; direction: rtl; text-align: right; unicode-bidi: plaintext; line-height: 1.8; overflow-wrap: anywhere; margin-top: 4px; }
 
     .pf-detail-receipt { margin-bottom: 12px; }
     .pf-receipt-img {
@@ -1339,25 +1870,86 @@
     }
 
     .pf-order-item {
-        padding: 10px 14px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px;
         border: 1px solid var(--pf-border);
         border-radius: var(--pf-radius-sm);
         background: #fff;
+        text-decoration: none;
+        color: inherit;
+        transition: all 0.15s;
+    }
+    .pf-order-item:hover {
+        border-color: var(--pf-red);
+        box-shadow: 0 2px 8px rgba(220,53,69,0.1);
+        color: inherit;
+        text-decoration: none;
+    }
+
+    .pf-order-item-img {
+        width: 56px;
+        height: 56px;
+        flex-shrink: 0;
+        border-radius: 10px;
+        background: #f8fafc;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .pf-order-item-img img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        padding: 4px;
+    }
+
+    .pf-order-item-body {
+        flex: 1;
+        min-width: 0;
     }
 
     .pf-item-name {
         font-weight: 700;
         font-size: 0.85rem;
         margin-bottom: 4px;
+        color: var(--pf-text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
+    .pf-order-item:hover .pf-item-name { color: var(--pf-red); }
 
     .pf-item-meta {
         display: flex;
         flex-wrap: wrap;
-        gap: 12px;
+        gap: 10px;
         font-size: 0.75rem;
         color: var(--pf-text-muted);
+        align-items: center;
     }
+
+    .pf-item-qty {
+        background: #f1f5f9;
+        border-radius: 6px;
+        padding: 2px 8px;
+        font-weight: 600;
+    }
+
+    .pf-item-line-total {
+        font-weight: 800;
+        color: var(--pf-red);
+    }
+
+    .pf-order-item-arrow {
+        color: #cbd5e1;
+        font-size: 0.85rem;
+        flex-shrink: 0;
+        margin-right: auto;
+    }
+    .pf-order-item:hover .pf-order-item-arrow { color: var(--pf-red); }
 
     .pf-order-total {
         display: flex;
@@ -1412,6 +2004,297 @@
         opacity: 0.2;
         display: block;
         margin-bottom: 12px;
+    }
+
+    /* ═══════════════ COUPONS ═══════════════ */
+    .pf-coupons-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 12px;
+    }
+
+    .pf-coupon-card {
+        border: 2px solid var(--pf-border);
+        border-radius: var(--pf-radius);
+        padding: 16px;
+        background: #fff;
+        transition: all 0.2s;
+    }
+    .pf-coupon-card.active { border-color: #16a34a; background: linear-gradient(135deg, #f0fdf4 0%, #fff 100%); }
+    .pf-coupon-card.used { border-color: #94a3b8; opacity: 0.6; }
+    .pf-coupon-card.expired { border-color: #f59e0b; background: linear-gradient(135deg, #fffbeb 0%, #fff 100%); }
+    .pf-coupon-card.exhausted { border-color: #dc3545; background: linear-gradient(135deg, #fef2f2 0%, #fff 100%); }
+    .pf-coupon-card.inactive { border-color: #e2e8f0; opacity: 0.5; }
+
+    .pf-coupon-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+
+    .pf-coupon-badge {
+        width: 36px; height: 36px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1rem; color: #fff; flex-shrink: 0;
+    }
+    .pf-coupon-badge.active { background: #16a34a; }
+    .pf-coupon-badge.used { background: #94a3b8; }
+    .pf-coupon-badge.expired { background: #f59e0b; }
+    .pf-coupon-badge.exhausted { background: #dc3545; }
+    .pf-coupon-badge.inactive { background: #cbd5e1; }
+
+    .pf-coupon-code { font-size: 1.1rem; font-weight: 900; letter-spacing: 1px; }
+    .pf-coupon-desc { font-size: 0.78rem; color: var(--pf-text-muted); margin-top: 2px; }
+
+    .pf-coupon-value { margin-bottom: 10px; }
+    .pf-coupon-discount { font-size: 0.88rem; font-weight: 800; color: #16a34a; }
+    .pf-coupon-card.expired .pf-coupon-discount, .pf-coupon-card.exhausted .pf-coupon-discount { color: var(--pf-text-muted); }
+
+    .pf-coupon-meta {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 0.72rem; color: var(--pf-text-muted); border-top: 1px solid var(--pf-border); padding-top: 8px;
+    }
+
+    .pf-coupon-status {
+        font-weight: 700; padding: 2px 8px; border-radius: 12px;
+    }
+    .pf-coupon-status.active { background: #dcfce7; color: #16a34a; }
+    .pf-coupon-status.used { background: #f1f5f9; color: #64748b; }
+    .pf-coupon-status.expired { background: #fef3c7; color: #92400e; }
+    .pf-coupon-status.exhausted { background: #fee2e2; color: #dc2626; }
+    .pf-coupon-status.inactive { background: #f1f5f9; color: #94a3b8; }
+
+    /* ═══════════════ WISHLIST ═══════════════ */
+    .pf-wishlist-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 12px;
+    }
+
+    .pf-wishlist-card {
+        border: 1px solid var(--pf-border);
+        border-radius: var(--pf-radius);
+        overflow: hidden;
+        background: #fff;
+        transition: all 0.2s;
+    }
+    .pf-wishlist-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+
+    .pf-wishlist-img {
+        display: block; height: 140px; background: #f8fafc; overflow: hidden;
+    }
+    .pf-wishlist-img img { width: 100%; height: 100%; object-fit: contain; padding: 12px; }
+
+    .pf-wishlist-body { padding: 12px; }
+
+    .pf-wishlist-name {
+        display: block; font-weight: 700; font-size: 0.82rem; color: var(--pf-text);
+        text-decoration: none; margin-bottom: 6px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .pf-wishlist-name:hover { color: var(--pf-red); }
+
+    .pf-wishlist-price {
+        font-size: 0.85rem; margin-bottom: 8px;
+    }
+
+    .pf-wishlist-actions { display: flex; gap: 6px; }
+
+    .pf-wishlist-btn-view {
+        flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px;
+        padding: 6px; border-radius: 8px; font-size: 0.75rem; font-weight: 700;
+        background: var(--pf-red); color: #fff; text-decoration: none; transition: all 0.15s;
+    }
+    .pf-wishlist-btn-view:hover { background: var(--pf-red-dark); color: #fff; text-decoration: none; }
+
+    .pf-wishlist-btn-remove {
+        width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+        border-radius: 8px; border: 1px solid var(--pf-border); background: #fff;
+        color: #dc3545; cursor: pointer; transition: all 0.15s; padding: 0;
+    }
+    .pf-wishlist-btn-remove:hover { background: #fef2f2; border-color: #dc3545; }
+
+    /* ═══════════════ CART ═══════════════ */
+    .pf-cart-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+
+    .pf-cart-card {
+        display: flex;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid var(--pf-border);
+        border-radius: var(--pf-radius);
+        background: #fff;
+        transition: all 0.2s;
+    }
+    .pf-cart-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+
+    .pf-cart-card--unavailable {
+        border-color: #fecaca;
+        background: #fffafa;
+        opacity: 0.95;
+    }
+    .pf-cart-card--unavailable .pf-cart-img,
+    .pf-cart-card--unavailable .pf-cart-name,
+    .pf-cart-card--unavailable .pf-cart-price {
+        opacity: 0.55;
+        filter: grayscale(0.6);
+    }
+
+    .pf-cart-unavailable-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #fee2e2;
+        color: #b91c1c;
+        border-radius: 8px;
+        padding: 4px 10px;
+        font-size: 0.72rem;
+        font-weight: 800;
+        margin-bottom: 8px;
+        width: fit-content;
+    }
+
+    .pf-cart-alert {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        color: #b91c1c;
+        border-radius: 14px;
+        padding: 12px 14px;
+        margin-bottom: 14px;
+    }
+    .pf-cart-alert .oi { font-size: 1.1rem; margin-top: 2px; }
+    .pf-cart-alert strong { display: block; font-size: 0.88rem; margin-bottom: 2px; }
+    .pf-cart-alert p { margin: 0; font-size: 0.78rem; opacity: 0.9; }
+
+    .pf-cart-summary-warn .fw-bold,
+    .pf-cart-summary-warn span { color: #dc2626; }
+
+    .pf-cart-img {
+        display: block;
+        width: 80px;
+        height: 80px;
+        flex-shrink: 0;
+        border-radius: var(--pf-radius-sm);
+        background: #f8fafc;
+        overflow: hidden;
+    }
+    .pf-cart-img img { width: 100%; height: 100%; object-fit: contain; padding: 8px; }
+
+    .pf-cart-body { flex: 1; min-width: 0; }
+
+    .pf-cart-name {
+        display: block;
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: var(--pf-text);
+        text-decoration: none;
+        margin-bottom: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .pf-cart-name:hover { color: var(--pf-red); }
+
+    .pf-cart-price {
+        font-size: 0.82rem;
+        font-weight: 800;
+        color: var(--pf-red);
+        margin-bottom: 8px;
+    }
+
+    .pf-cart-qty-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .pf-cart-qty-controls {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        border: 1px solid var(--pf-border);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .pf-cart-qty-btn {
+        width: 32px;
+        height: 32px;
+        border: none;
+        background: #f8fafc;
+        color: var(--pf-text);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        transition: all 0.15s;
+        font-size: 0.7rem;
+    }
+    .pf-cart-qty-btn:hover:not(:disabled) { background: var(--pf-red-light); color: var(--pf-red); }
+    .pf-cart-qty-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .pf-cart-qty-val {
+        min-width: 36px;
+        text-align: center;
+        font-weight: 800;
+        font-size: 0.88rem;
+        border-left: 1px solid var(--pf-border);
+        border-right: 1px solid var(--pf-border);
+        line-height: 32px;
+    }
+
+    .pf-cart-remove-btn {
+        width: 32px;
+        height: 32px;
+        border: 1px solid #fee2e2;
+        background: #fff;
+        color: #dc3545;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        transition: all 0.15s;
+        font-size: 0.78rem;
+    }
+    .pf-cart-remove-btn:hover { background: #fef2f2; border-color: #dc3545; }
+
+    .pf-cart-summary {
+        border: 1px solid var(--pf-border);
+        border-radius: var(--pf-radius);
+        padding: 16px;
+        margin-bottom: 16px;
+    }
+
+    .pf-cart-summary-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.85rem;
+        color: var(--pf-text-muted);
+        padding: 6px 0;
+    }
+
+    .pf-cart-summary-total {
+        border-top: 1px solid var(--pf-border);
+        margin-top: 6px;
+        padding-top: 10px;
+        font-size: 1rem;
+        color: var(--pf-text);
+    }
+
+    .pf-cart-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+    }
+    .pf-cart-actions a { flex: 1; text-align: center; }
+
+    @@media (max-width: 768px) {
+        .pf-cart-card { flex-direction: column; }
+        .pf-cart-img { width: 100%; height: 160px; }
+        .pf-cart-actions { flex-direction: column; }
     }
 
     /* ═══════════════ TICKETS ═══════════════ */
@@ -1682,6 +2565,80 @@
     }
     .pf-refresh-btn:hover { border-color: var(--pf-red); color: var(--pf-red); }
 
+    /* ═══════════════ ALERT BANNER ═══════════════ */
+    .pf-alert-banner {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 16px 20px;
+        background: linear-gradient(135deg, #fef3c7 0%, #fff7ed 100%);
+        border: 1px solid #fcd34d;
+        border-radius: var(--pf-radius-sm);
+        position: relative;
+        overflow: hidden;
+    }
+    .pf-alert-banner::before {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: linear-gradient(to bottom, #f59e0b, #d97706);
+        border-radius: 0 var(--pf-radius-sm) var(--pf-radius-sm) 0;
+    }
+    .pf-alert-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(245,158,11,0.3);
+    }
+    .pf-alert-text {
+        flex: 1;
+        min-width: 0;
+    }
+    .pf-alert-title {
+        font-weight: 800;
+        font-size: 0.9rem;
+        color: #92400e;
+        margin-bottom: 2px;
+    }
+    .pf-alert-sub {
+        font-size: 0.78rem;
+        color: #a16207;
+        line-height: 1.5;
+    }
+    .pf-alert-btn {
+        padding: 8px 20px;
+        border: none;
+        border-radius: var(--pf-radius-sm);
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: #fff;
+        font-weight: 700;
+        font-size: 0.82rem;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+        box-shadow: 0 2px 8px rgba(245,158,11,0.3);
+        font-family: inherit;
+    }
+    .pf-alert-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(245,158,11,0.4);
+    }
+    .pf-alert-btn:active { transform: scale(0.97); }
+
+    @@media (max-width: 768px) {
+        .pf-alert-banner { flex-wrap: wrap; padding: 14px 16px; gap: 10px; }
+        .pf-alert-btn { width: 100%; text-align: center; padding: 10px; }
+    }
+
     /* ═══════════════ MOBILE SIDEBAR ═══════════════ */
     .pf-sidebar-overlay {
         position: fixed;
@@ -1762,10 +2719,100 @@
 
     private List<OrderDto> myOrders = new();
     private List<ConsultationTicket> myTickets = new();
+    private List<CouponDto> myCoupons = new();
+    private List<WishlistItem> wishlistItems = new();
+    private List<CartItem> cartItems = new();
+    private decimal cartTotal = 0;
+    private bool isCartLoading = false;
     private bool isLoadingOrders = false;
     private bool isLoadingTickets = false;
+    private bool isLoadingCoupons = false;
+    private Dictionary<int, ProductAvailabilityDto> cartAvailability = new();
+    private bool showRemoveUnavailableConfirm;
+    private bool isCheckingCartAvailability;
+
+    private IEnumerable<int> UnavailableCartProductIds =>
+        cartItems
+            .Where(i => cartAvailability.TryGetValue(i.ProductId, out var a) && !a.HasSufficientStock)
+            .Select(i => i.ProductId);
+
+    private int UnavailableCartCount => UnavailableCartProductIds.Count();
+
+    private decimal AvailableCartTotal =>
+        cartItems
+            .Where(i => !cartAvailability.TryGetValue(i.ProductId, out var a) || a.HasSufficientStock)
+            .Sum(i => i.Price * i.Quantity);
+
+    private ProductAvailabilityDto? GetCartAvailability(int productId)
+        => cartAvailability.TryGetValue(productId, out var a) ? a : null;
+
+    private int ActiveOrdersCount => myOrders.Count(o =>
+        o.Status == OrderStatus.PendingPayment
+        || o.Status == OrderStatus.ReceiptUploaded
+        || o.Status == OrderStatus.Approved);
+
+    private int ActiveTicketsCount => myTickets.Count(t =>
+        !t.IsUserRead
+        || t.Status == TicketStatus.Pending
+        || t.Status == TicketStatus.InProgress);
+
+    private int ActiveCouponsCount => myCoupons.Count(c =>
+        !c.IsUsedByMe
+        && c.IsActive
+        && (!c.ExpiryDate.HasValue || c.ExpiryDate >= DateTimeOffset.UtcNow)
+        && (!c.MaxUsageCount.HasValue || c.CurrentUsageCount < c.MaxUsageCount.Value));
 
     private HashSet<int> expandedOrders = new();
+
+    private List<NotificationDto> notifications = new();
+    private bool notifsLoading = true;
+    private int notifUnreadCount;
+
+    private async Task LoadNotificationsAsync()
+    {
+        notifsLoading = true;
+        var items = await Notifs.LoadAsync(30);
+        notifications = items;
+        notifUnreadCount = items.Count(x => !x.IsRead);
+        notifsLoading = false;
+    }
+
+    private async Task MarkAllNotificationsReadAsync()
+    {
+        var count = await Notifs.MarkAllReadAsync();
+        foreach (var n in notifications) n.IsRead = true;
+        notifUnreadCount = 0;
+        if (count > 0)
+            Toast.ShowSuccess("همه اعلان‌ها خوانده شد");
+    }
+
+    private async Task OpenNotificationAsync(NotificationDto item)
+    {
+        if (!item.IsRead)
+        {
+            item.IsRead = true;
+            notifUnreadCount = Math.Max(0, notifUnreadCount - 1);
+            await Notifs.MarkReadAsync(item.Id);
+        }
+        if (!string.IsNullOrWhiteSpace(item.ActionUrl))
+            Nav.NavigateTo(item.ActionUrl);
+    }
+
+    private async Task HideNotificationAsync(NotificationDto item)
+    {
+        notifications.Remove(item);
+        if (!item.IsRead)
+            notifUnreadCount = Math.Max(0, notifUnreadCount - 1);
+        await Notifs.HideAsync(item.Id);
+    }
+
+    private static string NotifDotStyle(int severity) => severity switch
+    {
+        1 => "background:#16a34a",
+        2 => "background:#f59e0b",
+        3 => "background:#dc2626",
+        _ => "background:#0d6efd"
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -1774,6 +2821,111 @@
         {
             await LoadSummary();
         }
+        wishlistItems = await Ws.GetItemsAsync();
+        Ws.OnChange += OnWishlistChanged;
+
+        await Cart.InitializeAsync();
+        RefreshCart();
+        Cart.OnChange += OnCartChanged;
+
+        await LoadNotificationsAsync();
+    }
+
+    private async void OnWishlistChanged()
+    {
+        wishlistItems = await Ws.GetItemsAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnCartChanged()
+    {
+        RefreshCart();
+        _ = CheckCartAvailabilityAsync();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshCart()
+    {
+        cartItems = Cart.GetItems();
+        cartTotal = Cart.GetTotalAmount();
+    }
+
+    private async Task CheckCartAvailabilityAsync()
+    {
+        if (activeTab != "cart" || isCheckingCartAvailability)
+            return;
+
+        if (cartItems.Count == 0)
+        {
+            if (cartAvailability.Count > 0)
+            {
+                cartAvailability.Clear();
+                await InvokeAsync(StateHasChanged);
+            }
+            return;
+        }
+
+        isCheckingCartAvailability = true;
+        try
+        {
+            var req = cartItems.Select(i => new ProductAvailabilityCheckItem
+            {
+                ProductId = i.ProductId,
+                Quantity = i.Quantity
+            }).ToList();
+
+            var resp = await Http.PostAsJsonAsync("api/products/check-availability", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<List<ProductAvailabilityDto>>();
+                if (result != null)
+                {
+                    var newMap = result.ToDictionary(x => x.ProductId);
+                    var becameUnavailable = newMap.Count(kvp =>
+                        !kvp.Value.HasSufficientStock &&
+                        (!cartAvailability.TryGetValue(kvp.Key, out var old) || old.HasSufficientStock));
+
+                    cartAvailability = newMap;
+
+                    if (becameUnavailable > 0)
+                        Toast.ShowWarning($"{becameUnavailable} کالا در سبد شما ناموجود شده است.");
+
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch { }
+        finally { isCheckingCartAvailability = false; }
+    }
+
+    private async Task ProceedFromProfileCart()
+    {
+        await CheckCartAvailabilityAsync();
+
+        if (UnavailableCartCount > 0)
+        {
+            showRemoveUnavailableConfirm = true;
+            StateHasChanged();
+            return;
+        }
+
+        Nav.NavigateTo("/checkout");
+    }
+
+    private async Task HandleProfileRemoveUnavailableResult(bool confirmed)
+    {
+        showRemoveUnavailableConfirm = false;
+        if (!confirmed)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        foreach (var pid in UnavailableCartProductIds.ToList())
+            await Cart.RemoveItemAsync(pid);
+
+        Toast.ShowSuccess("کالاهای ناموجود از سبد حذف شدند.");
+        Nav.NavigateTo("/checkout");
     }
 
     private async Task LoadUser()
@@ -1794,7 +2946,8 @@
     {
         var ordersTask = LoadOrdersAsync();
         var ticketsTask = LoadTicketsAsync();
-        await Task.WhenAll(ordersTask, ticketsTask);
+        var couponsTask = LoadCouponsAsync();
+        await Task.WhenAll(ordersTask, ticketsTask, couponsTask);
     }
 
     private async Task LoadOrdersAsync()
@@ -1817,6 +2970,33 @@
         }
         catch { }
         isLoadingTickets = false;
+    }
+
+    private async Task LoadCouponsAsync()
+    {
+        isLoadingCoupons = true;
+        try
+        {
+            myCoupons = await Http.GetFromJsonAsync<List<CouponDto>>("api/coupons/my") ?? new();
+        }
+        catch { }
+        isLoadingCoupons = false;
+    }
+
+    private async Task RemoveFromWishlist(int productId)
+    {
+        await Ws.RemoveAsync(productId);
+    }
+
+    private async Task ClearWishlist()
+    {
+        await Ws.ClearAsync();
+    }
+
+    public void Dispose()
+    {
+        Ws.OnChange -= OnWishlistChanged;
+        Cart.OnChange -= OnCartChanged;
     }
 
     private string replyMessage = "";
@@ -2004,6 +3184,38 @@
         Nav.NavigateTo("/");
     }
 
+    private async Task IncreaseQty(int productId)
+    {
+        var item = cartItems.FirstOrDefault(x => x.ProductId == productId);
+        if (item != null)
+        {
+            await Cart.UpdateQuantityAsync(productId, item.Quantity + 1);
+        }
+    }
+
+    private async Task DecreaseQty(int productId)
+    {
+        var item = cartItems.FirstOrDefault(x => x.ProductId == productId);
+        if (item != null && item.Quantity > 1)
+        {
+            await Cart.UpdateQuantityAsync(productId, item.Quantity - 1);
+        }
+    }
+
+    private async Task RemoveCartItem(int productId)
+    {
+        await Cart.RemoveItemAsync(productId);
+        RefreshCart();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ClearCart()
+    {
+        await Cart.ClearCartAsync();
+        RefreshCart();
+        await InvokeAsync(StateHasChanged);
+    }
+
     private string GetOrderStatusClass(OrderStatus status) => status switch {
         OrderStatus.PendingPayment => "bg-warning-subtle",
         OrderStatus.ReceiptUploaded => "bg-info-subtle",
@@ -2016,7 +3228,7 @@
 
     private string GetOrderStatusLabel(OrderStatus status) => status switch {
         OrderStatus.PendingPayment => "در انتظار پرداخت",
-        OrderStatus.ReceiptUploaded => "رسید آپلود شد",
+        OrderStatus.ReceiptUploaded => "در انتظار تایید",
         OrderStatus.Approved => "تایید شده",
         OrderStatus.Rejected => "رد شده",
         OrderStatus.Cancelled => "لغو شده",
@@ -2036,12 +3248,39 @@
         else if (tab == "tickets" && !myTickets.Any()) {
             await LoadTicketsAsync();
         }
+        else if (tab == "coupons" && !myCoupons.Any()) {
+            await LoadCouponsAsync();
+        }
+        else if (tab == "cart") {
+            isCartLoading = true;
+            await Cart.InitializeAsync();
+            RefreshCart();
+            isCartLoading = false;
+            await CheckCartAvailabilityAsync();
+        }
     }
 
     private void ToggleOrder(int orderId)
     {
         if (!expandedOrders.Add(orderId))
             expandedOrders.Remove(orderId);
+    }
+
+    private void GoToOrderDetail(int orderId)
+    {
+        Nav.NavigateTo($"/my-orders/{orderId}");
+    }
+
+    private static string GetTrackingUrl(string carrier, string trackingNumber)
+    {
+        var c = carrier?.ToLowerInvariant() ?? "";
+        if (c.Contains("پست") || c.Contains("post"))
+            return $"https://tracking.post.ir/?id={trackingNumber}";
+        if (c.Contains("تیپاکس") || c.Contains("tipax"))
+            return $"https://tipax.trace.tci.ir/?trackingcode={trackingNumber}";
+        if (c.Contains("اسنپ") || c.Contains("snapp"))
+            return $"https://snappbox.ir/tracking/{trackingNumber}";
+        return $"https://tracking.post.ir/?id={trackingNumber}";
     }
 
     private static string FormatJalaliDateTime(DateTime dt)

@@ -37,7 +37,9 @@
                              ReplyFormVisible="@(_replyTargetId == comment.Id)"
                              ToggleReply="@(() => ToggleReply(comment.Id))"
                              OnReply="@(() => ToggleReply(comment.Id))"
-                             OnSubmitReply="@(async (req) => await SubmitReply(comment.Id, req))" />
+                             OnSubmitReply="@(async (req) => await SubmitReply(comment.Id, req))"
+                             IsAuthenticated="IsAuthenticated"
+                             AuthUserName="AuthUserName" />
             }
         </div>
     }
@@ -78,11 +80,16 @@
             <div class="cs-row">
                 <div class="cs-field cs-field--half">
                     <label class="cs-label">نام و نام خانوادگی</label>
-                    <input class="cs-input @(_nameError ? "cs-input--error" : "")" 
-                           placeholder="نام شما" 
-                           @bind="_form.FullName"
-                           @bind:event="oninput" />
-                    @if (_nameError) { <span class="cs-error">نام الزامی است</span> }
+                    <input class="cs-input @(_nameError ? "cs-input--error" : "")"
+                           placeholder="نام شما"
+                           value="@_form.FullName"
+                           readonly="@IsAuthenticated"
+                           @oninput="@(e => _form.FullName = e.Value?.ToString() ?? "")" />
+                    @if (IsAuthenticated)
+                    {
+                        <span class="cs-hint">نام شما از حساب کاربری درج شده و قابل تغییر نیست.</span>
+                    }
+                    else if (_nameError) { <span class="cs-error">نام الزامی است</span> }
                 </div>
                 @if (RequireEmail || ShowRating)
                 {
@@ -162,7 +169,9 @@
     .cs-label { display:block; font-size:.82rem; font-weight:600; color:var(--cs-text); margin-bottom:6px; }
     .cs-input { display:block; width:100%; padding:.65rem .85rem; font-size:.92rem; border:1px solid var(--cs-input-border); border-radius:12px; background:var(--cs-input-bg); color:var(--cs-text); transition:border-color .2s; font-family:inherit; }
     .cs-input:focus { outline:none;border-color:#2563eb; }
+    .cs-input[readonly] { background:#f1f5f9; color:#475569; cursor:not-allowed; }
     .cs-input--error { border-color:#ef4444 !important; }
+    .cs-hint { display:block;color:#64748b;font-size:.72rem;margin-top:4px; }
     .cs-textarea { resize:vertical;min-height:90px; }
     .cs-error { display:block;color:#ef4444;font-size:.78rem;margin-top:4px; }
     .cs-alert { padding:.75rem 1rem; border-radius:12px; font-size:.88rem; margin-top:1rem; }
@@ -244,6 +253,8 @@
     private bool _isSubmitting;
     private string? _successMsg, _errorMsg;
     private int? _replyTargetId;
+    private bool IsAuthenticated;
+    private string? AuthUserName;
 
     private string StarClass(int star) => star <= (_form.Rating ?? 0) ? "cs-star-btn--active" : "";
     private string StarFill(int star) => star <= (_form.Rating ?? 0) ? "#f59e0b" : "none";
@@ -252,12 +263,23 @@
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        if (authState.User.Identity?.IsAuthenticated == true)
+        IsAuthenticated = authState.User.Identity?.IsAuthenticated == true;
+        if (IsAuthenticated)
         {
-            var name = authState.User.Identity.Name;
+            var name = authState.User.Identity?.Name;
             if (!string.IsNullOrWhiteSpace(name))
+            {
+                AuthUserName = name;
                 _form.FullName = name;
-            var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+            }
+            else
+            {
+                AuthUserName = authState.User.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value
+                    ?? authState.User.FindFirst("unique_name")?.Value;
+                if (!string.IsNullOrWhiteSpace(AuthUserName))
+                    _form.FullName = AuthUserName;
+            }
+            var email = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
             if (!string.IsNullOrWhiteSpace(email))
                 _form.Email = email;
         }
@@ -276,6 +298,9 @@
         _successMsg = null;
         _errorMsg = null;
 
+        if (IsAuthenticated && !string.IsNullOrWhiteSpace(AuthUserName))
+            _form.FullName = AuthUserName;
+
         if (string.IsNullOrWhiteSpace(_form.FullName) || _form.FullName.Trim().Length < 2) _nameError = true;
         if ((_form.Rating ?? 0) <= 0 && ShowRating) _errorMsg = "لطفاً یک امتیاز انتخاب کنید";
         if (RequireEmail && string.IsNullOrWhiteSpace(_form.Email)) _emailError = true;
@@ -289,11 +314,16 @@
         {
             await SubmitComment.InvokeAsync(_form);
             _successMsg = "نظر شما با موفقیت ثبت شد و پس از تأیید نمایش داده خواهد شد.";
-            _form = new();
+            _form = new CommentRequest
+            {
+                FullName = IsAuthenticated ? AuthUserName ?? "" : "",
+                Email = IsAuthenticated ? _form.Email : null,
+                Rating = null
+            };
         }
         catch (Exception ex)
         {
-            _errorMsg = ex.Message;
+            _errorMsg = string.IsNullOrWhiteSpace(ex.Message) ? "خطا در ثبت نظر" : ex.Message;
         }
         finally
         {
@@ -314,6 +344,8 @@
     private async Task SubmitReply(int parentId, CommentRequest req)
     {
         req.ParentId = parentId;
+        if (IsAuthenticated && !string.IsNullOrWhiteSpace(AuthUserName))
+            req.FullName = AuthUserName;
         await SubmitComment.InvokeAsync(req);
         _replyTargetId = null;
     }

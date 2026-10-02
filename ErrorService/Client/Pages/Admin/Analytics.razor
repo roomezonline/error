@@ -1,0 +1,770 @@
+@page "/admin/analytics"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@using System.Text
+@using ErrorService.Shared
+@using ErrorService.Client.Utils
+@attribute [Authorize(Policy = "perm:admin.analytics.view")]
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<PageTitle>آمار بازدید سایت | ارورسرویس</PageTitle>
+
+<div class="an-page" dir="rtl">
+    <div class="an-header">
+        <div class="an-header__text">
+            <h1 class="an-header__title"><span class="oi oi-people"></span> آمار بازدید سایت</h1>
+            <p class="an-header__subtitle">بازدیدها و بازدیدکنندگان سایت عمومی — هر بازدید یک جلسه ۳۰ دقیقه‌ای است (معیار جهانی) · وقت تهران</p>
+        </div>
+        <div class="an-header__actions">
+            @if (_updatedAt.HasValue)
+            {
+                <span class="an-updated">آخرین بروزرسانی: @Fa(_updatedAt.Value.ToString("HH:mm"))</span>
+            }
+            <button class="an-refresh-btn" @onclick="RefreshAll" disabled="@_loading">
+                <span class="oi oi-reload @(_loading ? "an-spin" : "")"></span>
+                بروزرسانی
+            </button>
+        </div>
+    </div>
+
+    @if (_loading && _summary == null)
+    {
+        <div class="an-loading">
+            <div class="spinner-border text-primary"></div>
+            <span>در حال بارگذاری آمار...</span>
+        </div>
+    }
+    else
+    {
+        <div class="an-kpi-grid">
+            <div class="an-kpi an-kpi--indigo">
+                <div class="an-kpi__icon"><span class="oi oi-clock"></span></div>
+                <div class="an-kpi__body">
+                    <div class="an-kpi__value">@Fa(_summary?.TodayVisits ?? 0)</div>
+                    <div class="an-kpi__label">بازدید امروز</div>
+                    <div class="an-kpi__sub">@Fa(_summary?.TodayUniques ?? 0) بازدیدکننده یکتا · @Fa(_summary?.TodayPageViews ?? 0) صفحه‌بازدید</div>
+                </div>
+            </div>
+            <div class="an-kpi an-kpi--teal">
+                <div class="an-kpi__icon"><span class="oi oi-calendar"></span></div>
+                <div class="an-kpi__body">
+                    <div class="an-kpi__value">@Fa(_summary?.WeekVisits ?? 0)</div>
+                    <div class="an-kpi__label">این هفته</div>
+                    <div class="an-kpi__sub">@Fa(_summary?.WeekUniques ?? 0) یکتا · از شنبه</div>
+                </div>
+            </div>
+            <div class="an-kpi an-kpi--amber">
+                <div class="an-kpi__icon"><span class="oi oi-eye"></span></div>
+                <div class="an-kpi__body">
+                    <div class="an-kpi__value">@Fa(_summary?.MonthVisits ?? 0)</div>
+                    <div class="an-kpi__label">این ماه</div>
+                    <div class="an-kpi__sub">@Fa(_summary?.MonthUniques ?? 0) یکتا · ماه شمسی</div>
+                </div>
+            </div>
+            <div class="an-kpi an-kpi--rose">
+                <div class="an-kpi__icon"><span class="oi oi-bar-chart"></span></div>
+                <div class="an-kpi__body">
+                    <div class="an-kpi__value">@Fa(_summary?.YearVisits ?? 0)</div>
+                    <div class="an-kpi__label">امسال</div>
+                    <div class="an-kpi__sub">از ابتدای سال شمسی</div>
+                </div>
+            </div>
+            <div class="an-kpi an-kpi--violet">
+                <div class="an-kpi__icon"><span class="oi oi-people"></span></div>
+                <div class="an-kpi__body">
+                    <div class="an-kpi__value">@Fa(_summary?.TotalVisits ?? 0)</div>
+                    <div class="an-kpi__label">کل بازدیدها</div>
+                    <div class="an-kpi__sub">فعال در @Fa(_summary?.ActiveDays ?? 0) روز</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="an-card">
+            <div class="an-card__head">
+                <h3 class="an-card__title"><span class="oi oi-graph"></span> روند بازدید</h3>
+                <div class="an-range-chips">
+                    <button class="an-chip @(_trendDays == 7 ? "an-chip--active" : "")" @onclick="() => LoadTrendAsync(7)">۷ روز</button>
+                    <button class="an-chip @(_trendDays == 30 ? "an-chip--active" : "")" @onclick="() => LoadTrendAsync(30)">۳۰ روز</button>
+                    <button class="an-chip @(_trendDays == 90 ? "an-chip--active" : "")" @onclick="() => LoadTrendAsync(90)">۹۰ روز</button>
+                </div>
+            </div>
+            <div class="an-chart-box">
+                <canvas id="anTrendChart"></canvas>
+            </div>
+            <div class="an-trend-readout" id="anTrendReadout">
+                برای مشاهده جزئیات هر روز، روی نمودار کلیک کنید
+            </div>
+        </div>
+
+        <div class="an-card">
+            <div class="an-card__head">
+                <h3 class="an-card__title"><span class="oi oi-bar-chart"></span> پربحترین صفحات (بیشترین بازدید)</h3>
+                <div class="an-range-chips">
+                    <button class="an-chip @(_pathDays == 7 ? "an-chip--active" : "")" @onclick="() => LoadPathsAsync(7)">۷ روز</button>
+                    <button class="an-chip @(_pathDays == 30 ? "an-chip--active" : "")" @onclick="() => LoadPathsAsync(30)">۳۰ روز</button>
+                    <button class="an-chip @(_pathDays == 90 ? "an-chip--active" : "")" @onclick="() => LoadPathsAsync(90)">۹۰ روز</button>
+                    <button class="an-chip @(_pathDays == 365 ? "an-chip--active" : "")" @onclick="() => LoadPathsAsync(365)">۳۶۵ روز</button>
+                </div>
+            </div>
+            @if (_loadingPaths)
+            {
+                <div class="an-loading an-loading--sm"><div class="spinner-border spinner-border-sm text-primary"></div><span>در حال بارگذاری...</span></div>
+            }
+            else if (_pathItems == null || _pathItems.Count == 0)
+            {
+                <div class="an-empty">
+                    <span class="oi oi-inbox"></span>
+                    <p>در این بازه صفحه‌ای بازدید نشده است</p>
+                </div>
+            }
+            else
+            {
+                var rank = 0;
+                <div class="an-top-paths">
+                    @foreach (var p in _pathItems)
+                    {
+                        rank++;
+                        <a class="an-path-row" href="@p.Path" target="_blank" rel="noopener" title="باز کردن @p.Path در تب جدید">
+                            <span class="an-path-rank">@Fa(rank)</span>
+                            <span class="an-path-name">@(string.IsNullOrWhiteSpace(p.Title) ? p.Path : p.Title)</span>
+                            <span class="an-path-bar"><i style="width:@(Math.Max(p.Share, 1.5))%"></i></span>
+                            <span class="an-path-count">@Fa(p.PageViews) بازدید</span>
+                            <span class="oi oi-arrow-right an-path-go"></span>
+                        </a>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="an-card">
+            <div class="an-card__head">
+                <h3 class="an-card__title"><span class="oi oi-list"></span> جزئیات بازدیدها</h3>
+                <span class="an-total-badge">@Fa(_total) بازدید در بازه انتخابی · @Fa(_totalPageViews) صفحه‌بازدید</span>
+            </div>
+
+            <div class="an-filters">
+                <div class="an-filter">
+                    <label>از تاریخ</label>
+                    <input type="date" value="@_from" @onchange="OnFromDateChanged" />
+                </div>
+                <div class="an-filter">
+                    <label>تا تاریخ</label>
+                    <input type="date" value="@_to" @onchange="OnToDateChanged" />
+                </div>
+                <div class="an-filter an-filter--grow">
+                    <label>جستجو (IP، مسیر، نام کاربر یا شناسه)</label>
+                    <input type="text" placeholder="مثلا 192.168 یا /product/... یا نام و نام خانوادگی" @bind="_search" @bind:event="oninput" @onkeydown="OnSearchKey" />
+                </div>
+                <button class="an-filter-btn" @onclick="ApplyFilters" disabled="@_loadingList">اعمال فیلتر</button>
+                @if (_filtersActive)
+                {
+                    <button class="an-filter-btn an-filter-btn--ghost" @onclick="ClearFilters">پاک‌سازی</button>
+                }
+            </div>
+
+            @if (_loadingList)
+            {
+                <div class="an-loading an-loading--sm"><div class="spinner-border spinner-border-sm text-primary"></div><span>در حال بارگذاری...</span></div>
+            }
+            else if (_items == null || _items.Count == 0)
+            {
+                <div class="an-empty">
+                    <span class="oi oi-inbox"></span>
+                    <p>در این بازه بازدیدی ثبت نشده است</p>
+                </div>
+            }
+            else
+            {
+                var rowNo = (_page - 1) * _pageSize;
+                <div class="an-table-wrap">
+                    <table class="an-table an-table--visits">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>شروع بازدید (تهران)</th>
+                                <th>بازدیدکننده</th>
+                                <th>IP</th>
+                                <th>صفحه ورودی</th>
+                                <th>آخرین صفحه</th>
+                                <th>صفحات</th>
+                                <th>مدت</th>
+                                <th>مبدأ</th>
+                                <th>مرورگر</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in _items)
+                            {
+                                rowNo++;
+                                <tr>
+                                    <td class="an-num">@Fa(rowNo)</td>
+                                    <td class="an-nowrap">@PersianDate.ToJalaliDateTime(item.VisitedAtLocal)</td>
+                                    <td class="an-nowrap">
+                                        @if (!string.IsNullOrEmpty(item.UserName))
+                                        {
+                                            <span class="an-user" title="کاربر واردشده"><span class="oi oi-person"></span> @item.UserName</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="an-guest" title="@item.VisitorId"><span class="oi oi-person"></span> مهمان</span>
+                                        }
+                                    </td>
+                                    <td><code class="an-ip">@item.Ip</code></td>
+                                    <td class="an-nowrap">
+                                        @if (!string.IsNullOrEmpty(item.PathTitle))
+                                        {
+                                            <a class="an-path an-path--name" href="@item.Path" target="_blank" rel="noopener" title="@item.Path">@item.PathTitle</a>
+                                        }
+                                        else
+                                        {
+                                            <a class="an-path" href="@item.Path" target="_blank" rel="noopener" title="@item.Path">@item.Path</a>
+                                        }
+                                    </td>
+                                    <td class="an-nowrap">
+                                        @if (!string.IsNullOrEmpty(item.LastPathTitle))
+                                        {
+                                            <a class="an-path an-path--name" href="@item.LastPath" target="_blank" rel="noopener" title="@item.LastPath">@item.LastPathTitle</a>
+                                        }
+                                        else
+                                        {
+                                            <a class="an-path" href="@item.LastPath" target="_blank" rel="noopener" title="@item.LastPath">@item.LastPath</a>
+                                        }
+                                    </td>
+                                    <td class="an-nowrap"><span class="an-views">@Fa(item.PageViews) صفحه</span></td>
+                                    <td class="an-nowrap an-muted-td">@FormatDuration(item.DurationMinutes)</td>
+                                    <td class="an-nowrap an-muted-td">@FormatReferrer(item.Referrer)</td>
+                                    <td class="an-nowrap">@FormatBrowser(item.UserAgent)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="an-pager">
+                    <button class="an-page-btn" disabled="@(_page <= 1)" @onclick="() => GoToPage(_page - 1)">قبلی</button>
+                    <span class="an-page-info">صفحه @Fa(_page) از @Fa(_totalPages)</span>
+                    <button class="an-page-btn" disabled="@(_page >= _totalPages)" @onclick="() => GoToPage(_page + 1)">بعدی</button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .an-page { padding: 4px 0 24px; }
+    .an-header {
+        display: flex; align-items: flex-start; justify-content: space-between;
+        gap: 14px; flex-wrap: wrap; margin-bottom: 18px;
+    }
+    .an-header__title {
+        font-size: 20px; font-weight: 900; color: #0f172a; margin: 0 0 4px;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .an-header__title .oi { color: #6366f1; font-size: 22px; }
+    .an-header__subtitle { font-size: 12.5px; color: #64748b; margin: 0; font-weight: 500; }
+    .an-header__actions { display: flex; align-items: center; gap: 12px; }
+    .an-updated { font-size: 11px; color: #94a3b8; font-weight: 600; }
+    .an-refresh-btn {
+        display: inline-flex; align-items: center; gap: 7px;
+        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        color: #fff; border: 0; border-radius: 12px; padding: 9px 18px;
+        font-size: 13px; font-weight: 800; cursor: pointer;
+        box-shadow: 0 6px 16px rgba(79, 70, 229, .28);
+        transition: .2s;
+    }
+    .an-refresh-btn:hover { transform: translateY(-1px); filter: brightness(1.07); }
+    .an-refresh-btn:disabled { opacity: .65; transform: none; }
+    .an-spin { animation: anSpin 1s linear infinite; display: inline-block; }
+    @@keyframes anSpin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+    .an-loading {
+        display: flex; align-items: center; justify-content: center; gap: 12px;
+        padding: 60px 16px; color: #64748b; font-size: 13.5px; font-weight: 600;
+    }
+    .an-loading--sm { padding: 26px 16px; }
+
+    /* KPI */
+    .an-kpi-grid {
+        display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 18px;
+    }
+    .an-kpi {
+        background: #fff; border: 1px solid #eef1f7; border-radius: 18px;
+        padding: 16px 14px; display: flex; align-items: center; gap: 13px;
+        box-shadow: 0 4px 18px rgba(15, 23, 42, .05); transition: .2s;
+        position: relative; overflow: hidden;
+    }
+    .an-kpi::after {
+        content: ''; position: absolute; inset: auto 0 0 0; height: 3px; opacity: .85;
+        background: linear-gradient(90deg, transparent, var(--ac, #6366f1), transparent);
+    }
+    .an-kpi:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(15, 23, 42, .09); }
+    .an-kpi--indigo { --ac: #6366f1; } .an-kpi--indigo .an-kpi__icon { background: #eef2ff; color: #4f46e5; }
+    .an-kpi--teal { --ac: #14b8a6; } .an-kpi--teal .an-kpi__icon { background: #f0fdfa; color: #0d9488; }
+    .an-kpi--amber { --ac: #f59e0b; } .an-kpi--amber .an-kpi__icon { background: #fffbeb; color: #d97706; }
+    .an-kpi--rose { --ac: #f43f5e; } .an-kpi--rose .an-kpi__icon { background: #fff1f2; color: #e11d48; }
+    .an-kpi--violet { --ac: #8b5cf6; } .an-kpi--violet .an-kpi__icon { background: #f5f3ff; color: #7c3aed; }
+    .an-kpi__icon {
+        width: 48px; height: 48px; min-width: 48px; border-radius: 15px;
+        display: flex; align-items: center; justify-content: center; font-size: 22px;
+    }
+    .an-kpi__value { font-size: 25px; font-weight: 900; color: #0f172a; line-height: 1.1; }
+    .an-kpi__label { font-size: 12px; font-weight: 800; color: #475569; margin-top: 3px; }
+    .an-kpi__sub { font-size: 10.5px; color: #94a3b8; font-weight: 600; margin-top: 2px; }
+
+    /* Card */
+    .an-card {
+        background: #fff; border: 1px solid #eef1f7; border-radius: 18px;
+        padding: 18px; margin-bottom: 18px; box-shadow: 0 4px 18px rgba(15, 23, 42, .05);
+    }
+    .an-card__head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .an-card__title {
+        font-size: 15px; font-weight: 900; color: #0f172a; margin: 0;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .an-card__title .oi { color: #6366f1; }
+    .an-range-chips { display: flex; gap: 7px; }
+    .an-chip {
+        border: 1px solid #e2e8f0; background: #fff; color: #475569;
+        border-radius: 999px; padding: 6px 15px; font-size: 12px; font-weight: 800;
+        cursor: pointer; transition: .18s;
+    }
+    .an-chip:hover { border-color: #c7d2fe; color: #4f46e5; }
+    .an-chip--active {
+        background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff;
+        border-color: transparent; box-shadow: 0 4px 12px rgba(79, 70, 229, .3);
+    }
+    .an-chart-box { position: relative; height: 310px; }
+    .an-trend-readout {
+        display: flex; align-items: center; justify-content: center; gap: 14px;
+        flex-wrap: wrap; margin-top: 10px; padding: 9px 14px;
+        border: 1px dashed #e2e8f0; border-radius: 12px;
+        background: #f8fafc; color: #94a3b8;
+        font-size: 11.5px; font-weight: 700; transition: .18s;
+    }
+    .an-trend-readout--active {
+        border-style: solid; border-color: #e0e7ff; background: #eef2ff;
+        color: #475569;
+    }
+    .an-trend-readout__date {
+        background: #4f46e5; color: #fff; border-radius: 9px;
+        padding: 4px 12px; font-size: 12.5px; font-weight: 900;
+        direction: ltr; display: inline-block;
+    }
+    .an-trend-readout__item { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+    .an-trend-readout__item b { color: #0f172a; font-weight: 900; }
+    .an-trend-readout__item .dot {
+        width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+    }
+    .an-trend-readout__hint { color: #94a3b8; font-size: 10.5px; font-weight: 600; }
+    .an-total-badge {
+        background: #eef2ff; color: #4f46e5; font-size: 11.5px; font-weight: 800;
+        padding: 6px 13px; border-radius: 999px;
+    }
+
+    /* Filters */
+    .an-filters { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 14px; }
+    .an-filter { display: flex; flex-direction: column; gap: 5px; }
+    .an-filter--grow { flex: 1; min-width: 200px; }
+    .an-filter label { font-size: 10.5px; font-weight: 800; color: #64748b; }
+    .an-filter input {
+        border: 1px solid #e2e8f0; border-radius: 11px; padding: 9px 12px;
+        font-size: 12.5px; font-weight: 600; color: #0f172a; background: #f8fafc;
+        transition: .18s; width: 100%;
+    }
+    .an-filter input:focus { outline: none; border-color: #a5b4fc; background: #fff; box-shadow: 0 0 0 3px rgba(99, 102, 241, .12); }
+    .an-filter-btn {
+        background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; border: 0;
+        border-radius: 11px; padding: 10px 20px; font-size: 12.5px; font-weight: 800;
+        cursor: pointer; transition: .18s; box-shadow: 0 5px 14px rgba(79, 70, 229, .25);
+    }
+    .an-filter-btn:hover { filter: brightness(1.08); }
+    .an-filter-btn:disabled { opacity: .6; }
+    .an-filter-btn--ghost {
+        background: #fff; color: #dc2626; border: 1px solid #fecaca;
+        box-shadow: none;
+    }
+
+    /* Table */
+    .an-table-wrap { overflow-x: auto; border-radius: 13px; border: 1px solid #eef1f7; }
+    .an-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 860px; }
+    .an-table thead th {
+        background: #f8fafc; color: #64748b; font-size: 10.5px; font-weight: 900;
+        padding: 11px 12px; text-align: right; border-bottom: 1px solid #eef1f7;
+        white-space: nowrap;
+    }
+    .an-table tbody td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+    .an-table tbody tr:hover { background: #f8fafc; }
+    .an-table tbody tr:last-child td { border-bottom: 0; }
+    .an-num { color: #94a3b8; font-weight: 800; }
+    .an-nowrap { white-space: nowrap; }
+    .an-ip {
+        background: #f1f5f9; color: #334155; padding: 3px 9px; border-radius: 7px;
+        font-size: 11.5px; font-weight: 700; direction: ltr; display: inline-block;
+    }
+    .an-vid {
+        background: #f5f3ff; color: #7c3aed; padding: 3px 9px; border-radius: 7px;
+        font-size: 11px; font-weight: 700; direction: ltr; display: inline-block;
+    }
+    .an-user {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;
+        padding: 3px 9px; border-radius: 7px; font-size: 11.5px; font-weight: 800;
+        white-space: nowrap;
+    }
+    .an-user .oi { font-size: 12px; }
+    .an-views {
+        background: #eef2ff; color: #4338ca; padding: 3px 8px; border-radius: 7px;
+        font-size: 11px; font-weight: 800; white-space: nowrap;
+    }
+    .an-table--visits { min-width: 1260px; }
+    .an-path {
+        color: #4f46e5; font-weight: 700; text-decoration: none;
+        display: inline-block; max-width: 230px; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap; direction: ltr; text-align: right;
+    }
+    .an-path--name { direction: rtl; text-align: right; max-width: 210px; color: #0f172a; }
+    .an-path:hover { text-decoration: underline; }
+    .an-guest {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
+        padding: 3px 9px; border-radius: 7px; font-size: 11.5px; font-weight: 800;
+        white-space: nowrap;
+    }
+    .an-guest .oi { font-size: 12px; color: #94a3b8; }
+    .an-muted-td { color: #94a3b8; }
+
+    /* پربحترین صفحات */
+    .an-top-paths { display: flex; flex-direction: column; gap: 8px; }
+    .an-path-row {
+        display: grid; grid-template-columns: 34px minmax(0, 1fr) 150px 96px 16px;
+        align-items: center; gap: 12px; padding: 9px 12px;
+        background: #f8fafc; border: 1px solid #eef1f7; border-radius: 12px;
+        text-decoration: none; color: #334155; transition: .16s;
+    }
+    .an-path-row:hover { background: #eef2ff; border-color: #c7d2fe; }
+    .an-path-row .an-path-rank {
+        width: 30px; height: 30px; border-radius: 9px;
+        display: flex; align-items: center; justify-content: center;
+        background: #eef2ff; color: #4338ca; font-size: 12px; font-weight: 900;
+    }
+    .an-path-row:nth-child(1) .an-path-rank { background: #f59e0b; color: #fff; }
+    .an-path-row:nth-child(2) .an-path-rank { background: #94a3b8; color: #fff; }
+    .an-path-row:nth-child(3) .an-path-rank { background: #b45309; color: #fff; }
+    .an-path-name {
+        font-size: 13px; font-weight: 800; color: #0f172a;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .an-path-bar { height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
+    .an-path-bar i { display: block; height: 100%; background: linear-gradient(90deg, #6366f1, #22d3ee); border-radius: 999px; }
+    .an-path-count { font-size: 11.5px; font-weight: 800; color: #4f46e5; white-space: nowrap; }
+    .an-path-go { color: #94a3b8; font-size: 13px; }
+
+    .an-pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 15px; }
+    .an-page-btn {
+        border: 1px solid #e2e8f0; background: #fff; color: #475569;
+        border-radius: 999px; padding: 7px 22px; font-size: 12px; font-weight: 800; cursor: pointer; transition: .18s;
+    }
+    .an-page-btn:hover:not(:disabled) { border-color: #a5b4fc; color: #4f46e5; }
+    .an-page-btn:disabled { opacity: .45; cursor: default; }
+    .an-page-info { font-size: 12px; font-weight: 800; color: #64748b; }
+
+    .an-empty {
+        display: flex; flex-direction: column; align-items: center; gap: 10px;
+        padding: 46px 16px; color: #94a3b8;
+    }
+    .an-empty .oi { font-size: 38px; opacity: .55; }
+    .an-empty p { margin: 0; font-size: 13px; font-weight: 700; }
+
+    @@media (max-width: 1200px) { .an-kpi-grid { grid-template-columns: repeat(3, 1fr); } }
+    @@media (max-width: 760px) {
+        .an-kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .an-kpi { padding: 13px 11px; flex-direction: column; align-items: flex-start; gap: 9px; }
+        .an-chart-box { height: 240px; }
+        .an-header__title { font-size: 17px; }
+        .an-filter--grow { min-width: 100%; }
+        .an-path-row { grid-template-columns: 30px minmax(0, 1fr) 84px; }
+        .an-path-bar, .an-path-go { display: none; }
+    }
+    @@media (max-width: 440px) {
+        .an-kpi-grid { grid-template-columns: 1fr 1fr; }
+        .an-kpi__value { font-size: 21px; }
+    }
+</style>
+
+@code {
+    private VisitSummaryDto? _summary;
+    private List<VisitTrendPointDto>? _trendPoints;
+    private List<VisitListItemDto>? _items;
+    private List<VisitPathStatDto>? _pathItems;
+    private bool _loading = true;
+    private bool _loadingList;
+    private bool _loadingPaths;
+    private int _trendDays = 30;
+    private int _pathDays = 30;
+    private int _page = 1;
+    private int _pageSize = 25;
+    private int _total;
+    private int _totalPageViews;
+    private int _totalPages => Math.Max(1, (int)Math.Ceiling(_total / (double)_pageSize));
+    private string _from = "";
+    private string _to = "";
+    private string _search = "";
+    private bool _filtersActive;
+    private DateTime? _updatedAt;
+    private string? _trendRenderKey;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var nowTehran = DateTime.UtcNow.AddMinutes(330);
+        _to = nowTehran.ToString("yyyy-MM-dd");
+        _from = nowTehran.AddDays(-29).ToString("yyyy-MM-dd");
+        await RefreshAll();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_trendPoints == null || _trendPoints.Count == 0) return;
+        try
+        {
+            await RenderTrendChart();
+        }
+        catch
+        {
+            // کانواس هنوز در DOM قرار نگرفته — پس از رندر بعدی دوباره تلاش می‌شود
+        }
+    }
+
+    private async Task RefreshAll()
+    {
+        _loading = true;
+        try
+        {
+            await Task.WhenAll(LoadSummaryAsync(), LoadTrendAsync(_trendDays), LoadListAsync(), LoadPathsAsync(_pathDays));
+            _updatedAt = DateTime.UtcNow;
+        }
+        catch
+        {
+            // خطا در بارگذاری — وضعیت خالی نمایش داده می‌شود
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        try
+        {
+            _summary = await Http.GetFromJsonAsync<VisitSummaryDto>("api/visits/summary");
+        }
+        catch { }
+    }
+
+    private async Task LoadTrendAsync(int days)
+    {
+        _trendDays = days;
+        try
+        {
+            var res = await Http.GetFromJsonAsync<VisitTrendResponse>($"api/visits/trend?days={days}");
+            _trendPoints = res?.Points ?? new();
+            await RenderTrendChart();
+        }
+        catch { }
+    }
+
+    private async Task RenderTrendChart()
+    {
+        if (_trendPoints == null || _trendPoints.Count == 0) return;
+
+        var key = $"{_trendDays}|{_trendPoints.Count}|{_trendPoints[^1].Date}|{_trendPoints[^1].Visits}|{_trendPoints[^1].Uniques}";
+        if (key == _trendRenderKey) return;
+
+        var labels = _trendPoints.Select(p => ShortJalali(p.Date)).ToList();
+        var fullDates = _trendPoints.Select(p => FullJalali(p.Date)).ToList();
+        var visits = _trendPoints.Select(p => p.Visits).ToList();
+        var uniques = _trendPoints.Select(p => p.Uniques).ToList();
+
+        var rendered = await JS.InvokeAsync<bool>("adminInsights.renderTrend", "anTrendChart", labels, visits, uniques, fullDates, "anTrendReadout");
+        if (rendered) _trendRenderKey = key;
+    }
+
+    private async Task LoadPathsAsync(int days)
+    {
+        _pathDays = days;
+        _loadingPaths = true;
+        try
+        {
+            var res = await Http.GetFromJsonAsync<VisitPathsResponse>($"api/visits/paths?days={days}&take=15");
+            _pathItems = res?.Items ?? new();
+        }
+        catch
+        {
+            _pathItems = new();
+        }
+        finally
+        {
+            _loadingPaths = false;
+        }
+    }
+
+    private async Task LoadListAsync()
+    {
+        _loadingList = true;
+        try
+        {
+            var url = $"api/visits/list?page={_page}&pageSize={_pageSize}";
+            if (!string.IsNullOrWhiteSpace(_from)) url += $"&from={_from}";
+            if (!string.IsNullOrWhiteSpace(_to)) url += $"&to={_to}";
+            if (!string.IsNullOrWhiteSpace(_search)) url += $"&search={Uri.EscapeDataString(_search.Trim())}";
+
+            var res = await Http.GetFromJsonAsync<VisitListResponse>(url);
+            _items = res?.Items ?? new();
+            _total = res?.Total ?? 0;
+            _totalPageViews = res?.TotalPageViews ?? 0;
+        }
+        catch
+        {
+            _items = new();
+            _total = 0;
+            _totalPageViews = 0;
+        }
+        finally
+        {
+            _loadingList = false;
+        }
+    }
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ApplyFilters();
+    }
+
+    private void OnFromDateChanged(ChangeEventArgs e)
+    {
+        _from = e.Value?.ToString() ?? "";
+    }
+
+    private void OnToDateChanged(ChangeEventArgs e)
+    {
+        _to = e.Value?.ToString() ?? "";
+    }
+
+    private async Task ApplyFilters()
+    {
+        _page = 1;
+        _filtersActive = !string.IsNullOrWhiteSpace(_search) || !IsDefaultRange();
+        await LoadListAsync();
+    }
+
+    private async Task ClearFilters()
+    {
+        _search = "";
+        var nowTehran = DateTime.UtcNow.AddMinutes(330);
+        _from = nowTehran.AddDays(-29).ToString("yyyy-MM-dd");
+        _to = nowTehran.ToString("yyyy-MM-dd");
+        _page = 1;
+        _filtersActive = false;
+        await LoadListAsync();
+    }
+
+    private bool IsDefaultRange()
+    {
+        var nowTehran = DateTime.UtcNow.AddMinutes(330);
+        return _from == nowTehran.AddDays(-29).ToString("yyyy-MM-dd") && _to == nowTehran.ToString("yyyy-MM-dd");
+    }
+
+    private async Task GoToPage(int page)
+    {
+        if (page < 1 || page > _totalPages) return;
+        _page = page;
+        await LoadListAsync();
+    }
+
+    private static string ShortJalali(string isoDate)
+    {
+        if (!DateTime.TryParse(isoDate, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var dt))
+            return isoDate;
+
+        var jal = PersianDate.ToJalaliDate(DateTime.SpecifyKind(dt, DateTimeKind.Unspecified));
+        return jal.Length >= 5 ? jal.Substring(5) : jal; // MM/dd
+    }
+
+    private static string FullJalali(string isoDate)
+    {
+        if (!DateTime.TryParse(isoDate, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var dt))
+            return isoDate;
+
+        var local = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+        var num = Fa(PersianDate.ToJalaliDate(local));
+        var longDate = PersianDate.ToLongPersianDate(local);
+        var weekday = string.IsNullOrEmpty(longDate) ? "" : longDate.Split(' ')[0];
+        return string.IsNullOrEmpty(weekday) ? num : $"{num} ({weekday})";
+    }
+
+    private static string FormatDuration(int minutes)
+    {
+        if (minutes <= 0) return "کمتر از ۱ دقیقه";
+        if (minutes == 1) return "۱ دقیقه";
+        if (minutes < 60) return $"{Fa(minutes)} دقیقه";
+        return $"{Fa(minutes / 60)} ساعت و {Fa(minutes % 60)} دقیقه";
+    }
+
+    private static string FormatReferrer(string? referrer)
+    {
+        if (string.IsNullOrWhiteSpace(referrer)) return "—";
+        try
+        {
+            if (Uri.TryCreate(referrer, UriKind.Absolute, out var uri))
+                return uri.Host.Replace("www.", "");
+            return referrer.Length > 24 ? referrer[..24] + "…" : referrer;
+        }
+        catch
+        {
+            return "—";
+        }
+    }
+
+    private static string FormatBrowser(string? ua)
+    {
+        if (string.IsNullOrWhiteSpace(ua)) return "نامشخص";
+
+        string browser;
+        if (ua.Contains("Edg/")) browser = "Edge";
+        else if (ua.Contains("OPR/") || ua.Contains("Opera")) browser = "Opera";
+        else if (ua.Contains("Firefox/")) browser = "Firefox";
+        else if (ua.Contains("Chrome/")) browser = "Chrome";
+        else if (ua.Contains("Safari/")) browser = "Safari";
+        else if (ua.Contains("curl") || ua.Contains("wget")) browser = "ابزار خط فرمان";
+        else browser = "سایر";
+
+        string os;
+        if (ua.Contains("Windows")) os = "ویندوز";
+        else if (ua.Contains("Android")) os = "اندروید";
+        else if (ua.Contains("iPhone") || ua.Contains("iPad") || ua.Contains("iOS")) os = "iOS";
+        else if (ua.Contains("Mac OS X") || ua.Contains("Macintosh")) os = "macOS";
+        else if (ua.Contains("Linux")) os = "لینوکس";
+        else os = "";
+
+        return string.IsNullOrEmpty(os) ? browser : $"{browser} • {os}";
+    }
+
+    private static string Fa(int value) => Fa(value.ToString());
+
+    private static string Fa(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        var sb = new StringBuilder(value.Length);
+        foreach (var c in value)
+        {
+            sb.Append(c >= '0' && c <= '9' ? (char)('۰' + (c - '0')) : c);
+        }
+        return sb.ToString();
+    }
+}

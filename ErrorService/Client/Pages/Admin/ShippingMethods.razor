@@ -1,0 +1,471 @@
+@page "/admin/shipping-methods"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.shipping.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@inject HttpClient Http
+@inject ToastService ToastService
+@inject IJSRuntime JS
+
+<PageTitle>مدیریت روش‌های ارسال</PageTitle>
+
+<div class="sm-page-header">
+    <div>
+        <h5 class="sm-page-title">روش‌های ارسال</h5>
+        <p class="sm-page-subtitle">مدیریت متودها و هزینه‌های ارسال</p>
+    </div>
+    <button class="sm-btn sm-btn-primary sm-btn-pill" @onclick="NewMethod">
+        <span class="oi oi-plus"></span>
+        افزودن
+    </button>
+</div>
+
+@if (isLoading)
+{
+    <div class="sm-loading-box">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p>در حال بارگذاری...</p>
+    </div>
+}
+else if (methods == null || !methods.Any())
+{
+    <div class="sm-empty-box">
+        <span class="oi oi-box" style="font-size:2.5rem;color:#cbd5e1;"></span>
+        <p>روش ارسالی تعریف نشده</p>
+        <button class="sm-btn sm-btn-outline sm-btn-pill" @onclick="NewMethod">اولین روش ارسال را اضافه کنید</button>
+    </div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var m in methods)
+        {
+            <div class="col-12 col-sm-6 col-lg-4">
+                <div class="sm-card @(m.IsActive ? "" : "sm-card-disabled")">
+                    <div class="sm-card-header" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">
+                        <div class="sm-card-icon">
+                            <span class="oi oi-location" style="font-size:1.5rem;color:rgba(255,255,255,0.9);"></span>
+                        </div>
+                        <div>
+                            <div class="sm-card-title" style="color:#fff;">@m.Name</div>
+                            <div class="sm-card-subtitle" style="color:rgba(255,255,255,0.75);">
+                                @if (m.Price == 0)
+                                {
+                                    <span class="badge bg-success">رایگان</span>
+                                }
+                                else
+                                {
+                                    <span>@m.Price.ToString("N0") تومان</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                    <div class="sm-card-body">
+                        <div class="sm-info-row">
+                            <span class="sm-info-label">زمان تقریبی</span>
+                            <span class="sm-info-value">@(m.EstimatedDays ?? "—")</span>
+                        </div>
+                        <div class="sm-info-row">
+                            <span class="sm-info-label">وضعیت</span>
+                            <span class="badge @(m.IsActive ? "bg-success" : "bg-secondary")">@(m.IsActive ? "فعال" : "غیرفعال")</span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(m.Description))
+                        {
+                            <div class="sm-desc" style="margin-top:8px;color:#64748b;font-size:0.8rem;line-height:1.5;">
+                                @m.Description
+                            </div>
+                        }
+                    </div>
+                    <div class="sm-card-footer">
+                        <button class="sm-btn sm-btn-ghost sm-btn-sm" @onclick="() => EditMethod(m)">
+                            <span class="oi oi-pencil"></span>
+                        </button>
+                        <button class="sm-btn sm-btn-ghost sm-btn-sm" @onclick="() => ToggleActive(m)">
+                            <span class="oi oi@(m.IsActive ? "-ban" : "-check")"></span>
+                        </button>
+                        <button class="sm-btn sm-btn-ghost sm-btn-sm sm-btn-danger" @onclick="() => ConfirmDelete(m)">
+                            <span class="oi oi-trash"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (showEditor)
+{
+    <div class="sm-modal-overlay" @onclick="CloseEditor">
+        <div class="sm-modal" @onclick:stopPropagation>
+            <div class="sm-modal-header">
+                <h6 class="sm-modal-title">@(editingId == 0 ? "روش ارسال جدید" : "ویرایش روش ارسال")</h6>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+            <div class="sm-modal-body">
+                <EditForm Model="editModel" OnValidSubmit="SaveMethod">
+                    <DataAnnotationsValidator />
+                    <div class="mb-3">
+                        <label class="form-label">نام روش ارسال *</label>
+                        <InputText class="form-control" @bind-Value="editModel.Name" placeholder="مثلاً پست پیشتاز" />
+                        <ValidationMessage For="() => editModel.Name" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">توضیحات</label>
+                        <InputTextArea class="form-control" @bind-Value="editModel.Description" rows="2" placeholder="توضیحات اختیاری" />
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label">هزینه (تومان) *</label>
+                            <input type="text" class="form-control ltr" inputmode="numeric" placeholder="مثلاً ۳۵,۰۰۰"
+                                   @ref="_priceRef" data-raw=""
+                                   @oninput="OnPriceInput" />
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label">زمان تقریبی</label>
+                            <InputText class="form-control" @bind-Value="editModel.EstimatedDays" placeholder="مثلاً ۲ تا ۳ روز" />
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label">ترتیب نمایش</label>
+                            <InputNumber class="form-control" @bind-Value="editModel.SortOrder" />
+                        </div>
+                        <div class="col-6 mb-3 d-flex align-items-end">
+                            <div class="form-check form-switch">
+                                <InputCheckbox class="form-check-input" @bind-Value="editModel.IsActive" id="activeCheck" />
+                                <label class="form-check-label" for="activeCheck">فعال</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="sm-modal-footer">
+                        <button type="button" class="sm-btn sm-btn-outline sm-btn-pill" @onclick="CloseEditor">انصراف</button>
+                        <button type="submit" class="sm-btn sm-btn-primary sm-btn-pill" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <span class="spinner-border spinner-border-sm ms-1"></span>
+                            }
+                            ذخیره
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showDeleteConfirm)
+{
+    <div class="sm-modal-overlay" @onclick="() => showDeleteConfirm = false">
+        <div class="sm-modal sm-modal-sm" @onclick:stopPropagation>
+            <div class="sm-modal-header sm-modal-header-danger">
+                <h6 class="sm-modal-title">حذف روش ارسال</h6>
+                <button class="btn-close btn-close-white" @onclick="() => showDeleteConfirm = false"></button>
+            </div>
+            <div class="sm-modal-body text-center">
+                <p>آیا از حذف «<strong>@itemToDelete?.Name</strong>» مطمئنید؟</p>
+            </div>
+            <div class="sm-modal-footer">
+                <button class="sm-btn sm-btn-outline sm-btn-pill" @onclick="() => showDeleteConfirm = false">انصراف</button>
+                <button class="sm-btn sm-btn-danger sm-btn-pill" @onclick="DeleteConfirmed" disabled="@isSaving">
+                    @if (isSaving)
+                    {
+                        <span class="spinner-border spinner-border-sm ms-1"></span>
+                    }
+                    حذف
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<script>
+    window.__smFormatPrice = (el) => {
+        const raw = el.value.replace(/,/g, '').replace(/[^0-9]/g, '');
+        if (raw === '') { el.value = ''; el.dataset.raw = ''; return ''; }
+        const num = parseInt(raw, 10);
+        if (isNaN(num)) { el.value = ''; el.dataset.raw = ''; return ''; }
+        el.value = num.toLocaleString('en-US');
+        el.dataset.raw = raw;
+        return raw;
+    };
+    window.__smSetFormattedValue = (el, value) => {
+        if (!el) return;
+        const num = parseInt(value, 10);
+        if (isNaN(num) || num === 0) { el.value = ''; el.dataset.raw = ''; return; }
+        el.value = num.toLocaleString('en-US');
+        el.dataset.raw = num.toString();
+    };
+</script>
+
+<style>
+    .sm-page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.25rem;
+    }
+    .sm-page-title {
+        font-weight: 800;
+        color: #1e293b;
+        margin: 0;
+    }
+    .sm-page-subtitle {
+        font-size: 0.82rem;
+        color: #94a3b8;
+        margin: 2px 0 0;
+    }
+    .sm-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: none;
+        padding: 8px 16px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .sm-btn-sm { padding: 6px 10px; font-size: 0.8rem; }
+    .sm-btn-primary { background: #2563eb; color: #fff; }
+    .sm-btn-primary:hover { background: #1d4ed8; }
+    .sm-btn-outline { background: transparent; border: 1.5px solid #e2e8f0; color: #475569; }
+    .sm-btn-outline:hover { background: #f8fafc; }
+    .sm-btn-ghost { background: transparent; color: #64748b; }
+    .sm-btn-ghost:hover { background: #f1f5f9; color: #1e293b; }
+    .sm-btn-danger { color: #ef4444; }
+    .sm-btn-danger:hover { background: #fef2f2; }
+    .sm-btn-pill { border-radius: 999px; }
+    .sm-card {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        overflow: hidden;
+        transition: all 0.2s;
+        border: 1px solid #f1f5f9;
+    }
+    .sm-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-2px); }
+    .sm-card-disabled { opacity: 0.55; }
+    .sm-card-header {
+        padding: 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .sm-card-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+    .sm-card-title { font-weight: 700; font-size: 0.95rem; }
+    .sm-card-subtitle { font-size: 0.82rem; margin-top: 2px; }
+    .sm-card-body { padding: 14px 16px; }
+    .sm-info-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        border-bottom: 1px solid #f8fafc;
+    }
+    .sm-info-row:last-child { border-bottom: none; }
+    .sm-info-label { font-size: 0.8rem; color: #94a3b8; }
+    .sm-info-value { font-size: 0.82rem; font-weight: 600; color: #334155; }
+    .sm-card-footer {
+        padding: 10px 16px;
+        border-top: 1px solid #f1f5f9;
+        display: flex;
+        justify-content: flex-end;
+        gap: 4px;
+    }
+    .sm-loading-box, .sm-empty-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 4rem 2rem;
+        color: #94a3b8;
+        gap: 12px;
+    }
+    .sm-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 1050;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    .sm-modal {
+        background: #fff;
+        border-radius: 20px;
+        width: 100%;
+        max-width: 500px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+        animation: modalIn 0.2s ease;
+    }
+    .sm-modal-sm { max-width: 380px; }
+    @@keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    .sm-modal-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid #f1f5f9;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .sm-modal-header-danger { background: #fef2f2; }
+    .sm-modal-title { font-weight: 700; margin: 0; font-size: 1rem; }
+    .sm-modal-body { padding: 20px; }
+    .sm-modal-footer {
+        padding: 14px 20px;
+        border-top: 1px solid #f1f5f9;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+    .form-label { font-size: 0.82rem; font-weight: 600; color: #475569; }
+    .form-control { border-radius: 10px; border: 1.5px solid #e2e8f0; font-size: 0.85rem; }
+    .form-control:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.08); }
+    .form-check-input:checked { background-color: #2563eb; border-color: #2563eb; }
+    .badge { font-size: 0.72rem; font-weight: 600; padding: 4px 8px; border-radius: 8px; }
+</style>
+
+@code {
+    private List<ShippingMethodDto>? methods;
+    private ShippingMethodCreateRequest editModel = new();
+    private ShippingMethodDto? itemToDelete;
+    private bool showEditor;
+    private int editingId;
+    private bool isSaving;
+    private bool isLoading = true;
+    private bool showDeleteConfirm;
+    private ElementReference _priceRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMethods();
+    }
+
+    private async Task LoadMethods()
+    {
+        isLoading = true;
+        try
+        {
+            methods = await Http.GetFromJsonAsync<List<ShippingMethodDto>>("api/shippingmethods/admin/all");
+        }
+        catch { }
+        finally { isLoading = false; }
+    }
+
+    private void NewMethod()
+    {
+        editingId = 0;
+        editModel = new ShippingMethodCreateRequest { IsActive = true, SortOrder = (methods?.Count ?? 0) + 1 };
+        showEditor = true;
+    }
+
+    private async Task EditMethod(ShippingMethodDto m)
+    {
+        editingId = m.Id;
+        editModel = new ShippingMethodCreateRequest
+        {
+            Name = m.Name,
+            Description = m.Description,
+            Price = m.Price,
+            EstimatedDays = m.EstimatedDays,
+            IsActive = m.IsActive,
+            SortOrder = m.SortOrder
+        };
+        showEditor = true;
+        await Task.Delay(50);
+        await JS.InvokeVoidAsync("window.__smSetFormattedValue", _priceRef, editModel.Price);
+    }
+
+    private async Task OnPriceInput()
+    {
+        var raw = await JS.InvokeAsync<string>("window.__smFormatPrice", _priceRef);
+        editModel.Price = string.IsNullOrEmpty(raw) ? 0 : decimal.TryParse(raw, out var val) ? val : 0;
+    }
+
+    private void CloseEditor()
+    {
+        showEditor = false;
+        editingId = 0;
+    }
+
+    private async Task SaveMethod()
+    {
+        isSaving = true;
+        try
+        {
+            if (editingId == 0)
+                await Http.PostAsJsonAsync("api/shippingmethods", editModel);
+            else
+                await Http.PutAsJsonAsync($"api/shippingmethods/{editingId}", editModel);
+
+            ToastService.ShowSuccess("ذخیره شد.");
+            showEditor = false;
+            await LoadMethods();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally { isSaving = false; }
+    }
+
+    private void ConfirmDelete(ShippingMethodDto m)
+    {
+        itemToDelete = m;
+        showDeleteConfirm = true;
+    }
+
+    private async Task DeleteConfirmed()
+    {
+        if (itemToDelete == null) return;
+        isSaving = true;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/shippingmethods/{itemToDelete.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("حذف شد.");
+                await LoadMethods();
+            }
+            else
+            {
+                var err = await resp.Content.ReadFromJsonAsync<ErrorResponse>();
+                ToastService.ShowError(err?.message ?? "خطا در حذف");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError($"خطا: {ex.Message}"); }
+        finally { isSaving = false; showDeleteConfirm = false; }
+    }
+
+    private async Task ToggleActive(ShippingMethodDto m)
+    {
+        try
+        {
+            var resp = await Http.PostAsJsonAsync<object>($"api/shippingmethods/{m.Id}/toggle", new { });
+            if (resp.IsSuccessStatusCode)
+            {
+                m.IsActive = !m.IsActive;
+                ToastService.ShowSuccess(m.IsActive ? "فعال شد" : "غیرفعال شد");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError($"خطا: {ex.Message}"); }
+    }
+
+    private class ErrorResponse
+    {
+        public string? message { get; set; }
+    }
+}

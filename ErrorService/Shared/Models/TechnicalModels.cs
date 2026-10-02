@@ -30,7 +30,57 @@ namespace ErrorService.Shared.Models
 
         public string? ImageUrl { get; set; }
 
+        [MaxLength(100)]
+        public string? Category { get; set; }
+
         public List<ErrorCodeDocument> Documents { get; set; } = new();
+    }
+
+    public static class ErrorCodeCategories
+    {
+        public static readonly string[] All =
+        {
+            "سنسورها",
+            "موتور و پمپ",
+            "برد و الکترونیک",
+            "آب و نشتی",
+            "دما و گرمایش",
+            "صفحه نمایش و پنل",
+            "منبع تغذیه",
+            "اتصالات و سیم‌کشی",
+            "نرم‌افزار و فریمور",
+            "سایر"
+        };
+    }
+
+    public enum ErrorCodeCatalogKind
+    {
+        Brand = 0,
+        DeviceType = 1,
+        Category = 2
+    }
+
+    public class ErrorCodeCatalogItem
+    {
+        public int Id { get; set; }
+
+        public ErrorCodeCatalogKind Kind { get; set; }
+
+        [Required(ErrorMessage = "نام الزامی است")]
+        [MaxLength(100)]
+        public string Name { get; set; } = string.Empty;
+
+        [NotMapped]
+        public int UsageCount { get; set; }
+    }
+
+    public class ErrorCodeCatalogUpsertRequest
+    {
+        public int Id { get; set; }
+
+        [Required(ErrorMessage = "نام الزامی است")]
+        [MaxLength(100)]
+        public string Name { get; set; } = string.Empty;
     }
 
     public class ErrorCodeDocument
@@ -59,33 +109,6 @@ namespace ErrorService.Shared.Models
         ServiceManual = 2,
         Datasheet = 3,
         Source = 4
-    }
-
-    public class ErrorCodeImportModel
-    {
-        public string Brand { get; set; } = string.Empty;
-        public string DeviceType { get; set; } = string.Empty;
-        public string Code { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public string Solution { get; set; } = string.Empty;
-        public string? TechnicalNotes { get; set; }
-        public string? ModelNames { get; set; }
-        public List<ErrorCodeDocumentImportModel> Documents { get; set; } = new();
-    }
-
-    public class ErrorCodeDocumentImportModel
-    {
-        public string Title { get; set; } = string.Empty;
-        public string Url { get; set; } = string.Empty;
-        public ErrorCodeDocumentType DocType { get; set; } = ErrorCodeDocumentType.Other;
-    }
-
-    public class ErrorCodeImportResult
-    {
-        public int TotalProcessed { get; set; }
-        public int InsertedCount { get; set; }
-        public int UpdatedCount { get; set; }
-        public List<string> Errors { get; set; } = new();
     }
 
     public class ConsultationTicket

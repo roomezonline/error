@@ -46,29 +46,44 @@ public class CartController : ControllerBase
         var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
             return Unauthorized();
+
+        // Normalize: positive qty only, one entry per product (max qty wins).
+        var normalized = (clientItems ?? new())
+            .Where(c => c.ProductId > 0 && c.Quantity > 0)
+            .GroupBy(c => c.ProductId)
+            .Select(g => new { ProductId = g.Key, Quantity = g.Max(x => x.Quantity) })
+            .ToList();
+        var clientIds = normalized.Select(c => c.ProductId).ToHashSet();
+
         var serverItems = await _db.CartItems.Where(c => c.UserId == userId).ToListAsync();
 
-        foreach (var clientItem in clientItems)
+        // Full replace: remove anything on server that the client no longer has
+        // (this is what actually persists deletes across browser restarts).
+        var toRemove = serverItems.Where(s => !clientIds.Contains(s.ProductId)).ToList();
+        if (toRemove.Count > 0)
+            _db.CartItems.RemoveRange(toRemove);
+
+        foreach (var n in normalized)
         {
-            var existing = serverItems.FirstOrDefault(s => s.ProductId == clientItem.ProductId);
+            var existing = serverItems.FirstOrDefault(s => s.ProductId == n.ProductId);
             if (existing != null)
             {
-                existing.Quantity = Math.Max(existing.Quantity, clientItem.Quantity);
+                existing.Quantity = n.Quantity;
                 existing.UpdatedAt = DateTimeOffset.UtcNow;
             }
             else
             {
-                var product = await _db.Products.FindAsync(clientItem.ProductId);
+                var product = await _db.Products.FindAsync(n.ProductId);
                 if (product != null)
                 {
                     _db.CartItems.Add(new CartItem
                     {
                         UserId = userId,
-                        ProductId = clientItem.ProductId,
+                        ProductId = n.ProductId,
                         ProductName = product.Name,
                         ImageUrl = product.MainImageUrl,
                         Price = DiscountHelper.IsActive(product) ? product.DiscountPrice!.Value : product.Price,
-                        Quantity = clientItem.Quantity
+                        Quantity = n.Quantity
                     });
                 }
             }

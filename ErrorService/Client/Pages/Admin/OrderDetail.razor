@@ -1,0 +1,2072 @@
+@page "/admin/orders/{Id:int}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.orders.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@inject HttpClient Http
+@inject ToastService ToastService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>@(order == null ? "جزئیات سفارش | ارورسرویس" : $"سفارش #{order.OrderNumber} | ارورسرویس")</PageTitle>
+
+@if (isLoading)
+{
+    <div class="od-loading">
+        <div class="od-spinner"></div>
+    </div>
+}
+else if (order == null)
+{
+    <div class="od-loading">
+        <div class="od-empty">
+            <span class="oi oi-circle-x" style="font-size:2rem;color:#94a3b8"></span>
+            <p>سفارش یافت نشد.</p>
+        </div>
+    </div>
+}
+else
+{
+    <div class="od-page">
+        <div class="od-header">
+            <div class="od-header-top">
+                <button class="od-back-btn" @onclick="GoBack">
+                    <span class="oi oi-arrow-right"></span>
+                </button>
+                <div class="od-header-info">
+                    <span class="od-order-num"> #@order.OrderNumber</span>
+                    <span class="od-header-date">@PersianDate.ToJalaliDateTime(order.CreatedAt)</span>
+                </div>
+                <span class="od-status-badge @GetStatusBadgeClass(order.Status)">@GetStatusLabel(order.Status)</span>
+            </div>
+
+            @if (!string.IsNullOrEmpty(order.NextAction))
+            {
+                <div class="od-next-action">
+                    <span class="oi oi-bell"></span>
+                    <strong>@order.NextAction</strong>
+                </div>
+            }
+        </div>
+
+        <OrderStageStepper Status="order.Status"
+                           Stage="order.Stage"
+                           StageDates="order.StageDates"
+                           CreatedAt="order.CreatedAt"
+                           PaymentDate="order.PaymentDate"
+                           UpdatedAt="order.UpdatedAt" />
+
+        <div class="od-summary-bar">
+            <div class="od-summary-item">
+                <span class="od-summary-value">@order.Items.Count</span>
+                <span class="od-summary-label">اقلام</span>
+            </div>
+            <div class="od-summary-divider"></div>
+            <div class="od-summary-item">
+                <span class="od-summary-value">@((order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0"))</span>
+                <span class="od-summary-label">مبلغ (تومان)</span>
+            </div>
+            <div class="od-summary-divider"></div>
+            <div class="od-summary-item">
+                <span class="od-summary-value" style="font-size:0.8rem">@(order.ShippingMethodName ?? "—")</span>
+                <span class="od-summary-label">ارسال @(order.ShippingCost > 0 ? $"({order.ShippingCost.ToString("N0")}ت)" : "(رایگان)")</span>
+            </div>
+            <div class="od-summary-divider"></div>
+            <div class="od-summary-item">
+                <span class="od-summary-value ltr" style="font-size:0.85rem">@order.PhoneNumber</span>
+                <span class="od-summary-label">موبایل</span>
+            </div>
+        </div>
+
+        @if (order.Status == OrderStatus.ReceiptUploaded)
+        {
+            <div class="od-quick-actions">
+                <div class="od-quick-actions-title">
+                    <span class="oi oi-check-circle"></span>
+                    بررسی رسید پرداخت
+                </div>
+                <div class="od-quick-actions-row">
+                    <button class="od-btn od-btn-approve" @onclick="QuickApprove" disabled="@isSaving">
+                        @if (isSaving) { <span class="od-btn-spinner"></span> }
+                        <span class="oi oi-check"></span> تایید سفارش
+                    </button>
+                    <button class="od-btn od-btn-reject" @onclick="QuickReject" disabled="@isSaving">
+                        <span class="oi oi-x"></span> رد سفارش
+                    </button>
+                </div>
+            </div>
+        }
+
+        <div class="od-section">
+            <div class="od-section-header" @onclick="ToggleC">
+                <div class="od-section-title">
+                    <span class="od-section-icon oi oi-person"></span>
+                    اطلاعات مشتری
+                </div>
+                <span class="oi oi-chevron-bottom od-section-toggle"></span>
+                @if (!isEditingInfo)
+                {
+                    <button class="od-edit-btn" @onclick="StartEditingInfo" @onclick:stopPropagation="true">
+                        <span class="oi oi-pencil"></span>
+                    </button>
+                }
+            </div>
+            @if (IsSectionVisible("c"))
+            {
+            @if (isEditingInfo)
+            {
+                <div class="od-edit-form">
+                    <div class="od-field">
+                        <label>نام</label>
+                        <input class="od-input" @bind="editInfo.FullName" />
+                    </div>
+                    <div class="od-field">
+                        <label>موبایل</label>
+                        <input class="od-input ltr" @bind="editInfo.PhoneNumber" />
+                    </div>
+                    <div class="od-field">
+                        <label>ایمیل</label>
+                        <input class="od-input" @bind="editInfo.Email" />
+                    </div>
+                    <div class="od-field">
+                        <label>آدرس</label>
+                        <textarea class="od-input" rows="2" @bind="editInfo.Address"></textarea>
+                    </div>
+                    <div class="od-field">
+                        <label>کد پستی</label>
+                        <input class="od-input ltr" @bind="editInfo.PostalCode" />
+                    </div>
+                    <div class="od-field-row">
+                        <button class="od-btn od-btn-primary" @onclick="SaveInfo" disabled="@isSaving">
+                            @if (isSaving) { <span class="od-btn-spinner"></span> }
+                            ذخیره
+                        </button>
+                        <button class="od-btn od-btn-ghost" @onclick="() => isEditingInfo = false">انصراف</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="od-info-grid">
+                    <div class="od-info-item">
+                        <span class="od-info-label">نام</span>
+                        <span class="od-info-value">@order.FullName</span>
+                    </div>
+                    <div class="od-info-item">
+                        <span class="od-info-label">موبایل</span>
+                        <span class="od-info-value ltr">@order.PhoneNumber</span>
+                    </div>
+                    @if (!string.IsNullOrEmpty(order.Email))
+                    {
+                        <div class="od-info-item">
+                            <span class="od-info-label">ایمیل</span>
+                            <span class="od-info-value">@order.Email</span>
+                        </div>
+                    }
+                    <div class="od-info-item full">
+                        <span class="od-info-label">آدرس</span>
+                        <span class="od-info-value">@(order.Address ?? "ثبت نشده")</span>
+                    </div>
+                    <div class="od-info-item">
+                        <span class="od-info-label">استان / شهر</span>
+                        <span class="od-info-value">@FormatProvinceCity()</span>
+                    </div>
+                    <div class="od-info-item">
+                        <span class="od-info-label">کد پستی</span>
+                        <span class="od-info-value ltr">@(string.IsNullOrWhiteSpace(order.PostalCode) ? "-" : order.PostalCode)</span>
+                    </div>
+                </div>
+            }
+            }
+        </div>
+
+        <div class="od-section">
+            <div class="od-section-header" @onclick="ToggleP">
+                <div class="od-section-title">
+                    <span class="od-section-icon oi oi-credit-card"></span>
+                    پرداخت و رسید
+                </div>
+                <span class="oi oi-minus od-section-toggle"></span>
+            </div>
+            @if (IsSectionVisible("p"))
+            {
+            <div class="od-info-grid">
+                <div class="od-info-item">
+                    <span class="od-info-label">کد رهگیری</span>
+                    <span class="od-info-value ltr">@(order.TrackingNumber ?? "ثبت نشده")</span>
+                </div>
+                <div class="od-info-item">
+                    <span class="od-info-label">تاریخ پرداخت</span>
+                    <span class="od-info-value">@(order.PaymentDate.HasValue ? PersianDate.ToJalaliDateTime(order.PaymentDate.Value) : "-")</span>
+                </div>
+                <div class="od-info-item">
+                    <span class="od-info-label">درگاه پرداخت</span>
+                    <span class="od-info-value">@(order.PaymentProvider?.ToString() ?? "دستی")</span>
+                </div>
+            </div>
+            @if (order.ReceiptImageUrls != null && order.ReceiptImageUrls.Count > 0)
+            {
+                <div class="od-receipts">
+                    @foreach (var url in order.ReceiptImageUrls)
+                    {
+                        <a href="@url" target="_blank" class="od-receipt-thumb">
+                            <img src="@url" />
+                        </a>
+                    }
+                </div>
+            }
+            else if (!string.IsNullOrEmpty(order.ReceiptImageUrl))
+            {
+                <div class="od-receipts">
+                    <a href="@order.ReceiptImageUrl" target="_blank" class="od-receipt-thumb">
+                        <img src="@order.ReceiptImageUrl" />
+                    </a>
+                </div>
+            }
+            }
+        </div>
+
+        <div class="od-section">
+            <div class="od-section-header" @onclick="ToggleI">
+                <div class="od-section-title">
+                    <span class="od-section-icon oi oi-list"></span>
+                    اقلام سفارش
+                </div>
+                <span class="oi oi-minus od-section-toggle"></span>
+            </div>
+            @if (IsSectionVisible("i"))
+            {
+            <div class="od-items-list">
+                @foreach (var item in order.Items)
+                {
+                    <div class="od-item-row">
+                        <div class="od-item-info">
+                            <span class="od-item-name">@item.ProductName</span>
+                            <span class="od-item-meta">@item.Quantity × @item.Price.ToString("N0") تومان</span>
+                        </div>
+                        <span class="od-item-total">@((item.Price * item.Quantity).ToString("N0"))</span>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(order.ShippingMethodName))
+                {
+                    <div class="od-item-row">
+                        <div class="od-item-info">
+                            <span class="od-item-name" style="color:#64748b">ارسال (@order.ShippingMethodName)</span>
+                        </div>
+                        <span class="od-item-total" style="color:#64748b">
+                            @if (order.ShippingCost == 0)
+                            {
+                                <span style="color:#16a34a">رایگان</span>
+                            }
+                            else
+                            {
+                                @order.ShippingCost.ToString("N0")
+                            }
+                        </span>
+                    </div>
+                }
+                @if ((order.DiscountAmount ?? 0) > 0)
+                {
+                    <div class="od-item-row">
+                        <div class="od-item-info">
+                            <span class="od-item-name" style="color:#dc2626">تخفیف (@order.CouponCode)</span>
+                        </div>
+                        <span class="od-item-total" style="color:#dc2626">-@order.DiscountAmount?.ToString("N0")</span>
+                    </div>
+                }
+                <div class="od-item-row od-items-footer od-total-row">
+                    <div class="od-item-info">
+                        <span class="od-item-name">مبلغ نهایی</span>
+                    </div>
+                    <span class="od-total-amount">@((order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0")) تومان</span>
+                </div>
+            </div>
+            }
+        </div>
+
+        @if (CanShowShipments())
+        {
+        <div class="od-section">
+            <div class="od-section-header" @onclick="ToggleS">
+                <div class="od-section-title">
+                    <span class="od-section-icon oi oi-package"></span>
+                    مرسوله‌ها
+                    <span class="od-badge-count">@order.Shipments.Count</span>
+                </div>
+                @if (CanShowNewShipmentButton())
+                {
+                <button class="od-btn od-btn-primary od-btn-sm" @onclick="ShowNewShipmentForm" @onclick:stopPropagation="true">
+                    <span class="oi oi-plus"></span> جدید
+                </button>
+                }
+                <span class="oi oi-minus od-section-toggle"></span>
+            </div>
+
+            @if (IsSectionVisible("s"))
+            {
+            @if (showShipmentForm)
+            {
+                <div class="od-shipment-form">
+                    <div class="od-form-title">@($"مرسوله جدید (تلاش #{order.Shipments.Count + 1})")</div>
+                    <div class="od-field-row" style="flex-wrap:wrap">
+                        <div class="od-field" style="flex:1;min-width:140px">
+                            <label>شرکت حمل</label>
+                            <input class="od-input" @bind="newShipment.Carrier" placeholder="پست، تیپاکس،..." />
+                        </div>
+                        <div class="od-field" style="flex:1;min-width:140px">
+                            <label>کد رهگیری</label>
+                            <input class="od-input ltr" @bind="newShipment.TrackingNumber" />
+                        </div>
+                    </div>
+                    <div class="od-field">
+                        <label>یادداشت</label>
+                        <input class="od-input" @bind="newShipment.Notes" />
+                    </div>
+                    <div class="od-field-row">
+                        <button class="od-btn od-btn-primary" @onclick="CreateShipment" disabled="@isSaving">
+                            @if (isSaving) { <span class="od-btn-spinner"></span> }
+                            ثبت مرسوله
+                        </button>
+                        <button class="od-btn od-btn-ghost" @onclick="() => showShipmentForm = false">انصراف</button>
+                    </div>
+                </div>
+            }
+
+            @if (!order.Shipments.Any())
+            {
+                <div class="od-empty-state">
+                    <span class="oi oi-inbox" style="font-size:1.5rem;color:#94a3b8"></span>
+                    <span>هنوز مرسوله‌ای ثبت نشده است.</span>
+                </div>
+            }
+            else
+            {
+                @foreach (var ship in order.Shipments)
+                {
+                    <div class="od-shipment-card">
+                        <div class="od-shipment-header">
+                            <div>
+                                <span class="od-shipment-attempt">تلاش #@ship.AttemptNumber</span>
+                                <strong style="margin-right:6px">@ship.Carrier</strong>
+                                @if (!string.IsNullOrEmpty(ship.TrackingNumber))
+                                {
+                                    <span class="od-shipment-meta ltr" style="margin-right:6px">@ship.TrackingNumber</span>
+                                }
+                            </div>
+                            <div style="position:relative">
+                                <button class="od-shipment-menu" @onclick="() => ToggleShipMenu(ship.Id)">
+                                    <span class="oi oi-ellipsis-vert"></span>
+                                </button>
+                                @if (expandedShipmentId == ship.Id)
+                                {
+                                    <div class="od-shipment-dropdown">
+                                        @foreach (OrderShipmentStatus s in Enum.GetValues(typeof(OrderShipmentStatus)))
+                                        {
+                                            <button class="od-dropdown-item" @onclick="() => UpdateShipmentStatus(ship, s)">@GetShipmentStatusLabel(s)</button>
+                                        }
+                                        <div class="od-dropdown-divider"></div>
+                                        <button class="od-dropdown-item od-text-danger" @onclick="() => ConfirmDeleteShipment(ship)">حذف مرسوله</button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="od-shipment-meta">
+                            <span class="od-shipment-status @GetShipmentStatusClass(ship.Status)">@GetShipmentStatusLabelFromStr(ship.Status)</span>
+                            @if (ship.ShippedAt.HasValue)
+                            {
+                                <span>ارسال: @PersianDate.ToJalaliDateTime(ship.ShippedAt.Value)</span>
+                            }
+                            @if (ship.DeliveredAt.HasValue)
+                            {
+                                <span>تحویل: @PersianDate.ToJalaliDateTime(ship.DeliveredAt.Value)</span>
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(ship.FailureReason))
+                        {
+                            <div class="od-text-danger" style="font-size:0.8rem;margin-top:6px">علت ناموفقی: @ship.FailureReason</div>
+                        }
+                        @if (!string.IsNullOrEmpty(ship.Notes))
+                        {
+                            <div style="font-size:0.8rem;color:#64748b;margin-top:4px">@ship.Notes</div>
+                        }
+                        <div style="font-size:0.75rem;color:#94a3b8;margin-top:6px">ثبت توسط: @(ship.CreatedBy ?? "سیستم") | @PersianDate.ToJalaliDateTime(ship.CreatedAt)</div>
+                    </div>
+                }
+            }
+            }
+        </div>
+        }
+
+        @if (CanShowStatusChange() || CanShowStageChange())
+        {
+        <div class="od-section">
+            <div class="od-section-header" @onclick="ToggleU">
+                <div class="od-section-title">
+                    <span class="od-section-icon oi oi-loop"></span>
+                    تغییر وضعیت و مرحله
+                </div>
+                <span class="oi oi-minus od-section-toggle"></span>
+            </div>
+            @if (IsSectionVisible("u"))
+            {
+            @if (CanShowStageChange())
+            {
+                <div class="od-stage-form">
+                    <div class="od-stage-form-title">مرحله سفارش</div>
+                    <div class="od-stage-options">
+                        @foreach (var st in OrderStageInfo.Flow)
+                        {
+                            var stage = st;
+                            var selected = stageToUpdate == stage;
+                            <button class="od-stage-opt @(selected ? "selected" : "")"
+                                    style="--sc: @OrderStageInfo.Color(stage);"
+                                    disabled="@isSaving"
+                                    @onclick="() => SelectStage(stage)">
+                                <span class="od-stage-opt-dot"></span>
+                                @if (stage is OrderStage.SentToUnit or OrderStage.Resolved)
+                                {
+                                    <span class="oi oi-truck" style="margin-inline-end:2px;"></span>
+                                }
+                                @OrderStageInfo.Label(stage)
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+            @if (CanShowStatusChange())
+            {
+            <div class="od-status-row">
+                <select class="od-select" @bind="statusToUpdate">
+                    @foreach (var s in GetValidTransitions())
+                    {
+                        <option value="@s">@GetStatusLabel(s)</option>
+                    }
+                </select>
+            </div>
+            }
+                <div class="od-field">
+                    <input class="od-input" dir="rtl" @bind="adminNote" placeholder="یادداشت مدیر (اختیاری)" />
+                </div>
+                <div class="od-status-actions">
+                    @if (CanShowStageChange())
+                    {
+                        <button class="od-btn od-btn-primary" @onclick="UpdateStage" disabled="@(isSaving || stageToUpdate == null)">
+                            @if (isSaving) { <span class="od-btn-spinner"></span> }
+                            بروزرسانی مرحله
+                        </button>
+                    }
+                    @if (CanShowStatusChange())
+                    {
+                        <button class="od-btn od-btn-secondary" @onclick="UpdateStatus" disabled="@isSaving">
+                            @if (isSaving) { <span class="od-btn-spinner"></span> }
+                            بروزرسانی وضعیت
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+        }
+
+        <div class="od-section">
+            <div class="od-section-header" @onclick="ToggleN">
+                <div class="od-section-title">
+                    <span class="od-section-icon oi oi-document"></span>
+                    یادداشت مدیر
+                </div>
+                <span class="oi oi-minus od-section-toggle"></span>
+            </div>
+            @if (IsSectionVisible("n"))
+            {
+            @if (string.IsNullOrEmpty(order.AdminNotes))
+            {
+                <div class="od-empty-state">
+                    <span class="oi oi-document" style="font-size:1.5rem;color:#94a3b8"></span>
+                    <span>یادداشتی ثبت نشده.</span>
+                </div>
+            }
+            else
+            {
+                <div style="padding:0 16px 16px">
+                    <AdminNotesList Notes="@order.AdminNotes" />
+                </div>
+            }
+            }
+        </div>
+
+        @if (CanShowReturns())
+        {
+        <div class="od-section">
+            <div class="od-section-header" @onclick="ToggleR">
+                <div class="od-section-title">
+                    <span class="od-section-icon oi oi-action-undo"></span>
+                    مرجوعی
+                    @if (order.Returns.Any())
+                    {
+                        <span class="od-badge-count">@order.Returns.Count</span>
+                    }
+                </div>
+                @if (order.Status == OrderStatus.Completed || order.Returns.Any())
+                {
+                    <button class="od-btn od-btn-primary od-btn-sm" @onclick="ShowNewReturnForm" @onclick:stopPropagation="true">
+                        <span class="oi oi-plus"></span> ثبت مرجوعی
+                    </button>
+                }
+                <span class="oi oi-minus od-section-toggle"></span>
+            </div>
+            @if (IsSectionVisible("r"))
+            {
+
+            @if (showReturnForm)
+            {
+                <div class="od-return-form">
+                    <div class="od-form-title">ثبت مرجوعی جدید</div>
+                    <div class="od-field">
+                        <label>مبلغ مرجوعی (تومان) *</label>
+                        <input type="number" class="od-input" @bind="newReturn.RefundAmount" min="0" />
+                    </div>
+                    <div class="od-field-row" style="flex-wrap:wrap">
+                        <div class="od-field" style="flex:1;min-width:140px">
+                            <label>شماره کارت/حساب مقصد</label>
+                            <input class="od-input ltr" @bind="newReturn.RefundCardNumber" placeholder="6037..." />
+                        </div>
+                        <div class="od-field" style="flex:1;min-width:140px">
+                            <label>نام بانک</label>
+                            <input class="od-input" @bind="newReturn.RefundBankName" placeholder="ملی، ملت،..." />
+                        </div>
+                    </div>
+                    <div class="od-field">
+                        <label>دلیل مرجوعی</label>
+                        <input class="od-input" @bind="newReturn.ReturnReason" placeholder="خرابی، مغایرت، پشیمانی..." />
+                    </div>
+                    <div class="od-field">
+                        <label>یادداشت</label>
+                        <input class="od-input" @bind="newReturn.AdminNotes" />
+                    </div>
+                    <div class="od-field-row">
+                        <button class="od-btn od-btn-primary" @onclick="CreateReturn" disabled="@isSaving">
+                            @if (isSaving) { <span class="od-btn-spinner"></span> }
+                            ثبت مرجوعی
+                        </button>
+                        <button class="od-btn od-btn-ghost" @onclick="() => showReturnForm = false">انصراف</button>
+                    </div>
+                </div>
+            }
+
+            @if (!order.Returns.Any())
+            {
+                <div class="od-empty-state">
+                    <span class="oi oi-action-undo" style="font-size:1.5rem;color:#94a3b8"></span>
+                    <span>مرجوعی ثبت نشده.</span>
+                </div>
+            }
+            else
+            {
+                <div class="od-returns-list">
+                    @foreach (var ret in order.Returns.OrderByDescending(r => r.CreatedAt))
+                    {
+                        <div class="od-return-card @(ret.IsRefunded ? "od-return-refunded" : "")">
+                            <div class="od-return-header">
+                                <div>
+                                    <span class="od-return-amount">@ret.RefundAmount.ToString("N0") تومان</span>
+                                    <span class="od-return-status @(ret.IsRefunded ? "od-return-status-ok" : "od-return-status-pending")">
+                                        @(ret.IsRefunded ? "واریز شد" : "در انتظار واریز")
+                                    </span>
+                                </div>
+                                @if (!ret.IsRefunded)
+                                {
+                                    <div style="display:flex;gap:4px">
+                                        <button class="od-btn od-btn-primary od-btn-sm" @onclick="() => ShowRefundForm(ret)">
+                                            <span class="oi oi-credit-card"></span> واریز
+                                        </button>
+                                        <button class="od-btn od-btn-ghost od-btn-sm od-btn-danger" @onclick="() => ConfirmDeleteReturn(ret)">
+                                            <span class="oi oi-trash"></span>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(ret.RefundCardNumber))
+                            {
+                                <div class="od-return-info">
+                                    <span class="od-return-info-label">شماره کارت:</span>
+                                    <span class="od-return-info-value ltr">@ret.RefundCardNumber</span>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(ret.RefundBankName))
+                            {
+                                <div class="od-return-info">
+                                    <span class="od-return-info-label">بانک:</span>
+                                    <span class="od-return-info-value">@ret.RefundBankName</span>
+                                </div>
+                            }
+                            @if (ret.RefundDate.HasValue)
+                            {
+                                <div class="od-return-info">
+                                    <span class="od-return-info-label">تاریخ واریز:</span>
+                                    <span class="od-return-info-value">@PersianDate.ToJalaliDateTime(ret.RefundDate.Value)</span>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(ret.RefundReceiptImageUrl))
+                            {
+                                <div class="od-return-info">
+                                    <span class="od-return-info-label">رسید واریزی:</span>
+                                    <a class="od-return-info-value" href="@ret.RefundReceiptImageUrl" target="_blank" rel="noopener" style="color:#2563eb;font-weight:700;">
+                                        <span class="oi oi-external-link"></span> مشاهده تصویر رسید
+                                    </a>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(ret.ReturnReason))
+                            {
+                                <div class="od-return-info">
+                                    <span class="od-return-info-label">دلیل:</span>
+                                    <span class="od-return-info-value">@ret.ReturnReason</span>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(ret.AdminNotes))
+                            {
+                                <div class="od-return-info">
+                                    <span class="od-return-info-label">یادداشت:</span>
+                                    <span class="od-return-info-value" dir="rtl" style="white-space:pre-wrap;unicode-bidi:plaintext;">@ret.AdminNotes</span>
+                                </div>
+                            }
+                            <div class="od-return-meta">
+                                ثبت توسط: @(ret.CreatedBy ?? "سیستم") | @PersianDate.ToJalaliDateTime(ret.CreatedAt)
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            }
+        </div>
+        }
+
+        <div class="od-section">
+            <div class="od-section-header" @onclick="ToggleT">
+                <div class="od-section-title">
+                    <span class="od-section-icon oi oi-clock"></span>
+                    تاریخچه عملیات
+                </div>
+                <span class="oi oi-minus od-section-toggle"></span>
+            </div>
+            @if (IsSectionVisible("t"))
+            {
+            @if (!order.Events.Any())
+            {
+                <div class="od-empty-state">
+                    <span class="oi oi-clock" style="font-size:1.5rem;color:#94a3b8"></span>
+                    <span>رویدادی ثبت نشده است.</span>
+                </div>
+            }
+            else
+            {
+                <div class="od-events">
+                    @foreach (var evt in order.Events.OrderByDescending(e => e.CreatedAt).Take(10))
+                    {
+                        <div class="od-event-row">
+                            <div class="od-event-icon @GetEventIconClass(evt.EventType)">
+                                <span class="oi @GetEventIcon(evt.EventType)"></span>
+                            </div>
+                            <div class="od-event-body">
+                                <div class="od-event-top">
+                                    <span class="od-event-label">@GetEventLabel(evt)</span>
+                                    <span class="od-event-time">@PersianDate.ToJalaliDateTime(evt.CreatedAt)</span>
+                                </div>
+                                @if (!string.IsNullOrEmpty(evt.DisplayMessage))
+                                {
+                                    <div class="od-event-msg">@evt.DisplayMessage</div>
+                                }
+                                <div class="od-event-by">@(evt.CreatedBy ?? "سیستم")</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            }
+        </div>
+
+        @if (CanShowDangerZone())
+        {
+            <div class="od-danger-zone">
+                <h6 style="color:#dc2626;font-weight:700;margin:0 0 8px 0">عملیات خطرناک</h6>
+                <button class="od-btn od-btn-danger" @onclick="() => showDeleteConfirm = true">
+                    <span class="oi oi-trash"></span> حذف سفارش
+                </button>
+            </div>
+        }
+    </div>
+}
+
+<ConfirmDialog IsVisible="showDeleteConfirm"
+               Title="حذف سفارش"
+               Message="@($"آیا از حذف سفارش #{order?.OrderNumber} اطمینان دارید؟ این عمل غیرقابل بازگشت است.")"
+               ConfirmText="بله، حذف شود"
+               IsDanger="true"
+               OnResult="HandleDeleteResult" />
+
+<ConfirmDialog IsVisible="showDeleteShipmentConfirm"
+               Title="حذف مرسوله"
+               Message="آیا از حذف این مرسوله اطمینان دارید؟"
+               ConfirmText="بله، حذف شود"
+               IsDanger="true"
+               OnResult="HandleDeleteShipmentResult" />
+
+@if (showRefundModal)
+{
+    <div class="od-modal-overlay" @onclick="() => showRefundModal = false">
+        <div class="od-modal" @onclick:stopPropagation>
+            <div class="od-modal-header">
+                <h6 class="od-modal-title">ثبت واریز مرجوعی</h6>
+                <button class="btn-close" @onclick="() => showRefundModal = false"></button>
+            </div>
+            <div class="od-modal-body">
+                <div style="background:#f0fdf4;border-radius:10px;padding:12px;margin-bottom:16px;">
+                    <div style="font-size:0.82rem;color:#64748b;">مبلغ مرجوعی</div>
+                    <div style="font-size:1.1rem;font-weight:800;color:#059669;">@returnToRefund?.RefundAmount.ToString("N0") تومان</div>
+                </div>
+                <div class="od-field">
+                    <label>شماره کارت/حساب مقصد *</label>
+                    <input class="od-input ltr" @bind="refundInfo.RefundCardNumber" placeholder="6037..." />
+                </div>
+                <div class="od-field">
+                    <label>نام بانک</label>
+                    <input class="od-input" @bind="refundInfo.RefundBankName" placeholder="ملی، ملت،..." />
+                </div>
+                <div class="od-field">
+                    <label>تاریخ واریز (شمسی)</label>
+                    <input class="od-input ltr" data-jdp autocomplete="off" placeholder="1404/01/01" @bind="refundDateText" @bind:event="oninput" />
+                </div>
+                <div class="od-field">
+                    <label>عکس رسید واریزی</label>
+                    <ImageUploader ImageUrl="@refundReceiptUrl"
+                                   ImageUrlChanged="@(u => refundReceiptUrl = u)"
+                                   UploadUrl="api/orders/admin/returns/receipt"
+                                   MaxSizeMb="5"
+                                   ShowCamera="true" />
+                </div>
+                <div class="od-field">
+                    <label>یادداشت</label>
+                    <input class="od-input" @bind="refundInfo.AdminNotes" />
+                </div>
+                <div class="od-field-row">
+                    <button class="od-btn od-btn-primary" @onclick="MarkRefunded" disabled="@(isSaving || string.IsNullOrWhiteSpace(refundInfo.RefundCardNumber))">
+                        @if (isSaving) { <span class="od-btn-spinner"></span> }
+                        تایید واریز
+                    </button>
+                    <button class="od-btn od-btn-ghost" @onclick="() => showRefundModal = false">انصراف</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<ConfirmDialog IsVisible="showDeleteReturnConfirm"
+               Title="حذف مرجوعی"
+               Message="@($"آیا از حذف این مرجوعی ({returnToDelete?.RefundAmount.ToString("N0")} تومان) اطمینان دارید؟")"
+               ConfirmText="بله، حذف شود"
+               IsDanger="true"
+               OnResult="HandleDeleteReturnResult" />
+
+<style>
+    .ltr { direction: ltr; text-align: left; }
+
+    .od-page { max-width: 1100px; margin: 0 auto; padding: 0 20px 80px; }
+
+    .od-loading {
+        min-height: 80vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .od-spinner {
+        width: 40px; height: 40px;
+        border: 4px solid #e2e8f0;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: od-spin .7s linear infinite;
+    }
+    @@keyframes od-spin { to { transform: rotate(360deg); } }
+    .od-empty {
+        text-align: center;
+        color: #94a3b8;
+    }
+
+    .od-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 16px 20px; border-radius: 0 0 24px 24px; margin: 0 -20px 16px; }
+    .od-header-top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .od-back-btn {
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.2);
+        border: none;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background .15s;
+    }
+    .od-back-btn:hover { background: rgba(255,255,255,0.35); }
+    .od-header-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .od-order-num {
+        font-size: 1.25rem;
+        font-weight: 800;
+    }
+    .od-header-date {
+        font-size: 0.8rem;
+        opacity: 0.8;
+    }
+    .od-status-badge {
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .od-badge-warning { background: #fbbf24; color: #78350f; }
+    .od-badge-info { background: #67e8f9; color: #155e75; }
+    .od-badge-success { background: #86efac; color: #166534; }
+    .od-badge-danger { background: #fca5a5; color: #991b1b; }
+    .od-badge-muted { background: #cbd5e1; color: #475569; }
+    .od-badge-done { background: #34d399; color: #fff; }
+
+    .od-next-action {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 14px;
+        padding: 10px 14px;
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+        border-radius: 10px;
+        color: #78350f;
+        font-size: 0.85rem;
+    }
+
+    .od-steps {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 0;
+        padding: 8px 0 20px;
+        overflow-x: auto;
+    }
+    .od-step {
+        display: flex;
+        align-items: center;
+        gap: 0;
+    }
+    .od-step-dot {
+        width: 32px; height: 32px;
+        border-radius: 50%;
+        border: 2px solid #d1d5db;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #94a3b8;
+        background: #fff;
+        flex-shrink: 0;
+        transition: all .2s;
+    }
+    .od-step-dot.active {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #fff;
+        box-shadow: 0 0 0 4px rgba(37,99,235,0.15);
+    }
+    .od-step-dot.done {
+        background: #16a34a;
+        border-color: #16a34a;
+        color: #fff;
+    }
+    .od-step-line {
+        width: 48px;
+        height: 2px;
+        background: #e2e8f0;
+        flex-shrink: 0;
+    }
+    .od-step-line.done {
+        background: #16a34a;
+    }
+    .od-step-label {
+        font-size: 0.7rem;
+        color: #64748b;
+        white-space: nowrap;
+        margin-left: 4px;
+    }
+
+    .od-summary-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #fff;
+        border-radius: 14px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        padding: 14px 16px;
+        margin-bottom: 16px;
+    }
+    .od-summary-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+    }
+    .od-summary-value {
+        font-weight: 700;
+        font-size: 1rem;
+        color: #1e293b;
+    }
+    .od-summary-label {
+        font-size: 0.7rem;
+        color: #94a3b8;
+    }
+    .od-summary-divider {
+        width: 1px;
+        height: 28px;
+        background: #e2e8f0;
+        flex-shrink: 0;
+    }
+
+    .od-section { background: white; border-radius: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px; overflow: hidden; border: 1px solid #f1f5f9; }
+    .od-section-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; cursor: pointer; transition: background 0.15s; }
+    .od-section-header:active { background: #f8fafc; }
+    .od-section-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.9rem; }
+    .od-section-icon { color: #2563eb; font-size: 1rem; }
+    .od-section-toggle { font-size: 0.7rem; color: #94a3b8; transition: transform 0.2s; }
+    .od-badge-count { background: #2563eb; color: white; font-size: 0.6rem; padding: 2px 7px; border-radius: 10px; font-weight: 700; }
+
+    .od-quick-actions { background: linear-gradient(135deg, #f0fdf4, #ecfdf5); border: 2px solid #86efac; border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+    .od-quick-actions-title { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 0.95rem; color: #166534; margin-bottom: 12px; }
+    .od-quick-actions-title .oi { color: #16a34a; font-size: 1.1rem; }
+    .od-quick-actions-row { display: flex; gap: 10px; }
+    .od-btn-approve { flex: 1; background: #16a34a; color: white; border: none; border-radius: 12px; padding: 12px; font-weight: 800; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.15s; }
+    .od-btn-approve:hover { background: #15803d; }
+    .od-btn-approve:disabled { opacity: 0.5; cursor: not-allowed; }
+    .od-btn-reject { flex: 1; background: white; color: #dc2626; border: 2px solid #fca5a5; border-radius: 12px; padding: 12px; font-weight: 800; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s; }
+    .od-btn-reject:hover { background: #fef2f2; border-color: #dc2626; }
+
+    .od-info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        padding: 14px 16px;
+    }
+    .od-info-item {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .od-info-item.full {
+        grid-column: 1 / -1;
+    }
+    .od-info-label {
+        font-size: 0.75rem;
+        color: #94a3b8;
+    }
+    .od-info-value {
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #1e293b;
+    }
+
+    .od-edit-btn {
+        width: 32px; height: 32px;
+        border-radius: 50%;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #2563eb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all .15s;
+    }
+    .od-edit-btn:hover {
+        background: #eff6ff;
+        border-color: #2563eb;
+    }
+
+    .od-edit-form {
+        padding: 14px 16px;
+    }
+    .od-field {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 12px;
+    }
+    .od-field label {
+        font-size: 0.75rem;
+        color: #64748b;
+        margin-bottom: 4px;
+    }
+    .od-input {
+        border: 1.5px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 0.88rem;
+        width: 100%;
+        transition: border-color .15s;
+        outline: none;
+        font-family: inherit;
+        direction: rtl;
+        text-align: right;
+    }
+    .od-input.ltr {
+        direction: ltr;
+        text-align: left;
+    }
+    .od-input:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    }
+    .od-admin-notes {
+        white-space: pre-wrap;
+        font-family: inherit;
+        margin: 0;
+        font-size: 0.85rem;
+        color: #334155;
+        background: #f8fafc;
+        padding: 12px;
+        border-radius: 8px;
+        direction: rtl;
+        text-align: right;
+        unicode-bidi: plaintext;
+        line-height: 1.8;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    .od-select {
+        border: 1.5px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 0.88rem;
+        width: 100%;
+        outline: none;
+        background: #fff;
+        font-family: inherit;
+    }
+    .od-select:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    }
+    .od-field-row {
+        display: flex;
+        gap: 8px;
+    }
+
+    .od-btn {
+        border-radius: 10px;
+        padding: 10px 20px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        border: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all .15s;
+        font-family: inherit;
+        min-height: 44px;
+    }
+    .od-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    .od-btn-primary {
+        background: #2563eb;
+        color: #fff;
+    }
+    .od-btn-primary:hover:not(:disabled) {
+        background: #1d4ed8;
+    }
+    .od-btn-ghost {
+        background: transparent;
+        color: #64748b;
+    }
+    .od-btn-ghost:hover {
+        background: #f1f5f9;
+    }
+    .od-btn-sm {
+        padding: 6px 14px;
+        font-size: 0.8rem;
+        min-height: 36px;
+    }
+    .od-btn-danger {
+        background: transparent;
+        border: 1.5px solid #fca5a5;
+        color: #dc2626;
+    }
+    .od-btn-danger:hover {
+        background: #fef2f2;
+    }
+    .od-btn-spinner {
+        width: 14px; height: 14px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: od-spin .7s linear infinite;
+        display: inline-block;
+    }
+
+    .od-receipts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 12px 16px;
+    }
+    .od-receipt-thumb {
+        width: 100px;
+        height: 100px;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        display: block;
+    }
+    .od-receipt-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .od-empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 24px 16px;
+        color: #94a3b8;
+        font-size: 0.85rem;
+    }
+
+    .od-items-list {
+        padding: 0 16px 14px;
+    }
+    .od-item-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .od-item-row:last-child {
+        border-bottom: none;
+    }
+    .od-item-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .od-item-name {
+        font-weight: 600;
+        font-size: 0.88rem;
+        color: #1e293b;
+    }
+    .od-item-meta {
+        font-size: 0.75rem;
+        color: #94a3b8;
+    }
+    .od-item-total {
+        font-weight: 700;
+        font-size: 0.9rem;
+        text-align: left;
+        color: #1e293b;
+    }
+    .od-items-footer {
+        border-bottom: none !important;
+    }
+    .od-total-row {
+        border-top: 2px solid #e2e8f0 !important;
+        padding-top: 12px;
+    }
+    .od-total-amount {
+        color: #2563eb;
+        font-size: 1rem;
+        font-weight: 800;
+    }
+
+    .od-shipment-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 14px;
+        margin: 0 16px 10px;
+        transition: box-shadow .15s;
+    }
+    .od-shipment-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .od-shipment-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+    .od-shipment-attempt {
+        font-size: 0.7rem;
+        color: #64748b;
+        background: #f1f5f9;
+        padding: 2px 8px;
+        border-radius: 6px;
+    }
+    .od-shipment-menu {
+        width: 32px; height: 32px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #64748b;
+        transition: background .15s;
+    }
+    .od-shipment-menu:hover {
+        background: #f1f5f9;
+    }
+    .od-shipment-dropdown {
+        position: absolute;
+        left: 0;
+        top: 100%;
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+        z-index: 10;
+        min-width: 180px;
+        padding: 4px;
+    }
+    .od-dropdown-item {
+        display: block;
+        width: 100%;
+        padding: 8px 12px;
+        border: none;
+        background: none;
+        text-align: right;
+        cursor: pointer;
+        font-size: 0.8rem;
+        border-radius: 6px;
+        font-family: inherit;
+        color: #334155;
+    }
+    .od-dropdown-item:hover {
+        background: #f1f5f9;
+    }
+    .od-dropdown-divider {
+        height: 1px;
+        background: #e2e8f0;
+        margin: 4px 0;
+    }
+    .od-shipment-status {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 8px;
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+    .od-shipment-status.bg-warning-subtle { background: #fef3c7; color: #92400e; }
+    .od-shipment-status.bg-info-subtle { background: #cffafe; color: #155e75; }
+    .od-shipment-status.bg-primary-subtle { background: #dbeafe; color: #1e40af; }
+    .od-shipment-status.bg-success { background: #16a34a; color: #fff; }
+    .od-shipment-status.bg-danger-subtle { background: #fee2e2; color: #991b1b; }
+    .od-shipment-status.bg-secondary-subtle { background: #f1f5f9; color: #475569; }
+    .od-shipment-status.bg-dark-subtle { background: #f1f5f9; color: #334155; }
+    .od-shipment-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+        font-size: 0.78rem;
+        color: #64748b;
+    }
+
+    .od-shipment-form {
+        background: #eff6ff;
+        border-radius: 12px;
+        padding: 14px;
+        margin: 0 16px 14px;
+    }
+    .od-form-title {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #1e40af;
+        margin-bottom: 12px;
+    }
+
+    .od-status-form {
+        padding: 14px 16px;
+    }
+    .od-status-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+    .od-stage-form { padding: 14px 16px 0; }
+    .od-stage-form-title { font-size: 0.78rem; font-weight: 800; color: #64748b; margin-bottom: 10px; }
+    .od-stage-options { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .od-stage-opt {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: 1.5px solid #e2e8f0;
+        background: #fff;
+        color: #475569;
+        border-radius: 20px;
+        padding: 7px 12px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        cursor: pointer;
+        font-family: inherit;
+        transition: all 0.15s;
+    }
+    .od-stage-opt:hover { border-color: var(--sc); color: var(--sc); }
+    .od-stage-opt.selected {
+        border-color: var(--sc);
+        color: var(--sc);
+        background: color-mix(in srgb, var(--sc) 8%, #fff);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--sc) 15%, transparent);
+    }
+    .od-stage-opt-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--sc); flex-shrink: 0; }
+    .od-stage-opt.selected .od-stage-opt-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--sc) 25%, transparent); }
+    .od-status-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 14px; }
+    .od-status-actions .od-btn { flex: 1; min-width: 140px; justify-content: center; text-align: center; }
+    .od-btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+    .od-btn-secondary:hover { background: #e2e8f0; }
+
+    .od-events { padding: 0 16px 14px; }
+    .od-event-row { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f8fafc; }
+    .od-event-row:last-child { border-bottom: none; }
+    .od-event-icon {
+        width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center;
+        font-size: 0.8rem; color: white; flex-shrink: 0;
+    }
+    .od-event-icon-blue { background: linear-gradient(135deg, #667eea, #764ba2); }
+    .od-event-icon-green { background: linear-gradient(135deg, #10b981, #059669); }
+    .od-event-icon-red { background: linear-gradient(135deg, #ef4444, #dc2626); }
+    .od-event-icon-amber { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    .od-event-icon-gray { background: linear-gradient(135deg, #94a3b8, #64748b); }
+    .od-event-body { flex: 1; min-width: 0; }
+    .od-event-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .od-event-label { font-weight: 700; font-size: 0.82rem; color: #1e293b; }
+    .od-event-time { font-size: 0.68rem; color: #94a3b8; white-space: nowrap; }
+    .od-event-msg { font-size: 0.78rem; color: #64748b; margin-top: 3px; line-height: 1.5; }
+    .od-event-by { font-size: 0.65rem; color: #cbd5e1; margin-top: 2px; }
+
+    .od-danger-zone {
+        border: 1.5px solid #fca5a5;
+        border-radius: 16px;
+        padding: 16px;
+        margin-top: 8px;
+        background: #fff;
+    }
+
+    .od-text-danger { color: #dc2626; }
+    .od-text-success { color: #16a34a; }
+
+    .od-return-form {
+        background: #fff7ed;
+        border-radius: 12px;
+        padding: 14px;
+        margin: 0 16px 14px;
+    }
+    .od-returns-list { padding: 0 16px 14px; }
+    .od-return-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 10px;
+        transition: box-shadow .15s;
+    }
+    .od-return-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .od-return-refunded { border-left: 4px solid #16a34a; background: #f0fdf4; }
+    .od-return-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+    .od-return-amount { font-weight: 800; font-size: 0.95rem; color: #1e293b; margin-left: 8px; }
+    .od-return-status {
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 8px;
+    }
+    .od-return-status-ok { background: #d1fae5; color: #059669; }
+    .od-return-status-pending { background: #fef3c7; color: #d97706; }
+    .od-return-info {
+        display: flex;
+        gap: 6px;
+        font-size: 0.8rem;
+        padding: 3px 0;
+    }
+    .od-return-info-label { color: #94a3b8; white-space: nowrap; }
+    .od-return-info-value { color: #334155; font-weight: 600; }
+    .od-return-meta { font-size: 0.7rem; color: #cbd5e1; margin-top: 6px; }
+
+    .od-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 1050;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    .od-modal {
+        background: #fff;
+        border-radius: 20px;
+        width: 100%;
+        max-width: 480px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+        animation: modalIn .2s ease;
+    }
+    @@keyframes modalIn { from { opacity:0; transform: scale(.95) translateY(10px); } to { opacity:1; transform: scale(1) translateY(0); } }
+    .od-modal-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid #f1f5f9;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .od-modal-title { font-weight: 700; margin: 0; font-size: 1rem; }
+    .od-modal-body { padding: 20px; }
+
+    @@media (max-width: 576px) {
+        .od-page { padding: 0 8px 24px; }
+        .od-header { padding: 16px 12px 14px; border-radius: 0 0 16px 16px; margin: 0 -8px 16px; }
+        .od-order-num { font-size: 1.1rem; }
+        .od-summary-bar {
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 12px;
+        }
+        .od-summary-divider { display: none; }
+        .od-summary-item {
+            min-width: calc(50% - 8px);
+            flex: unset;
+        }
+        .od-summary-value { font-size: 0.9rem; }
+        .od-step-line { width: 32px; }
+        .od-step-label { font-size: 0.65rem; }
+        .od-step-dot { width: 28px; height: 28px; font-size: 0.7rem; }
+        .od-info-grid {
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+        .od-section-header { padding: 12px 14px; min-height: 48px; }
+        .od-shipment-card { margin: 0 12px 8px; padding: 12px; }
+        .od-shipment-form { margin: 0 12px 12px; }
+        .od-btn { min-height: 44px; }
+        .od-btn-sm { min-height: 40px; }
+    }
+</style>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private OrderDto? order;
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isEditingInfo = false;
+    private OrderUpdateInfoRequest editInfo = new();
+    private string statusToUpdate = "";
+    private OrderStage? stageToUpdate;
+    private string? adminNote;
+
+    private bool showShipmentForm = false;
+    private OrderShipmentCreateDto newShipment = new();
+    private int? expandedShipmentId = null;
+
+    private bool showDeleteConfirm = false;
+    private bool showDeleteShipmentConfirm = false;
+    private OrderShipmentDto? shipmentToDelete;
+
+    private bool showReturnForm = false;
+    private OrderReturnCreateRequest newReturn = new();
+    private bool showRefundModal = false;
+    private OrderReturnDto? returnToRefund;
+    private OrderReturnRefundRequest refundInfo = new();
+    private string refundDateText = "";
+    private string? refundReceiptUrl;
+    private bool refundJdpReady;
+    private bool showDeleteReturnConfirm = false;
+    private OrderReturnDto? returnToDelete;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOrder();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (showRefundModal && !refundJdpReady)
+        {
+            refundJdpReady = true;
+            try { await JS.InvokeVoidAsync("initJalali"); } catch { }
+        }
+    }
+
+    private async Task LoadOrder()
+    {
+        isLoading = true;
+        try
+        {
+            order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/admin/{Id}");
+            if (order != null)
+            {
+                var valid = GetValidTransitions();
+                statusToUpdate = valid.Count > 0 ? valid[0].ToString() : order.Status.ToString();
+                stageToUpdate = order.Stage
+                    ?? (order.Status == OrderStatus.Completed ? OrderStage.Resolved
+                        : order.Status == OrderStatus.Approved ? OrderStage.PaymentConfirmed : null);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطا در بارگذاری: " + ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void GoBack() => Nav.NavigateTo("/admin/orders");
+
+    private string FormatProvinceCity()
+    {
+        if (order == null) return "";
+        if (string.IsNullOrWhiteSpace(order.ProvinceName) && string.IsNullOrWhiteSpace(order.CityName))
+            return "ثبت نشده";
+        if (string.IsNullOrWhiteSpace(order.CityName)) return order.ProvinceName!;
+        return $"{order.ProvinceName} - {order.CityName}";
+    }
+
+    private void StartEditingInfo()
+    {
+        if (order == null) return;
+        editInfo = new OrderUpdateInfoRequest
+        {
+            FullName = order.FullName, PhoneNumber = order.PhoneNumber, Email = order.Email,
+            Address = order.Address ?? "", ProvinceId = order.ProvinceId, CityId = order.CityId,
+            ProvinceName = order.ProvinceName, CityName = order.CityName, PostalCode = order.PostalCode
+        };
+        isEditingInfo = true;
+    }
+
+    private async Task SaveInfo()
+    {
+        if (order == null || isSaving) return;
+        isSaving = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/info", editInfo);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("اطلاعات بروزرسانی شد.");
+                isEditingInfo = false;
+                await LoadOrder();
+            }
+            else ToastService.ShowError("خطا در بروزرسانی.");
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private void SelectStage(OrderStage stage)
+    {
+        stageToUpdate = stage;
+    }
+
+    private bool CanShowStageChange() => order != null
+        && order.Status is not (OrderStatus.Rejected or OrderStatus.Cancelled or OrderStatus.PendingPayment);
+
+    private async Task UpdateStage()
+    {
+        if (order == null || isSaving || stageToUpdate == null) return;
+        isSaving = true;
+        try
+        {
+            var req = new OrderStageUpdateDto { Stage = stageToUpdate.Value, AdminNotes = adminNote };
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/stage", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("مرحله سفارش بروزرسانی شد.");
+                adminNote = null;
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در بروزرسانی مرحله.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private async Task UpdateStatus()
+    {
+        if (order == null || isSaving) return;
+        isSaving = true;
+        try
+        {
+            var req = new OrderStatusUpdateDto { Status = Enum.Parse<OrderStatus>(statusToUpdate), AdminNotes = adminNote };
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/status", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("وضعیت بروزرسانی شد.");
+                adminNote = null;
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در بروزرسانی وضعیت.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private void ShowNewShipmentForm()
+    {
+        newShipment = new OrderShipmentCreateDto();
+        showShipmentForm = true;
+    }
+
+    private async Task CreateShipment()
+    {
+        if (order == null || isSaving) return;
+        if (string.IsNullOrWhiteSpace(newShipment.Carrier))
+        {
+            ToastService.ShowError("شرکت حمل الزامی است.");
+            return;
+        }
+        isSaving = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"api/orders/admin/{order.Id}/shipments", newShipment);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("مرسوله ثبت شد.");
+                showShipmentForm = false;
+                await LoadOrder();
+            }
+            else ToastService.ShowError("خطا در ثبت مرسوله.");
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private void ToggleShipMenu(int shipId)
+    {
+        expandedShipmentId = expandedShipmentId == shipId ? null : shipId;
+    }
+
+    private async Task UpdateShipmentStatus(OrderShipmentDto ship, OrderShipmentStatus newStatus)
+    {
+        if (order == null) return;
+        expandedShipmentId = null;
+        try
+        {
+            var req = new OrderShipmentUpdateDto { Status = newStatus };
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/shipments/{ship.Id}", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("وضعیت مرسوله بروزرسانی شد.");
+                await LoadOrder();
+            }
+            else ToastService.ShowError("خطا در بروزرسانی.");
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+    }
+
+    private void ConfirmDeleteShipment(OrderShipmentDto ship)
+    {
+        shipmentToDelete = ship;
+        expandedShipmentId = null;
+        showDeleteShipmentConfirm = true;
+    }
+
+    private async Task HandleDeleteShipmentResult(bool confirmed)
+    {
+        showDeleteShipmentConfirm = false;
+        if (!confirmed || shipmentToDelete == null || order == null) return;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/orders/admin/{order.Id}/shipments/{shipmentToDelete.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("مرسوله حذف شد.");
+                await LoadOrder();
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+    }
+
+    private void ShowNewReturnForm()
+    {
+        newReturn = new OrderReturnCreateRequest
+        {
+            RefundAmount = order != null ? order.TotalAmount - (order.DiscountAmount ?? 0) : 0
+        };
+        showReturnForm = true;
+    }
+
+    private async Task CreateReturn()
+    {
+        if (order == null || isSaving) return;
+        if (newReturn.RefundAmount <= 0) { ToastService.ShowError("مبلغ مرجوعی باید بزرگ‌تر از صفر باشد."); return; }
+        isSaving = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"api/orders/admin/{order.Id}/returns", newReturn);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("مرجوعی ثبت شد.");
+                showReturnForm = false;
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در ثبت مرجوعی.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private void ShowRefundForm(OrderReturnDto ret)
+    {
+        returnToRefund = ret;
+        refundInfo = new OrderReturnRefundRequest
+        {
+            RefundCardNumber = ret.RefundCardNumber ?? "",
+            RefundBankName = ret.RefundBankName,
+            RefundDate = ret.RefundDate ?? DateTimeOffset.UtcNow,
+            RefundReceiptImageUrl = ret.RefundReceiptImageUrl,
+            AdminNotes = ret.AdminNotes
+        };
+        refundDateText = PersianDate.ToJalaliDate(ret.RefundDate ?? DateTimeOffset.UtcNow);
+        refundReceiptUrl = ret.RefundReceiptImageUrl;
+        refundJdpReady = false;
+        showRefundModal = true;
+    }
+
+    private async Task MarkRefunded()
+    {
+        if (order == null || returnToRefund == null || isSaving) return;
+        if (string.IsNullOrWhiteSpace(refundInfo.RefundCardNumber)) { ToastService.ShowError("شماره کارت الزامی است."); return; }
+        if (!string.IsNullOrWhiteSpace(refundDateText))
+        {
+            if (PersianDate.TryParseJalaliDateTime(refundDateText, out var refundDateParsed))
+                refundInfo.RefundDate = refundDateParsed;
+            else { ToastService.ShowError("تاریخ واریز نامعتبر است. (فرمت شمسی: 1404/01/01)"); return; }
+        }
+        else refundInfo.RefundDate = DateTimeOffset.UtcNow;
+        refundInfo.RefundReceiptImageUrl = refundReceiptUrl;
+        isSaving = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"api/orders/admin/{order.Id}/returns/{returnToRefund.Id}/refund", refundInfo);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("واریز ثبت شد.");
+                showRefundModal = false;
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در ثبت واریز.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private void ConfirmDeleteReturn(OrderReturnDto ret)
+    {
+        returnToDelete = ret;
+        showDeleteReturnConfirm = true;
+    }
+
+    private async Task HandleDeleteReturnResult(bool confirmed)
+    {
+        showDeleteReturnConfirm = false;
+        if (!confirmed || returnToDelete == null || order == null) return;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/orders/admin/{order.Id}/returns/{returnToDelete.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("مرجوعی حذف شد.");
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در حذف.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+    }
+
+    private async Task HandleDeleteResult(bool confirmed)
+    {
+        showDeleteConfirm = false;
+        if (!confirmed || order == null) return;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/orders/admin/{order.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("سفارش حذف شد.");
+                Nav.NavigateTo("/admin/orders");
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در حذف.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+    }
+
+    private string GetStatusLabel(OrderStatus s) => s switch
+    {
+        OrderStatus.PendingPayment => "در انتظار پرداخت",
+        OrderStatus.ReceiptUploaded => "رسید آپلود شد",
+        OrderStatus.Approved => "تایید شده",
+        OrderStatus.Rejected => "رد شده",
+        OrderStatus.Cancelled => "لغو شده",
+        OrderStatus.Completed => "تکمیل شده",
+        _ => s.ToString()
+    };
+
+    private string GetStatusClass(OrderStatus s) => s switch
+    {
+        OrderStatus.PendingPayment => "bg-warning-subtle text-warning",
+        OrderStatus.ReceiptUploaded => "bg-info-subtle text-info",
+        OrderStatus.Approved => "bg-success-subtle text-success",
+        OrderStatus.Rejected => "bg-danger-subtle text-danger",
+        OrderStatus.Cancelled => "bg-secondary-subtle text-secondary",
+        OrderStatus.Completed => "bg-success text-white",
+        _ => "bg-light"
+    };
+
+    private string GetStatusBadgeClass(OrderStatus s) => s switch
+    {
+        OrderStatus.PendingPayment => "od-badge-warning",
+        OrderStatus.ReceiptUploaded => "od-badge-info",
+        OrderStatus.Approved => "od-badge-success",
+        OrderStatus.Rejected => "od-badge-danger",
+        OrderStatus.Cancelled => "od-badge-muted",
+        OrderStatus.Completed => "od-badge-done",
+        _ => ""
+    };
+
+    private string GetShipmentStatusLabel(OrderShipmentStatus s) => s switch
+    {
+        OrderShipmentStatus.Pending => "در انتظار ارسال",
+        OrderShipmentStatus.Shipped => "ارسال شد",
+        OrderShipmentStatus.InTransit => "در مسیر",
+        OrderShipmentStatus.Delivered => "تحویل شد",
+        OrderShipmentStatus.Failed => "تحویل ناموفق",
+        OrderShipmentStatus.Returned => "برگشتی",
+        OrderShipmentStatus.Cancelled => "لغو شد",
+        _ => s.ToString()
+    };
+
+    private string GetShipmentStatusLabelFromStr(string s) => s switch
+    {
+        "Pending" => "در انتظار ارسال",
+        "Shipped" => "ارسال شد",
+        "InTransit" => "در مسیر",
+        "Delivered" => "تحویل شد",
+        "Failed" => "تحویل ناموفق",
+        "Returned" => "برگشتی",
+        "Cancelled" => "لغو شد",
+        _ => s
+    };
+
+    private string GetShipmentStatusClass(string s) => s switch
+    {
+        "Pending" => "bg-warning-subtle text-warning",
+        "Shipped" => "bg-info-subtle text-info",
+        "InTransit" => "bg-primary-subtle text-primary",
+        "Delivered" => "bg-success",
+        "Failed" => "bg-danger-subtle text-danger",
+        "Returned" => "bg-secondary-subtle text-secondary",
+        "Cancelled" => "bg-dark-subtle text-dark",
+        _ => "bg-light"
+    };
+
+    private string GetEventLabel(OrderEventDto e) => e.EventType switch
+    {
+        "created" => "سفارش ثبت شد",
+        "status_changed" => "تغییر وضعیت",
+        "stage_changed" => "تغییر مرحله",
+        "info_updated" => "بروزرسانی اطلاعات",
+        "shipment_created" => "ایجاد مرسوله",
+        "reship_created" => "ارسال مجدد",
+        "shipment_status_changed" => "تغییر وضعیت مرسوله",
+        "shipment_deleted" => "حذف مرسوله",
+        "return_created" => "ثبت مرجوعی",
+        "return_refunded" => "واریز مرجوعی",
+        "return_deleted" => "حذف مرجوعی",
+        "deleted" => "حذف سفارش",
+        _ => e.EventType
+    };
+
+    private string GetEventIconClass(string type) => type switch
+    {
+        "created" => "od-event-icon-blue",
+        "status_changed" => "od-event-icon-green",
+        "stage_changed" => "od-event-icon-amber",
+        "deleted" => "od-event-icon-red",
+        "shipment_created" or "reship_created" => "od-event-icon-blue",
+        "shipment_status_changed" => "od-event-icon-amber",
+        "return_created" => "od-event-icon-amber",
+        "return_refunded" => "od-event-icon-green",
+        "return_deleted" => "od-event-icon-red",
+        "info_updated" => "od-event-icon-blue",
+        _ => "od-event-icon-gray"
+    };
+
+    private string GetEventIcon(string type) => type switch
+    {
+        "created" => "oi-plus",
+        "status_changed" => "oi-loop",
+        "stage_changed" => "oi-arrow-right",
+        "deleted" => "oi-trash",
+        "shipment_created" or "reship_created" => "oi-package",
+        "shipment_status_changed" => "oi-transfer",
+        "info_updated" => "oi-pencil",
+        "shipment_deleted" => "oi-x",
+        "return_created" => "oi-action-undo",
+        "return_refunded" => "oi-credit-card",
+        "return_deleted" => "oi-x",
+        _ => "oi-record"
+    };
+
+    private List<OrderStep> GetSteps()
+    {
+        var steps = new List<OrderStep>
+        {
+            new("ثبت سفارش", true),
+            new("پرداخت", order.Status is OrderStatus.ReceiptUploaded or OrderStatus.Approved or OrderStatus.Completed),
+            new("بررسی رسید", order.Status is OrderStatus.Approved or OrderStatus.Completed),
+            new("ارسال و تحویل", order.Status == OrderStatus.Completed)
+        };
+        var activeIdx = order.Status switch
+        {
+            OrderStatus.PendingPayment => 1,
+            OrderStatus.ReceiptUploaded => 2,
+            OrderStatus.Approved => 3,
+            _ => -1
+        };
+        if (activeIdx >= 0 && activeIdx < steps.Count && !steps[activeIdx].IsDone)
+            steps[activeIdx].IsActive = true;
+        return steps;
+    }
+
+    private HashSet<string> collapsedSections = new();
+
+    private void ToggleSection(string section)
+    {
+        if (!collapsedSections.Remove(section))
+            collapsedSections.Add(section);
+        StateHasChanged();
+    }
+
+    private bool IsSectionVisible(string section) => !collapsedSections.Contains(section);
+
+    private void ToggleC() => ToggleSection("c");
+    private void ToggleP() => ToggleSection("p");
+    private void ToggleI() => ToggleSection("i");
+    private void ToggleS() => ToggleSection("s");
+    private void ToggleU() => ToggleSection("u");
+    private void ToggleN() => ToggleSection("n");
+    private void ToggleR() => ToggleSection("r");
+    private void ToggleT() => ToggleSection("t");
+
+    private List<OrderStatus> GetValidTransitions() => order?.Status switch
+    {
+        OrderStatus.PendingPayment => new() { OrderStatus.ReceiptUploaded, OrderStatus.Approved, OrderStatus.Rejected, OrderStatus.Cancelled },
+        OrderStatus.ReceiptUploaded => new() { OrderStatus.Approved, OrderStatus.Rejected, OrderStatus.Cancelled },
+        OrderStatus.Approved => new() { OrderStatus.Completed, OrderStatus.Rejected, OrderStatus.Cancelled },
+        _ => new()
+    };
+
+    private bool CanShowShipments() => order?.Status is OrderStatus.Approved or OrderStatus.Completed or OrderStatus.ReceiptUploaded;
+    private bool CanShowNewShipmentButton() => order?.Status is OrderStatus.Approved;
+    private bool CanShowReturns() => order?.Status is OrderStatus.Completed || order?.Returns.Any() == true;
+    private bool CanShowStatusChange() => GetValidTransitions().Count > 0;
+    private bool CanShowDangerZone() => order != null;
+
+    private async Task QuickApprove()
+    {
+        if (order == null || isSaving) return;
+        isSaving = true;
+        try
+        {
+            var req = new OrderStatusUpdateDto { Status = OrderStatus.Approved };
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/status", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("سفارش تایید شد.");
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در تایید.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private async Task QuickReject()
+    {
+        if (order == null || isSaving) return;
+        isSaving = true;
+        try
+        {
+            var req = new OrderStatusUpdateDto { Status = OrderStatus.Rejected, AdminNotes = "رد توسط مدیر" };
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/status", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("سفارش رد شد.");
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در رد.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private class OrderStep(string label, bool isDone)
+    {
+        public string Label { get; } = label;
+        public bool IsDone { get; } = isDone;
+        public bool IsActive { get; set; }
+    }
+}

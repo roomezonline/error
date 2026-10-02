@@ -1,5 +1,6 @@
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
+using ErrorService.Server.Services;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,10 +13,12 @@ namespace ErrorService.Server.Controllers;
 public sealed class ContactController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
+    private readonly NotificationEventService _notificationEvents;
 
-    public ContactController(ErrorServiceDbContext db)
+    public ContactController(ErrorServiceDbContext db, NotificationEventService notificationEvents)
     {
         _db = db;
+        _notificationEvents = notificationEvents;
     }
 
     [HttpPost]
@@ -32,6 +35,21 @@ public sealed class ContactController : ControllerBase
         };
 
         _db.ContactMessages.Add(msg);
+
+        await _notificationEvents.NotifyAsync(
+            eventType: "contact.created",
+            values: new Dictionary<string, string?>
+            {
+                ["FullName"] = msg.FullName,
+                ["Subject"] = msg.Subject,
+                ["Phone"] = msg.PhoneNumber
+            },
+            idempotencyKey: $"contact.created:{msg.CreatedAt.UtcTicks}",
+            fallbackSeverity: NotificationSeverity.Info,
+            fallbackTitle: "پیام جدید تماس با ما",
+            fallbackBody: $"{msg.FullName} با موضوع «{msg.Subject}» پیامی ثبت کرده است. تلفن: {msg.PhoneNumber}",
+            fallbackUrl: "/admin/contact-messages");
+
         await _db.SaveChangesAsync();
 
         return Ok(new { message = "پیام شما با موفقیت ثبت شد. در اسرع وقت با شما تماس خواهیم گرفت." });

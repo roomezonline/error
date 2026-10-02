@@ -1,0 +1,197 @@
+@using System.Globalization
+@using System.Text.RegularExpressions
+@using ErrorService.Client.Utils
+
+@if (ParsedNotes.Count > 0)
+{
+    <div class="an-list" dir="rtl">
+        @foreach (var note in ParsedNotes)
+        {
+            <div class="an-item @(note.IsPlain ? "an-item--plain" : null)">
+                @if (!note.IsPlain)
+                {
+                    <div class="an-meta">
+                        @if (!string.IsNullOrWhiteSpace(note.AdminName))
+                        {
+                            <span class="an-chip an-chip--user">
+                                <span class="oi oi-people"></span>
+                                @note.AdminName
+                            </span>
+                        }
+                        @if (!string.IsNullOrEmpty(note.DateFa) || !string.IsNullOrEmpty(note.TimeFa))
+                        {
+                            <span class="an-chip an-chip--date">
+                                <span class="oi oi-calendar"></span>
+                                @if (!string.IsNullOrEmpty(note.DateFa))
+                                {
+                                    <span>@note.DateFa</span>
+                                }
+                                @if (!string.IsNullOrEmpty(note.TimeFa))
+                                {
+                                    <span class="an-time">
+                                        <span class="oi oi-clock"></span>
+                                        @note.TimeFa
+                                    </span>
+                                }
+                            </span>
+                        }
+                    </div>
+                }
+                <div class="an-text">@note.Text</div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? Notes { get; set; }
+
+    private static readonly Regex NoteRegex = new(
+        @"^\[(?<ts>[^\]]+)\]\s*(?<name>[^:]+):\s*(?<msg>.*)$",
+        RegexOptions.Compiled | RegexOptions.Singleline);
+
+    private List<ParsedNote> ParsedNotes = new();
+
+    protected override void OnParametersSet()
+    {
+        ParsedNotes = Parse(Notes);
+    }
+
+    private static List<ParsedNote> Parse(string? notes)
+    {
+        var result = new List<ParsedNote>();
+        if (string.IsNullOrWhiteSpace(notes)) return result;
+
+        foreach (var raw in notes.Replace("\r\n", "\n").Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0) continue;
+
+            var m = NoteRegex.Match(line);
+            if (!m.Success)
+            {
+                result.Add(new ParsedNote { Text = line, IsPlain = true });
+                continue;
+            }
+
+            var ts = m.Groups["ts"].Value.Trim();
+            var name = m.Groups["name"].Value.Trim();
+            var msg = m.Groups["msg"].Value.Trim();
+
+            string dateFa = "", timeFa = "";
+            if (DateTime.TryParseExact(ts, "yyyy/MM/dd HH:mm",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out var utc))
+            {
+                var local = new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)).ToLocalTime();
+                dateFa = PersianDate.ToJalaliDate(local);
+                timeFa = PersianDate.ToTime(local);
+            }
+            else
+            {
+                dateFa = ts;
+            }
+
+            result.Add(new ParsedNote
+            {
+                AdminName = name,
+                DateFa = dateFa,
+                TimeFa = timeFa,
+                Text = string.IsNullOrEmpty(msg) ? "—" : msg
+            });
+        }
+
+        return result;
+    }
+
+    private sealed class ParsedNote
+    {
+        public string AdminName { get; set; } = "";
+        public string DateFa { get; set; } = "";
+        public string TimeFa { get; set; } = "";
+        public string Text { get; set; } = "";
+        public bool IsPlain { get; set; }
+    }
+}
+
+<style>
+    .an-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .an-item {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 12px 14px;
+        border-right: 3px solid #2563eb;
+    }
+
+    .an-item--plain {
+        border-right-color: #94a3b8;
+    }
+
+    .an-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .an-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.72rem;
+        font-weight: 800;
+        border-radius: 999px;
+        padding: 4px 10px;
+        line-height: 1.4;
+        white-space: nowrap;
+    }
+
+    .an-chip .oi {
+        font-size: 0.7rem;
+        opacity: 0.9;
+    }
+
+    .an-chip--user {
+        background: #dbeafe;
+        color: #1d4ed8;
+        border: 1px solid #bfdbfe;
+    }
+
+    .an-chip--date {
+        background: #ecfdf5;
+        color: #047857;
+        border: 1px solid #a7f3d0;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .an-time {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-right: 4px;
+        padding-right: 8px;
+        border-right: 1px dashed rgba(4,120,87,0.35);
+    }
+
+    .an-text {
+        font-size: 0.86rem;
+        color: #334155;
+        line-height: 1.9;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: pre-wrap;
+        unicode-bidi: plaintext;
+    }
+
+    .an-item--plain .an-text {
+        color: #475569;
+    }
+</style>

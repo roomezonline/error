@@ -15,10 +15,13 @@ public sealed class SeoFallbackMiddleware
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<SeoFallbackMiddleware> _logger;
     private string? _indexHtmlTemplate;
-    private readonly ConcurrentDictionary<string, (string html, int statusCode, DateTime cachedAt)> _cache = new();
+    private static readonly ConcurrentDictionary<string, (string html, int statusCode, DateTime cachedAt)> _cache = new();
+    private static int _cacheVersion;
     private readonly string _baseUrl;
     private readonly IConfiguration _config;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
+
+    public static void InvalidateHtmlCache() => Interlocked.Increment(ref _cacheVersion);
 
     private sealed record SeoContactData(string? Phone1, string? Phone2, string? Email, string? Address,
         string? Instagram, string? Telegram, string? Youtube);
@@ -89,6 +92,10 @@ public sealed class SeoFallbackMiddleware
                                     "ثبت درخواست کارشناسی و عیب‌یابی لوازم خانگی",
                                     "کارشناسی لوازم خانگی, عیب‌یابی, بررسی فنی",
                                     "WebPage"),
+        ["/commitment"] = ("تعهدنامه دیجیتال | ارورسرویس",
+                           "تعهدنامه و اصول ارائه خدمات تعمیرات ارورسرویس",
+                           "تعهدنامه ارورسرویس, اصول خدمات تعمیرات, ضمانت خدمات",
+                           "WebPage"),
     };
 
     public SeoFallbackMiddleware(RequestDelegate next, IWebHostEnvironment env, ILogger<SeoFallbackMiddleware> logger, IConfiguration configuration)
@@ -97,7 +104,7 @@ public sealed class SeoFallbackMiddleware
         _env = env;
         _logger = logger;
         _config = configuration;
-        _baseUrl = configuration.GetValue<string>("Site:_baseUrl") ?? "https://errorservice.ir";
+        _baseUrl = (configuration.GetValue<string>("Site:BaseUrl") ?? "https://errorservice.ir").TrimEnd('/');
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -114,6 +121,20 @@ public sealed class SeoFallbackMiddleware
         if (path.Length > 1 && path.EndsWith('/'))
         {
             path = path.TrimEnd('/');
+        }
+
+        // Permanent redirect for non-lowercase path variants (e.g. .../IE -> .../ie)
+        // so Google only sees one canonical URL instead of "Alternate page".
+        var lowerPath = path.ToLowerInvariant();
+        if (!string.Equals(path, lowerPath, StringComparison.Ordinal))
+        {
+            var qs = context.Request.QueryString.Value ?? "";
+            var encoded = _baseUrl + string.Join("/", lowerPath.Split('/').Select(Uri.EscapeDataString));
+            context.Response.StatusCode = StatusCodes.Status301MovedPermanently;
+            context.Response.Headers.Location = encoded + qs;
+            context.Response.ContentType = "text/plain; charset=utf-8";
+            await context.Response.WriteAsync("Moved Permanently");
+            return;
         }
 
         var db = context.RequestServices.GetRequiredService<ErrorServiceDbContext>();
@@ -176,7 +197,7 @@ public sealed class SeoFallbackMiddleware
 
     private async Task<(string? html, int statusCode)> GetSeoHtml(string path, ErrorServiceDbContext db, bool isCrawler)
     {
-        var cacheKey = path.ToLowerInvariant() + (isCrawler ? "|crawler" : "|min");
+        var cacheKey = path.ToLowerInvariant() + "|" + _cacheVersion + (isCrawler ? "|crawler" : "|min");
 
         if (_cache.TryGetValue(cacheKey, out var cached) && (DateTime.UtcNow - cached.cachedAt) < CacheDuration)
             return (cached.html, cached.statusCode);
@@ -197,8 +218,23 @@ public sealed class SeoFallbackMiddleware
         string ogImage = "";
         var statusCode = 200;
         var entity = await TryGetEntityData(cleanPath, db);
+        var entityFound = entity != null;
 
-        if (TryGetDynamicMeta(cleanPath, entity, out var dynMeta, out var entityFound))
+        if (cleanPath == "admin" || cleanPath.StartsWith("admin/"))
+        {
+            title = "پنل مدیریت | ارورسرویس";
+            description = "پنل مدیریت ارورسرویس";
+            keywords = "پنل مدیریت, ارورسرویس";
+            jsonLd = BuildWebPageJsonLd(canonical, title, description);
+        }
+        else if (cleanPath == "auth" || cleanPath.StartsWith("auth/"))
+        {
+            title = "حساب کاربری | ارورسرویس";
+            description = "ورود و ثبت‌نام در ارورسرویس";
+            keywords = "ورود, ثبت نام, ارورسرویس";
+            jsonLd = BuildWebPageJsonLd(canonical, title, description);
+        }
+        else if (TryGetDynamicMeta(cleanPath, entity, out var dynMeta, out entityFound))
         {
             (title, description, keywords, jsonLd, ogImage) = dynMeta;
             if (!entityFound)
@@ -231,12 +267,17 @@ public sealed class SeoFallbackMiddleware
         }
 
         var crawlerContent = "";
-        var isPublicPage = statusCode == 200 && !cleanPath.StartsWith("admin");
+        var isPublicPage = statusCode == 200 && !cleanPath.StartsWith("admin") && !cleanPath.StartsWith("auth");
         if (isPublicPage)
         {
             if (isCrawler && entityFound && entity != null)
             {
-                crawlerContent = BuildPrerenderBody(cleanPath, entity);
+                crawlerContent = await BuildPrerenderBodyAsync(cleanPath, entity, db);
+            }
+
+            if (isCrawler && cleanPath == "technical/error-codes")
+            {
+                crawlerContent = await BuildErrorCodeHubContent(db);
             }
 
             if (string.IsNullOrEmpty(crawlerContent))
@@ -246,11 +287,271 @@ public sealed class SeoFallbackMiddleware
             }
         }
 
+        // Inject product review structured data for crawlers (rich results)
+        if (isCrawler && cleanPath.StartsWith("products/") && entityFound && entity != null)
+        {
+            jsonLd = await EnrichProductJsonLdWithReviewsAsync(jsonLd, entity, db);
+        }
+
         var result = ApplyMetaTags(template, title, description, keywords, canonical, jsonLd, ogImage,
             noindex: !isPublicPage, crawlerContent: crawlerContent);
 
         _cache[cacheKey] = (result, statusCode, DateTime.UtcNow);
         return (result, statusCode);
+    }
+
+    private async Task<string> BuildErrorCodeHubContent(ErrorServiceDbContext db)
+    {
+        var errors = await db.ErrorCodes
+            .OrderByDescending(e => e.Id)
+            .Take(24)
+            .Select(e => new { e.Brand, e.DeviceType, e.Code, e.Description })
+            .ToListAsync();
+
+        var sb = new StringBuilder();
+        sb.Append("<h1 class=\"seo-prerender\">بانک کدهای خطا</h1>\n");
+        sb.Append("<p class=\"seo-prerender-desc\">جستجو و مشاهده کدهای خطای لوازم خانگی بر اساس برند، نوع دستگاه و کد خطا.</p>\n");
+        sb.Append("<h2 class=\"seo-prerender-h2\">کدهای خطای پرکاربرد</h2>\n<ul class=\"seo-prerender-list\">");
+
+        foreach (var error in errors)
+        {
+            var brand = Uri.EscapeDataString(error.Brand.Trim().ToLowerInvariant());
+            var device = Uri.EscapeDataString(error.DeviceType.Trim().ToLowerInvariant());
+            var code = Uri.EscapeDataString(error.Code.Trim().ToLowerInvariant());
+            var url = $"{_baseUrl}/technical/error-codes/{brand}/{device}/{code}";
+            var label = $"کد خطای {error.Code} {error.Brand} {error.DeviceType}";
+            if (!string.IsNullOrWhiteSpace(error.Description))
+                label += $" - {error.Description}";
+            sb.Append($"<li><a href=\"{EscapeHtml(url)}\">{EscapeHtml(label)}</a></li>");
+        }
+
+        sb.Append("</ul>\n");
+        return sb.ToString();
+    }
+
+    private async Task<string> BuildPrerenderBodyAsync(string cleanPath, object entity, ErrorServiceDbContext db)
+    {
+        var body = BuildPrerenderBody(cleanPath, entity);
+        var reviewsHtml = await BuildReviewsHtmlAsync(cleanPath, entity, db);
+        return body + reviewsHtml;
+    }
+
+    private async Task<string> BuildReviewsHtmlAsync(string cleanPath, object entity, ErrorServiceDbContext db)
+    {
+        try
+        {
+            if (cleanPath.StartsWith("products/"))
+            {
+                var node = JsonSerializer.SerializeToNode(entity);
+                var pid = node?["Id"]?.GetValue<int>() ?? 0;
+                if (pid <= 0) return "";
+
+                var roots = await db.ProductReviews
+                    .Where(r => r.ProductId == pid && r.IsApproved && r.ParentId == null)
+                    .OrderBy(r => r.CreatedAt)
+                    .Select(r => new { r.Id, r.FullName, r.Rating, r.Content, r.CreatedAt })
+                    .ToListAsync();
+
+                if (roots.Count == 0) return "";
+
+                var ids = roots.Select(r => r.Id).ToList();
+                var replies = await db.ProductReviews
+                    .Where(r => r.ProductId == pid && r.IsApproved && r.ParentId != null && ids.Contains(r.ParentId.Value))
+                    .OrderBy(r => r.CreatedAt)
+                    .Select(r => new { r.Id, r.ParentId, r.FullName, r.Content, r.CreatedAt })
+                    .ToListAsync();
+
+                return BuildCommentSectionHtml(
+                    "نظرات کاربران",
+                    roots.Select(r => new SeoComment(
+                        r.FullName, r.Content, r.CreatedAt,
+                        r.Rating,
+                        replies.Where(x => x.ParentId == r.Id)
+                            .Select(x => new SeoComment(x.FullName, x.Content, x.CreatedAt, null, new List<SeoComment>()))
+                            .ToList())),
+                    showRating: true);
+            }
+
+            if (cleanPath.StartsWith("news/"))
+            {
+                var node = JsonSerializer.SerializeToNode(entity);
+                var nid = node?["Id"]?.GetValue<int>() ?? 0;
+                if (nid <= 0) return "";
+
+                var roots = await db.NewsComments
+                    .Where(c => c.NewsId == nid && c.IsApproved && c.ParentId == null)
+                    .OrderBy(c => c.CreatedAt)
+                    .Select(c => new { c.Id, c.FullName, c.Rating, c.Content, c.CreatedAt })
+                    .ToListAsync();
+
+                if (roots.Count == 0) return "";
+
+                var ids = roots.Select(c => c.Id).ToList();
+                var replies = await db.NewsComments
+                    .Where(c => c.NewsId == nid && c.IsApproved && c.ParentId != null && ids.Contains(c.ParentId.Value))
+                    .OrderBy(c => c.CreatedAt)
+                    .Select(c => new { c.Id, c.ParentId, c.FullName, c.Content, c.CreatedAt })
+                    .ToListAsync();
+
+                return BuildCommentSectionHtml(
+                    "نظرات کاربران",
+                    roots.Select(c => new SeoComment(
+                        c.FullName, c.Content, c.CreatedAt,
+                        c.Rating,
+                        replies.Where(x => x.ParentId == c.Id)
+                            .Select(x => new SeoComment(x.FullName, x.Content, x.CreatedAt, null, new List<SeoComment>()))
+                            .ToList())),
+                    showRating: true);
+            }
+
+            if (cleanPath.StartsWith("academy/articles/"))
+            {
+                var node = JsonSerializer.SerializeToNode(entity);
+                var aid = node?["Id"]?.GetValue<int>() ?? 0;
+                if (aid <= 0) return "";
+
+                var roots = await db.TrainingArticleComments
+                    .Where(c => c.ArticleId == aid && c.IsApproved && c.ParentId == null)
+                    .OrderBy(c => c.CreatedAt)
+                    .Select(c => new { c.Id, c.FullName, c.Rating, c.Content, c.CreatedAt })
+                    .ToListAsync();
+
+                if (roots.Count == 0) return "";
+
+                var ids = roots.Select(c => c.Id).ToList();
+                var replies = await db.TrainingArticleComments
+                    .Where(c => c.ArticleId == aid && c.IsApproved && c.ParentId != null && ids.Contains(c.ParentId.Value))
+                    .OrderBy(c => c.CreatedAt)
+                    .Select(c => new { c.Id, c.ParentId, c.FullName, c.Content, c.CreatedAt })
+                    .ToListAsync();
+
+                return BuildCommentSectionHtml(
+                    "نظرات کاربران",
+                    roots.Select(c => new SeoComment(
+                        c.FullName, c.Content, c.CreatedAt,
+                        c.Rating,
+                        replies.Where(x => x.ParentId == c.Id)
+                            .Select(x => new SeoComment(x.FullName, x.Content, x.CreatedAt, null, new List<SeoComment>()))
+                            .ToList())),
+                    showRating: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SEO middleware: failed to load reviews for {Path}", cleanPath);
+        }
+
+        return "";
+    }
+
+    private sealed record SeoComment(string FullName, string Content, DateTimeOffset CreatedAt, int? Rating, List<SeoComment> Replies);
+
+    private static string BuildCommentSectionHtml(string heading, IEnumerable<SeoComment> comments, bool showRating)
+    {
+        var list = comments.ToList();
+        if (list.Count == 0) return "";
+
+        var sb = new StringBuilder();
+        sb.Append($"<section class=\"seo-prerender-reviews\" itemscope itemtype=\"https://schema.org/Review\">");
+        sb.Append($"<h2 class=\"seo-prerender-h2\">{EscapeHtml(heading)}</h2>\n");
+
+        foreach (var c in list)
+        {
+            var date = c.CreatedAt.ToUniversalTime().ToString("yyyy-MM-dd");
+            sb.Append("<article class=\"seo-prerender-review\" itemprop=\"review\" itemscope itemtype=\"https://schema.org/Review\">");
+            sb.Append($"<h3 class=\"seo-prerender-review-author\" itemprop=\"author\">{EscapeHtml(c.FullName)}</h3>");
+            if (showRating && c.Rating.HasValue)
+            {
+                sb.Append($"<div class=\"seo-prerender-review-rating\" itemprop=\"reviewRating\" itemscope itemtype=\"https://schema.org/Rating\">");
+                sb.Append($"<meta itemprop=\"ratingValue\" content=\"{c.Rating.Value}\" />");
+                sb.Append($"<meta itemprop=\"bestRating\" content=\"5\" />");
+                sb.Append($"{c.Rating.Value} از ۵</div>\n");
+            }
+            sb.Append($"<div class=\"seo-prerender-review-body\" itemprop=\"reviewBody\">{EscapeHtml(c.Content)}</div>");
+            sb.Append($"<meta itemprop=\"datePublished\" content=\"{date}\" />");
+
+            if (c.Replies.Count > 0)
+            {
+                sb.Append("<div class=\"seo-prerender-review-replies\">");
+                foreach (var r in c.Replies)
+                {
+                    sb.Append("<div class=\"seo-prerender-review-reply\">");
+                    sb.Append($"<strong>پاسخ {EscapeHtml(r.FullName)}:</strong> ");
+                    sb.Append(EscapeHtml(r.Content));
+                    sb.Append("</div>");
+                }
+                sb.Append("</div>");
+            }
+
+            sb.Append("</article>\n");
+        }
+
+        sb.Append("</section>\n");
+        return sb.ToString();
+    }
+
+    private async Task<string> EnrichProductJsonLdWithReviewsAsync(string jsonLd, object entity, ErrorServiceDbContext db)
+    {
+        try
+        {
+            var node = JsonSerializer.SerializeToNode(entity);
+            var pid = node?["Id"]?.GetValue<int>() ?? 0;
+            if (pid <= 0) return jsonLd;
+
+            var reviews = await db.ProductReviews
+                .Where(r => r.ProductId == pid && r.IsApproved)
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => new { r.FullName, r.Rating, r.Content, r.CreatedAt })
+                .ToListAsync();
+
+            if (reviews.Count == 0) return jsonLd;
+
+            var avg = Math.Round(reviews.Average(r => (double)r.Rating), 1);
+            var reviewArr = string.Join(",", reviews.Take(20).Select(r =>
+            {
+                var author = EscapeJson(r.FullName);
+                var body = EscapeJson(r.Content);
+                var date = r.CreatedAt.ToUniversalTime().ToString("yyyy-MM-dd");
+                return $@"{{""@type"":""Review"",""author"":{{""@type"":""Person"",""name"":""{author}""}},""reviewBody"":""{body}"",""reviewRating"":{{""@type"":""Rating"",""ratingValue"":{r.Rating},""bestRating"":5}},""datePublished"":""{date}""}}";
+            }));
+
+            var aggregate = $@"{{""@type"":""AggregateRating"",""ratingValue"":{avg.ToString(System.Globalization.CultureInfo.InvariantCulture)},""reviewCount"":{reviews.Count},""bestRating"":5,""worstRating"":1}}";
+            var reviewBlock = $@",""aggregateRating"":{aggregate},""review"":[{reviewArr}]";
+
+            // Inject into the first Product object of the JSON-LD array (or single object)
+            if (jsonLd.StartsWith("[") && jsonLd.Contains("\"@type\":\"Product\""))
+            {
+                var idx = jsonLd.IndexOf("\"@type\":\"Product\"", StringComparison.Ordinal);
+                if (idx > 0)
+                {
+                    // Find matching closing brace of the Product object by scanning braces from its opening {
+                    var objStart = jsonLd.LastIndexOf('{', idx);
+                    if (objStart > 0)
+                    {
+                        var depth = 0;
+                        var objEnd = -1;
+                        for (var i = objStart; i < jsonLd.Length; i++)
+                        {
+                            var ch = jsonLd[i];
+                            if (ch == '{') depth++;
+                            else if (ch == '}')
+                            {
+                                depth--;
+                                if (depth == 0) { objEnd = i; break; }
+                            }
+                        }
+                        if (objEnd > 0)
+                            return jsonLd[..objEnd] + reviewBlock + jsonLd[objEnd..];
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SEO middleware: failed to enrich product JSON-LD with reviews");
+        }
+
+        return jsonLd;
     }
 
     private string BuildPrerenderBody(string cleanPath, object entity)
@@ -563,7 +864,12 @@ public sealed class SeoFallbackMiddleware
                     var brand = Uri.UnescapeDataString(parts[0].Trim());
                     var device = Uri.UnescapeDataString(parts[1].Trim());
                     var code = Uri.UnescapeDataString(parts[2].Trim());
-                    return await db.ErrorCodes.Where(e => e.Brand == brand && e.DeviceType == device && e.Code == code)
+                    var brandKey = brand.Trim().ToLowerInvariant();
+                    var deviceKey = device.Trim().ToLowerInvariant();
+                    var codeKey = code.Trim().ToLowerInvariant();
+                    return await db.ErrorCodes.Where(e => e.Brand.Trim().ToLower() == brandKey &&
+                                                          e.DeviceType.Trim().ToLower() == deviceKey &&
+                                                          e.Code.Trim().ToLower() == codeKey)
                         .Select(e => new { e.Id, e.Brand, e.DeviceType, e.Code, e.Description, e.Solution, e.TechnicalNotes, e.ModelNames, e.ImageUrl }).FirstOrDefaultAsync();
                 }
             }
@@ -901,11 +1207,27 @@ public sealed class SeoFallbackMiddleware
     {
         if (_indexHtmlTemplate != null) return _indexHtmlTemplate;
 
-        var indexPath = Path.Combine(_env.WebRootPath, "index.html");
-        if (!File.Exists(indexPath)) return null;
+        // فایل سروشده توسط static web assets — وقتی پوشه wwwroot در content root وجود ندارد
+        // WebRootPath برابر null است و Path.Combine کرش می‌کند؛ بنابراین از file provider می‌خوانیم.
+        var fileInfo = _env.WebRootFileProvider?.GetFileInfo("index.html");
+        if (fileInfo != null && fileInfo.Exists)
+        {
+            using var stream = fileInfo.CreateReadStream();
+            using var reader = new StreamReader(stream);
+            _indexHtmlTemplate = await reader.ReadToEndAsync();
+            return _indexHtmlTemplate;
+        }
 
-        _indexHtmlTemplate = await File.ReadAllTextAsync(indexPath);
-        return _indexHtmlTemplate;
+        foreach (var dir in new[] { _env.WebRootPath, Path.Combine(_env.ContentRootPath ?? "", "wwwroot"), AppContext.BaseDirectory })
+        {
+            if (string.IsNullOrEmpty(dir)) continue;
+            var indexPath = Path.Combine(dir, "index.html");
+            if (!File.Exists(indexPath)) continue;
+            _indexHtmlTemplate = await File.ReadAllTextAsync(indexPath);
+            return _indexHtmlTemplate;
+        }
+
+        return null;
     }
 
     private static string EscapeHtml(string text) =>

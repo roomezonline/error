@@ -19,12 +19,14 @@ public class MonitoringServerController : ControllerBase
     private readonly MonitoringCacheService _cache;
     private readonly ErrorServiceDbContext _db;
     private readonly ILogger<MonitoringServerController> _logger;
+    private readonly NotificationEventService _notificationEvents;
 
-    public MonitoringServerController(MonitoringCacheService cache, ErrorServiceDbContext db, ILogger<MonitoringServerController> logger)
+    public MonitoringServerController(MonitoringCacheService cache, ErrorServiceDbContext db, ILogger<MonitoringServerController> logger, NotificationEventService notificationEvents)
     {
         _cache = cache;
         _db = db;
         _logger = logger;
+        _notificationEvents = notificationEvents;
     }
 
     [HttpPost("command")]
@@ -285,8 +287,17 @@ public class MonitoringServerController : ControllerBase
                     .FirstOrDefaultAsync();
                 if (connection != null)
                 {
+                    var maxHours = await _db.Workshops
+                        .Where(w => w.Id == connection.WorkshopId)
+                        .Select(w => (int?)w.MonitoringDurationHours)
+                        .FirstOrDefaultAsync() ?? 72;
+                    if (maxHours < 1) maxHours = 72;
+                    var maxHoursFa = maxHours.ToString("N0", CultureInfo.InvariantCulture)
+                        .Replace('0', '۰').Replace('1', '۱').Replace('2', '۲').Replace('3', '۳')
+                        .Replace('4', '۴').Replace('5', '۵').Replace('6', '۶').Replace('7', '۷')
+                        .Replace('8', '۸').Replace('9', '۹');
                     var elapsed = DateTimeOffset.UtcNow - connection.CreatedAt;
-                    if (elapsed.TotalHours >= 72 && connection.EndedAt == null)
+                    if (elapsed.TotalHours >= maxHours && connection.EndedAt == null)
                     {
                         var expiredCmdDir = Path.Combine(baseDir, deviceCode, "command");
                         Directory.CreateDirectory(expiredCmdDir);
@@ -311,8 +322,8 @@ public class MonitoringServerController : ControllerBase
                             {
                                 connection.EndedAt = DateTimeOffset.UtcNow;
                                 connection.EndReason = deviceOff
-                                    ? "پایان خودکار مانیتورینگ پس از ۷۲ ساعت"
-                                    : "پایان خودکار مانیتورینگ پس از ۷۲ ساعت (قطع اجباری - دستگاه خاموش نشد)";
+                                    ? $"پایان خودکار مانیتورینگ پس از {maxHoursFa} ساعت"
+                                    : $"پایان خودکار مانیتورینگ پس از {maxHoursFa} ساعت (قطع اجباری - دستگاه خاموش نشد)";
                                 await _db.SaveChangesAsync();
                                 await CreateArchiveForConnection(connection.Id, connection.WorkshopId, connection.CustomerReceiptId, deviceCode, connection.CreatedAt);
                             }
@@ -778,6 +789,22 @@ public class MonitoringServerController : ControllerBase
         }
     }
 
+    private async Task NotifyMonitoringAlertAsync(string deviceCode, string message, int num, string type)
+    {
+        await _notificationEvents.NotifyAsync(
+            eventType: "monitoring.alert",
+            values: new Dictionary<string, string?>
+            {
+                ["Message"] = message,
+                ["DeviceName"] = deviceCode
+            },
+            idempotencyKey: $"monitoring.alert:{deviceCode}:{type}:{num}",
+            fallbackSeverity: NotificationSeverity.Critical,
+            fallbackTitle: "هشدار پایش دستگاه",
+            fallbackBody: message,
+            fallbackUrl: "/admin/monitoring-devices");
+    }
+
     private static bool IsOn(string? val) =>
         val != null && val.Trim().Equals("on", StringComparison.OrdinalIgnoreCase);
 
@@ -836,6 +863,7 @@ public class MonitoringServerController : ControllerBase
                 CreatedAt = DateTime.UtcNow
             });
 
+            await NotifyMonitoringAlertAsync(deviceCode, message, num, typeAlarm);
             await _db.SaveChangesAsync();
         }
         catch (Exception ex)
@@ -878,6 +906,7 @@ public class MonitoringServerController : ControllerBase
                 CreatedAt = DateTime.UtcNow
             });
 
+            await NotifyMonitoringAlertAsync(deviceCode, message, num, "ambient_temp");
             await _db.SaveChangesAsync();
         }
         catch (Exception ex)

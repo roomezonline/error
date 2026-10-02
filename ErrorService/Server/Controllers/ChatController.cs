@@ -24,9 +24,11 @@ public class ChatController : ControllerBase
     private readonly IHubContext<ChatHub> _chatHub;
     private readonly MessengerRouter _router;
     private readonly ILogger<ChatController> _logger;
+    private readonly NotificationEventService _notificationEvents;
 
     public ChatController(ErrorServiceDbContext db, IHttpClientFactory httpClientFactory, BaleBotService baleBot,
-        IConfiguration config, IHubContext<ChatHub> chatHub, MessengerRouter router, ILogger<ChatController> logger)
+        IConfiguration config, IHubContext<ChatHub> chatHub, MessengerRouter router, ILogger<ChatController> logger,
+        NotificationEventService notificationEvents)
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
@@ -34,6 +36,7 @@ public class ChatController : ControllerBase
         _config = config;
         _chatHub = chatHub;
         _router = router;
+        _notificationEvents = notificationEvents;
         _logger = logger;
     }
 
@@ -491,7 +494,27 @@ public class ChatController : ControllerBase
         var session = await _db.ChatSessions.Include(s => s.Operator).FirstOrDefaultAsync(s => s.Id == id);
         if (session == null) return NotFound();
 
+        var previousOperatorId = session.OperatorId;
         session.OperatorId = req.OperatorId;
+
+        if (req.OperatorId != 0 && req.OperatorId != previousOperatorId)
+        {
+            var visitorName = string.IsNullOrWhiteSpace(session.UserName) ? "مشتری" : session.UserName;
+            await _notificationEvents.NotifyAsync(
+                eventType: "chat.session_transferred",
+                values: new Dictionary<string, string?>
+                {
+                    ["UserName"] = visitorName,
+                    ["SessionId"] = session.Id.ToString()
+                },
+                idempotencyKey: $"chat.transferred:{session.Id}:{previousOperatorId ?? 0}:{req.OperatorId}:{DateTimeOffset.UtcNow:yyyyMMddHH}",
+                fallbackSeverity: NotificationSeverity.Info,
+                fallbackTitle: "گفتگو به شما منتقل شد",
+                fallbackBody: $"گفتگوی #{session.Id} با {visitorName} به شما منتقل شد.",
+                fallbackUrl: "/admin/chat",
+                appUserId: req.OperatorId);
+        }
+
         await _db.SaveChangesAsync();
 
         var dto = new ChatSessionDto
@@ -773,6 +796,26 @@ public class ChatController : ControllerBase
 
         session.Rating = req.Rating;
         session.RatingComment = req.Comment;
+
+        if (session.OperatorId.HasValue && session.Rating.HasValue)
+        {
+            var visitorName = string.IsNullOrWhiteSpace(session.UserName) ? "مشتری" : session.UserName;
+            await _notificationEvents.NotifyAsync(
+                eventType: "chat.session_rated",
+                values: new Dictionary<string, string?>
+                {
+                    ["UserName"] = visitorName,
+                    ["SessionId"] = session.Id.ToString(),
+                    ["Rating"] = session.Rating.Value.ToString()
+                },
+                idempotencyKey: $"chat.rated:{session.Id}",
+                fallbackSeverity: NotificationSeverity.Info,
+                fallbackTitle: "امتیاز جدید برای گفتگو",
+                fallbackBody: $"مشتری {visitorName} به گفتگوی #{session.Id} امتیاز {session.Rating} از ۵ داد.",
+                fallbackUrl: "/admin/chat",
+                appUserId: session.OperatorId);
+        }
+
         await _db.SaveChangesAsync();
 
         return Ok();

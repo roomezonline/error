@@ -6,14 +6,7 @@
     font-family: 'Vazirmatn', sans-serif;
 }
 
-.admin-header {
-    background-color: #fff;
-    height: 60px;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-}
+/* NOTE: .admin-header styles live inline in AdminLayout.razor — do not redefine here (scoped CSS overrides them). */
 
 .admin-header__content {
     height: 100%;

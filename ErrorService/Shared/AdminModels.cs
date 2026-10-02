@@ -10,6 +10,7 @@ public sealed class ProductReviewAdminDto
     public int Rating { get; set; }
     public string Content { get; set; } = "";
     public bool IsApproved { get; set; }
+    public bool IsAdminRead { get; set; }
     public string CreatedAtFa { get; set; } = "";
 }
 

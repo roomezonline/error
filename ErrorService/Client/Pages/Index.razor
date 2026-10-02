@@ -13,6 +13,29 @@
 
 <PublicHero />
 
+<nav class="container py-3" dir="rtl" aria-label="بخش‌های اصلی ارورسرویس">
+    <div class="row g-2 justify-content-center">
+        <div class="col-6 col-md-4 col-lg-2">
+            <a href="/products" class="btn btn-outline-primary w-100 rounded-pill">فروشگاه</a>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <a href="/academy" class="btn btn-outline-primary w-100 rounded-pill">آکادمی</a>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <a href="/technical/error-codes" class="btn btn-outline-primary w-100 rounded-pill">کدهای خطا</a>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <a href="/admission/repair" class="btn btn-outline-primary w-100 rounded-pill">درخواست تعمیر</a>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <a href="/technical/consultation" class="btn btn-outline-primary w-100 rounded-pill">مشاوره فنی</a>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <a href="/contact" class="btn btn-outline-primary w-100 rounded-pill">تماس با ما</a>
+        </div>
+    </div>
+</nav>
+
 @if (isInitialLoading)
 {
     <div class="container my-4" dir="rtl">
@@ -126,7 +149,7 @@ else
             isInitialLoading = true;
             settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
 
-            orgJsonLd = $"[{BuildOrgJsonLd(settings)},{BuildWebSiteJsonLd()}]";
+            orgJsonLd = $"[{BuildOrgJsonLd(settings)},{BuildWebSiteJsonLd()},{BuildSiteNavigationJsonLd()}]";
 
             orderedModules = (settings?.HomeModules ?? new List<SiteHomeModuleDto>())
                 .OrderBy(x => x.SortOrder)
@@ -219,6 +242,36 @@ else
                 },
                 ["query-input"] = "required name=search_term_string"
             }
+        };
+
+        return JsonSerializer.Serialize(obj);
+    }
+
+    private string BuildSiteNavigationJsonLd()
+    {
+        var baseUrl = NavigationManager.BaseUri.TrimEnd('/');
+        var navigationItems = new[]
+        {
+            (Name: "فروشگاه", Url: $"{baseUrl}/products"),
+            (Name: "آکادمی", Url: $"{baseUrl}/academy"),
+            (Name: "بانک کدهای خطا", Url: $"{baseUrl}/technical/error-codes"),
+            (Name: "درخواست تعمیر", Url: $"{baseUrl}/admission/repair"),
+            (Name: "مشاوره فنی", Url: $"{baseUrl}/technical/consultation"),
+            (Name: "تماس با ما", Url: $"{baseUrl}/contact")
+        };
+
+        var obj = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "ItemList",
+            ["name"] = "بخش‌های اصلی ارورسرویس",
+            ["itemListElement"] = navigationItems.Select((item, index) => new Dictionary<string, object?>
+            {
+                ["@type"] = "ListItem",
+                ["position"] = index + 1,
+                ["name"] = item.Name,
+                ["url"] = item.Url
+            }).ToList()
         };
 
         return JsonSerializer.Serialize(obj);

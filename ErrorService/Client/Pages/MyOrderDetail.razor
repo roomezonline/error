@@ -1,0 +1,423 @@
+@page "/my-orders/{Id:int}"
+@using ErrorService.Shared
+@using ErrorService.Shared.Models
+@using ErrorService.Client.Utils
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>جزئیات سفارش | ارورسرویس</PageTitle>
+
+<div class="mod-page py-5" dir="rtl">
+    <div class="container" style="max-width: 880px;">
+        <div class="d-flex align-items-center gap-3 mb-4">
+            <button class="btn btn-outline-secondary rounded-pill btn-sm" @onclick="GoToProfile">
+                <span class="oi oi-chevron-right me-1"></span>بازگشت
+            </button>
+            <h1 class="fw-black m-0 fs-4">جزئیات سفارش</h1>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+            </div>
+        }
+        else if (_order == null)
+        {
+            <div class="text-center py-5">
+                <div class="display-3 text-muted opacity-25 mb-3"><span class="oi oi-ban"></span></div>
+                <h4 class="fw-bold">سفارش یافت نشد</h4>
+                <p class="text-muted">سفارش مورد نظر وجود ندارد یا دسترسی ندارید.</p>
+                <button class="btn btn-primary rounded-pill px-4" @onclick="GoToProfile">بازگشت به پروفایل</button>
+            </div>
+        }
+        else
+        {
+            <div class="mod-card">
+                <div class="mod-card-header">
+                    <div>
+                        <div class="mod-order-num" dir="ltr">@_order.OrderNumber</div>
+                        <div class="mod-order-date">@PersianDate.ToJalaliDateTime(_order.CreatedAt)</div>
+                    </div>
+                    <span class="mod-status-badge" style="@OrderDisplayHelper.SoftBadgeStyle(_order)">@OrderDisplayHelper.Label(_order)</span>
+                </div>
+
+                <OrderStageStepper Status="_order.Status"
+                                   Stage="_order.Stage"
+                                   StageDates="_order.StageDates"
+                                   CreatedAt="_order.CreatedAt"
+                                   PaymentDate="_order.PaymentDate"
+                                   UpdatedAt="_order.UpdatedAt" />
+            </div>
+
+            <div class="mod-card mt-3">
+                <div class="mod-card-title"><span class="oi oi-list-rich"></span> اقلام سفارش</div>
+                <div class="mod-order-items">
+                    @foreach (var item in _order.Items)
+                    {
+                        <a href="/products/@item.ProductId" target="_blank" rel="noopener" class="mod-order-item">
+                            <div class="mod-item-img">
+                                <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-product.svg" : item.ImageUrl)"
+                                     alt="@item.ProductName" />
+                            </div>
+                            <div class="mod-item-body">
+                                <div class="mod-item-name">@item.ProductName</div>
+                                <div class="mod-item-meta">
+                                    <span class="mod-item-qty">@item.Quantity × @item.Price.ToString("N0") تومان</span>
+                                    <span class="mod-item-line-total">@((item.Price * item.Quantity).ToString("N0")) تومان</span>
+                                </div>
+                            </div>
+                            <span class="oi oi-chevron-right mod-item-arrow"></span>
+                        </a>
+                    }
+                </div>
+                <div class="mod-total">
+                    <span>جمع کل</span>
+                    <span class="fw-bold text-danger">@_order.TotalAmount.ToString("N0") ریال</span>
+                </div>
+                @if ((_order.DiscountAmount ?? 0) > 0)
+                {
+                    <div class="mod-total" style="color:#16a34a;">
+                        <span>تخفیف (@_order.CouponCode)</span>
+                        <span class="fw-bold">-@_order.DiscountAmount?.ToString("N0") ریال</span>
+                    </div>
+                }
+            </div>
+
+            @if (_order.Items.Any() && !string.IsNullOrEmpty(_order.Items[0].ProductName))
+            {
+                <div class="mod-card mt-3">
+                    <div class="mod-card-title"><span class="oi oi-person"></span> اطلاعات خریدار</div>
+                    <div class="mod-info-grid">
+                        <div class="mod-info-box">
+                            <div class="mod-info-label">نام</div>
+                            <div class="mod-info-value">@_order.FullName</div>
+                        </div>
+                        <div class="mod-info-box">
+                            <div class="mod-info-label">موبایل</div>
+                            <div class="mod-info-value" dir="ltr">@_order.PhoneNumber</div>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_order.Email))
+                        {
+                            <div class="mod-info-box">
+                                <div class="mod-info-label">ایمیل</div>
+                                <div class="mod-info-value" dir="ltr">@_order.Email</div>
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_order.Address))
+                        {
+                            <div class="mod-info-box" style="grid-column:1/-1;">
+                                <div class="mod-info-label">آدرس</div>
+                                <div class="mod-info-value">@_order.Address</div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_order.PaymentDate.HasValue || (_order.ReceiptImageUrls?.Count ?? 0) > 0 || (_order.Returns?.Count ?? 0) > 0)
+            {
+                <div class="mod-card mt-3">
+                    <div class="mod-card-title"><span class="oi oi-credit-card"></span> اطلاعات واریزی و مرجوعی</div>
+                    <div class="mod-info-grid">
+                        <div class="mod-info-box">
+                            <div class="mod-info-label">تاریخ واریز</div>
+                            <div class="mod-info-value">@(_order.PaymentDate.HasValue ? PersianDate.ToJalaliDateTime(_order.PaymentDate.Value) : "---")</div>
+                        </div>
+                        <div class="mod-info-box">
+                            <div class="mod-info-label">وضعیت سفارش</div>
+                            <div class="mod-info-value">@OrderDisplayHelper.Label(_order)</div>
+                        </div>
+                    </div>
+
+                    @if ((_order.ReceiptImageUrls?.Count ?? 0) > 0)
+                    {
+                        <div style="margin-top:12px;">
+                            <div class="mod-info-label mb-2">تصاویر رسید واریز</div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                @foreach (var img in _order.ReceiptImageUrls)
+                                {
+                                    <a href="@img" target="_blank" rel="noopener">
+                                        <img src="@img" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;" />
+                                    </a>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if ((_order.Returns?.Count ?? 0) > 0)
+                    {
+                        <div style="margin-top:12px;border-top:1px dashed #cbd5e1;padding-top:10px;">
+                            <div class="mod-info-label mb-2" style="color:#dc2626;">اطلاعات مرجوعی ثبت شده</div>
+                            @foreach (var r in _order.Returns)
+                            {
+                                <div style="background:#fef2f2;border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+                                    <div style="display:flex;flex-wrap:wrap;gap:6px 18px;font-size:0.85rem;">
+                                        <div><span class="text-muted">مبلغ مرجوعی:</span> <span class="fw-bold text-danger">@r.RefundAmount.ToString("N0") تومان</span></div>
+                                        @if (!string.IsNullOrWhiteSpace(r.RefundCardNumber))
+                                        {
+                                            <div><span class="text-muted">به کارت:</span> <span class="fw-bold" dir="ltr">@r.RefundCardNumber</span></div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(r.RefundBankName))
+                                        {
+                                            <div><span class="text-muted">بانک:</span> <span class="fw-bold">@r.RefundBankName</span></div>
+                                        }
+                                        @if (r.RefundDate.HasValue)
+                                        {
+                                            <div><span class="text-muted">تاریخ واریز:</span> <span class="fw-bold">@PersianDate.ToJalaliDateTime(r.RefundDate.Value)</span></div>
+                                        }
+                                        <div><span class="text-muted">وضعیت:</span> <span class="fw-bold" style="color:@(r.IsRefunded ? "#16a34a" : "#f59e0b");">@(r.IsRefunded ? "واریز شده" : "در انتظار واریز")</span></div>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(r.ReturnReason))
+                                    {
+                                        <div style="margin-top:6px;font-size:0.8rem;color:#64748b;">دلیل مرجوعی: @r.ReturnReason</div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(r.RefundReceiptImageUrl))
+                                    {
+                                        <div style="margin-top:8px;">
+                                            <span class="text-muted" style="font-size:0.8rem;">رسید واریز مرجوعی:</span>
+                                            <a href="@r.RefundReceiptImageUrl" target="_blank" rel="noopener" style="margin-inline-start:8px;color:#2563eb;font-weight:700;font-size:0.85rem;">
+                                                <span class="oi oi-external-link"></span> مشاهده تصویر
+                                            </a>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_order.ShippingMethodName))
+            {
+                <div class="mod-card mt-3">
+                    <div class="mod-card-title"><span class="oi oi-location"></span> ارسال</div>
+                    <div class="mod-info-box" style="background:#f0fdf4;border-left:3px solid #16a34a;">
+                        <div class="mod-info-label" style="color:#059669;">روش ارسال</div>
+                        <div class="mod-info-value">
+                            @_order.ShippingMethodName
+                            @if (_order.ShippingCost == 0)
+                            {
+                                <span class="badge bg-success ms-2">رایگان</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted ms-2">— هزینه: @_order.ShippingCost.ToString("N0") تومان</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (_order.Shipments.Any())
+            {
+                <div class="mod-card mt-3">
+                    <div class="mod-card-title"><span class="oi oi-cart"></span> مرسولات پستی</div>
+                    @foreach (var s in _order.Shipments)
+                    {
+                        <div class="mod-shipment">
+                            <div class="mod-shipment-header">
+                                <span class="fw-bold">@s.Carrier</span>
+                                <span class="mod-status-badge @GetShipmentStatusClass(s.Status)">@s.Status</span>
+                            </div>
+                @if (!string.IsNullOrEmpty(s.TrackingNumber))
+                {
+                    <div class="mod-shipment-tracking">
+                        <span class="text-muted">کد رهگیری:</span>
+                        <span class="fw-bold ltr" dir="ltr">@s.TrackingNumber</span>
+                        <a class="mod-tracking-link" href="@GetTrackingUrl(s.Carrier, s.TrackingNumber)" target="_blank" rel="noopener">
+                            <span class="oi oi-external-link"></span> رهگیری مرسوله
+                        </a>
+                    </div>
+                }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_order.AdminNotes))
+            {
+                <div class="mod-card mt-3">
+                    <div class="mod-card-title"><span class="oi oi-info"></span> یادداشت مدیر</div>
+                    <div class="mod-admin-note" dir="rtl" style="background:transparent;border:none;padding:0">
+                        <AdminNotesList Notes="@_order.AdminNotes" />
+                    </div>
+                </div>
+            }
+
+            @if (_order.Events.Any())
+            {
+                <div class="mod-card mt-3">
+                    <div class="mod-card-title"><span class="oi oi-clock"></span> رویدادها</div>
+                    @foreach (var e in _order.Events)
+                    {
+                        <div class="mod-event">
+                            <div class="mod-event-dot"></div>
+                            <div class="mod-event-content">
+                                <div class="mod-event-text">@e.DisplayMessage</div>
+                                <div class="mod-event-date">@PersianDate.ToJalaliDateTime(e.CreatedAt)</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .mod-page { max-width: 880px; margin: 0 auto; }
+    .mod-card { background: #fff; border-radius: 16px; padding: 20px; border: 1px solid rgba(0,0,0,0.06); }
+    .mod-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+    .mod-order-num { font-size: 1.3rem; font-weight: 900; }
+    .mod-order-date { font-size: 0.82rem; color: #64748b; margin-top: 2px; }
+    .mod-card-title { font-weight: 800; font-size: 0.92rem; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+    .mod-card-title .oi { color: #dc3545; }
+
+    .mod-status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
+    .mod-status-badge.bg-warning-subtle { background: #fff3cd; color: #856404; }
+    .mod-status-badge.bg-info-subtle { background: #d1ecf1; color: #0c5460; }
+    .mod-status-badge.bg-success-subtle { background: #d4edda; color: #155724; }
+    .mod-status-badge.bg-success { background: #16a34a; color: #fff; }
+    .mod-status-badge.bg-danger-subtle { background: #f8d7da; color: #721c24; }
+    .mod-status-badge.bg-secondary-subtle { background: #e2e3e5; color: #383d41; }
+
+    .mod-order-items { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+
+    .mod-order-item {
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px; border: 1px solid #e2e8f0; border-radius: 12px;
+        background: #fff; text-decoration: none; color: inherit; transition: all 0.15s;
+    }
+    .mod-order-item:hover {
+        border-color: #dc3545; box-shadow: 0 2px 8px rgba(220,53,69,0.1);
+        color: inherit; text-decoration: none;
+    }
+
+    .mod-item-img {
+        width: 56px; height: 56px; flex-shrink: 0; border-radius: 10px;
+        background: #f8fafc; overflow: hidden;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .mod-item-img img { width: 100%; height: 100%; object-fit: contain; padding: 4px; }
+
+    .mod-item-body { flex: 1; min-width: 0; }
+
+    .mod-item-name {
+        font-weight: 700; font-size: 0.88rem; color: #0f172a;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px;
+    }
+    .mod-order-item:hover .mod-item-name { color: #dc3545; }
+
+    .mod-item-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.78rem; color: #64748b; align-items: center; }
+
+    .mod-item-qty {
+        background: #f1f5f9; border-radius: 6px; padding: 2px 8px; font-weight: 600;
+    }
+
+    .mod-item-line-total { font-weight: 800; color: #dc3545; }
+
+    .mod-item-arrow { color: #cbd5e1; font-size: 0.85rem; flex-shrink: 0; margin-right: auto; }
+    .mod-order-item:hover .mod-item-arrow { color: #dc3545; }
+
+    .mod-total { display: flex; justify-content: space-between; align-items: center; padding: 12px 0 0; border-top: 2px solid #f1f5f9; font-size: 0.88rem; }
+
+    .mod-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .mod-info-box { background: #f8fafc; border-radius: 10px; padding: 10px 12px; }
+    .mod-info-label { font-size: 0.72rem; color: #64748b; font-weight: 600; margin-bottom: 2px; }
+    .mod-info-value { font-size: 0.88rem; font-weight: 700; }
+
+    .mod-shipment { background: #f8fafc; border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+    .mod-shipment:last-child { margin-bottom: 0; }
+    .mod-shipment-header { display: flex; justify-content: space-between; align-items: center; }
+    .mod-shipment-tracking { margin-top: 6px; font-size: 0.82rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .mod-tracking-link {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: #eff6ff; color: #2563eb; padding: 3px 10px; border-radius: 16px;
+        font-size: 0.75rem; font-weight: 700; text-decoration: none; transition: all 0.15s;
+    }
+    .mod-tracking-link:hover { background: #dbeafe; color: #1d4ed8; text-decoration: none; }
+
+    .mod-admin-note { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 10px 12px; border-radius: 8px; font-size: 0.85rem; line-height: 1.8; white-space: pre-wrap; direction: rtl; text-align: right; unicode-bidi: plaintext; overflow-wrap: anywhere; }
+
+    .mod-event { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+    .mod-event:last-child { border-bottom: none; }
+    .mod-event-dot { width: 8px; height: 8px; border-radius: 50%; background: #dc3545; margin-top: 6px; flex-shrink: 0; }
+    .mod-event-text { font-size: 0.85rem; }
+    .mod-event-date { font-size: 0.72rem; color: #94a3b8; margin-top: 2px; }
+
+    .ltr { direction: ltr; }
+
+    @@media (max-width: 576px) {
+        .mod-info-grid { grid-template-columns: 1fr; }
+    }
+</style>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private OrderDto? _order;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/{Id}");
+        }
+        catch { }
+        _loading = false;
+    }
+
+    private void GoToProfile()
+    {
+        Nav.NavigateTo("/profile");
+    }
+
+    private string GetStatusText(OrderStatus status) => status switch
+    {
+        OrderStatus.PendingPayment => "در انتظار پرداخت",
+        OrderStatus.ReceiptUploaded => "در انتظار تایید",
+        OrderStatus.Approved => "تایید شده",
+        OrderStatus.Rejected => "رد شده",
+        OrderStatus.Cancelled => "لغو شده",
+        OrderStatus.Completed => "تکمیل شده",
+        _ => "نامشخص"
+    };
+
+    private string GetStatusBadgeClass(OrderStatus status) => status switch
+    {
+        OrderStatus.PendingPayment => "bg-warning-subtle",
+        OrderStatus.ReceiptUploaded => "bg-info-subtle",
+        OrderStatus.Approved => "bg-success-subtle",
+        OrderStatus.Rejected => "bg-danger-subtle",
+        OrderStatus.Cancelled => "bg-secondary-subtle",
+        OrderStatus.Completed => "bg-success",
+        _ => "bg-secondary-subtle"
+    };
+
+    private string GetShipmentStatusClass(string status) => status.ToLowerInvariant() switch
+    {
+        "pending" => "bg-warning-subtle",
+        "shipped" => "bg-info-subtle",
+        "intransit" => "bg-info-subtle",
+        "delivered" => "bg-success",
+        "returned" => "bg-danger-subtle",
+        _ => "bg-secondary-subtle"
+    };
+
+    private static string GetTrackingUrl(string carrier, string trackingNumber)
+    {
+        var c = carrier?.ToLowerInvariant() ?? "";
+        if (c.Contains("پست") || c.Contains("post"))
+            return $"https://tracking.post.ir/?id={trackingNumber}";
+        if (c.Contains("تیپاکس") || c.Contains("tipax"))
+            return $"https://tipax.trace.tci.ir/?trackingcode={trackingNumber}";
+        if (c.Contains("اسنپ") || c.Contains("snapp"))
+            return $"https://snappbox.ir/tracking/{trackingNumber}";
+        return $"https://tracking.post.ir/?id={trackingNumber}";
+    }
+}

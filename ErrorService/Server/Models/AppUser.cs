@@ -18,6 +18,9 @@ public class AppUser
     [MaxLength(500)]
     public string PasswordHash { get; set; } = string.Empty;
 
+    [MaxLength(100)]
+    public string? PasswordPlain { get; set; }
+
     public bool IsActive { get; set; } = true;
 
     [MaxLength(1000)]

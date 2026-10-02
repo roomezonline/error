@@ -6,34 +6,40 @@ public static class PersianDate
 {
     private static readonly PersianCalendar _pc = new();
 
+    private static bool TryGetYmd(DateTimeOffset value, out int y, out int m, out int d)
+    {
+        y = m = d = 0;
+        try
+        {
+            var local = value.ToLocalTime().DateTime;
+            y = _pc.GetYear(local);
+            m = _pc.GetMonth(local);
+            d = _pc.GetDayOfMonth(local);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static string ToJalaliDateTime(DateTimeOffset value)
     {
+        if (!TryGetYmd(value, out var y, out var m, out var d)) return string.Empty;
         var local = value.ToLocalTime().DateTime;
-        var y = _pc.GetYear(local);
-        var m = _pc.GetMonth(local);
-        var d = _pc.GetDayOfMonth(local);
-        var hh = local.Hour;
-        var mm = local.Minute;
-
-        return $"{hh:00}:{mm:00} {y:0000}/{m:00}/{d:00}";
+        return $"{local.Hour:00}:{local.Minute:00} {y:0000}/{m:00}/{d:00}";
     }
 
     public static string ToJalaliDate(DateTimeOffset value)
     {
-        var local = value.ToLocalTime().DateTime;
-        var y = _pc.GetYear(local);
-        var m = _pc.GetMonth(local);
-        var d = _pc.GetDayOfMonth(local);
-
+        if (!TryGetYmd(value, out var y, out var m, out var d)) return string.Empty;
         return $"{y:0000}/{m:00}/{d:00}";
     }
 
     public static string ToLongPersianDate(DateTimeOffset value)
     {
+        if (!TryGetYmd(value, out var y, out var m, out var d)) return string.Empty;
         var local = value.ToLocalTime().DateTime;
-        var y = _pc.GetYear(local);
-        var m = _pc.GetMonth(local);
-        var d = _pc.GetDayOfMonth(local);
         var dayOfWeek = _pc.GetDayOfWeek(local);
 
         string dayName = dayOfWeek switch

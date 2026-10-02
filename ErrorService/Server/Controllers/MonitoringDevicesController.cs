@@ -24,7 +24,7 @@ public sealed class MonitoringDevicesController : ControllerBase
     public async Task<ActionResult<List<MonitoringDeviceDto>>> GetDevices([FromQuery] bool onlyFree = false)
     {
 
-        var now = DateTimeOffset.UtcNow;
+        var now = DateTime.UtcNow;
         var query = _db.MonitoringDevices.AsNoTracking();
 
         if (onlyFree)
@@ -56,7 +56,7 @@ public sealed class MonitoringDevicesController : ControllerBase
         var list = devices.Select(x =>
         {
             var hasData = lastDataDict.TryGetValue(x.DeviceNumber, out var lastTs);
-            var lastTime = hasData ? (DateTimeOffset?)lastTs : null;
+            var lastTime = hasData ? (DateTimeOffset?)new DateTimeOffset(DateTime.SpecifyKind(lastTs, DateTimeKind.Utc), TimeSpan.Zero) : null;
             var isOnline = hasData && (now - lastTs) < onlineThreshold;
 
             return new MonitoringDeviceDto
@@ -257,7 +257,7 @@ public sealed class MonitoringDevicesController : ControllerBase
             workshopId = userWorkshopId;
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = DateTime.UtcNow;
         var q = _db.MonitoringDeviceAssignments
             .AsNoTracking()
             .Include(x => x.MonitoringDevice)
@@ -288,7 +288,7 @@ public sealed class MonitoringDevicesController : ControllerBase
         var list = rawList.Select(x =>
         {
             var hasData = lastDataDict.TryGetValue(x.MonitoringDevice.DeviceNumber, out var lastTs);
-            var lastTime = hasData ? (DateTimeOffset?)lastTs : null;
+            var lastTime = hasData ? (DateTimeOffset?)new DateTimeOffset(DateTime.SpecifyKind(lastTs, DateTimeKind.Utc), TimeSpan.Zero) : null;
             var isOnline = hasData && (now - lastTs) < onlineThreshold;
 
             return new MonitoringDeviceAssignmentDto

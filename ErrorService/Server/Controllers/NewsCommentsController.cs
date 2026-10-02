@@ -1,5 +1,6 @@
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
+using ErrorService.Server.Services;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,10 +13,12 @@ namespace ErrorService.Server.Controllers;
 public sealed class NewsCommentsController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
+    private readonly NotificationEventService _notificationEvents;
 
-    public NewsCommentsController(ErrorServiceDbContext db)
+    public NewsCommentsController(ErrorServiceDbContext db, NotificationEventService notificationEvents)
     {
         _db = db;
+        _notificationEvents = notificationEvents;
     }
 
     [HttpGet]
@@ -53,8 +56,11 @@ public sealed class NewsCommentsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> PostComment(int newsId, [FromBody] CommentRequest request)
     {
-        var exists = await _db.News.AnyAsync(x => x.Id == newsId);
-        if (!exists) return NotFound("خبر یافت نشد");
+        var newsTitle = await _db.News
+            .Where(x => x.Id == newsId)
+            .Select(x => x.Title)
+            .FirstOrDefaultAsync();
+        if (newsTitle == null) return NotFound("خبر یافت نشد");
 
         if (request.Rating.HasValue && (request.Rating.Value < 1 || request.Rating.Value > 5))
             return BadRequest("امتیاز باید بین ۱ تا ۵ باشد");
@@ -65,7 +71,7 @@ public sealed class NewsCommentsController : ControllerBase
             if (!parentExists) return BadRequest("نظر والد یافت نشد");
         }
 
-        _db.NewsComments.Add(new NewsComment
+        var comment = new NewsComment
         {
             NewsId = newsId,
             FullName = request.FullName.Trim(),
@@ -75,8 +81,28 @@ public sealed class NewsCommentsController : ControllerBase
             Content = request.Content.Trim(),
             CreatedAt = DateTimeOffset.UtcNow,
             IsApproved = User.Identity?.IsAuthenticated == true
-        });
+        };
+        _db.NewsComments.Add(comment);
         await _db.SaveChangesAsync();
+
+        if (!comment.IsApproved)
+        {
+            await _notificationEvents.NotifyAsync(
+                eventType: "news.comment_created",
+                values: new Dictionary<string, string?>
+                {
+                    ["UserName"] = comment.FullName,
+                    ["NewsTitle"] = newsTitle
+                },
+                idempotencyKey: $"news.comment:{comment.Id}",
+                fallbackSeverity: NotificationSeverity.Info,
+                fallbackTitle: "نظر جدید مقاله ثبت شد",
+                fallbackBody: $"{comment.FullName} برای «{newsTitle}» نظر ثبت کرده است.",
+                fallbackUrl: "/admin/comments");
+            await _db.SaveChangesAsync();
+        }
+
+        ErrorService.Server.Infrastructure.SeoFallbackMiddleware.InvalidateHtmlCache();
 
         return Ok(new { message = "نظر شما با موفقیت ثبت شد و پس از تأیید نمایش داده خواهد شد." });
     }
@@ -111,6 +137,7 @@ public sealed class NewsCommentsController : ControllerBase
         if (comment == null) return NotFound();
         comment.IsApproved = !comment.IsApproved;
         await _db.SaveChangesAsync();
+        ErrorService.Server.Infrastructure.SeoFallbackMiddleware.InvalidateHtmlCache();
         return Ok(new { isApproved = comment.IsApproved });
     }
 
@@ -124,6 +151,7 @@ public sealed class NewsCommentsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(request.Content)) comment.Content = request.Content.Trim();
         if (request.Rating.HasValue) comment.Rating = request.Rating;
         await _db.SaveChangesAsync();
+        ErrorService.Server.Infrastructure.SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 
@@ -135,6 +163,7 @@ public sealed class NewsCommentsController : ControllerBase
         if (comment == null) return NotFound();
         _db.NewsComments.Remove(comment);
         await _db.SaveChangesAsync();
+        ErrorService.Server.Infrastructure.SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 

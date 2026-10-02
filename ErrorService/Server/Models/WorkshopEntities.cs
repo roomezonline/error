@@ -57,4 +57,8 @@ public sealed class Workshop
 
     [Range(1, 100)]
     public int MaxMonitoringConnections { get; set; } = 2;
+
+    /// <summary>حداکثر مدت فعال بودن مانیتورینگ برای این کارگاه (ساعت). پایان خودکار پس از این مدت.</summary>
+    [Range(1, 8760)]
+    public int MonitoringDurationHours { get; set; } = 72;
 }

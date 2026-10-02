@@ -13,12 +13,38 @@ public sealed class SmsService : ISmsService
     private readonly ErrorServiceDbContext _db;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SmsService> _logger;
+    private readonly NotificationEventService _notificationEvents;
 
-    public SmsService(ErrorServiceDbContext db, IHttpClientFactory httpClientFactory, ILogger<SmsService> logger)
+    public SmsService(ErrorServiceDbContext db, IHttpClientFactory httpClientFactory, ILogger<SmsService> logger, NotificationEventService notificationEvents)
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _notificationEvents = notificationEvents;
+    }
+
+    private async Task NotifyLowBalanceAsync(WorkshopSmsCredit credit, decimal tariff)
+    {
+        try
+        {
+            await _notificationEvents.NotifyAsync(
+                eventType: "sms.low_balance",
+                values: new Dictionary<string, string?>
+                {
+                    ["Balance"] = credit.Balance.ToString("N0")
+                },
+                idempotencyKey: $"sms.low_balance:{credit.WorkshopId}:{DateTimeOffset.UtcNow:yyyyMMdd}",
+                fallbackSeverity: NotificationSeverity.Warning,
+                fallbackTitle: "اعتبار پیامک رو به پایان است",
+                fallbackBody: $"اعتبار پیامک به {credit.Balance:N0} تومان رسیده است (تعرفه هر پیامک {tariff:N0} تومان).",
+                fallbackUrl: "/admin/sms",
+                workshopId: credit.WorkshopId);
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to emit sms.low_balance for workshop {WorkshopId}", credit.WorkshopId);
+        }
     }
 
     public async Task<OtpResultDto> SendVerificationSmsAsync(int workshopId, string mobile, string code, int templateId)
@@ -48,6 +74,7 @@ public sealed class SmsService : ISmsService
         }
         if (credit.Balance < tariff)
         {
+            await NotifyLowBalanceAsync(credit, tariff);
             _logger.LogWarning("Insufficient credit for workshop {WorkshopId}: balance {Balance}, tariff {Tariff}",
                 workshopId, credit.Balance, tariff);
             Console.Error.WriteLine($"[SmsService] WARNING: Workshop #{workshopId} has balance {credit.Balance} but tariff is {tariff}.");
@@ -222,7 +249,10 @@ public sealed class SmsService : ISmsService
         if (credit == null)
             return new SendSmsResultDto { Success = false, Message = "اعتبار پیامک برای این کارگاه یافت نشد" };
         if (credit.Balance < tariff)
+        {
+            await NotifyLowBalanceAsync(credit, tariff);
             return new SendSmsResultDto { Success = false, Message = "اعتبار پیامک کارگاه کافی نیست" };
+        }
 
         var payload = new SmsIrVerifyRequest
         {
@@ -342,7 +372,10 @@ public sealed class SmsService : ISmsService
         if (credit == null)
             return new SendSmsResultDto { Success = false, Message = "اعتبار پیامک برای این کارگاه یافت نشد" };
         if (credit.Balance < tariff)
+        {
+            await NotifyLowBalanceAsync(credit, tariff);
             return new SendSmsResultDto { Success = false, Message = "اعتبار پیامک کارگاه کافی نیست" };
+        }
 
         var payload = new SmsIrVerifyRequest
         {
@@ -469,7 +502,10 @@ public sealed class SmsService : ISmsService
         if (credit == null)
             return new SendSmsResultDto { Success = false, Message = "اعتبار پیامک برای این کارگاه یافت نشد" };
         if (credit.Balance < tariff)
+        {
+            await NotifyLowBalanceAsync(credit, tariff);
             return new SendSmsResultDto { Success = false, Message = "اعتبار پیامک کارگاه کافی نیست" };
+        }
 
         var payload = new SmsIrVerifyRequest
         {
@@ -596,7 +632,10 @@ public sealed class SmsService : ISmsService
         if (credit == null)
             return new SendSmsResultDto { Success = false, Message = "اعتبار پیامک برای این کارگاه یافت نشد" };
         if (credit.Balance < tariff)
+        {
+            await NotifyLowBalanceAsync(credit, tariff);
             return new SendSmsResultDto { Success = false, Message = "اعتبار پیامک کارگاه کافی نیست" };
+        }
 
         var payload = new SmsIrVerifyRequest
         {

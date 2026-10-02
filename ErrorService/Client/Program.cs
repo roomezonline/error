@@ -30,10 +30,12 @@ builder.Services.AddScoped(sp =>
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<WishlistService>();
+builder.Services.AddScoped<NotificationCenterService>();
 builder.Services.AddScoped<ThemeService>();
 builder.Services.AddScoped<RecentlyViewedService>();
 builder.Services.AddScoped<LocalStorageService>();
 builder.Services.AddScoped<AdminWorkshopSelectionService>();
+builder.Services.AddScoped<CustomerSearchCacheService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ClientErrorLogger>();
 builder.Services.AddScoped<JwtAuthStateProvider>();

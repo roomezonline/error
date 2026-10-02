@@ -1,8 +1,11 @@
 using ErrorService.Server.Data;
+using ErrorService.Server.Models;
+using ErrorService.Server.Services;
 using ErrorService.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
@@ -11,13 +14,254 @@ namespace ErrorService.Server.Controllers;
 [Route("api/[controller]")]
 public class TechnicalController : ControllerBase
 {
+    private const string ErrorCodeCacheTag = "error-codes";
+    private const string ErrorCodesPerm = "perm:admin.technical.errorcodes.manage";
+
     private readonly ErrorServiceDbContext _context;
     private readonly IWebHostEnvironment _env;
+    private readonly IOutputCacheStore _cacheStore;
+    private readonly ILogger<TechnicalController> _logger;
+    private readonly NotificationEventService _notificationEvents;
 
-    public TechnicalController(ErrorServiceDbContext context, IWebHostEnvironment env)
+    public TechnicalController(ErrorServiceDbContext context, IWebHostEnvironment env, IOutputCacheStore cacheStore, ILogger<TechnicalController> logger, NotificationEventService notificationEvents)
     {
         _context = context;
         _env = env;
+        _cacheStore = cacheStore;
+        _logger = logger;
+        _notificationEvents = notificationEvents;
+    }
+
+    private async Task EvictErrorCodesCacheAsync()
+    {
+        try { await _cacheStore.EvictByTagAsync(ErrorCodeCacheTag, CancellationToken.None); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Error evicting error-codes cache"); }
+        ErrorService.Server.Infrastructure.SeoFallbackMiddleware.InvalidateHtmlCache();
+    }
+
+    private static string Norm(string? value) => (value ?? string.Empty).Trim();
+
+    private static ErrorCode NormalizeErrorCode(ErrorCode errorCode)
+    {
+        errorCode.Brand = Norm(errorCode.Brand);
+        errorCode.DeviceType = Norm(errorCode.DeviceType);
+        errorCode.Code = Norm(errorCode.Code);
+        errorCode.Category = string.IsNullOrWhiteSpace(errorCode.Category) ? null : Norm(errorCode.Category);
+        return errorCode;
+    }
+
+    private async Task<bool> IsDuplicateErrorCodeAsync(string brand, string deviceType, string code, int? excludeId = null)
+    {
+        var b = Norm(brand).ToLowerInvariant();
+        var d = Norm(deviceType).ToLowerInvariant();
+        var c = Norm(code).ToLowerInvariant();
+        return await _context.ErrorCodes.AnyAsync(e =>
+            e.Brand.Trim().ToLower() == b &&
+            e.DeviceType.Trim().ToLower() == d &&
+            e.Code.Trim().ToLower() == c &&
+            (excludeId == null || e.Id != excludeId));
+    }
+
+    private async Task EnsureCatalogItemAsync(ErrorCodeCatalogKind kind, string? name)
+    {
+        var n = Norm(name);
+        if (n.Length == 0) return;
+
+        var key = n.ToLowerInvariant();
+        var exists = await _context.ErrorCodeCatalogItems.AnyAsync(x =>
+            x.Kind == kind && x.Name.ToLower() == key);
+        if (!exists)
+        {
+            _context.ErrorCodeCatalogItems.Add(new ErrorCodeCatalogItem { Kind = kind, Name = n });
+        }
+    }
+
+    private async Task SyncCatalogFromErrorCodeAsync(ErrorCode errorCode)
+    {
+        await EnsureCatalogItemAsync(ErrorCodeCatalogKind.Brand, errorCode.Brand);
+        await EnsureCatalogItemAsync(ErrorCodeCatalogKind.DeviceType, errorCode.DeviceType);
+        await EnsureCatalogItemAsync(ErrorCodeCatalogKind.Category, errorCode.Category);
+    }
+
+    private async Task<int> CountBrandUsageAsync(string name, int? excludeCatalogId = null)
+    {
+        var key = Norm(name).ToLowerInvariant();
+        if (key.Length == 0) return 0;
+        var fromCodes = await _context.ErrorCodes.CountAsync(e => e.Brand.Trim().ToLower() == key);
+        var fromCatalog = await _context.ErrorCodeCatalogItems.CountAsync(x =>
+            x.Kind == ErrorCodeCatalogKind.Brand &&
+            x.Name.ToLower() == key &&
+            (excludeCatalogId == null || x.Id != excludeCatalogId));
+        return fromCodes + fromCatalog;
+    }
+
+    private async Task<int> CountDeviceUsageAsync(string name, int? excludeCatalogId = null)
+    {
+        var key = Norm(name).ToLowerInvariant();
+        if (key.Length == 0) return 0;
+        var fromCodes = await _context.ErrorCodes.CountAsync(e => e.DeviceType.Trim().ToLower() == key);
+        var fromCatalog = await _context.ErrorCodeCatalogItems.CountAsync(x =>
+            x.Kind == ErrorCodeCatalogKind.DeviceType &&
+            x.Name.ToLower() == key &&
+            (excludeCatalogId == null || x.Id != excludeCatalogId));
+        return fromCodes + fromCatalog;
+    }
+
+    private async Task<int> CountCategoryUsageAsync(string name, int? excludeCatalogId = null)
+    {
+        var key = Norm(name).ToLowerInvariant();
+        if (key.Length == 0) return 0;
+        var fromCodes = await _context.ErrorCodes.CountAsync(e =>
+            e.Category != null && e.Category.Trim().ToLower() == key);
+        var fromCatalog = await _context.ErrorCodeCatalogItems.CountAsync(x =>
+            x.Kind == ErrorCodeCatalogKind.Category &&
+            x.Name.ToLower() == key &&
+            (excludeCatalogId == null || x.Id != excludeCatalogId));
+        return fromCodes + fromCatalog;
+    }
+
+    private async Task<int> GetCatalogUsageAsync(ErrorCodeCatalogKind kind, string name, int? excludeCatalogId = null) =>
+        kind switch
+        {
+            ErrorCodeCatalogKind.Brand => await CountBrandUsageAsync(name, excludeCatalogId),
+            ErrorCodeCatalogKind.DeviceType => await CountDeviceUsageAsync(name, excludeCatalogId),
+            ErrorCodeCatalogKind.Category => await CountCategoryUsageAsync(name, excludeCatalogId),
+            _ => 0
+        };
+
+    private async Task<bool> CatalogNameExistsAsync(ErrorCodeCatalogKind kind, string name, int? excludeId = null)
+    {
+        var key = Norm(name).ToLowerInvariant();
+        if (key.Length == 0) return false;
+        return await _context.ErrorCodeCatalogItems.AnyAsync(x =>
+            x.Kind == kind &&
+            x.Name.ToLower() == key &&
+            (excludeId == null || x.Id != excludeId));
+    }
+
+    private async Task RenameErrorCodesCascadeAsync(ErrorCodeCatalogKind kind, string oldName, string newName)
+    {
+        var oldKey = Norm(oldName).ToLowerInvariant();
+        var newKey = Norm(newName).ToLowerInvariant();
+        if (oldKey.Length == 0 || newKey.Length == 0 || oldKey == newKey) return;
+
+        if (kind == ErrorCodeCatalogKind.Brand)
+        {
+            var items = await _context.ErrorCodes
+                .Where(e => e.Brand.Trim().ToLower() == oldKey)
+                .ToListAsync();
+            foreach (var item in items)
+                item.Brand = newName;
+        }
+        else if (kind == ErrorCodeCatalogKind.DeviceType)
+        {
+            var items = await _context.ErrorCodes
+                .Where(e => e.DeviceType.Trim().ToLower() == oldKey)
+                .ToListAsync();
+            foreach (var item in items)
+                item.DeviceType = newName;
+        }
+        else if (kind == ErrorCodeCatalogKind.Category)
+        {
+            var items = await _context.ErrorCodes
+                .Where(e => e.Category != null && e.Category.Trim().ToLower() == oldKey)
+                .ToListAsync();
+            foreach (var item in items)
+                item.Category = newName;
+        }
+    }
+
+    // --- Error Code Catalog ---
+
+    [HttpGet("error-codes/catalog")]
+    [OutputCache(Duration = 300, VaryByQueryKeys = new[] { "kind" }, Tags = new[] { ErrorCodeCacheTag })]
+    public async Task<ActionResult<IEnumerable<ErrorCodeCatalogItem>>> GetCatalog(ErrorCodeCatalogKind kind)
+    {
+        var items = await _context.ErrorCodeCatalogItems
+            .AsNoTracking()
+            .Where(x => x.Kind == kind)
+            .OrderBy(x => x.Name)
+            .ToListAsync();
+
+        var result = new List<ErrorCodeCatalogItem>();
+        foreach (var item in items)
+        {
+            item.UsageCount = await GetCatalogUsageAsync(kind, item.Name, item.Id);
+            result.Add(item);
+        }
+        return Ok(result);
+    }
+
+    [Authorize(Policy = ErrorCodesPerm)]
+    [HttpPost("error-codes/catalog")]
+    public async Task<ActionResult<ErrorCodeCatalogItem>> CreateCatalogItem([FromBody] ErrorCodeCatalogItem request)
+    {
+        var name = Norm(request.Name);
+        if (name.Length == 0)
+            return BadRequest(new { message = "نام الزامی است." });
+
+        if (await CatalogNameExistsAsync(request.Kind, name))
+            return Conflict(new { message = $"«{name}» قبلاً در این لیست ثبت شده است." });
+
+        var item = new ErrorCodeCatalogItem { Kind = request.Kind, Name = name };
+        _context.ErrorCodeCatalogItems.Add(item);
+        await _context.SaveChangesAsync();
+        await EvictErrorCodesCacheAsync();
+
+        item.UsageCount = 0;
+        return Ok(item);
+    }
+
+    [Authorize(Policy = ErrorCodesPerm)]
+    [HttpPut("error-codes/catalog/{id}")]
+    public async Task<IActionResult> RenameCatalogItem(int id, [FromBody] ErrorCodeCatalogUpsertRequest request)
+    {
+        var item = await _context.ErrorCodeCatalogItems.FindAsync(id);
+        if (item == null) return NotFound();
+
+        var newName = Norm(request.Name);
+        if (newName.Length == 0)
+            return BadRequest(new { message = "نام الزامی است." });
+
+        var oldName = item.Name;
+        if (string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase))
+            return NoContent();
+
+        if (await CatalogNameExistsAsync(item.Kind, newName, id))
+            return Conflict(new { message = $"«{newName}» قبلاً در این لیست ثبت شده است." });
+
+        await RenameErrorCodesCascadeAsync(item.Kind, oldName, newName);
+        item.Name = newName;
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { message = "تغییر نام باعث ایجاد تکرار در کدهای خطا می‌شود." });
+        }
+
+        await EvictErrorCodesCacheAsync();
+        return NoContent();
+    }
+
+    [Authorize(Policy = ErrorCodesPerm)]
+    [HttpDelete("error-codes/catalog/{id}")]
+    public async Task<IActionResult> DeleteCatalogItem(int id)
+    {
+        var item = await _context.ErrorCodeCatalogItems.FindAsync(id);
+        if (item == null) return NotFound();
+
+        // Usage of this exact name excluding this catalog row itself
+        var usage = await GetCatalogUsageAsync(item.Kind, item.Name, item.Id);
+        if (usage > 0)
+            return Conflict(new { message = $"«{item.Name}» در {usage} مورد استفاده شده و قابل حذف نیست." });
+
+        _context.ErrorCodeCatalogItems.Remove(item);
+        await _context.SaveChangesAsync();
+        await EvictErrorCodesCacheAsync();
+        return NoContent();
     }
 
     private async Task<int?> ResolveSiteUserIdAsync()
@@ -38,29 +282,44 @@ public class TechnicalController : ControllerBase
     // --- Error Codes ---
 
     [HttpGet("error-codes")]
-    [OutputCache(Duration = 300, VaryByQueryKeys = new[] { "*" })]
-    public async Task<ActionResult<IEnumerable<ErrorCode>>> GetErrorCodes(string? brand = null, string? deviceType = null, string? search = null)
+    [OutputCache(Duration = 300, VaryByQueryKeys = new[] { "*" }, Tags = new[] { ErrorCodeCacheTag })]
+    public async Task<ActionResult<IEnumerable<ErrorCode>>> GetErrorCodes(string? brand = null, string? deviceType = null, string? search = null, string? category = null)
     {
         var query = _context.ErrorCodes
             .Include(e => e.Documents)
             .AsQueryable();
 
         if (!string.IsNullOrEmpty(brand))
-            query = query.Where(e => e.Brand == brand);
+        {
+            var brandKey = brand.Trim().ToLowerInvariant();
+            query = query.Where(e => e.Brand.Trim().ToLower() == brandKey);
+        }
 
         if (!string.IsNullOrEmpty(deviceType))
-            query = query.Where(e => e.DeviceType == deviceType);
+        {
+            var deviceKey = deviceType.Trim().ToLowerInvariant();
+            query = query.Where(e => e.DeviceType.Trim().ToLower() == deviceKey);
+        }
+
+        if (!string.IsNullOrEmpty(category))
+        {
+            var categoryKey = category.Trim().ToLowerInvariant();
+            query = query.Where(e => e.Category != null && e.Category.Trim().ToLower() == categoryKey);
+        }
 
         if (!string.IsNullOrEmpty(search))
         {
-            query = query.Where(e => e.Code.Contains(search) || e.Description.Contains(search) || e.Solution.Contains(search));
+            var searchKey = search.Trim().ToLowerInvariant();
+            query = query.Where(e => e.Code.ToLower().Contains(searchKey) ||
+                                     e.Description.ToLower().Contains(searchKey) ||
+                                     e.Solution.ToLower().Contains(searchKey));
         }
 
         return await query.ToListAsync();
     }
 
     [HttpGet("error-codes/recent")]
-    [OutputCache(Duration = 600)]
+    [OutputCache(Duration = 600, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<IEnumerable<object>>> GetRecentErrorCodes([FromQuery] int take = 3)
     {
         return await _context.ErrorCodes
@@ -71,27 +330,116 @@ public class TechnicalController : ControllerBase
     }
 
     [HttpGet("error-codes/count")]
-    [OutputCache(Duration = 600)]
+    [OutputCache(Duration = 600, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<int>> GetErrorCodeCount()
     {
         return await _context.ErrorCodes.CountAsync();
     }
 
+    [HttpGet("error-codes/detail")]
+    [OutputCache(Duration = 600, VaryByQueryKeys = new[] { "brand", "deviceType", "code" }, Tags = new[] { ErrorCodeCacheTag })]
+    public async Task<ActionResult<ErrorCode>> GetErrorCodeDetail(
+        [FromQuery] string brand,
+        [FromQuery] string deviceType,
+        [FromQuery] string code)
+    {
+        if (string.IsNullOrWhiteSpace(brand) || string.IsNullOrWhiteSpace(deviceType) || string.IsNullOrWhiteSpace(code))
+            return BadRequest("برند، نوع دستگاه و کد خطا الزامی هستند.");
+
+        var brandKey = brand.Trim().ToLowerInvariant();
+        var deviceKey = deviceType.Trim().ToLowerInvariant();
+        var codeKey = code.Trim().ToLowerInvariant();
+
+        var errorCode = await _context.ErrorCodes
+            .Include(e => e.Documents)
+            .FirstOrDefaultAsync(e => e.Brand.Trim().ToLower() == brandKey &&
+                                      e.DeviceType.Trim().ToLower() == deviceKey &&
+                                      e.Code.Trim().ToLower() == codeKey);
+
+        return errorCode == null ? NotFound() : Ok(errorCode);
+    }
+
     [HttpGet("error-codes/brands")]
-    [OutputCache(Duration = 1800)]
+    [OutputCache(Duration = 1800, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<IEnumerable<string>>> GetBrands()
     {
-        return await _context.ErrorCodes.Select(e => e.Brand).Distinct().ToListAsync();
+        var catalog = await _context.ErrorCodeCatalogItems
+            .AsNoTracking()
+            .Where(x => x.Kind == ErrorCodeCatalogKind.Brand)
+            .Select(x => x.Name)
+            .ToListAsync();
+
+        var used = await _context.ErrorCodes
+            .AsNoTracking()
+            .Select(e => e.Brand)
+            .ToListAsync();
+
+        return Ok(catalog
+            .Concat(used)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList());
     }
 
     [HttpGet("error-codes/devices")]
+    [OutputCache(Duration = 1800, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<IEnumerable<string>>> GetDeviceTypes()
     {
-        return await _context.ErrorCodes.Select(e => e.DeviceType).Distinct().ToListAsync();
+        var catalog = await _context.ErrorCodeCatalogItems
+            .AsNoTracking()
+            .Where(x => x.Kind == ErrorCodeCatalogKind.DeviceType)
+            .Select(x => x.Name)
+            .ToListAsync();
+
+        var used = await _context.ErrorCodes
+            .AsNoTracking()
+            .Select(e => e.DeviceType)
+            .ToListAsync();
+
+        return Ok(catalog
+            .Concat(used)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList());
+    }
+
+    [HttpGet("error-codes/categories")]
+    [OutputCache(Duration = 3600, Tags = new[] { ErrorCodeCacheTag })]
+    public async Task<ActionResult<IEnumerable<string>>> GetCategories()
+    {
+        var catalog = await _context.ErrorCodeCatalogItems
+            .AsNoTracking()
+            .Where(x => x.Kind == ErrorCodeCatalogKind.Category)
+            .Select(x => x.Name)
+            .ToListAsync();
+
+        if (catalog.Count == 0)
+            return Ok(ErrorCodeCategories.All);
+
+        return Ok(catalog
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList());
+    }
+
+    [HttpGet("error-codes/exists")]
+    public async Task<ActionResult<bool>> CheckErrorCodeExists(
+        [FromQuery] string brand,
+        [FromQuery] string deviceType,
+        [FromQuery] string code,
+        [FromQuery] int? excludeId = null)
+    {
+        if (string.IsNullOrWhiteSpace(brand) || string.IsNullOrWhiteSpace(deviceType) || string.IsNullOrWhiteSpace(code))
+            return BadRequest("برند، نوع دستگاه و کد خطا الزامی هستند.");
+        return Ok(await IsDuplicateErrorCodeAsync(brand, deviceType, code, excludeId));
     }
 
     [HttpGet("error-codes/{id}")]
-    [OutputCache(Duration = 600)]
+    [OutputCache(Duration = 600, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<ErrorCode>> GetErrorCodeById(int id)
     {
         var ec = await _context.ErrorCodes
@@ -102,7 +450,7 @@ public class TechnicalController : ControllerBase
     }
 
     [HttpGet("error-codes/related/{id}")]
-    [OutputCache(Duration = 600)]
+    [OutputCache(Duration = 600, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<IEnumerable<ErrorCode>>> GetRelatedErrorCodes(int id)
     {
         var current = await _context.ErrorCodes.FindAsync(id);
@@ -119,7 +467,7 @@ public class TechnicalController : ControllerBase
     }
 
     [HttpGet("error-codes/by-brand/{brand}")]
-    [OutputCache(Duration = 600)]
+    [OutputCache(Duration = 600, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<IEnumerable<ErrorCode>>> GetErrorCodesByBrand(string brand)
     {
         return await _context.ErrorCodes
@@ -130,7 +478,7 @@ public class TechnicalController : ControllerBase
     }
 
     [HttpGet("error-codes/by-device/{brand}/{deviceType}")]
-    [OutputCache(Duration = 600)]
+    [OutputCache(Duration = 600, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<IEnumerable<ErrorCode>>> GetErrorCodesByDevice(string brand, string deviceType)
     {
         return await _context.ErrorCodes
@@ -140,14 +488,28 @@ public class TechnicalController : ControllerBase
             .ToListAsync();
     }
 
+    [Authorize(Policy = ErrorCodesPerm)]
     [HttpPost("error-codes")]
     public async Task<ActionResult<ErrorCode>> PostErrorCode(ErrorCode errorCode)
     {
+        NormalizeErrorCode(errorCode);
+
+        if (string.IsNullOrWhiteSpace(errorCode.Brand) ||
+            string.IsNullOrWhiteSpace(errorCode.DeviceType) ||
+            string.IsNullOrWhiteSpace(errorCode.Code))
+            return BadRequest("برند، نوع دستگاه و کد خطا الزامی هستند.");
+
+        if (await IsDuplicateErrorCodeAsync(errorCode.Brand, errorCode.DeviceType, errorCode.Code))
+            return Conflict(new { message = $"کد {errorCode.Code} برای «{errorCode.Brand} - {errorCode.DeviceType}» قبلاً ثبت شده است." });
+
+        await SyncCatalogFromErrorCodeAsync(errorCode);
         _context.ErrorCodes.Add(errorCode);
         await _context.SaveChangesAsync();
+        await EvictErrorCodesCacheAsync();
         return Ok(errorCode);
     }
 
+    [Authorize(Policy = ErrorCodesPerm)]
     [HttpPost("error-codes/upload")]
     public async Task<ActionResult<string>> UploadErrorCodeImage([FromForm] IFormFile file)
     {
@@ -176,10 +538,21 @@ public class TechnicalController : ControllerBase
         return Ok($"/{relativeFolder}/{fileName}");
     }
 
+    [Authorize(Policy = ErrorCodesPerm)]
     [HttpPut("error-codes/{id}")]
     public async Task<IActionResult> PutErrorCode(int id, ErrorCode errorCode)
     {
         if (id != errorCode.Id) return BadRequest();
+
+        NormalizeErrorCode(errorCode);
+
+        if (string.IsNullOrWhiteSpace(errorCode.Brand) ||
+            string.IsNullOrWhiteSpace(errorCode.DeviceType) ||
+            string.IsNullOrWhiteSpace(errorCode.Code))
+            return BadRequest("برند، نوع دستگاه و کد خطا الزامی هستند.");
+
+        if (await IsDuplicateErrorCodeAsync(errorCode.Brand, errorCode.DeviceType, errorCode.Code, id))
+            return Conflict(new { message = $"کد {errorCode.Code} برای «{errorCode.Brand} - {errorCode.DeviceType}» قبلاً ثبت شده است." });
 
         var existing = await _context.ErrorCodes
             .Include(e => e.Documents)
@@ -196,87 +569,31 @@ public class TechnicalController : ControllerBase
         existing.ModelNames = errorCode.ModelNames;
         existing.RelatedProductIds = errorCode.RelatedProductIds;
         existing.ImageUrl = errorCode.ImageUrl;
+        existing.Category = errorCode.Category;
 
-        _context.ErrorCodeDocuments.RemoveRange(existing.Documents);
-        existing.Documents = (errorCode.Documents ?? new List<ErrorCodeDocument>())
-            .OrderBy(d => d.SortOrder)
-            .Select((d, i) => new ErrorCodeDocument
-            {
-                Title = d.Title,
-                Url = d.Url,
-                DocType = d.DocType,
-                SortOrder = i
-            })
-            .ToList();
+        await SyncCatalogFromErrorCodeAsync(errorCode);
 
-        await _context.SaveChangesAsync();
-        return NoContent();
-    }
-
-    [HttpPost("error-codes/import")]
-    public async Task<ActionResult<ErrorCodeImportResult>> ImportErrorCodes(List<ErrorCodeImportModel> items)
-    {
-        var result = new ErrorCodeImportResult { TotalProcessed = items.Count };
-        
-        foreach (var item in items)
+        if (errorCode.Documents != null)
         {
-            try
-            {
-                var existing = await _context.ErrorCodes
-                    .Include(e => e.Documents)
-                    .FirstOrDefaultAsync(e => e.Brand == item.Brand && e.DeviceType == item.DeviceType && e.Code == item.Code);
-
-                if (existing != null)
+            _context.ErrorCodeDocuments.RemoveRange(existing.Documents);
+            existing.Documents = errorCode.Documents
+                .OrderBy(d => d.SortOrder)
+                .Select((d, i) => new ErrorCodeDocument
                 {
-                    existing.Description = item.Description;
-                    existing.Solution = item.Solution;
-                    existing.TechnicalNotes = item.TechnicalNotes;
-                    existing.ModelNames = item.ModelNames;
-
-                    _context.ErrorCodeDocuments.RemoveRange(existing.Documents);
-                    existing.Documents = item.Documents.Select((d, i) => new ErrorCodeDocument
-                    {
-                        Title = d.Title,
-                        Url = d.Url,
-                        DocType = d.DocType,
-                        SortOrder = i
-                    }).ToList();
-                    
-                    result.UpdatedCount++;
-                }
-                else
-                {
-                    var newCode = new ErrorCode
-                    {
-                        Brand = item.Brand,
-                        DeviceType = item.DeviceType,
-                        Code = item.Code,
-                        Description = item.Description,
-                        Solution = item.Solution,
-                        TechnicalNotes = item.TechnicalNotes,
-                        ModelNames = item.ModelNames,
-                        Documents = item.Documents.Select((d, i) => new ErrorCodeDocument
-                        {
-                            Title = d.Title,
-                            Url = d.Url,
-                            DocType = d.DocType,
-                            SortOrder = i
-                        }).ToList()
-                    };
-                    _context.ErrorCodes.Add(newCode);
-                    result.InsertedCount++;
-                }
-            }
-            catch (Exception ex)
-            {
-                result.Errors.Add($"Error processing {item.Brand} - {item.Code}: {ex.Message}");
-            }
+                    Title = d.Title,
+                    Url = d.Url,
+                    DocType = d.DocType,
+                    SortOrder = i
+                })
+                .ToList();
         }
 
         await _context.SaveChangesAsync();
-        return Ok(result);
+        await EvictErrorCodesCacheAsync();
+        return NoContent();
     }
 
+    [Authorize(Policy = ErrorCodesPerm)]
     [HttpDelete("error-codes/{id}")]
     public async Task<IActionResult> DeleteErrorCode(int id)
     {
@@ -284,6 +601,7 @@ public class TechnicalController : ControllerBase
         if (errorCode == null) return NotFound();
         _context.ErrorCodes.Remove(errorCode);
         await _context.SaveChangesAsync();
+        await EvictErrorCodesCacheAsync();
         return NoContent();
     }
 
@@ -450,6 +768,23 @@ public class TechnicalController : ControllerBase
         if (reply.IsAdmin)
             ticket.Status = TicketStatus.InProgress;
 
+        if (reply.IsAdmin && ticket.UserId.HasValue)
+        {
+            await _notificationEvents.NotifyAsync(
+                eventType: "ticket.replied",
+                values: new Dictionary<string, string?>
+                {
+                    ["TicketTitle"] = ticket.Title,
+                    ["TicketId"] = ticket.Id.ToString()
+                },
+                idempotencyKey: $"ticket.replied:{ticket.Id}:{reply.RepliedAt:yyyyMMddHHmmssfff}",
+                fallbackSeverity: NotificationSeverity.Info,
+                fallbackTitle: "پاسخ جدید دریافت شد",
+                fallbackBody: $"به تیکت «{ticket.Title}» پاسخ جدید ثبت شد.",
+                fallbackUrl: "/technical/consultation",
+                appUserId: ticket.UserId);
+        }
+
         await _context.SaveChangesAsync();
         return Ok(reply);
     }
@@ -488,7 +823,35 @@ public class TechnicalController : ControllerBase
         var ticket = await _context.ConsultationTickets.FindAsync(id);
         if (ticket == null) return NotFound();
 
+        var previousStatus = ticket.Status;
         ticket.Status = status;
+
+        if (previousStatus != status && ticket.UserId.HasValue)
+        {
+            var statusLabel = status switch
+            {
+                TicketStatus.Pending => "در انتظار",
+                TicketStatus.InProgress => "در حال بررسی",
+                TicketStatus.Resolved => "حل شده",
+                TicketStatus.Closed => "بسته شده",
+                _ => status.ToString()
+            };
+            await _notificationEvents.NotifyAsync(
+                eventType: "ticket.status_changed",
+                values: new Dictionary<string, string?>
+                {
+                    ["TicketTitle"] = ticket.Title,
+                    ["Status"] = statusLabel,
+                    ["TicketId"] = ticket.Id.ToString()
+                },
+                idempotencyKey: $"ticket.status:{ticket.Id}:{status}:{DateTimeOffset.UtcNow:yyyyMMddHH}",
+                fallbackSeverity: NotificationSeverity.Info,
+                fallbackTitle: "وضعیت تیکت شما تغییر کرد",
+                fallbackBody: $"وضعیت تیکت «{ticket.Title}» به «{statusLabel}» تغییر کرد.",
+                fallbackUrl: "/technical/consultation",
+                appUserId: ticket.UserId);
+        }
+
         await _context.SaveChangesAsync();
         return NoContent();
     }
