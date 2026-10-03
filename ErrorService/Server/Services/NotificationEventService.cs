@@ -1,5 +1,6 @@
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
+using ErrorService.Server.Services.Messenger;
 using ErrorService.Shared;
 using Microsoft.EntityFrameworkCore;
 
@@ -424,61 +425,24 @@ public sealed class NotificationEventService
         var settings = await _db.SiteSettings.FirstOrDefaultAsync();
         if (settings == null)
             return;
-        if (!settings.EnableBaleNotifications || string.IsNullOrWhiteSpace(settings.BaleBotToken))
-            flags &= ~NotificationChannelFlags.Bale;
-        if (!settings.EnableTelegramNotifications || string.IsNullOrWhiteSpace(settings.TelegramBotToken))
-            flags &= ~NotificationChannelFlags.Telegram;
-        if (!settings.EnableEitaaNotifications || string.IsNullOrWhiteSpace(settings.EitaaBotToken))
-            flags &= ~NotificationChannelFlags.Eitaa;
-        if (flags == 0)
-            return;
 
-        var userSettings = await _db.UserNotificationSettings
-            .Where(x => appUserIds.Contains(x.AppUserId))
-            .ToDictionaryAsync(x => x.AppUserId, x => x.Channels);
-
-        var wanted = new Dictionary<int, int>();
-        foreach (var userId in appUserIds)
+        foreach (var (channel, flag) in ExternalChannelFlags)
         {
-            if (!userSettings.TryGetValue(userId, out var userChannels))
+            if ((flags & flag) == 0)
                 continue;
-            var userFlags = flags & userChannels;
-            if (userFlags != 0)
-                wanted[userId] = userFlags;
-        }
-        if (wanted.Count == 0)
-            return;
-
-        var wantedPairs = ExternalChannelFlags
-            .Where(p => wanted.Values.Any(v => (v & p.Flag) != 0))
-            .Select(p => p.Channel)
-            .Distinct()
-            .ToList();
-        var userIds = wanted.Keys.ToList();
-        var endpoints = await _db.MessengerEndpoints
-            .Where(x => x.Status == MessengerEndpointStatus.Verified
-                && wantedPairs.Contains(x.Channel)
-                && userIds.Contains(x.AppUserId))
-            .Select(x => new { x.Channel, x.AppUserId })
-            .ToHashSetAsync();
-
-        foreach (var recipient in notification.Recipients)
-        {
-            if (!recipient.AppUserId.HasValue || !wanted.TryGetValue(recipient.AppUserId.Value, out var recipientFlags))
+            if (!MessengerChannels.IsEnabled(channel, settings))
                 continue;
 
-            foreach (var (channel, flag) in ExternalChannelFlags)
+            foreach (var recipient in notification.Recipients)
             {
-                if ((recipientFlags & flag) == 0)
+                if (!recipient.AppUserId.HasValue || !appUserIds.Contains(recipient.AppUserId.Value))
                     continue;
 
-                var connected = endpoints.Contains(new { Channel = channel, AppUserId = recipient.AppUserId.Value });
                 notification.Deliveries.Add(new NotificationDelivery
                 {
                     Recipient = recipient,
                     Channel = channel,
-                    Status = connected ? NotificationDeliveryStatus.Pending : NotificationDeliveryStatus.Skipped,
-                    ErrorMessage = connected ? null : "کاربر هنوز این پیام‌رسان را در تنظیمات اعلان متصل نکرده است"
+                    Status = NotificationDeliveryStatus.Pending
                 });
             }
         }

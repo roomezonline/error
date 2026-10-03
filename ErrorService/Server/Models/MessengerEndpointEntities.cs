@@ -30,30 +30,3 @@ public sealed class MessengerEndpoint
 
     public DateTimeOffset? LastSentAt { get; set; }
 }
-
-public sealed class MessengerLinkCode
-{
-    public int Id { get; set; }
-
-    [Required, MaxLength(16)]
-    public string Code { get; set; } = string.Empty;
-
-    public NotificationDeliveryChannel Channel { get; set; }
-
-    public int AppUserId { get; set; }
-
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-
-    public DateTimeOffset ExpiresAt { get; set; }
-
-    public DateTimeOffset? UsedAt { get; set; }
-}
-
-public sealed class UserNotificationSetting
-{
-    public int AppUserId { get; set; }
-
-    public int Channels { get; set; }
-
-    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
-}

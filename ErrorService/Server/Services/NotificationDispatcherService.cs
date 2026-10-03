@@ -68,6 +68,7 @@ public sealed class NotificationDispatcherService : BackgroundService
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ErrorServiceDbContext>();
         var router = scope.ServiceProvider.GetRequiredService<MessengerRouter>();
+        var safir = scope.ServiceProvider.GetRequiredService<BaleSafirService>();
 
         var now = DateTimeOffset.UtcNow;
         var candidates = await db.NotificationDeliveries
@@ -94,39 +95,70 @@ public sealed class NotificationDispatcherService : BackgroundService
         {
             delivery.LastAttemptAt = now;
 
-            var channelKey = ChannelKey(delivery.Channel);
-            var channel = channelKey == null ? null : router.GetByKey(channelKey);
             var appUserId = delivery.Recipient?.AppUserId;
-
-            if (channel == null || appUserId == null || !NotificationsEnabled(delivery.Channel, settings))
+            if (appUserId == null || !MessengerChannels.IsEnabled(delivery.Channel, settings))
             {
                 delivery.AttemptCount++;
                 delivery.Status = NotificationDeliveryStatus.Failed;
-                delivery.ErrorMessage = "کانال اعلان پیکربندی نشده یا برای این گیرنده در دسترس نیست";
+                delivery.ErrorMessage = "کانال اعلان پیکربندی یا فعال نشده است";
                 continue;
             }
 
-            var endpoint = await db.MessengerEndpoints
-                .FirstOrDefaultAsync(x => x.Channel == delivery.Channel
-                    && x.AppUserId == appUserId.Value
-                    && x.Status == MessengerEndpointStatus.Verified, ct);
-
-            if (endpoint == null)
+            MessengerSendResult result;
+            if (delivery.Channel == NotificationDeliveryChannel.Bale)
             {
-                delivery.Status = NotificationDeliveryStatus.Skipped;
-                delivery.ErrorMessage = "کاربر هنوز این پیام‌رسان را در تنظیمات اعلان متصل نکرده است";
-                continue;
-            }
+                var userPhone = await db.Users
+                    .Where(x => x.Id == appUserId.Value)
+                    .Select(x => x.PhoneNumber)
+                    .FirstOrDefaultAsync(ct);
 
-            if (!long.TryParse(endpoint.ExternalId, out var chatId))
+                if (string.IsNullOrWhiteSpace(userPhone))
+                {
+                    delivery.Status = NotificationDeliveryStatus.Skipped;
+                    delivery.ErrorMessage = "شماره موبایل برای این کاربر ثبت نشده است";
+                    continue;
+                }
+
+                var text = BuildMessage(delivery.Notification, _configuration);
+                var actionUrl = BuildActionUrl(delivery.Notification, _configuration);
+                result = await safir.SendToPhoneAsync(settings, userPhone, text, actionUrl);
+            }
+            else
             {
-                delivery.AttemptCount++;
-                delivery.Status = NotificationDeliveryStatus.Failed;
-                delivery.ErrorMessage = "شناسه گفتگوی ذخیره‌شده نامعتبر است";
-                continue;
+                var endpoint = await db.MessengerEndpoints
+                    .FirstOrDefaultAsync(x => x.Channel == delivery.Channel
+                        && x.AppUserId == appUserId.Value
+                        && x.Status == MessengerEndpointStatus.Verified, ct);
+
+                if (endpoint == null)
+                {
+                    delivery.Status = NotificationDeliveryStatus.Skipped;
+                    delivery.ErrorMessage = "نشانی این پیام‌رسان برای کاربر توسط مدیر ثبت نشده است";
+                    continue;
+                }
+
+                if (!long.TryParse(endpoint.ExternalId, out var chatId))
+                {
+                    delivery.AttemptCount++;
+                    delivery.Status = NotificationDeliveryStatus.Failed;
+                    delivery.ErrorMessage = "نشانی ثبت‌شده برای گیرنده نامعتبر است";
+                    continue;
+                }
+
+                var channel = router.GetByKey(ChannelKey(delivery.Channel));
+                if (channel == null)
+                {
+                    delivery.AttemptCount++;
+                    delivery.Status = NotificationDeliveryStatus.Failed;
+                    delivery.ErrorMessage = "کانال اعلان پیکربندی نشده است";
+                    continue;
+                }
+
+                result = await channel.TrySendTextToChatAsync(chatId, BuildMessage(delivery.Notification, _configuration));
+                if (result.Success)
+                    endpoint.LastSentAt = now;
             }
 
-            var result = await channel.TrySendTextToChatAsync(chatId, BuildMessage(delivery.Notification, _configuration));
             delivery.AttemptCount++;
 
             if (result.Success)
@@ -135,7 +167,6 @@ public sealed class NotificationDispatcherService : BackgroundService
                 delivery.SentAt = now;
                 delivery.ExternalMessageId = result.ExternalMessageId;
                 delivery.ErrorMessage = null;
-                endpoint.LastSentAt = now;
                 _logger.LogInformation("Notification {NotificationId} delivered via {Channel} to user {UserId}",
                     delivery.NotificationId, delivery.Channel, appUserId);
             }
@@ -168,17 +199,13 @@ public sealed class NotificationDispatcherService : BackgroundService
         _ => null
     };
 
-    private static bool NotificationsEnabled(NotificationDeliveryChannel channel, SiteSettings? settings)
+    internal static string? BuildActionUrl(Notification notification, IConfiguration configuration)
     {
-        if (settings == null)
-            return false;
-        return channel switch
-        {
-            NotificationDeliveryChannel.Bale => settings.EnableBaleNotifications && !string.IsNullOrWhiteSpace(settings.BaleBotToken),
-            NotificationDeliveryChannel.Telegram => settings.EnableTelegramNotifications && !string.IsNullOrWhiteSpace(settings.TelegramBotToken),
-            NotificationDeliveryChannel.Eitaa => settings.EnableEitaaNotifications && !string.IsNullOrWhiteSpace(settings.EitaaBotToken),
-            _ => false
-        };
+        if (string.IsNullOrWhiteSpace(notification.ActionUrl))
+            return null;
+        var baseUrl = (configuration.GetValue<string>("Site:BaseUrl") ?? "https://errorservice.ir").TrimEnd('/');
+        var url = notification.ActionUrl.StartsWith('/') ? notification.ActionUrl : "/" + notification.ActionUrl;
+        return baseUrl + url;
     }
 
     internal static string BuildMessage(Notification notification, IConfiguration configuration)

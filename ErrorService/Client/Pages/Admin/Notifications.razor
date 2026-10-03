@@ -399,7 +399,7 @@
                                 }
                                 <p class="rv-channels__h">
                                     <span class="oi oi-info"></span>
-                                    ارسال خارجی فقط برای کاربرانی انجام می‌شود که خودشان آن پیام‌رسان را در «تنظیمات اعلان» پروفایلشان روشن کرده و متصل باشند.
+                                    ارسال خارجی یک‌طرفه است: بله مستقیماً به شماره موبایل کاربر و تلگرام/ایتا به نشانی ثبت‌شده توسط مدیر ارسال می‌شود.
                                 </p>
                             </div>
 
@@ -548,11 +548,12 @@
                             <i>
                                 @if (!st.BotConfigured) { <text>ربات تنظیم نشده</text> }
                                 else if (!st.NotificationsEnabled) { <text>ارسال اعلان خاموش</text> }
+                                else if (st.ChannelKey == "bale") { <text>@st.ConnectedUserCount گیرنده با شماره موبایل</text> }
                                 else { <text>@st.ConnectedUserCount کاربر متصل</text> }
                             </i>
                         </span>
                     }
-                    <span class="rl-mstate__h">اتصال کاربران از پروفایل آن‌ها (تنظیمات اعلان) انجام می‌شود.</span>
+                    <span class="rl-mstate__h">بله به شماره موبایل کاربر ارسال می‌کند؛ تلگرام و ایتا به نشانی ثبت‌شده توسط مدیر.</span>
                 </div>
             }
 
@@ -650,16 +651,16 @@
                                     <label class="rl-chb on locked" title="اعلان درون‌برنامه‌ای همیشه فعال است">
                                         <input type="checkbox" checked disabled /> درون‌برنامه‌ای
                                     </label>
-                                    <label class="rl-chb @(rule.BaleEnabled ? "on" : "")" title="ارسال از طریق بله به کاربران متصل">
+                                    <label class="rl-chb @(rule.BaleEnabled ? "on" : "")" title="ارسال از طریق بله به شماره موبایل کاربر">
                                         <input type="checkbox" disabled="@(!canManageRules || IsRuleSaving(rule.EventType))" checked="@rule.BaleEnabled" @onchange="e => rule.BaleEnabled = e.Value as bool? ?? false" /> بله
                                     </label>
-                                    <label class="rl-chb @(rule.TelegramEnabled ? "on" : "")" title="ارسال از طریق تلگرام به کاربران متصل">
+                                    <label class="rl-chb @(rule.TelegramEnabled ? "on" : "")" title="ارسال از طریق تلگرام به نشانی ثبت‌شده توسط مدیر">
                                         <input type="checkbox" disabled="@(!canManageRules || IsRuleSaving(rule.EventType))" checked="@rule.TelegramEnabled" @onchange="e => rule.TelegramEnabled = e.Value as bool? ?? false" /> تلگرام
                                     </label>
-                                    <label class="rl-chb @(rule.EitaaEnabled ? "on" : "")" title="ارسال از طریق ایتا به کاربران متصل">
+                                    <label class="rl-chb @(rule.EitaaEnabled ? "on" : "")" title="ارسال از طریق ایتا به نشانی ثبت‌شده توسط مدیر">
                                         <input type="checkbox" disabled="@(!canManageRules || IsRuleSaving(rule.EventType))" checked="@rule.EitaaEnabled" @onchange="e => rule.EitaaEnabled = e.Value as bool? ?? false" /> ایتا
                                     </label>
-                                    <span class="rl-ch__h">دریافت هر پیام‌رسان را کاربر در «تنظیمات اعلان» پروفایل خود روشن می‌کند.</span>
+                                    <span class="rl-ch__h">بله به شماره موبایل کاربر، تلگرام و ایتا به نشانی ثبت‌شده توسط مدیر ارسال می‌شود.</span>
                                 </div>
 
                                 <div class="rl-foot">

@@ -23,16 +23,11 @@ public sealed class NotificationsController : ControllerBase
 
     private readonly ErrorServiceDbContext _db;
     private readonly NotificationEventService _notifier;
-    private readonly MessengerLinkService _linkService;
-    private readonly MessengerRouter _router;
 
-    public NotificationsController(ErrorServiceDbContext db, NotificationEventService notifier,
-        MessengerLinkService linkService, MessengerRouter router)
+    public NotificationsController(ErrorServiceDbContext db, NotificationEventService notifier)
     {
         _db = db;
         _notifier = notifier;
-        _linkService = linkService;
-        _router = router;
     }
 
     private int? CurrentUserId()
@@ -240,27 +235,33 @@ public sealed class NotificationsController : ControllerBase
                 && appUserIds.Contains(x.AppUserId))
             .Select(x => new { x.Channel, x.AppUserId })
             .ToHashSetAsync();
-        var userSettings = await _db.UserNotificationSettings.AsNoTracking()
-            .Where(x => appUserIds.Contains(x.AppUserId))
-            .ToDictionaryAsync(x => x.AppUserId, x => x.Channels);
 
         var result = new List<ChannelPreviewDto>();
         foreach (var channel in NotifiableChannels)
         {
-            var flag = NotificationChannelFlags.FlagFor((int)channel);
             var available = IsChannelAvailable(channel, siteSettings);
-            var count = available
-                ? appUserIds.Count(uid =>
-                    userSettings.TryGetValue(uid, out var channels)
-                    && (channels & flag) != 0
-                    && endpoints.Contains(new { Channel = channel, AppUserId = uid }))
-                : 0;
+            int count;
+            if (!available)
+            {
+                count = 0;
+            }
+            else if (channel == NotificationDeliveryChannel.Bale)
+            {
+                count = await _db.Users.CountAsync(x => appUserIds.Contains(x.Id)
+                    && x.IsActive
+                    && x.PhoneNumber != null
+                    && x.PhoneNumber != "");
+            }
+            else
+            {
+                count = appUserIds.Count(uid => endpoints.Contains(new { Channel = channel, AppUserId = uid }));
+            }
 
             result.Add(new ChannelPreviewDto
             {
                 Channel = (int)channel,
-                ChannelKey = MessengerLinkService.ChannelKey(channel),
-                ChannelTitle = MessengerLinkService.ChannelTitle(channel),
+                ChannelKey = MessengerChannels.ChannelKey(channel),
+                ChannelTitle = MessengerChannels.ChannelTitle(channel),
                 Available = available,
                 Count = count
             });
@@ -614,112 +615,19 @@ public sealed class NotificationsController : ControllerBase
         });
     }
 
-    [Authorize]
-    [HttpGet("my-settings")]
-    public async Task<ActionResult<UserNotificationSettingsDto>> GetMySettings()
-    {
-        var userId = CurrentUserId();
-        if (!userId.HasValue) return Unauthorized();
-        return Ok(await BuildMySettingsAsync(userId.Value));
-    }
-
-    [Authorize]
-    [HttpPut("my-settings")]
-    public async Task<ActionResult<UserNotificationSettingsDto>> UpdateMySettings(UserNotificationSettingsUpdateRequest request)
-    {
-        var userId = CurrentUserId();
-        if (!userId.HasValue) return Unauthorized();
-
-        var channels = request.Channels & (NotificationChannelFlags.Bale | NotificationChannelFlags.Telegram | NotificationChannelFlags.Eitaa);
-
-        var setting = await _db.UserNotificationSettings.FindAsync(userId.Value);
-        if (setting == null)
-        {
-            setting = new UserNotificationSetting { AppUserId = userId.Value };
-            _db.UserNotificationSettings.Add(setting);
-        }
-        setting.Channels = channels;
-        setting.UpdatedAt = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync();
-
-        return Ok(await BuildMySettingsAsync(userId.Value));
-    }
-
-    [Authorize]
-    [HttpPost("my-settings/link-code/{channelKey}")]
-    public async Task<ActionResult<MessengerLinkCodeDto>> CreateLinkCode(string channelKey)
-    {
-        var userId = CurrentUserId();
-        if (!userId.HasValue) return Unauthorized();
-
-        var channel = MessengerLinkService.ParseChannel(channelKey);
-        if (channel == null) return BadRequest("پیام‌رسان نامعتبر است.");
-
-        var siteSettings = await _db.SiteSettings.FirstOrDefaultAsync();
-        if (!IsChannelAvailable(channel.Value, siteSettings))
-            return BadRequest("این پیام‌رسان هنوز در سایت پیکربندی نشده است.");
-
-        var code = await _linkService.CreateCodeAsync(userId.Value, channel.Value);
-        return Ok(new MessengerLinkCodeDto
-        {
-            Channel = (int)channel.Value,
-            ChannelKey = MessengerLinkService.ChannelKey(channel.Value),
-            ChannelTitle = MessengerLinkService.ChannelTitle(channel.Value),
-            Code = code,
-            ExpiresAt = DateTimeOffset.UtcNow.Add(MessengerLinkService.CodeLifetime),
-            BotUrl = await BuildBotUrlAsync(channel.Value, code)
-        });
-    }
-
-    [Authorize]
-    [HttpGet("my-settings/link-status/{channelKey}")]
-    public async Task<ActionResult<MessengerEndpointDto>> GetLinkStatus(string channelKey)
-    {
-        var userId = CurrentUserId();
-        if (!userId.HasValue) return Unauthorized();
-
-        var channel = MessengerLinkService.ParseChannel(channelKey);
-        if (channel == null) return BadRequest("پیام‌رسان نامعتبر است.");
-
-        var endpoint = await _db.MessengerEndpoints
-            .FirstOrDefaultAsync(x => x.Channel == channel.Value
-                && x.AppUserId == userId.Value
-                && x.Status == MessengerEndpointStatus.Verified);
-        var siteSettings = await _db.SiteSettings.FirstOrDefaultAsync();
-
-        return Ok(BuildEndpointDto(channel.Value, endpoint, siteSettings));
-    }
-
-    [Authorize]
-    [HttpDelete("my-settings/endpoint/{channelKey}")]
-    public async Task<ActionResult<UserNotificationSettingsDto>> DisconnectEndpoint(string channelKey)
-    {
-        var userId = CurrentUserId();
-        if (!userId.HasValue) return Unauthorized();
-
-        var channel = MessengerLinkService.ParseChannel(channelKey);
-        if (channel == null) return BadRequest("پیام‌رسان نامعتبر است.");
-
-        var endpoints = await _db.MessengerEndpoints
-            .Where(x => x.Channel == channel.Value && x.AppUserId == userId.Value)
-            .ToListAsync();
-        if (endpoints.Count > 0)
-            _db.MessengerEndpoints.RemoveRange(endpoints);
-        await _db.SaveChangesAsync();
-
-        return Ok(await BuildMySettingsAsync(userId.Value));
-    }
-
     [Authorize(Policy = "perm:admin.notifications.view")]
     [HttpGet("admin/messenger-status")]
     public async Task<ActionResult<List<MessengerChannelStatusDto>>> GetMessengerStatus()
     {
         var siteSettings = await _db.SiteSettings.FirstOrDefaultAsync();
-        var counts = await _db.MessengerEndpoints
+        var endpointCounts = await _db.MessengerEndpoints
             .Where(x => x.Status == MessengerEndpointStatus.Verified)
             .GroupBy(x => x.Channel)
             .Select(g => new { Channel = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Channel, x => x.Count);
+        var phoneUserCount = await _db.Users.CountAsync(x => x.IsActive
+            && x.PhoneNumber != null
+            && x.PhoneNumber != "");
 
         var result = new List<MessengerChannelStatusDto>();
         foreach (var channel in NotifiableChannels)
@@ -727,11 +635,13 @@ public sealed class NotificationsController : ControllerBase
             result.Add(new MessengerChannelStatusDto
             {
                 Channel = (int)channel,
-                ChannelKey = MessengerLinkService.ChannelKey(channel),
-                ChannelTitle = MessengerLinkService.ChannelTitle(channel),
-                BotConfigured = IsChannelAvailable(channel, siteSettings),
+                ChannelKey = MessengerChannels.ChannelKey(channel),
+                ChannelTitle = MessengerChannels.ChannelTitle(channel),
+                BotConfigured = MessengerChannels.IsEnabled(channel, siteSettings),
                 NotificationsEnabled = NotificationsEnabled(channel, siteSettings),
-                ConnectedUserCount = counts.TryGetValue(channel, out var c) ? c : 0
+                ConnectedUserCount = channel == NotificationDeliveryChannel.Bale
+                    ? phoneUserCount
+                    : endpointCounts.TryGetValue(channel, out var c) ? c : 0
             });
         }
         return Ok(result);
@@ -741,7 +651,7 @@ public sealed class NotificationsController : ControllerBase
     [HttpPut("admin/users/{userId:int}/endpoint/{channelKey}")]
     public async Task<ActionResult<MessengerEndpointDto>> SetUserEndpoint(int userId, string channelKey, [FromBody] AdminEndpointRequest request)
     {
-        var channel = MessengerLinkService.ParseChannel(channelKey);
+        var channel = MessengerChannels.ParseChannel(channelKey);
         if (channel == null) return BadRequest("پیام‌رسان نامعتبر است.");
         if (!await _db.Users.AnyAsync(x => x.Id == userId)) return NotFound("کاربر یافت نشد.");
 
@@ -777,35 +687,13 @@ public sealed class NotificationsController : ControllerBase
         return Ok(BuildEndpointDto(channel.Value, endpoint, siteSettings));
     }
 
-    private async Task<UserNotificationSettingsDto> BuildMySettingsAsync(int userId)
-    {
-        var setting = await _db.UserNotificationSettings.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.AppUserId == userId);
-        var endpoints = await _db.MessengerEndpoints.AsNoTracking()
-            .Where(x => x.AppUserId == userId && x.Status == MessengerEndpointStatus.Verified)
-            .ToListAsync();
-        var siteSettings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
-
-        var list = new List<MessengerEndpointDto>();
-        foreach (var channel in NotifiableChannels)
-        {
-            list.Add(BuildEndpointDto(channel, endpoints.FirstOrDefault(x => x.Channel == channel), siteSettings));
-        }
-
-        return new UserNotificationSettingsDto
-        {
-            Channels = setting?.Channels ?? 0,
-            Endpoints = list
-        };
-    }
-
     private static MessengerEndpointDto BuildEndpointDto(NotificationDeliveryChannel channel, MessengerEndpoint? endpoint, SiteSettings? settings)
     {
         return new MessengerEndpointDto
         {
             Channel = (int)channel,
-            ChannelKey = MessengerLinkService.ChannelKey(channel),
-            ChannelTitle = MessengerLinkService.ChannelTitle(channel),
+            ChannelKey = MessengerChannels.ChannelKey(channel),
+            ChannelTitle = MessengerChannels.ChannelTitle(channel),
             Available = IsChannelAvailable(channel, settings),
             Connected = endpoint != null,
             ExternalIdMasked = endpoint == null ? null : MaskExternalId(endpoint.ExternalId),
@@ -827,37 +715,10 @@ public sealed class NotificationsController : ControllerBase
     }
 
     private static bool IsChannelAvailable(NotificationDeliveryChannel channel, SiteSettings? settings)
-    {
-        if (settings == null) return false;
-        return channel switch
-        {
-            NotificationDeliveryChannel.Bale => settings.EnableBaleNotifications && !string.IsNullOrWhiteSpace(settings.BaleBotToken),
-            NotificationDeliveryChannel.Telegram => settings.EnableTelegramNotifications && !string.IsNullOrWhiteSpace(settings.TelegramBotToken),
-            NotificationDeliveryChannel.Eitaa => settings.EnableEitaaNotifications && !string.IsNullOrWhiteSpace(settings.EitaaBotToken),
-            _ => false
-        };
-    }
+        => MessengerChannels.IsEnabled(channel, settings);
 
     private static string MaskExternalId(string id)
         => id.Length <= 4 ? "***" : $"{id[..2]}***{id[^2..]}";
-
-    private async Task<string?> BuildBotUrlAsync(NotificationDeliveryChannel channel, string code)
-    {
-        var key = MessengerLinkService.ChannelKey(channel);
-        var bot = _router.GetByKey(key);
-        if (bot == null) return null;
-
-        var username = await bot.GetBotUsernameAsync();
-        if (string.IsNullOrWhiteSpace(username)) return null;
-
-        return channel switch
-        {
-            NotificationDeliveryChannel.Telegram => $"https://t.me/{username}?start={code}",
-            NotificationDeliveryChannel.Bale => $"https://ble.ir/{username}",
-            NotificationDeliveryChannel.Eitaa => $"https://eitaa.com/{username}",
-            _ => null
-        };
-    }
 }
 
 public sealed class AdminEndpointRequest

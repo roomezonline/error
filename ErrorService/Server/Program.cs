@@ -91,7 +91,7 @@ builder.Services.AddScoped<IChatMessengerChannel, BaleMessengerChannel>();
 builder.Services.AddScoped<IChatMessengerChannel, TelegramMessengerChannel>();
 builder.Services.AddScoped<IChatMessengerChannel, EitaaMessengerChannel>();
     builder.Services.AddScoped<MessengerRouter>();
-    builder.Services.AddScoped<MessengerLinkService>();
+    builder.Services.AddScoped<BaleSafirService>();
 builder.Services.AddScoped<IChatAiService, FaqChatService>();
 builder.Services.AddScoped<IChatAiService, OpenAiCompatibleChatService>();
 builder.Services.AddScoped<ChatAiCoordinator>();

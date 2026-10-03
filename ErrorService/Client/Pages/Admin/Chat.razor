@@ -159,10 +159,15 @@
                     }
                     <div class="border-top pt-2 mt-2">
                         <div class="fw-bold small mb-2">ارسال اعلان خودکار</div>
-                        <p class="text-muted small mb-2">فعال‌سازی زیر فقط امکان ارسال اعلان‌ها از این پیام‌رسان را باز می‌کند؛ هر کاربر در «تنظیمات اعلان» پروفایل خود انتخاب می‌کند کدام پیام‌رسان دریافت کند.</p>
+                        <p class="text-muted small mb-2">ارسال اعلان‌ها یک‌طرفه و به‌صورت خودکار انجام می‌شود: بله مستقیماً به شماره موبایل کاربر، تلگرام و ایتا به نشانی ثبت‌شده توسط مدیر.</p>
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="chkNotifyBale" @bind="_siteNotifyBale" />
                             <label class="form-check-label small" for="chkNotifyBale">ارسال اعلان از طریق بله</label>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">کلید دسترسی سفیر (Api Access Key)</label>
+                            <input type="password" class="form-control form-control-sm" @bind="_siteBaleSafirKey" placeholder="از پنل کسب‌وکار بله (business.bale.ai)" />
+                            <div class="form-text small">برای ارسال پیام بله به شماره کاربران لازم است از بخش «سفیر» پنل کسب‌وکار بله دریافت شود.</div>
                         </div>
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="chkNotifyTelegram" @bind="_siteNotifyTelegram" />
@@ -1072,6 +1077,7 @@
     private bool _siteNotifyBale = true;
     private bool _siteNotifyTelegram = true;
     private bool _siteNotifyEitaa = true;
+    private string _siteBaleSafirKey = "";
     private bool _siteEnableAi;
     private string _siteAiProvider = "";
     private string _siteAiApiUrl = "";
@@ -1859,6 +1865,7 @@
             _siteNotifyBale = !s.TryGetProperty("enableBaleNotifications", out var enb) || enb.GetBoolean();
             _siteNotifyTelegram = !s.TryGetProperty("enableTelegramNotifications", out var ent) || ent.GetBoolean();
             _siteNotifyEitaa = !s.TryGetProperty("enableEitaaNotifications", out var ene) || ene.GetBoolean();
+            _siteBaleSafirKey = s.TryGetProperty("baleSafirApiKey", out var skb) ? skb.GetString() ?? "" : "";
             _siteWelcomeMessage = s.TryGetProperty("welcomeMessage", out var wm) ? wm.GetString() ?? "" : "";
             _siteEnableAutoMessage = s.TryGetProperty("enableAutoMessage", out var am) && am.GetBoolean();
             _siteAutoMessageSeconds = s.TryGetProperty("autoMessageSeconds", out var aSec) ? aSec.GetInt32() : 60;
@@ -1894,6 +1901,7 @@
                 enableBaleNotifications = _siteNotifyBale,
                 enableTelegramNotifications = _siteNotifyTelegram,
                 enableEitaaNotifications = _siteNotifyEitaa,
+                baleSafirApiKey = _siteBaleSafirKey,
                 welcomeMessage = _siteWelcomeMessage,
                 enableAutoMessage = _siteEnableAutoMessage,
                 autoMessageSeconds = _siteAutoMessageSeconds,

@@ -210,6 +210,32 @@ public sealed class BaleBotService
         return null;
     }
 
+    public async Task<long?> GetBotIdAsync()
+    {
+        var (token, _) = await GetSettingsAsync();
+        if (string.IsNullOrEmpty(token)) return null;
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient("BaleBot");
+            var body = await client.GetStringAsync($"https://tapi.bale.ai/bot{token}/getMe");
+            if (body.Length == 0 || body[0] != '{') return null;
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("result", out var result)
+                && result.ValueKind == JsonValueKind.Object
+                && result.TryGetProperty("id", out var id)
+                && id.ValueKind == JsonValueKind.Number)
+            {
+                return id.GetInt64();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "BaleBot: getMe (id) failed");
+        }
+        return null;
+    }
+
     public async Task<(bool success, string message)> SetWebhookAsync(string webhookUrl, string secret)
     {
         var (token, _) = await GetSettingsAsync();

@@ -131,8 +131,6 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<NotificationDelivery> NotificationDeliveries { get; set; }
     public DbSet<NotificationRule> NotificationRules { get; set; }
     public DbSet<MessengerEndpoint> MessengerEndpoints { get; set; }
-    public DbSet<MessengerLinkCode> MessengerLinkCodes { get; set; }
-    public DbSet<UserNotificationSetting> UserNotificationSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -195,21 +193,6 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.ExternalUserName).HasMaxLength(120);
             entity.HasIndex(x => new { x.Channel, x.AppUserId }).IsUnique();
             entity.HasIndex(x => new { x.Channel, x.ExternalId }).IsUnique();
-        });
-
-        modelBuilder.Entity<MessengerLinkCode>(entity =>
-        {
-            entity.HasKey(x => x.Id);
-            entity.Property(x => x.Code).IsRequired().HasMaxLength(16);
-            entity.HasIndex(x => x.Code).IsUnique();
-            entity.HasIndex(x => new { x.AppUserId, x.Channel });
-        });
-
-        modelBuilder.Entity<UserNotificationSetting>(entity =>
-        {
-            entity.HasKey(x => x.AppUserId);
-            entity.Property(x => x.AppUserId).ValueGeneratedNever();
-            entity.ToTable("UserNotificationSettings");
         });
 
         modelBuilder.Entity<MonitoringDevice>(entity =>

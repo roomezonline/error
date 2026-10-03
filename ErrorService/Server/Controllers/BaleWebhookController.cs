@@ -23,13 +23,12 @@ public class BaleWebhookController : ControllerBase
     private readonly ILogger<BaleWebhookController> _logger;
     private readonly BaleBotService _baleBot;
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly MessengerLinkService _linkService;
 
     private static readonly ConcurrentDictionary<long, DateTime> LastHelpSent = new();
 
     public BaleWebhookController(ErrorServiceDbContext db, IHubContext<ChatHub> hub,
         IConfiguration config, ILogger<BaleWebhookController> logger, BaleBotService baleBot,
-        IHttpClientFactory httpClientFactory, MessengerLinkService linkService)
+        IHttpClientFactory httpClientFactory)
     {
         _db = db;
         _hub = hub;
@@ -37,7 +36,6 @@ public class BaleWebhookController : ControllerBase
         _logger = logger;
         _baleBot = baleBot;
         _httpClientFactory = httpClientFactory;
-        _linkService = linkService;
     }
 
     [HttpGet]
@@ -214,33 +212,6 @@ public class BaleWebhookController : ControllerBase
         {
             _logger.LogWarning("Bale webhook: Message is null after parsing. Raw: {Body}", rawBody);
             return Ok();
-        }
-
-        // اتصال کاربر به بله برای دریافت اعلان (کد یک‌بارمصرف از پروفایل)
-        if (payload.Message.Chat != null && payload.Message.Chat.Type is not ("group" or "supergroup" or "channel"))
-        {
-            var linkText = payload.Message.Text ?? payload.Message.Caption;
-            if (MessengerLinkService.ExtractCode(linkText) != null)
-            {
-                var from = payload.Message.From;
-                var fullName = string.Join(" ", new[] { from?.FirstName, from?.LastName }
-                    .Where(x => !string.IsNullOrWhiteSpace(x)));
-                var (handled, reply) = await _linkService.TryHandleMessageAsync(
-                    NotificationDeliveryChannel.Bale, linkText, payload.Message.Chat.Id,
-                    !string.IsNullOrWhiteSpace(fullName) ? fullName : from?.Username);
-                if (handled)
-                {
-                    try
-                    {
-                        await _baleBot.SendTextToChat(payload.Message.Chat.Id, reply);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Bale webhook: failed to send link reply");
-                    }
-                    return Ok();
-                }
-            }
         }
 
         // Validate chat ID matches configured group

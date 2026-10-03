@@ -130,17 +130,6 @@ public sealed class NotificationRuleUpdateRequest
     public int Channels { get; set; } = NotificationChannelFlags.Internal;
 }
 
-public sealed class UserNotificationSettingsDto
-{
-    public int Channels { get; set; }
-    public List<MessengerEndpointDto> Endpoints { get; set; } = new();
-}
-
-public sealed class UserNotificationSettingsUpdateRequest
-{
-    public int Channels { get; set; }
-}
-
 public sealed class MessengerEndpointDto
 {
     public int Channel { get; set; }
@@ -151,16 +140,6 @@ public sealed class MessengerEndpointDto
     public string? ExternalIdMasked { get; set; }
     public string? ExternalUserName { get; set; }
     public DateTimeOffset? VerifiedAt { get; set; }
-}
-
-public sealed class MessengerLinkCodeDto
-{
-    public int Channel { get; set; }
-    public string ChannelKey { get; set; } = string.Empty;
-    public string ChannelTitle { get; set; } = string.Empty;
-    public string Code { get; set; } = string.Empty;
-    public DateTimeOffset ExpiresAt { get; set; }
-    public string? BotUrl { get; set; }
 }
 
 public sealed class MessengerChannelStatusDto

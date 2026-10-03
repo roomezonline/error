@@ -738,6 +738,7 @@ public class ChatController : ControllerBase
             EnableBaleNotifications = settings.EnableBaleNotifications,
             EnableTelegramNotifications = settings.EnableTelegramNotifications,
             EnableEitaaNotifications = settings.EnableEitaaNotifications,
+            BaleSafirApiKey = settings.BaleSafirApiKey,
             WelcomeMessage = settings.ChatWelcomeMessage,
             EnableAutoMessage = settings.ChatEnableAutoMessage,
             AutoMessageSeconds = settings.ChatAutoMessageSeconds,
@@ -774,6 +775,7 @@ public class ChatController : ControllerBase
         settings.EnableBaleNotifications = p.EnableBaleNotifications;
         settings.EnableTelegramNotifications = p.EnableTelegramNotifications;
         settings.EnableEitaaNotifications = p.EnableEitaaNotifications;
+        settings.BaleSafirApiKey = string.IsNullOrWhiteSpace(p.BaleSafirApiKey) ? null : p.BaleSafirApiKey.Trim();
         settings.ChatWelcomeMessage = p.WelcomeMessage;
         settings.ChatEnableAutoMessage = p.EnableAutoMessage;
         settings.ChatAutoMessageSeconds = p.AutoMessageSeconds > 0 ? p.AutoMessageSeconds : 60;
@@ -921,6 +923,7 @@ public class ChatSettingsPayload
     public bool EnableBaleNotifications { get; set; } = true;
     public bool EnableTelegramNotifications { get; set; } = true;
     public bool EnableEitaaNotifications { get; set; } = true;
+    public string? BaleSafirApiKey { get; set; }
     public string? WelcomeMessage { get; set; }
     public bool EnableAutoMessage { get; set; }
     public int AutoMessageSeconds { get; set; } = 60;
