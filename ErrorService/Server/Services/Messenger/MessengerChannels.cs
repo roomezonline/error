@@ -35,8 +35,7 @@ public static class MessengerChannels
         return channel switch
         {
             NotificationDeliveryChannel.Bale => settings.EnableBaleNotifications
-                && !string.IsNullOrWhiteSpace(settings.BaleBotToken)
-                && !string.IsNullOrWhiteSpace(settings.BaleSafirApiKey),
+                && !string.IsNullOrWhiteSpace(settings.BaleBotToken),
             NotificationDeliveryChannel.Telegram => settings.EnableTelegramNotifications
                 && !string.IsNullOrWhiteSpace(settings.TelegramBotToken),
             NotificationDeliveryChannel.Eitaa => settings.EnableEitaaNotifications

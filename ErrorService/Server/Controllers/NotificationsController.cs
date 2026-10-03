@@ -23,11 +23,13 @@ public sealed class NotificationsController : ControllerBase
 
     private readonly ErrorServiceDbContext _db;
     private readonly NotificationEventService _notifier;
+    private readonly BaleBotService _baleBot;
 
-    public NotificationsController(ErrorServiceDbContext db, NotificationEventService notifier)
+    public NotificationsController(ErrorServiceDbContext db, NotificationEventService notifier, BaleBotService baleBot)
     {
         _db = db;
         _notifier = notifier;
+        _baleBot = baleBot;
     }
 
     private int? CurrentUserId()
@@ -247,10 +249,18 @@ public sealed class NotificationsController : ControllerBase
             }
             else if (channel == NotificationDeliveryChannel.Bale)
             {
-                count = await _db.Users.CountAsync(x => appUserIds.Contains(x.Id)
-                    && x.IsActive
-                    && x.PhoneNumber != null
-                    && x.PhoneNumber != "");
+                // کلید سفیر: همه کاربرانِ دارای شماره؛ بدون کلید: فقط کاربرانی که شماره را در ربات فرستاده‌اند
+                if (!string.IsNullOrWhiteSpace(siteSettings?.BaleSafirApiKey))
+                {
+                    count = await _db.Users.CountAsync(x => appUserIds.Contains(x.Id)
+                        && x.IsActive
+                        && x.PhoneNumber != null
+                        && x.PhoneNumber != "");
+                }
+                else
+                {
+                    count = appUserIds.Count(uid => endpoints.Contains(new { Channel = channel, AppUserId = uid }));
+                }
             }
             else
             {
@@ -630,8 +640,11 @@ public sealed class NotificationsController : ControllerBase
             && x.PhoneNumber != "");
 
         var result = new List<MessengerChannelStatusDto>();
+        var baleViaSafir = !string.IsNullOrWhiteSpace(siteSettings?.BaleSafirApiKey);
+        endpointCounts.TryGetValue(NotificationDeliveryChannel.Bale, out var linkedBaleCount);
         foreach (var channel in NotifiableChannels)
         {
+            var isBale = channel == NotificationDeliveryChannel.Bale;
             result.Add(new MessengerChannelStatusDto
             {
                 Channel = (int)channel,
@@ -639,12 +652,76 @@ public sealed class NotificationsController : ControllerBase
                 ChannelTitle = MessengerChannels.ChannelTitle(channel),
                 BotConfigured = MessengerChannels.IsEnabled(channel, siteSettings),
                 NotificationsEnabled = NotificationsEnabled(channel, siteSettings),
-                ConnectedUserCount = channel == NotificationDeliveryChannel.Bale
-                    ? phoneUserCount
-                    : endpointCounts.TryGetValue(channel, out var c) ? c : 0
+                ConnectedUserCount = isBale
+                    ? (baleViaSafir ? phoneUserCount : linkedBaleCount)
+                    : endpointCounts.TryGetValue(channel, out var c) ? c : 0,
+                CountLabel = isBale
+                    ? (baleViaSafir ? "گیرنده با شماره موبایل" : "کاربر متصل (ارسال شماره)")
+                    : "کاربر متصل"
             });
         }
         return Ok(result);
+    }
+
+    [Authorize]
+    [HttpGet("bale-status")]
+    public async Task<ActionResult<BaleConnectStatusDto>> GetBaleStatus()
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var settings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
+        var endpoint = await _db.MessengerEndpoints.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Channel == NotificationDeliveryChannel.Bale
+                && x.AppUserId == userId.Value
+                && x.Status == MessengerEndpointStatus.Verified);
+
+        var botConfigured = !string.IsNullOrWhiteSpace(settings?.BaleBotToken);
+        string? username = null;
+        if (botConfigured)
+            username = await _baleBot.GetBotUsernameAsync();
+
+        var phone = await _db.Users.AsNoTracking()
+            .Where(x => x.Id == userId.Value)
+            .Select(x => x.PhoneNumber)
+            .FirstOrDefaultAsync();
+
+        return Ok(new BaleConnectStatusDto
+        {
+            Connected = endpoint != null,
+            ConnectedAt = endpoint?.VerifiedAt,
+            Phone = phone,
+            BotConfigured = botConfigured,
+            BotUsername = username,
+            BotUrl = string.IsNullOrWhiteSpace(username) ? null : $"https://ble.ir/{username}",
+            NotificationsEnabled = MessengerChannels.IsEnabled(NotificationDeliveryChannel.Bale, settings),
+            SafirEnabled = !string.IsNullOrWhiteSpace(settings?.BaleSafirApiKey)
+        });
+    }
+
+    [Authorize(Policy = "perm:admin.notifications.view")]
+    [HttpGet("admin/messenger-users/bale")]
+    public async Task<ActionResult<List<MessengerUserDto>>> GetBaleMessengerUsers()
+    {
+        var rows = await (
+            from e in _db.MessengerEndpoints
+            where e.Channel == NotificationDeliveryChannel.Bale
+                && e.Status == MessengerEndpointStatus.Verified
+            join u in _db.Users on e.AppUserId equals u.Id
+            orderby e.VerifiedAt descending
+            select new { e.ExternalId, e.ExternalUserName, e.VerifiedAt, u.Id, u.FullName, u.PhoneNumber, u.IsActive })
+            .ToListAsync();
+
+        return Ok(rows.Select(x => new MessengerUserDto
+        {
+            UserId = x.Id,
+            FullName = x.FullName,
+            PhoneNumber = x.PhoneNumber,
+            MessengerName = x.ExternalUserName,
+            ChatIdMasked = MaskExternalId(x.ExternalId),
+            ConnectedAt = x.VerifiedAt,
+            IsActive = x.IsActive
+        }).ToList());
     }
 
     [Authorize(Policy = "perm:admin.notifications.manage")]

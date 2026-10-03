@@ -118,6 +118,18 @@ public sealed class BaleMessage
     public BaleVoice? Voice { get; set; }
     [JsonPropertyName("reply_to_message")]
     public BaleMessage? ReplyToMessage { get; set; }
+    [JsonPropertyName("contact")]
+    public BaleContact? Contact { get; set; }
+}
+
+public sealed class BaleContact
+{
+    [JsonPropertyName("phone_number")]
+    public string? PhoneNumber { get; set; }
+    [JsonPropertyName("first_name")]
+    public string? FirstName { get; set; }
+    [JsonPropertyName("last_name")]
+    public string? LastName { get; set; }
 }
 
 public sealed class BaleUser

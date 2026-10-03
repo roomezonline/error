@@ -141,6 +141,27 @@ public sealed class BaleBotService
         await SendApiAsync(token, "sendMessage", new { chat_id = chatId.ToString(), text });
     }
 
+    public async Task SendContactRequestToChat(long chatId, string text)
+    {
+        var (token, _) = await GetSettingsAsync();
+        if (string.IsNullOrEmpty(token)) return;
+
+        await SendApiAsync(token, "sendMessage", new
+        {
+            chat_id = chatId.ToString(),
+            text,
+            reply_markup = new
+            {
+                keyboard = new[]
+                {
+                    new[] { new { text = "ارسال شمارهٔ من", request_contact = true } }
+                },
+                resize_keyboard = true,
+                one_time_keyboard = true
+            }
+        });
+    }
+
     public async Task<Messenger.MessengerSendResult> TrySendTextToChat(long chatId, string text)
     {
         var (token, _) = await GetSettingsAsync();

@@ -122,6 +122,17 @@
                                 <span class="pf-menu-badge pf-badge-red">@ActiveCouponsCount</span>
                             }
                         </button>
+
+                        <button class="pf-menu-item @(activeTab == "bale" ? "active" : "")" @onclick='() => SwitchTab("bale")'>
+                            <span class="pf-menu-icon" style="background: rgba(220,53,69,0.1); color: #dc3545;">
+                                <span class="oi oi-bell"></span>
+                            </span>
+                            <span class="pf-menu-text">اتصال به بله</span>
+                            @if (baleStatus?.Connected == true)
+                            {
+                                <span class="pf-menu-badge" style="background:#16a34a; color:#fff;"><span class="oi oi-check" style="font-size:.65rem;"></span></span>
+                            }
+                        </button>
                     </div>
 
                     <!-- Logout -->
@@ -1006,6 +1017,100 @@
                                             </div>
                                         }
                                     </div>
+                                }
+                            </div>
+                        }
+
+                        <!-- ══════════ BALE CONNECTION ══════════ -->
+                        else if (activeTab == "bale")
+                        {
+                            <div class="pf-tab-content animate__animated animate__fadeIn">
+                                <div class="pf-tab-header">
+                                    <h5 class="pf-tab-title">
+                                        <span class="oi oi-bell"></span>
+                                        اتصال به بله (دریافت اعلان‌ها)
+                                    </h5>
+                                    <button class="pf-refresh-btn" disabled="@baleLoading" @onclick="LoadBaleStatusAsync">
+                                        <span class="oi oi-reload"></span>
+                                    </button>
+                                </div>
+
+                                @if (baleLoading && baleStatus == null)
+                                {
+                                    <div class="text-center py-4">
+                                        <div class="spinner-border spinner-border-sm text-danger"></div>
+                                    </div>
+                                }
+                                else if (baleStatus == null)
+                                {
+                                    <div class="pf-empty-state">
+                                        <span class="oi oi-warning"></span>
+                                        <p>دریافت وضعیت اتصال ممکن نشد؛ دکمهٔ بازخوانی را بزنید.</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="pf-bale-card @(baleStatus.Connected ? "on" : "")">
+                                        <div class="pf-bale-status">
+                                            <span class="oi @(baleStatus.Connected ? "oi-circle-check" : "oi-circle-x")"></span>
+                                            <div>
+                                                <b>@(baleStatus.Connected ? "اتصال برقرار است" : "هنوز متصل نشده‌اید")</b>
+                                                <p>
+                                                    @(baleStatus.Connected && baleStatus.ConnectedAt.HasValue
+                                                        ? $"از تاریخ {PersianDate.ToJalaliDate(baleStatus.ConnectedAt.Value)} اعلان‌های سایت به‌صورت خودکار در بله برای شما ارسال می‌شود."
+                                                        : "با ارسال شمارهٔ خود از داخل ربات بله، اعلان‌های سایت را در بله دریافت کنید.")
+                                                </p>
+                                            </div>
+                                        </div>
+                                        @if (baleStatus.Connected && !string.IsNullOrWhiteSpace(baleStatus.Phone))
+                                        {
+                                            <div class="pf-bale-phone">
+                                                شماره ثبت‌شده: <b dir="ltr">@baleStatus.Phone</b>
+                                            </div>
+                                        }
+                                        @if (baleStatus.Connected && !baleStatus.NotificationsEnabled)
+                                        {
+                                            <div class="pf-bale-warn">
+                                                <span class="oi oi-warning"></span>
+                                                دریافت اعلان در حال حاضر توسط مدیر سایت خاموش است؛ اتصال شما حفظ می‌شود و پس از فعال‌سازی، ارسال آغاز می‌شود.
+                                            </div>
+                                        }
+                                    </div>
+
+                                    <div class="pf-bale-steps">
+                                        <div class="pf-bale-steps__title"><span class="oi oi-info"></span> راهنمای اتصال (۴ مرحلهٔ ساده)</div>
+                                        <ol>
+                                            <li><b>۱.</b> روی دکمهٔ «باز کردن ربات بله» در پایین همین صفحه بزنید تا ربات در بله باز شود.</li>
+                                            <li><b>۲.</b> داخل ربات یک پیام متنی کوتاه بفرستید (مثلاً «سلام») تا راهنما نمایش داده شود.</li>
+                                            <li>
+                                                <b>۳.</b> دکمهٔ «ارسال شمارهٔ من» را بزنید تا شماره‌تان برای ما ارسال شود.
+                                                <div class="pf-bale-note">شماره باید دقیقاً همان شماره‌ای باشد که با آن در سایت ثبت‌نام کرده‌اید؛ در غیر این صورت پیام «شماره یافت نشد» می‌گیرید.</div>
+                                            </li>
+                                            <li><b>۴.</b> تا پیام «شماره شما ثبت شد ✓» صبر کنید — از این پس اعلان‌های سایت در بله برای شما ارسال می‌شود.</li>
+                                        </ol>
+                                    </div>
+
+                                    @if (!string.IsNullOrWhiteSpace(baleStatus.BotUrl))
+                                    {
+                                        <a class="pf-bale-open" href="@baleStatus.BotUrl" target="_blank" rel="noopener">
+                                            <span class="oi oi-external-link"></span>
+                                            باز کردن ربات بله
+                                        </a>
+                                    }
+                                    else if (baleStatus.BotConfigured)
+                                    {
+                                        <div class="pf-empty-state">
+                                            <span class="oi oi-info"></span>
+                                            <p>نشانی ربات بله در دسترس نیست؛ چند لحظه بعد دوباره تلاش کنید.</p>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="pf-empty-state">
+                                            <span class="oi oi-info"></span>
+                                            <p>ربات بله هنوز توسط مدیر سایت فعال نشده است؛ پس از فعال‌سازی، این بخش در دسترس قرار می‌گیرد.</p>
+                                        </div>
+                                    }
                                 }
                             </div>
                         }
@@ -2706,6 +2811,121 @@
         from { opacity: 0; }
         to { opacity: 1; }
     }
+
+    /* ── Bale connection tab ── */
+    .pf-bale-card {
+        border: 1px solid var(--pf-border, #e5e7eb);
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 16px;
+        background: var(--pf-card-bg, #fff);
+        transition: all .2s;
+    }
+    .pf-bale-card.on {
+        border-color: #16a34a55;
+        background: #16a34a0a;
+    }
+    .pf-bale-status {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    .pf-bale-status .oi {
+        font-size: 1.9rem;
+        color: #dc3545;
+        line-height: 1;
+        margin-top: 2px;
+    }
+    .pf-bale-card.on .pf-bale-status .oi { color: #16a34a; }
+    .pf-bale-status b { display: block; font-size: .98rem; font-weight: 900; }
+    .pf-bale-status p {
+        margin: 4px 0 0;
+        font-size: .83rem;
+        color: var(--pf-text-muted, #6b7280);
+        line-height: 1.7;
+    }
+    .pf-bale-phone {
+        margin-top: 12px;
+        font-size: .82rem;
+        color: var(--pf-text-muted, #6b7280);
+        background: rgba(22,163,74,.08);
+        border: 1px dashed rgba(22,163,74,.4);
+        border-radius: 10px;
+        padding: 8px 12px;
+        display: inline-block;
+    }
+    .pf-bale-phone b { color: #16a34a; }
+    .pf-bale-warn {
+        margin-top: 12px;
+        font-size: .78rem;
+        color: #b45309;
+        background: #f59e0b14;
+        border: 1px solid #f59e0b44;
+        border-radius: 10px;
+        padding: 8px 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        line-height: 1.8;
+    }
+    .pf-bale-steps {
+        border: 1px solid var(--pf-border, #e5e7eb);
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin-bottom: 16px;
+        background: var(--pf-card-bg, #fff);
+    }
+    .pf-bale-steps__title {
+        font-size: .85rem;
+        font-weight: 900;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 10px;
+        color: #dc3545;
+    }
+    .pf-bale-steps ol {
+        margin: 0;
+        padding-right: 0;
+        list-style: none;
+    }
+    .pf-bale-steps li {
+        font-size: .83rem;
+        line-height: 2;
+        padding: 6px 0;
+        border-bottom: 1px dashed var(--pf-border, #eceef1);
+    }
+    .pf-bale-steps li:last-child { border-bottom: 0; }
+    .pf-bale-steps li b { color: #dc3545; }
+    .pf-bale-note {
+        font-size: .75rem;
+        color: var(--pf-text-muted, #6b7280);
+        background: rgba(220,53,69,.06);
+        border-radius: 8px;
+        padding: 5px 10px;
+        margin-top: 4px;
+        display: inline-block;
+    }
+    .pf-bale-open {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #16a34a;
+        color: #fff;
+        font-size: .88rem;
+        font-weight: 800;
+        border: 0;
+        border-radius: 12px;
+        padding: 11px 22px;
+        text-decoration: none;
+        transition: all .15s;
+    }
+    .pf-bale-open:hover {
+        background: #15803d;
+        color: #fff;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(22,163,74,.25);
+    }
 </style>
 
 @code {
@@ -2767,6 +2987,20 @@
     private List<NotificationDto> notifications = new();
     private bool notifsLoading = true;
     private int notifUnreadCount;
+
+    private BaleConnectStatusDto? baleStatus;
+    private bool baleLoading;
+
+    private async Task LoadBaleStatusAsync()
+    {
+        baleLoading = true;
+        try
+        {
+            baleStatus = await Http.GetFromJsonAsync<BaleConnectStatusDto>("api/notifications/bale-status");
+        }
+        catch { baleStatus = null; }
+        baleLoading = false;
+    }
 
     private async Task LoadNotificationsAsync()
     {
@@ -3250,6 +3484,9 @@
         }
         else if (tab == "coupons" && !myCoupons.Any()) {
             await LoadCouponsAsync();
+        }
+        else if (tab == "bale") {
+            await LoadBaleStatusAsync();
         }
         else if (tab == "cart") {
             isCartLoading = true;

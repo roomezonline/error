@@ -150,6 +150,30 @@ public sealed class MessengerChannelStatusDto
     public bool BotConfigured { get; set; }
     public bool NotificationsEnabled { get; set; }
     public int ConnectedUserCount { get; set; }
+    public string CountLabel { get; set; } = string.Empty;
+}
+
+public sealed class BaleConnectStatusDto
+{
+    public bool Connected { get; set; }
+    public DateTimeOffset? ConnectedAt { get; set; }
+    public string? Phone { get; set; }
+    public bool BotConfigured { get; set; }
+    public string? BotUsername { get; set; }
+    public string? BotUrl { get; set; }
+    public bool NotificationsEnabled { get; set; }
+    public bool SafirEnabled { get; set; }
+}
+
+public sealed class MessengerUserDto
+{
+    public int UserId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string? MessengerName { get; set; }
+    public string? ChatIdMasked { get; set; }
+    public DateTimeOffset? ConnectedAt { get; set; }
+    public bool IsActive { get; set; }
 }
 
 public sealed class ChannelPreviewDto

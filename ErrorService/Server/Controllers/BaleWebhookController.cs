@@ -22,19 +22,21 @@ public class BaleWebhookController : ControllerBase
     private readonly IConfiguration _config;
     private readonly ILogger<BaleWebhookController> _logger;
     private readonly BaleBotService _baleBot;
+    private readonly NotificationEventService _notifier;
     private readonly IHttpClientFactory _httpClientFactory;
 
     private static readonly ConcurrentDictionary<long, DateTime> LastHelpSent = new();
 
     public BaleWebhookController(ErrorServiceDbContext db, IHubContext<ChatHub> hub,
         IConfiguration config, ILogger<BaleWebhookController> logger, BaleBotService baleBot,
-        IHttpClientFactory httpClientFactory)
+        NotificationEventService notifier, IHttpClientFactory httpClientFactory)
     {
         _db = db;
         _hub = hub;
         _config = config;
         _logger = logger;
         _baleBot = baleBot;
+        _notifier = notifier;
         _httpClientFactory = httpClientFactory;
     }
 
@@ -214,6 +216,13 @@ public class BaleWebhookController : ControllerBase
             return Ok();
         }
 
+        // چت خصوصی: راهنما + اتصال شماره کاربر (دکمهٔ ارسال شماره) — پیش از اعتبارسنجی گروه
+        if (string.Equals(payload.Message.Chat?.Type, "private", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandlePrivateChatAsync(payload.Message);
+            return Ok();
+        }
+
         // Validate chat ID matches configured group
         var settings = await _db.SiteSettings.FirstOrDefaultAsync();
         var expectedGroupId = settings?.BaleBotGroupId?.Trim() ?? "";
@@ -372,6 +381,128 @@ public class BaleWebhookController : ControllerBase
         // اطلاع‌رسانی به پنل ادمین در لحظه، حتی اگر مکالمه باز نباشد
         await _hub.Clients.Group("admins").SendAsync("NewMessage", dto);
         return Ok();
+    }
+
+    private async Task HandlePrivateChatAsync(BaleMessage message)
+    {
+        var chatId = message.Chat?.Id ?? 0;
+        if (chatId == 0) return;
+
+        if (message.Contact != null && !string.IsNullOrWhiteSpace(message.Contact.PhoneNumber))
+        {
+            await LinkContactAsync(chatId, message.Contact, message.From);
+            return;
+        }
+
+        // راهنما با کیبوردِ ارسال شماره — تروتل‌شده تا مزاحم تکرار نشود
+        var nowUtc = DateTime.UtcNow;
+        if (nowUtc - LastHelpSent.GetValueOrDefault(chatId) <= TimeSpan.FromMinutes(2))
+            return;
+        LastHelpSent[chatId] = nowUtc;
+        try
+        {
+            await _baleBot.SendContactRequestToChat(chatId,
+                "سلام 👋\nبرای دریافت اعلان‌های سایت در بله، دکمهٔ زیر را بزنید تا شمارهٔ شما ثبت شود.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bale webhook: failed to send contact request to chat {ChatId}", chatId);
+        }
+    }
+
+    private async Task LinkContactAsync(long chatId, BaleContact contact, BaleUser? from)
+    {
+        var normalized = BaleSafirService.NormalizePhone(contact.PhoneNumber);
+        int? userId = null;
+        if (normalized != null)
+        {
+            var national = normalized[2..];
+            var candidates = await _db.Users.AsNoTracking()
+                .Where(x => x.IsActive
+                    && x.PhoneNumber != null
+                    && x.PhoneNumber != ""
+                    && x.PhoneNumber.EndsWith(national))
+                .Select(x => new { x.Id, x.PhoneNumber })
+                .ToListAsync();
+            userId = candidates
+                .Where(x => BaleSafirService.NormalizePhone(x.PhoneNumber) == normalized)
+                .Select(x => (int?)x.Id)
+                .FirstOrDefault();
+        }
+
+        if (userId == null)
+        {
+            _logger.LogInformation("Bale webhook: contact link failed, no user for phone (chat {ChatId})", chatId);
+            try
+            {
+                await _baleBot.SendTextToChat(chatId,
+                    "❌ شماره ارسال‌شده در سایت یافت نشد.\nلطفاً با همان شماره‌ای که با آن در سایت ثبت‌نام کرده‌اید تلاش کنید.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Bale webhook: failed to send no-match reply to chat {ChatId}", chatId);
+            }
+            return;
+        }
+
+        var existing = await _db.MessengerEndpoints
+            .Where(x => x.Channel == NotificationDeliveryChannel.Bale
+                && (x.AppUserId == userId.Value || x.ExternalId == chatId.ToString()))
+            .ToListAsync();
+        var alreadyLinked = existing.Any(x => x.AppUserId == userId.Value && x.ExternalId == chatId.ToString());
+        if (existing.Count > 0)
+            _db.MessengerEndpoints.RemoveRange(existing);
+
+        _db.MessengerEndpoints.Add(new MessengerEndpoint
+        {
+            Channel = NotificationDeliveryChannel.Bale,
+            AppUserId = userId.Value,
+            ExternalId = chatId.ToString(),
+            ExternalUserName = BuildContactName(contact, from),
+            Status = MessengerEndpointStatus.Verified,
+            VerifiedAt = DateTimeOffset.UtcNow
+        });
+        await _db.SaveChangesAsync();
+        _logger.LogInformation("Bale webhook: linked chat {ChatId} to user {UserId}", chatId, userId.Value);
+
+        try
+        {
+            await _baleBot.SendTextToChat(chatId, alreadyLinked
+                ? "✅ شماره شما با موفقیت به‌روزرسانی شد.\nاعلان‌های سایت همچنان برای شما در بله ارسال می‌شود."
+                : "✅ شماره شما ثبت شد.\nاز این پس اعلان‌های سایت به‌صورت خودکار در بله برای شما ارسال می‌شود.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bale webhook: failed to send confirmation to chat {ChatId}", chatId);
+        }
+
+        try
+        {
+            await _notifier.NotifyAsync(
+                "bale.connected",
+                new Dictionary<string, string?> { ["ChatId"] = chatId.ToString() },
+                $"bale.connected:{userId.Value}:{DateTime.UtcNow.Ticks / TimeSpan.TicksPerHour}",
+                NotificationSeverity.Success,
+                "اتصال به بله تأیید شد",
+                "شماره شما در ربات بله ثبت شد و از این پس اعلان‌های سایت در بله برای شما ارسال می‌شود.",
+                "/profile",
+                appUserId: userId.Value);
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bale webhook: failed to create connection notification for user {UserId}", userId.Value);
+        }
+    }
+
+    private static string? BuildContactName(BaleContact contact, BaleUser? from)
+    {
+        var name = (contact.FirstName ?? from?.FirstName)?.Trim() ?? "";
+        var last = (contact.LastName ?? from?.LastName)?.Trim();
+        if (!string.IsNullOrWhiteSpace(last)) name = $"{name} {last}".Trim();
+        if (string.IsNullOrWhiteSpace(name)) name = from?.Username?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        return name.Length > 120 ? name[..120] : name;
     }
 
     [HttpGet("log")]

@@ -399,7 +399,7 @@
                                 }
                                 <p class="rv-channels__h">
                                     <span class="oi oi-info"></span>
-                                    ارسال خارجی یک‌طرفه است: بله مستقیماً به شماره موبایل کاربر و تلگرام/ایتا به نشانی ثبت‌شده توسط مدیر ارسال می‌شود.
+                                    ارسال خارجی یک‌طرفه است: بله با کلید سفیر به شماره موبایل کاربر و بدون کلید، برای کاربران متصلِ ربات (ارسال‌کنندگان شماره) از همان ربات ارسال می‌شود؛ تلگرام/ایتا به نشانی ثبت‌شده توسط مدیر.
                                 </p>
                             </div>
 
@@ -548,12 +548,15 @@
                             <i>
                                 @if (!st.BotConfigured) { <text>ربات تنظیم نشده</text> }
                                 else if (!st.NotificationsEnabled) { <text>ارسال اعلان خاموش</text> }
-                                else if (st.ChannelKey == "bale") { <text>@st.ConnectedUserCount گیرنده با شماره موبایل</text> }
-                                else { <text>@st.ConnectedUserCount کاربر متصل</text> }
+                                else { <text>@st.ConnectedUserCount @st.CountLabel</text> }
                             </i>
+                            @if (st.ChannelKey == "bale" && st.BotConfigured && st.NotificationsEnabled)
+                            {
+                                <button type="button" class="rl-mstate__link" @onclick="OpenBaleUsersAsync">متصل‌ها</button>
+                            }
                         </span>
                     }
-                    <span class="rl-mstate__h">بله به شماره موبایل کاربر ارسال می‌کند؛ تلگرام و ایتا به نشانی ثبت‌شده توسط مدیر.</span>
+                    <span class="rl-mstate__h">بله با کلید سفیر به شماره موبایل کاربر و بدون کلید، برای کاربرانی که شماره را در ربات فرستاده‌اند از همان ربات ارسال می‌شود؛ تلگرام و ایتا به نشانی ثبت‌شده توسط مدیر.</span>
                 </div>
             }
 
@@ -651,7 +654,7 @@
                                     <label class="rl-chb on locked" title="اعلان درون‌برنامه‌ای همیشه فعال است">
                                         <input type="checkbox" checked disabled /> درون‌برنامه‌ای
                                     </label>
-                                    <label class="rl-chb @(rule.BaleEnabled ? "on" : "")" title="ارسال از طریق بله به شماره موبایل کاربر">
+                                    <label class="rl-chb @(rule.BaleEnabled ? "on" : "")" title="ارسال از طریق بله (سفیر به شماره، یا ربات برای کاربران متصل)">
                                         <input type="checkbox" disabled="@(!canManageRules || IsRuleSaving(rule.EventType))" checked="@rule.BaleEnabled" @onchange="e => rule.BaleEnabled = e.Value as bool? ?? false" /> بله
                                     </label>
                                     <label class="rl-chb @(rule.TelegramEnabled ? "on" : "")" title="ارسال از طریق تلگرام به نشانی ثبت‌شده توسط مدیر">
@@ -660,7 +663,7 @@
                                     <label class="rl-chb @(rule.EitaaEnabled ? "on" : "")" title="ارسال از طریق ایتا به نشانی ثبت‌شده توسط مدیر">
                                         <input type="checkbox" disabled="@(!canManageRules || IsRuleSaving(rule.EventType))" checked="@rule.EitaaEnabled" @onchange="e => rule.EitaaEnabled = e.Value as bool? ?? false" /> ایتا
                                     </label>
-                                    <span class="rl-ch__h">بله به شماره موبایل کاربر، تلگرام و ایتا به نشانی ثبت‌شده توسط مدیر ارسال می‌شود.</span>
+                                    <span class="rl-ch__h">بله با کلید سفیر به شماره موبایل کاربر و بدون کلید به کاربران متصلِ ربات ارسال می‌شود؛ تلگرام و ایتا به نشانی ثبت‌شده توسط مدیر.</span>
                                 </div>
 
                                 <div class="rl-foot">
@@ -748,6 +751,78 @@
                     <button type="button" class="ntf-btn ntf-btn--ghost" disabled="@deleteSaving" @onclick="() => deleting = null">انصراف</button>
                     <button type="button" class="ntf-btn ntf-btn--danger" disabled="@deleteSaving" @onclick="ConfirmDelete">
                         @(deleteSaving ? "در حال حذف..." : "حذف اعلان")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ═══ Bale Connected Users ═══ *@
+    @if (showBaleUsers)
+    {
+        <div class="nmodal" @onclick="CloseBaleUsers">
+            <div class="nmodal__box nmodal__box--wide" @onclick:stopPropagation>
+                <div class="nmodal__head">
+                    <div>
+                        <div class="nmodal__eyebrow">ارسال شماره در ربات بله</div>
+                        <h3 class="nmodal__title"><span class="oi oi-people"></span> کاربران متصل به بله</h3>
+                    </div>
+                    <button type="button" class="ntf-icon-btn" @onclick="CloseBaleUsers"><span class="oi oi-x"></span></button>
+                </div>
+                <div class="nmodal__body">
+                    @if (baleUsersLoading)
+                    {
+                        <div class="text-center py-4"><div class="spinner-border spinner-border-sm text-danger"></div></div>
+                    }
+                    else if (baleUsers == null || baleUsers.Count == 0)
+                    {
+                        <div class="lst-empty"><span class="oi oi-people"></span>هنوز کاربری شماره‌ای در ربات بله ارسال نکرده است.</div>
+                    }
+                    else
+                    {
+                        <p class="bale-users__h">
+                            <span class="oi oi-info"></span>
+                            این کاربران از داخل ربات بله دکمهٔ «ارسال شمارهٔ من» را زده‌اند؛ اعلان‌های بله برای آن‌ها از همان ربات ارسال می‌شود.
+                        </p>
+                        <div class="bale-users">
+                            <table class="bale-users__t">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>نام کاربر</th>
+                                        <th>شماره موبایل</th>
+                                        <th>نام در بله</th>
+                                        <th>گفتگو</th>
+                                        <th>تاریخ اتصال</th>
+                                        <th>وضعیت</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in baleUsers.Select((u, i) => new { U = u, I = i + 1 }))
+                                    {
+                                        <tr class="@(!row.U.IsActive ? "off" : "")">
+                                            <td>@row.I</td>
+                                            <td><b>@row.U.FullName</b></td>
+                                            <td dir="ltr">@row.U.PhoneNumber</td>
+                                            <td>@(string.IsNullOrWhiteSpace(row.U.MessengerName) ? "—" : row.U.MessengerName)</td>
+                                            <td dir="ltr">@row.U.ChatIdMasked</td>
+                                            <td>@(row.U.ConnectedAt.HasValue ? PersianDate.ToJalaliDate(row.U.ConnectedAt.Value) : "—")</td>
+                                            <td>
+                                                <span class="bale-users__st @(row.U.IsActive ? "on" : "")">
+                                                    @(row.U.IsActive ? "فعال" : "غیرفعال")
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+                <div class="nmodal__foot">
+                    <button type="button" class="ntf-btn ntf-btn--ghost" @onclick="CloseBaleUsers">بستن</button>
+                    <button type="button" class="ntf-btn ntf-btn--primary" disabled="@baleUsersLoading" @onclick="OpenBaleUsersAsync">
+                        @(baleUsersLoading ? "در حال دریافت..." : "به‌روزرسانی")
                     </button>
                 </div>
             </div>
@@ -1321,8 +1396,34 @@
 .rl-mstate .oi { font-size: .8rem; }
 .rl-mstate b { font-weight: 800; }
 .rl-mstate i { font-style: normal; }
-.rl-mstate.on { border-color: #16a34a55; color: #16a34a; background: #16a34a10; }
-.rl-mstate__h { font-size: .7rem; color: var(--bs-secondary-color); }
+    .rl-mstate.on { border-color: #16a34a55; color: #16a34a; background: #16a34a10; }
+    .rl-mstate__h { font-size: .7rem; color: var(--bs-secondary-color); }
+    .rl-mstate__link {
+        font-size: .7rem; font-weight: 800; font-style: normal; border: 0; cursor: pointer;
+        padding: 2px 8px; border-radius: 999px; color: #0d6efd; background: #0d6efd14;
+        transition: all .15s;
+    }
+    .rl-mstate__link:hover { background: #0d6efd25; }
+    .nmodal__box--wide { max-width: 860px; }
+    .bale-users__h {
+        display: flex; align-items: center; gap: 6px; font-size: .74rem;
+        color: var(--bs-secondary-color); margin: 0 0 10px;
+    }
+    .bale-users { overflow-x: auto; border: 1px solid var(--bs-border-color); border-radius: 12px; }
+    .bale-users__t { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    .bale-users__t th {
+        text-align: right; font-weight: 800; font-size: .72rem; color: var(--bs-secondary-color);
+        background: color-mix(in srgb, var(--bs-body-color) 4%, transparent);
+        padding: 9px 12px; white-space: nowrap; border-bottom: 1px solid var(--bs-border-color);
+    }
+    .bale-users__t td { padding: 9px 12px; border-bottom: 1px solid color-mix(in srgb, var(--bs-border-color) 60%, transparent); white-space: nowrap; }
+    .bale-users__t tr:last-child td { border-bottom: 0; }
+    .bale-users__t tr.off td { opacity: .55; }
+    .bale-users__st {
+        font-size: .68rem; font-weight: 800; padding: 3px 9px; border-radius: 999px;
+        color: #dc2626; background: #dc262614; border: 1px solid #dc262644;
+    }
+    .bale-users__st.on { color: #16a34a; background: #16a34a14; border-color: #16a34a44; }
 
 .rv-channels { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 8px; }
 .rv-channel { display: inline-flex; align-items: center; gap: 7px; font-size: .78rem; font-weight: 700; margin: 0; padding: 6px 12px; border: 1px solid var(--bs-border-color); border-radius: 12px; background: var(--bs-body-bg); cursor: pointer; transition: all .15s; }
@@ -1410,6 +1511,24 @@
     private string focusedField = "body";
     private List<MessengerChannelStatusDto>? messengerStatus;
     private List<ChannelPreviewDto>? channelPreview;
+
+    private bool showBaleUsers;
+    private bool baleUsersLoading;
+    private List<MessengerUserDto>? baleUsers;
+
+    private async Task OpenBaleUsersAsync()
+    {
+        showBaleUsers = true;
+        baleUsersLoading = true;
+        try
+        {
+            baleUsers = await Http.GetFromJsonAsync<List<MessengerUserDto>>("api/notifications/admin/messenger-users/bale");
+        }
+        catch { baleUsers = null; }
+        baleUsersLoading = false;
+    }
+
+    private void CloseBaleUsers() => showBaleUsers = false;
 
     private int SelectedSegmentCount =>
         (segAllUsers ? 1 : 0) + (segAdmins ? 1 : 0) + (segSuperAdmin ? 1 : 0)

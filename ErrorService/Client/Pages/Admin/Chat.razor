@@ -159,7 +159,7 @@
                     }
                     <div class="border-top pt-2 mt-2">
                         <div class="fw-bold small mb-2">ارسال اعلان خودکار</div>
-                        <p class="text-muted small mb-2">ارسال اعلان‌ها یک‌طرفه و به‌صورت خودکار انجام می‌شود: بله مستقیماً به شماره موبایل کاربر، تلگرام و ایتا به نشانی ثبت‌شده توسط مدیر.</p>
+                        <p class="text-muted small mb-2">ارسال اعلان‌ها یک‌طرفه و به‌صورت خودکار انجام می‌شود: بله با کلید سفیر به شماره موبایل کاربر و بدون کلید، برای کاربرانی که شماره را در ربات فرستاده‌اند از همان ربات ارسال می‌شود؛ تلگرام و ایتا به نشانی ثبت‌شده توسط مدیر.</p>
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="chkNotifyBale" @bind="_siteNotifyBale" />
                             <label class="form-check-label small" for="chkNotifyBale">ارسال اعلان از طریق بله</label>
@@ -167,7 +167,7 @@
                         <div class="mb-2">
                             <label class="form-label small fw-bold">کلید دسترسی سفیر (Api Access Key)</label>
                             <input type="password" class="form-control form-control-sm" @bind="_siteBaleSafirKey" placeholder="از پنل کسب‌وکار بله (business.bale.ai)" />
-                            <div class="form-text small">برای ارسال پیام بله به شماره کاربران لازم است از بخش «سفیر» پنل کسب‌وکار بله دریافت شود.</div>
+                            <div class="form-text small">برای ارسال بله به شماره موبایل کاربران لازم است از بخش «سفیر» پنل کسب‌وکار بله دریافت شود؛ در صورت نداشتن کلید، اعلان بله برای کاربرانی که شماره را در ربات فرستاده‌اند از خود ربات ارسال می‌شود.</div>
                         </div>
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="chkNotifyTelegram" @bind="_siteNotifyTelegram" />

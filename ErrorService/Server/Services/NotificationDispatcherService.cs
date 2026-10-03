@@ -105,7 +105,12 @@ public sealed class NotificationDispatcherService : BackgroundService
             }
 
             MessengerSendResult result;
-            if (delivery.Channel == NotificationDeliveryChannel.Bale)
+            var text = BuildMessage(delivery.Notification, _configuration);
+            // بله: اگر کلید سفیر تنظیم باشد به شماره موبایل، وگرنه به چت متصلِ ربات (ارسال شماره توسط کاربر)
+            var viaSafir = delivery.Channel == NotificationDeliveryChannel.Bale
+                && !string.IsNullOrWhiteSpace(settings?.BaleSafirApiKey);
+
+            if (viaSafir)
             {
                 var userPhone = await db.Users
                     .Where(x => x.Id == appUserId.Value)
@@ -119,7 +124,6 @@ public sealed class NotificationDispatcherService : BackgroundService
                     continue;
                 }
 
-                var text = BuildMessage(delivery.Notification, _configuration);
                 var actionUrl = BuildActionUrl(delivery.Notification, _configuration);
                 result = await safir.SendToPhoneAsync(settings, userPhone, text, actionUrl);
             }
@@ -133,7 +137,9 @@ public sealed class NotificationDispatcherService : BackgroundService
                 if (endpoint == null)
                 {
                     delivery.Status = NotificationDeliveryStatus.Skipped;
-                    delivery.ErrorMessage = "نشانی این پیام‌رسان برای کاربر توسط مدیر ثبت نشده است";
+                    delivery.ErrorMessage = delivery.Channel == NotificationDeliveryChannel.Bale
+                        ? "شماره این کاربر در ربات بله ثبت نشده است (پروفایل ← اتصال به بله)"
+                        : "نشانی این پیام‌رسان برای کاربر توسط مدیر ثبت نشده است";
                     continue;
                 }
 
@@ -154,7 +160,7 @@ public sealed class NotificationDispatcherService : BackgroundService
                     continue;
                 }
 
-                result = await channel.TrySendTextToChatAsync(chatId, BuildMessage(delivery.Notification, _configuration));
+                result = await channel.TrySendTextToChatAsync(chatId, text);
                 if (result.Success)
                     endpoint.LastSentAt = now;
             }
