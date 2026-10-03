@@ -67,13 +67,13 @@
             var result = await Auth.UnifiedLoginAsync(model);
             AuthStateProvider.NotifyAuthStateChanged();
             Toast.ShowSuccess("با موفقیت وارد شدید");
-            if (!string.IsNullOrWhiteSpace(returnUrl) && returnUrl.StartsWith("/"))
+            if (result.UserType == "workshop")
+            {
+                Nav.NavigateTo(returnUrl != null && returnUrl.StartsWith("/admin") ? returnUrl : "/admin");
+            }
+            else if (!string.IsNullOrWhiteSpace(returnUrl) && returnUrl.StartsWith("/"))
             {
                 Nav.NavigateTo(returnUrl);
-            }
-            else if (result.UserType == "workshop")
-            {
-                Nav.NavigateTo("/admin");
             }
             else
             {

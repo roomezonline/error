@@ -3305,6 +3305,18 @@
 
     private async Task LoadUser()
     {
+        var token = await Auth.GetTokenAsync() ?? await Auth.GetWorkshopTokenAsync();
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            var identity = JwtParser.ParseClaimsFromJwt(token);
+            if (!identity.Claims.Any(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier))
+            {
+                Toast.ShowError("با حساب کارگاه وارد شده‌اید؛ پروفایل کاربری فقط برای حساب کاربری سایت است.");
+                Nav.NavigateTo("/admin");
+                return;
+            }
+        }
+
         user = await Auth.GetMeAsync();
         if (user == null)
         {

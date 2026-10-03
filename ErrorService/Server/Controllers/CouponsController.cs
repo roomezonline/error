@@ -72,7 +72,9 @@ public class CouponsController : ControllerBase
     [HttpGet("my")]
     public async Task<ActionResult<List<CouponDto>>> GetMyCoupons()
     {
-        var userId = ClaimsHelper.GetUserId(User);
+        int userId;
+        try { userId = ClaimsHelper.GetUserId(User); }
+        catch { return Unauthorized(); }
 
         var usedCouponIds = await _db.Orders
             .Where(o => o.UserId == userId && o.CouponId != null)

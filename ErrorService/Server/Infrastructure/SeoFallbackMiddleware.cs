@@ -234,6 +234,13 @@ public sealed class SeoFallbackMiddleware
             keywords = "ورود, ثبت نام, ارورسرویس";
             jsonLd = BuildWebPageJsonLd(canonical, title, description);
         }
+        else if (cleanPath == "profile" || cleanPath.StartsWith("profile/"))
+        {
+            title = "پروفایل کاربری | ارورسرویس";
+            description = "پروفایل کاربری ارورسرویس";
+            keywords = "پروفایل, حساب کاربری, ارورسرویس";
+            jsonLd = BuildWebPageJsonLd(canonical, title, description);
+        }
         else if (TryGetDynamicMeta(cleanPath, entity, out var dynMeta, out entityFound))
         {
             (title, description, keywords, jsonLd, ogImage) = dynMeta;
@@ -267,7 +274,7 @@ public sealed class SeoFallbackMiddleware
         }
 
         var crawlerContent = "";
-        var isPublicPage = statusCode == 200 && !cleanPath.StartsWith("admin") && !cleanPath.StartsWith("auth");
+        var isPublicPage = statusCode == 200 && !cleanPath.StartsWith("admin") && !cleanPath.StartsWith("auth") && !cleanPath.StartsWith("profile");
         if (isPublicPage)
         {
             if (isCrawler && entityFound && entity != null)
