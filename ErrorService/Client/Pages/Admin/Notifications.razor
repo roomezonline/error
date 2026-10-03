@@ -491,7 +491,10 @@
                                 <span class="lcard__meta-i"><span class="oi oi-clock"></span> @PersianDate.ToJalaliDateTime(item.CreatedAt)</span>
                                 @if (item.RecipientCount > 0)
                                 {
-                                    <span class="lcard__meta-i"><span class="oi oi-people"></span> @item.RecipientCount.ToString("N0") گیرنده</span>
+                                    <button type="button" class="lcard__meta-i lcard__meta-i--rcp" title="نمایش گیرندگان اعلان" @onclick="() => OpenRecipientsAsync(item)" @onclick:stopPropagation>
+                                        <span class="oi oi-people"></span> @item.RecipientCount.ToString("N0") گیرنده
+                                        <span class="oi oi-magnifying-glass lcard__meta-i__zoom"></span>
+                                    </button>
                                 }
                                 @if (!string.IsNullOrWhiteSpace(item.CreatedByName))
                                 {
@@ -514,6 +517,16 @@
                     </div>
                 }
             }
+        }
+        @if (items != null && hasMoreItems)
+        {
+            <div class="lst-more">
+                <button type="button" class="ntf-btn ntf-btn--ghost" disabled="@itemsLoadingMore" @onclick="LoadMoreAsync">
+                    <span class="oi @(itemsLoadingMore ? "oi-loop" : "oi-chevron-down")"></span>
+                    @(itemsLoadingMore ? "در حال بارگذاری..." : $"نمایش ۵۰ اعلان قدیمی‌تر")
+                </button>
+                <span class="lst-more__count">تا اینجا @items!.Count اعلان نمایش داده شد</span>
+            </div>
         }
     </div>
     }
@@ -823,6 +836,73 @@
                     <button type="button" class="ntf-btn ntf-btn--ghost" @onclick="CloseBaleUsers">بستن</button>
                     <button type="button" class="ntf-btn ntf-btn--primary" disabled="@baleUsersLoading" @onclick="OpenBaleUsersAsync">
                         @(baleUsersLoading ? "در حال دریافت..." : "به‌روزرسانی")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (showRecipients)
+    {
+        <div class="nmodal" @onclick="CloseRecipients">
+            <div class="nmodal__box nmodal__box--wide" @onclick:stopPropagation>
+                <div class="nmodal__head">
+                    <div>
+                        <div class="nmodal__eyebrow">گیرندگان اعلان #@recipientsNotifId</div>
+                        <h3 class="nmodal__title"><span class="oi oi-people"></span> مشخصات گیرندگان</h3>
+                    </div>
+                    <button type="button" class="ntf-icon-btn" @onclick="CloseRecipients"><span class="oi oi-x"></span></button>
+                </div>
+                <div class="nmodal__body">
+                    @if (recipientsLoading)
+                    {
+                        <div class="text-center py-4"><div class="spinner-border spinner-border-sm text-danger"></div></div>
+                    }
+                    else if (recipients == null || recipients.Count == 0)
+                    {
+                        <div class="lst-empty"><span class="oi oi-people"></span>گیرنده‌ای برای این اعلان ثبت نشده است.</div>
+                    }
+                    else
+                    {
+                        <p class="bale-users__h">
+                            <span class="oi oi-info"></span>
+                            <b>@recipientsTitle</b> — @recipients.Count گیرنده
+                        </p>
+                        <div class="bale-users">
+                            <table class="bale-users__t">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>نام و نام خانوادگی</th>
+                                        <th>شماره تماس</th>
+                                        <th>سمت</th>
+                                        <th>خوانده شده</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var r in recipients.Select((x, i) => new { R = x, I = i + 1 }))
+                                    {
+                                        <tr>
+                                            <td>@r.I</td>
+                                            <td><b>@r.R.FullName</b></td>
+                                            <td dir="ltr">@(string.IsNullOrWhiteSpace(r.R.PhoneNumber) ? "—" : r.R.PhoneNumber)</td>
+                                            <td><span class="rcp-kind rcp-kind--@r.R.Kind">@RecipientKindLabel(r.R)</span></td>
+                                            <td>
+                                                <span class="rcp-st @(r.R.IsRead ? "on" : "")" title="@(r.R.ReadAt.HasValue ? PersianDate.ToJalaliDateTime(r.R.ReadAt.Value) : null)">
+                                                    @(r.R.IsRead ? "بله" : "خیر")
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+                <div class="nmodal__foot">
+                    <button type="button" class="ntf-btn ntf-btn--ghost" @onclick="CloseRecipients">بستن</button>
+                    <button type="button" class="ntf-btn ntf-btn--primary" disabled="@recipientsLoading" @onclick="LoadRecipientsAsync">
+                        @(recipientsLoading ? "در حال دریافت..." : "به‌روزرسانی")
                     </button>
                 </div>
             </div>
@@ -1209,6 +1289,9 @@
         border-radius: 999px; padding: 3px 10px;
     }
     .lcard__link:hover { background: #0d6efd20; text-decoration: none; }
+    .lst-more { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 16px 0 6px; }
+    .lst-more .ntf-btn { min-width: 250px; justify-content: center; }
+    .lst-more__count { font-size: .68rem; color: var(--bs-secondary-color); }
 
     .lcard__acts { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; opacity: 0; transition: opacity .15s; }
     .lcard:hover .lcard__acts, .lcard:focus-within .lcard__acts { opacity: 1; }
@@ -1425,6 +1508,29 @@
     }
     .bale-users__st.on { color: #16a34a; background: #16a34a14; border-color: #16a34a44; }
 
+    .lcard__meta-i--rcp {
+        font: inherit; cursor: pointer; transition: all .15s; -webkit-appearance: none; appearance: none;
+    }
+    .lcard__meta-i--rcp:hover {
+        color: #0d6efd; border-color: #0d6efd77; background: #0d6efd14;
+    }
+    .lcard__meta-i--rcp:hover .oi { color: #0d6efd !important; }
+    .lcard__meta-i__zoom { font-size: .58rem; opacity: .6; }
+    .rcp-kind {
+        display: inline-block; font-size: .68rem; font-weight: 800; padding: 3px 9px;
+        border-radius: 999px; white-space: nowrap;
+        color: #475569; background: #64748b14; border: 1px solid #64748b44;
+    }
+    .rcp-kind--admin { color: #b91c1c; background: #dc262614; border-color: #dc262644; }
+    .rcp-kind--user { color: #1d4ed8; background: #2563eb14; border-color: #2563eb44; }
+    .rcp-kind--workshop { color: #15803d; background: #16a34a14; border-color: #16a34a44; }
+    .rcp-kind--customer { color: #7c3aed; background: #8b5cf614; border-color: #8b5cf644; }
+    .rcp-st {
+        font-size: .68rem; font-weight: 800; padding: 3px 9px; border-radius: 999px;
+        color: #dc2626; background: #dc262614; border: 1px solid #dc262644;
+    }
+    .rcp-st.on { color: #16a34a; background: #16a34a14; border-color: #16a34a44; }
+
 .rv-channels { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 8px; }
 .rv-channel { display: inline-flex; align-items: center; gap: 7px; font-size: .78rem; font-weight: 700; margin: 0; padding: 6px 12px; border: 1px solid var(--bs-border-color); border-radius: 12px; background: var(--bs-body-bg); cursor: pointer; transition: all .15s; }
 .rv-channel input { width: 15px; height: 15px; accent-color: #0d6efd; margin: 0; }
@@ -1453,6 +1559,9 @@
 
 @code {
     private List<NotificationDto>? items;
+    private const int ListPageSize = 50;
+    private bool itemsLoadingMore;
+    private bool hasMoreItems;
     private NotificationSummaryDto? summary;
     private List<WorkshopDto> workshops = new();
 
@@ -1529,6 +1638,45 @@
     }
 
     private void CloseBaleUsers() => showBaleUsers = false;
+
+    private bool showRecipients;
+    private bool recipientsLoading;
+    private long recipientsNotifId;
+    private string recipientsTitle = string.Empty;
+    private List<NotificationRecipientInfoDto>? recipients;
+
+    private async Task OpenRecipientsAsync(NotificationDto item)
+    {
+        showRecipients = true;
+        recipientsNotifId = item.Id;
+        recipientsTitle = item.Title;
+        await LoadRecipientsAsync();
+    }
+
+    private async Task LoadRecipientsAsync()
+    {
+        recipientsLoading = true;
+        try
+        {
+            recipients = await Http.GetFromJsonAsync<List<NotificationRecipientInfoDto>>($"api/notifications/admin/{recipientsNotifId}/recipients");
+        }
+        catch { recipients = null; }
+        recipientsLoading = false;
+    }
+
+    private void CloseRecipients() => showRecipients = false;
+
+    private static string RecipientKindLabel(NotificationRecipientInfoDto r)
+    {
+        if (!string.IsNullOrWhiteSpace(r.RoleTitle)) return r.RoleTitle!;
+        return r.Kind switch
+        {
+            "admin" => "مدیر",
+            "workshop" => "کارشناس فروشگاه",
+            "customer" => "مشتری فروشگاه",
+            _ => "کاربر"
+        };
+    }
 
     private int SelectedSegmentCount =>
         (segAllUsers ? 1 : 0) + (segAdmins ? 1 : 0) + (segSuperAdmin ? 1 : 0)
@@ -1776,12 +1924,29 @@
     {
         try
         {
-            var listTask = Http.GetFromJsonAsync<List<NotificationDto>>("api/notifications/admin?take=100");
+            var listTask = Http.GetFromJsonAsync<List<NotificationDto>>($"api/notifications/admin?take={ListPageSize}");
             var summaryTask = Http.GetFromJsonAsync<NotificationSummaryDto>("api/notifications/admin/summary");
             items = await listTask ?? new();
+            hasMoreItems = items.Count >= ListPageSize;
             summary = await summaryTask;
         }
         catch (Exception ex) { error = $"دریافت اعلان‌ها انجام نشد: {ex.Message}"; }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (itemsLoadingMore) return;
+        itemsLoadingMore = true;
+        try
+        {
+            var next = (items?.Count ?? 0) + ListPageSize;
+            var more = await Http.GetFromJsonAsync<List<NotificationDto>>($"api/notifications/admin?take={next}");
+            items = more ?? new();
+            hasMoreItems = items.Count >= next;
+            if (hasMoreItems) error = null;
+        }
+        catch { error = "دریافت اعلان‌های بیشتر انجام نشد."; }
+        itemsLoadingMore = false;
     }
 
     private void ToggleSeg(ref bool flag)

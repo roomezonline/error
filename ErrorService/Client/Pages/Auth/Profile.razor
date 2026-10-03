@@ -168,6 +168,27 @@
                     }
                     else
                     {
+                        <!-- Bale connect banner -->
+                        @if (!hideBaleBanner && activeTab != "bale" && baleStatus != null && !baleStatus.Connected && baleStatus.BotConfigured)
+                        {
+                            <div class="pf-bale-banner animate__animated animate__fadeInDown">
+                                <div class="pf-bale-banner__icon">
+                                    <span class="oi oi-bell"></span>
+                                </div>
+                                <div class="pf-bale-banner__text">
+                                    <div class="pf-bale-banner__title">به ربات بله متصل نشده‌اید</div>
+                                    <div class="pf-bale-banner__sub">با اتصال، اعلان‌های مهم سایت (وضعیت سفارش، پیام مدیران و…) را فوراً در بله دریافت کنید.</div>
+                                </div>
+                                <button type="button" class="pf-bale-banner__close" title="بستن" @onclick="() => hideBaleBanner = true">
+                                    <span class="oi oi-x"></span>
+                                </button>
+                                <button type="button" class="pf-bale-banner__cta" @onclick='() => SwitchTab("bale")'>
+                                    اتصال به بله
+                                    <span class="oi oi-arrow-left"></span>
+                                </button>
+                            </div>
+                        }
+
                         <!-- ══════════ OVERVIEW ══════════ -->
                         @if (activeTab == "overview")
                         {
@@ -1044,8 +1065,18 @@
                                 else if (baleStatus == null)
                                 {
                                     <div class="pf-empty-state">
-                                        <span class="oi oi-warning"></span>
-                                        <p>دریافت وضعیت اتصال ممکن نشد؛ دکمهٔ بازخوانی را بزنید.</p>
+                                        <span class="oi @(baleSessionExpired ? "oi-lock-unlocked" : "oi-warning")"></span>
+                                        <p>@(baleSessionExpired
+                                            ? "جلسه شما منقضی شده است؛ برای مشاهدهٔ وضعیت اتصال دوباره وارد حساب کاربری شوید."
+                                            : "دریافت وضعیت اتصال ممکن نشد؛ دکمهٔ بازخوانی را بزنید.")</p>
+                                        @if (baleSessionExpired)
+                                        {
+                                            <button class="pf-primary-btn" @onclick='() => Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString("/profile")}")'>ورود مجدد</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="pf-refresh-btn" disabled="@baleLoading" @onclick="LoadBaleStatusAsync"><span class="oi oi-reload"></span> تلاش دوباره</button>
+                                        }
                                     </div>
                                 }
                                 else
@@ -2926,6 +2957,109 @@
         transform: translateY(-1px);
         box-shadow: 0 6px 16px rgba(22,163,74,.25);
     }
+
+    /* ── Bale connect banner ── */
+    .pf-bale-banner {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px 14px 44px;
+        border-radius: 16px;
+        margin-bottom: 18px;
+        color: #fff;
+        background: linear-gradient(120deg, #0b63ce 0%, #0ea5e9 58%, #22d3ee 100%);
+        box-shadow: 0 8px 24px rgba(14,165,233,.32);
+        overflow: hidden;
+    }
+    .pf-bale-banner::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(140px 70px at 92% -25%, rgba(255,255,255,.38), transparent 70%);
+        pointer-events: none;
+    }
+    .pf-bale-banner__icon {
+        position: relative;
+        z-index: 1;
+        flex: 0 0 auto;
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: rgba(255,255,255,.22);
+        border: 1px solid rgba(255,255,255,.35);
+        font-size: 1.35rem;
+    }
+    .pf-bale-banner__text {
+        position: relative;
+        z-index: 1;
+        flex: 1;
+        min-width: 0;
+    }
+    .pf-bale-banner__title {
+        font-weight: 900;
+        font-size: .97rem;
+        margin-bottom: 2px;
+    }
+    .pf-bale-banner__sub {
+        font-size: .81rem;
+        line-height: 1.7;
+        opacity: .93;
+    }
+    .pf-bale-banner__close {
+        position: absolute;
+        top: 8px;
+        left: 9px;
+        z-index: 2;
+        width: 26px;
+        height: 26px;
+        border: 0;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: rgba(255,255,255,.18);
+        color: #fff;
+        font-size: .75rem;
+        cursor: pointer;
+        transition: background .15s;
+    }
+    .pf-bale-banner__close:hover {
+        background: rgba(255,255,255,.35);
+    }
+    .pf-bale-banner__cta {
+        position: relative;
+        z-index: 1;
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 0;
+        border-radius: 12px;
+        padding: 11px 18px;
+        font-weight: 800;
+        font-size: .87rem;
+        color: #075985;
+        background: #fff;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: transform .15s, box-shadow .15s;
+    }
+    .pf-bale-banner__cta:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(3,40,80,.28);
+    }
+    @@media (max-width: 576px) {
+        .pf-bale-banner {
+            flex-wrap: wrap;
+            padding-top: 40px;
+        }
+        .pf-bale-banner__cta {
+            width: 100%;
+            justify-content: center;
+        }
+    }
 </style>
 
 @code {
@@ -2990,15 +3124,21 @@
 
     private BaleConnectStatusDto? baleStatus;
     private bool baleLoading;
+    private bool baleSessionExpired;
+    private bool hideBaleBanner;
 
     private async Task LoadBaleStatusAsync()
     {
         baleLoading = true;
         try
         {
-            baleStatus = await Http.GetFromJsonAsync<BaleConnectStatusDto>("api/notifications/bale-status");
+            var resp = await Http.GetAsync("api/notifications/bale-status");
+            baleSessionExpired = resp.StatusCode == System.Net.HttpStatusCode.Unauthorized;
+            baleStatus = resp.IsSuccessStatusCode
+                ? await resp.Content.ReadFromJsonAsync<BaleConnectStatusDto>()
+                : null;
         }
-        catch { baleStatus = null; }
+        catch { baleStatus = null; baleSessionExpired = false; }
         baleLoading = false;
     }
 
@@ -3054,6 +3194,7 @@
         if (user != null)
         {
             await LoadSummary();
+            await LoadBaleStatusAsync();
         }
         wishlistItems = await Ws.GetItemsAsync();
         Ws.OnChange += OnWishlistChanged;
@@ -3165,15 +3306,17 @@
     private async Task LoadUser()
     {
         user = await Auth.GetMeAsync();
-        if (user != null)
+        if (user == null)
         {
-            updateModel = new UpdateProfileRequest {
-                FullName = user.FullName,
-                Email = user.Email,
-                Address = user.Address,
-                PostalCode = user.PostalCode
-            };
+            Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString("/profile")}");
+            return;
         }
+        updateModel = new UpdateProfileRequest {
+            FullName = user.FullName,
+            Email = user.Email,
+            Address = user.Address,
+            PostalCode = user.PostalCode
+        };
     }
 
     private async Task LoadSummary()

@@ -34,6 +34,17 @@ public sealed class NotificationDto
     public string? CreatedByName { get; set; }
 }
 
+public sealed class NotificationRecipientInfoDto
+{
+    public long Id { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string Kind { get; set; } = "user";
+    public string? RoleTitle { get; set; }
+    public bool IsRead { get; set; }
+    public DateTimeOffset? ReadAt { get; set; }
+}
+
 public sealed class NotificationSummaryDto
 {
     public int UnreadCount { get; set; }

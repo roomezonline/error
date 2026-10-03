@@ -186,7 +186,7 @@ public sealed class NotificationsController : ControllerBase
     [HttpGet("admin")]
     public async Task<ActionResult<List<NotificationDto>>> GetAdminList([FromQuery] int take = 100)
     {
-        take = Math.Clamp(take, 1, 200);
+        take = Math.Clamp(take, 1, 500);
         var items = await _db.Notifications
             .AsNoTracking()
             .OrderByDescending(x => x.CreatedAt)
@@ -210,6 +210,86 @@ public sealed class NotificationsController : ControllerBase
             })
             .ToListAsync();
         return Ok(items);
+    }
+
+    [Authorize(Policy = "perm:admin.notifications.view")]
+    [HttpGet("admin/{id:long}/recipients")]
+    public async Task<ActionResult<List<NotificationRecipientInfoDto>>> GetNotificationRecipients(long id)
+    {
+        var rows = await _db.NotificationRecipients
+            .AsNoTracking()
+            .Where(x => x.NotificationId == id)
+            .OrderBy(x => x.Id)
+            .Select(x => new { x.Id, x.AppUserId, x.WorkshopUserId, x.WorkshopCustomerId, x.IsRead, x.ReadAt })
+            .ToListAsync();
+
+        var appIds = rows.Where(x => x.AppUserId.HasValue).Select(x => x.AppUserId!.Value).Distinct().ToList();
+        var wuIds = rows.Where(x => x.WorkshopUserId.HasValue).Select(x => x.WorkshopUserId!.Value).Distinct().ToList();
+        var wcIds = rows.Where(x => x.WorkshopCustomerId.HasValue).Select(x => x.WorkshopCustomerId!.Value).Distinct().ToList();
+
+        var users = new Dictionary<int, (string FullName, string? Phone)>();
+        foreach (var u in await _db.Users.AsNoTracking().Where(x => appIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.FullName, x.PhoneNumber }).ToListAsync())
+            users[u.Id] = (u.FullName, u.PhoneNumber);
+
+        var roles = new Dictionary<int, (string? TitleFa, string Key)>();
+        var roleRows = await _db.AppUserRoles.AsNoTracking()
+            .Where(x => appIds.Contains(x.UserId))
+            .Select(x => new { x.UserId, x.Role.TitleFa, x.Role.Key, x.Role.Rank })
+            .ToListAsync();
+        foreach (var g in roleRows.GroupBy(x => x.UserId))
+        {
+            var top = g.OrderByDescending(x => x.Rank)
+                .ThenByDescending(x => x.Key == "super_admin" || x.Key == "admin" ? 1 : 0)
+                .First();
+            roles[g.Key] = (top.TitleFa, top.Key);
+        }
+
+        var workshopUsers = new Dictionary<int, (string FullName, string? Phone)>();
+        foreach (var u in await _db.WorkshopUsers.AsNoTracking().Where(x => wuIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.FullName, x.PhoneNumber }).ToListAsync())
+            workshopUsers[u.Id] = (u.FullName, u.PhoneNumber);
+
+        var customers = new Dictionary<int, (string FullName, string? Phone)>();
+        foreach (var c in await _db.WorkshopCustomers.AsNoTracking().Where(x => wcIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.FirstName, x.LastName, x.Mobile }).ToListAsync())
+            customers[c.Id] = (c.FirstName + " " + c.LastName, c.Mobile);
+
+        var result = new List<NotificationRecipientInfoDto>(rows.Count);
+        foreach (var row in rows)
+        {
+            var dto = new NotificationRecipientInfoDto { Id = row.Id, IsRead = row.IsRead, ReadAt = row.ReadAt };
+            if (row.AppUserId.HasValue && users.TryGetValue(row.AppUserId.Value, out var user))
+            {
+                dto.FullName = user.FullName;
+                dto.PhoneNumber = user.Phone;
+                if (roles.TryGetValue(row.AppUserId.Value, out var role))
+                {
+                    dto.RoleTitle = role.TitleFa;
+                    dto.Kind = role.Key.Contains("admin", StringComparison.OrdinalIgnoreCase) ? "admin" : "user";
+                }
+            }
+            else if (row.WorkshopUserId.HasValue && workshopUsers.TryGetValue(row.WorkshopUserId.Value, out var wu))
+            {
+                dto.FullName = wu.FullName;
+                dto.PhoneNumber = wu.Phone;
+                dto.Kind = "workshop";
+                dto.RoleTitle = "کارشناس فروشگاه";
+            }
+            else if (row.WorkshopCustomerId.HasValue && customers.TryGetValue(row.WorkshopCustomerId.Value, out var wc))
+            {
+                dto.FullName = wc.FullName;
+                dto.PhoneNumber = wc.Phone;
+                dto.Kind = "customer";
+                dto.RoleTitle = "مشتری فروشگاه";
+            }
+            else
+            {
+                dto.FullName = row.AppUserId.HasValue ? "کاربر حذف‌شده" : "—";
+            }
+            result.Add(dto);
+        }
+        return Ok(result);
     }
 
     [Authorize(Policy = "perm:admin.notifications.manage")]
