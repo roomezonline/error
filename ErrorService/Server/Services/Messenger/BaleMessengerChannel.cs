@@ -44,6 +44,12 @@ public sealed class BaleMessengerChannel : IChatMessengerChannel
     public Task SendTextToChatAsync(long chatId, string text)
         => _baleBot.SendTextToChat(chatId, text);
 
+    public Task<MessengerSendResult> TrySendTextToChatAsync(long chatId, string text)
+        => _baleBot.TrySendTextToChat(chatId, text);
+
+    public Task<string?> GetBotUsernameAsync()
+        => _baleBot.GetBotUsernameAsync();
+
     public Task<string?> DownloadFileAsync(string fileId)
         => _baleBot.DownloadFileAsync(fileId);
 

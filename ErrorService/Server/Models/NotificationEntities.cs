@@ -15,7 +15,8 @@ public enum NotificationDeliveryChannel
     Internal = 0,
     Bale = 1,
     Telegram = 2,
-    Eitaa = 3
+    Eitaa = 3,
+    WhatsApp = 4
 }
 
 public enum NotificationDeliveryStatus
@@ -94,6 +95,8 @@ public sealed class NotificationRule
 
     public bool BroadcastToAdmins { get; set; }
 
+    public int Channels { get; set; } = 1;
+
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public int? UpdatedByUserId { get; set; }
 }
@@ -104,6 +107,7 @@ public sealed class NotificationDelivery
     public long NotificationId { get; set; }
     public Notification Notification { get; set; } = default!;
     public long? RecipientId { get; set; }
+    public NotificationRecipient? Recipient { get; set; }
     public NotificationDeliveryChannel Channel { get; set; }
     public NotificationDeliveryStatus Status { get; set; } = NotificationDeliveryStatus.Pending;
     public int AttemptCount { get; set; }

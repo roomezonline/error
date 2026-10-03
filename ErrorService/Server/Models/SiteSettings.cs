@@ -38,6 +38,9 @@ public sealed class SiteSettings
     public bool EnableEitaaChat { get; set; }
     public string? EitaaBotToken { get; set; }
     public string? EitaaGroupId { get; set; }
+    public bool EnableBaleNotifications { get; set; } = true;
+    public bool EnableTelegramNotifications { get; set; } = true;
+    public bool EnableEitaaNotifications { get; set; } = true;
     public string? ChatWelcomeMessage { get; set; }
     public bool ChatEnableAutoMessage { get; set; }
     public int ChatAutoMessageSeconds { get; set; } = 60;

@@ -735,6 +735,9 @@ public class ChatController : ControllerBase
             EnableEitaaChat = settings.EnableEitaaChat,
             EitaaBotToken = settings.EitaaBotToken,
             EitaaGroupId = settings.EitaaGroupId,
+            EnableBaleNotifications = settings.EnableBaleNotifications,
+            EnableTelegramNotifications = settings.EnableTelegramNotifications,
+            EnableEitaaNotifications = settings.EnableEitaaNotifications,
             WelcomeMessage = settings.ChatWelcomeMessage,
             EnableAutoMessage = settings.ChatEnableAutoMessage,
             AutoMessageSeconds = settings.ChatAutoMessageSeconds,
@@ -768,6 +771,9 @@ public class ChatController : ControllerBase
         settings.EnableEitaaChat = p.EnableEitaaChat;
         settings.EitaaBotToken = string.IsNullOrWhiteSpace(p.EitaaBotToken) ? null : p.EitaaBotToken.Trim();
         settings.EitaaGroupId = string.IsNullOrWhiteSpace(p.EitaaGroupId) ? null : p.EitaaGroupId.Trim();
+        settings.EnableBaleNotifications = p.EnableBaleNotifications;
+        settings.EnableTelegramNotifications = p.EnableTelegramNotifications;
+        settings.EnableEitaaNotifications = p.EnableEitaaNotifications;
         settings.ChatWelcomeMessage = p.WelcomeMessage;
         settings.ChatEnableAutoMessage = p.EnableAutoMessage;
         settings.ChatAutoMessageSeconds = p.AutoMessageSeconds > 0 ? p.AutoMessageSeconds : 60;
@@ -912,6 +918,9 @@ public class ChatSettingsPayload
     public bool EnableEitaaChat { get; set; }
     public string? EitaaBotToken { get; set; }
     public string? EitaaGroupId { get; set; }
+    public bool EnableBaleNotifications { get; set; } = true;
+    public bool EnableTelegramNotifications { get; set; } = true;
+    public bool EnableEitaaNotifications { get; set; } = true;
     public string? WelcomeMessage { get; set; }
     public bool EnableAutoMessage { get; set; }
     public int AutoMessageSeconds { get; set; } = 60;

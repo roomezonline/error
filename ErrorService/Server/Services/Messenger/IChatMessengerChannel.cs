@@ -28,9 +28,19 @@ public interface IChatMessengerChannel
 
     Task SendTextToChatAsync(long chatId, string text);
 
+    Task<MessengerSendResult> TrySendTextToChatAsync(long chatId, string text);
+
+    Task<string?> GetBotUsernameAsync();
+
     Task<string?> DownloadFileAsync(string fileId);
 
     Task<(bool success, string message)> SetWebhookAsync(string webhookUrl, string secret);
+}
+
+public sealed record MessengerSendResult(bool Success, string? ExternalMessageId, string? Error)
+{
+    public static MessengerSendResult Ok(string? messageId = null) => new(true, messageId, null);
+    public static MessengerSendResult Fail(string error) => new(false, null, error);
 }
 
 public static class MessengerHelper

@@ -120,6 +120,74 @@ public abstract class MessengerHttpChannelBase : IChatMessengerChannel
         await SendApiAsync(token, "sendMessage", new { chat_id = chatId, text });
     }
 
+    public async Task<MessengerSendResult> TrySendTextToChatAsync(long chatId, string text)
+    {
+        var settings = await LoadSettingsAsync();
+        var token = GetToken(settings);
+        if (string.IsNullOrEmpty(token))
+            return MessengerSendResult.Fail($"توکن {DisplayName} تنظیم نشده است");
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            var json = JsonSerializer.Serialize(new { chat_id = chatId, text });
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await client.PostAsync(BotUrl(token, "sendMessage"), content);
+            var body = await response.Content.ReadAsStringAsync();
+
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("ok", out var ok) && !ok.GetBoolean())
+            {
+                var desc = doc.RootElement.TryGetProperty("description", out var d) ? d.GetString() : null;
+                return MessengerSendResult.Fail(string.IsNullOrWhiteSpace(desc) ? body : desc);
+            }
+
+            string? messageId = null;
+            if (doc.RootElement.TryGetProperty("result", out var result)
+                && result.ValueKind == JsonValueKind.Object
+                && result.TryGetProperty("message_id", out var messageIdElement))
+            {
+                messageId = messageIdElement.ToString();
+            }
+
+            if (!response.IsSuccessStatusCode)
+                return MessengerSendResult.Fail($"HTTP {(int)response.StatusCode}");
+
+            return MessengerSendResult.Ok(messageId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "{Channel}: exception sending notification to chat {ChatId}", Key, chatId);
+            return MessengerSendResult.Fail(ex.Message);
+        }
+    }
+
+    public async Task<string?> GetBotUsernameAsync()
+    {
+        var settings = await LoadSettingsAsync();
+        var token = GetToken(settings);
+        if (string.IsNullOrEmpty(token)) return null;
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            var response = await client.GetAsync(BotUrl(token, "getMe"));
+            var body = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("result", out var result)
+                && result.ValueKind == JsonValueKind.Object
+                && result.TryGetProperty("username", out var username))
+            {
+                return username.GetString()?.TrimStart('@');
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "{Channel}: getMe failed", Key);
+        }
+        return null;
+    }
+
     public async Task<string?> DownloadFileAsync(string fileId)
     {
         var settings = await LoadSettingsAsync();

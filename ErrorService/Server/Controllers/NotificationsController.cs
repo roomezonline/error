@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
+using ErrorService.Server.Services;
+using ErrorService.Server.Services.Messenger;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,9 +14,26 @@ namespace ErrorService.Server.Controllers;
 [Route("api/notifications")]
 public sealed class NotificationsController : ControllerBase
 {
-    private readonly ErrorServiceDbContext _db;
+    private static readonly NotificationDeliveryChannel[] NotifiableChannels =
+    {
+        NotificationDeliveryChannel.Bale,
+        NotificationDeliveryChannel.Telegram,
+        NotificationDeliveryChannel.Eitaa
+    };
 
-    public NotificationsController(ErrorServiceDbContext db) => _db = db;
+    private readonly ErrorServiceDbContext _db;
+    private readonly NotificationEventService _notifier;
+    private readonly MessengerLinkService _linkService;
+    private readonly MessengerRouter _router;
+
+    public NotificationsController(ErrorServiceDbContext db, NotificationEventService notifier,
+        MessengerLinkService linkService, MessengerRouter router)
+    {
+        _db = db;
+        _notifier = notifier;
+        _linkService = linkService;
+        _router = router;
+    }
 
     private int? CurrentUserId()
     {
@@ -206,6 +225,49 @@ public sealed class NotificationsController : ControllerBase
         return Ok(appUserIds.Count + workshopUserIds.Count);
     }
 
+    [Authorize(Policy = "perm:admin.notifications.manage")]
+    [HttpPost("admin/preview-channels")]
+    public async Task<ActionResult<List<ChannelPreviewDto>>> PreviewChannels([FromBody] NotificationCreateRequest request)
+    {
+        if (request == null) return BadRequest();
+        var (appUserIds, _, resolveError) = await ResolveRecipientsAsync(request);
+        if (resolveError != null) return BadRequest(resolveError);
+
+        var siteSettings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
+        var endpoints = await _db.MessengerEndpoints.AsNoTracking()
+            .Where(x => x.Status == MessengerEndpointStatus.Verified
+                && NotifiableChannels.Contains(x.Channel)
+                && appUserIds.Contains(x.AppUserId))
+            .Select(x => new { x.Channel, x.AppUserId })
+            .ToHashSetAsync();
+        var userSettings = await _db.UserNotificationSettings.AsNoTracking()
+            .Where(x => appUserIds.Contains(x.AppUserId))
+            .ToDictionaryAsync(x => x.AppUserId, x => x.Channels);
+
+        var result = new List<ChannelPreviewDto>();
+        foreach (var channel in NotifiableChannels)
+        {
+            var flag = NotificationChannelFlags.FlagFor((int)channel);
+            var available = IsChannelAvailable(channel, siteSettings);
+            var count = available
+                ? appUserIds.Count(uid =>
+                    userSettings.TryGetValue(uid, out var channels)
+                    && (channels & flag) != 0
+                    && endpoints.Contains(new { Channel = channel, AppUserId = uid }))
+                : 0;
+
+            result.Add(new ChannelPreviewDto
+            {
+                Channel = (int)channel,
+                ChannelKey = MessengerLinkService.ChannelKey(channel),
+                ChannelTitle = MessengerLinkService.ChannelTitle(channel),
+                Available = available,
+                Count = count
+            });
+        }
+        return Ok(result);
+    }
+
     [Authorize(Policy = "perm:admin.notifications.view")]
     [HttpGet("admin/rules")]
     public async Task<ActionResult<List<NotificationRuleDto>>> GetRules()
@@ -231,7 +293,8 @@ public sealed class NotificationsController : ControllerBase
                     TitleTemplate = def.Title,
                     BodyTemplate = def.Body,
                     ActionUrlTemplate = def.ActionUrl,
-                    BroadcastToAdmins = def.BroadcastToAdmins
+                    BroadcastToAdmins = def.BroadcastToAdmins,
+                    Channels = NotificationChannelFlags.Internal
                 });
             }
         }
@@ -248,6 +311,7 @@ public sealed class NotificationsController : ControllerBase
             BodyTemplate = x.BodyTemplate,
             ActionUrlTemplate = x.ActionUrlTemplate,
             BroadcastToAdmins = x.BroadcastToAdmins,
+            Channels = x.Channels,
             Placeholders = NotificationRuleDefaults.PlaceholdersFor(x.EventType).ToList(),
             UpdatedAt = x.UpdatedAt
         }).ToList());
@@ -276,6 +340,7 @@ public sealed class NotificationsController : ControllerBase
         rule.BodyTemplate = request.BodyTemplate.Trim();
         rule.ActionUrlTemplate = string.IsNullOrWhiteSpace(request.ActionUrlTemplate) ? null : request.ActionUrlTemplate.Trim();
         rule.BroadcastToAdmins = request.BroadcastToAdmins;
+        rule.Channels = (request.Channels & NotificationChannelFlags.All) | NotificationChannelFlags.Internal;
         rule.UpdatedAt = DateTimeOffset.UtcNow;
         rule.UpdatedByUserId = CurrentUserId();
 
@@ -293,6 +358,7 @@ public sealed class NotificationsController : ControllerBase
             BodyTemplate = rule.BodyTemplate,
             ActionUrlTemplate = rule.ActionUrlTemplate,
             BroadcastToAdmins = rule.BroadcastToAdmins,
+            Channels = rule.Channels,
             Placeholders = NotificationRuleDefaults.PlaceholdersFor(rule.EventType).ToList(),
             UpdatedAt = rule.UpdatedAt
         });
@@ -530,17 +596,7 @@ public sealed class NotificationsController : ControllerBase
             notification.Recipients.Add(new NotificationRecipient { WorkshopUserId = workshopUserId });
         }
 
-        foreach (var _ in notification.Recipients)
-        {
-            notification.Deliveries.Add(new NotificationDelivery
-            {
-                Channel = NotificationDeliveryChannel.Internal,
-                Status = NotificationDeliveryStatus.Sent,
-                AttemptCount = 1,
-                LastAttemptAt = DateTimeOffset.UtcNow,
-                SentAt = DateTimeOffset.UtcNow
-            });
-        }
+        await _notifier.CreateDeliveriesAsync(notification, request.Channels);
 
         _db.Notifications.Add(notification);
         await _db.SaveChangesAsync();
@@ -557,4 +613,254 @@ public sealed class NotificationsController : ControllerBase
             CreatedAt = notification.CreatedAt
         });
     }
+
+    [Authorize]
+    [HttpGet("my-settings")]
+    public async Task<ActionResult<UserNotificationSettingsDto>> GetMySettings()
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue) return Unauthorized();
+        return Ok(await BuildMySettingsAsync(userId.Value));
+    }
+
+    [Authorize]
+    [HttpPut("my-settings")]
+    public async Task<ActionResult<UserNotificationSettingsDto>> UpdateMySettings(UserNotificationSettingsUpdateRequest request)
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var channels = request.Channels & (NotificationChannelFlags.Bale | NotificationChannelFlags.Telegram | NotificationChannelFlags.Eitaa);
+
+        var setting = await _db.UserNotificationSettings.FindAsync(userId.Value);
+        if (setting == null)
+        {
+            setting = new UserNotificationSetting { AppUserId = userId.Value };
+            _db.UserNotificationSettings.Add(setting);
+        }
+        setting.Channels = channels;
+        setting.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return Ok(await BuildMySettingsAsync(userId.Value));
+    }
+
+    [Authorize]
+    [HttpPost("my-settings/link-code/{channelKey}")]
+    public async Task<ActionResult<MessengerLinkCodeDto>> CreateLinkCode(string channelKey)
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var channel = MessengerLinkService.ParseChannel(channelKey);
+        if (channel == null) return BadRequest("پیام‌رسان نامعتبر است.");
+
+        var siteSettings = await _db.SiteSettings.FirstOrDefaultAsync();
+        if (!IsChannelAvailable(channel.Value, siteSettings))
+            return BadRequest("این پیام‌رسان هنوز در سایت پیکربندی نشده است.");
+
+        var code = await _linkService.CreateCodeAsync(userId.Value, channel.Value);
+        return Ok(new MessengerLinkCodeDto
+        {
+            Channel = (int)channel.Value,
+            ChannelKey = MessengerLinkService.ChannelKey(channel.Value),
+            ChannelTitle = MessengerLinkService.ChannelTitle(channel.Value),
+            Code = code,
+            ExpiresAt = DateTimeOffset.UtcNow.Add(MessengerLinkService.CodeLifetime),
+            BotUrl = await BuildBotUrlAsync(channel.Value, code)
+        });
+    }
+
+    [Authorize]
+    [HttpGet("my-settings/link-status/{channelKey}")]
+    public async Task<ActionResult<MessengerEndpointDto>> GetLinkStatus(string channelKey)
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var channel = MessengerLinkService.ParseChannel(channelKey);
+        if (channel == null) return BadRequest("پیام‌رسان نامعتبر است.");
+
+        var endpoint = await _db.MessengerEndpoints
+            .FirstOrDefaultAsync(x => x.Channel == channel.Value
+                && x.AppUserId == userId.Value
+                && x.Status == MessengerEndpointStatus.Verified);
+        var siteSettings = await _db.SiteSettings.FirstOrDefaultAsync();
+
+        return Ok(BuildEndpointDto(channel.Value, endpoint, siteSettings));
+    }
+
+    [Authorize]
+    [HttpDelete("my-settings/endpoint/{channelKey}")]
+    public async Task<ActionResult<UserNotificationSettingsDto>> DisconnectEndpoint(string channelKey)
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var channel = MessengerLinkService.ParseChannel(channelKey);
+        if (channel == null) return BadRequest("پیام‌رسان نامعتبر است.");
+
+        var endpoints = await _db.MessengerEndpoints
+            .Where(x => x.Channel == channel.Value && x.AppUserId == userId.Value)
+            .ToListAsync();
+        if (endpoints.Count > 0)
+            _db.MessengerEndpoints.RemoveRange(endpoints);
+        await _db.SaveChangesAsync();
+
+        return Ok(await BuildMySettingsAsync(userId.Value));
+    }
+
+    [Authorize(Policy = "perm:admin.notifications.view")]
+    [HttpGet("admin/messenger-status")]
+    public async Task<ActionResult<List<MessengerChannelStatusDto>>> GetMessengerStatus()
+    {
+        var siteSettings = await _db.SiteSettings.FirstOrDefaultAsync();
+        var counts = await _db.MessengerEndpoints
+            .Where(x => x.Status == MessengerEndpointStatus.Verified)
+            .GroupBy(x => x.Channel)
+            .Select(g => new { Channel = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Channel, x => x.Count);
+
+        var result = new List<MessengerChannelStatusDto>();
+        foreach (var channel in NotifiableChannels)
+        {
+            result.Add(new MessengerChannelStatusDto
+            {
+                Channel = (int)channel,
+                ChannelKey = MessengerLinkService.ChannelKey(channel),
+                ChannelTitle = MessengerLinkService.ChannelTitle(channel),
+                BotConfigured = IsChannelAvailable(channel, siteSettings),
+                NotificationsEnabled = NotificationsEnabled(channel, siteSettings),
+                ConnectedUserCount = counts.TryGetValue(channel, out var c) ? c : 0
+            });
+        }
+        return Ok(result);
+    }
+
+    [Authorize(Policy = "perm:admin.notifications.manage")]
+    [HttpPut("admin/users/{userId:int}/endpoint/{channelKey}")]
+    public async Task<ActionResult<MessengerEndpointDto>> SetUserEndpoint(int userId, string channelKey, [FromBody] AdminEndpointRequest request)
+    {
+        var channel = MessengerLinkService.ParseChannel(channelKey);
+        if (channel == null) return BadRequest("پیام‌رسان نامعتبر است.");
+        if (!await _db.Users.AnyAsync(x => x.Id == userId)) return NotFound("کاربر یافت نشد.");
+
+        var externalId = request?.ExternalId?.Trim() ?? string.Empty;
+        var existing = await _db.MessengerEndpoints
+            .Where(x => x.Channel == channel.Value && x.AppUserId == userId)
+            .ToListAsync();
+        if (existing.Count > 0)
+            _db.MessengerEndpoints.RemoveRange(existing);
+
+        MessengerEndpoint? endpoint = null;
+        if (!string.IsNullOrWhiteSpace(externalId))
+        {
+            var conflicts = await _db.MessengerEndpoints
+                .Where(x => x.Channel == channel.Value && x.ExternalId == externalId)
+                .ToListAsync();
+            if (conflicts.Count > 0)
+                _db.MessengerEndpoints.RemoveRange(conflicts);
+
+            endpoint = new MessengerEndpoint
+            {
+                Channel = channel.Value,
+                AppUserId = userId,
+                ExternalId = externalId,
+                Status = MessengerEndpointStatus.Verified,
+                VerifiedAt = DateTimeOffset.UtcNow
+            };
+            _db.MessengerEndpoints.Add(endpoint);
+        }
+        await _db.SaveChangesAsync();
+
+        var siteSettings = await _db.SiteSettings.FirstOrDefaultAsync();
+        return Ok(BuildEndpointDto(channel.Value, endpoint, siteSettings));
+    }
+
+    private async Task<UserNotificationSettingsDto> BuildMySettingsAsync(int userId)
+    {
+        var setting = await _db.UserNotificationSettings.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.AppUserId == userId);
+        var endpoints = await _db.MessengerEndpoints.AsNoTracking()
+            .Where(x => x.AppUserId == userId && x.Status == MessengerEndpointStatus.Verified)
+            .ToListAsync();
+        var siteSettings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
+
+        var list = new List<MessengerEndpointDto>();
+        foreach (var channel in NotifiableChannels)
+        {
+            list.Add(BuildEndpointDto(channel, endpoints.FirstOrDefault(x => x.Channel == channel), siteSettings));
+        }
+
+        return new UserNotificationSettingsDto
+        {
+            Channels = setting?.Channels ?? 0,
+            Endpoints = list
+        };
+    }
+
+    private static MessengerEndpointDto BuildEndpointDto(NotificationDeliveryChannel channel, MessengerEndpoint? endpoint, SiteSettings? settings)
+    {
+        return new MessengerEndpointDto
+        {
+            Channel = (int)channel,
+            ChannelKey = MessengerLinkService.ChannelKey(channel),
+            ChannelTitle = MessengerLinkService.ChannelTitle(channel),
+            Available = IsChannelAvailable(channel, settings),
+            Connected = endpoint != null,
+            ExternalIdMasked = endpoint == null ? null : MaskExternalId(endpoint.ExternalId),
+            ExternalUserName = endpoint?.ExternalUserName,
+            VerifiedAt = endpoint?.VerifiedAt
+        };
+    }
+
+    private static bool NotificationsEnabled(NotificationDeliveryChannel channel, SiteSettings? settings)
+    {
+        if (settings == null) return false;
+        return channel switch
+        {
+            NotificationDeliveryChannel.Bale => settings.EnableBaleNotifications,
+            NotificationDeliveryChannel.Telegram => settings.EnableTelegramNotifications,
+            NotificationDeliveryChannel.Eitaa => settings.EnableEitaaNotifications,
+            _ => false
+        };
+    }
+
+    private static bool IsChannelAvailable(NotificationDeliveryChannel channel, SiteSettings? settings)
+    {
+        if (settings == null) return false;
+        return channel switch
+        {
+            NotificationDeliveryChannel.Bale => settings.EnableBaleNotifications && !string.IsNullOrWhiteSpace(settings.BaleBotToken),
+            NotificationDeliveryChannel.Telegram => settings.EnableTelegramNotifications && !string.IsNullOrWhiteSpace(settings.TelegramBotToken),
+            NotificationDeliveryChannel.Eitaa => settings.EnableEitaaNotifications && !string.IsNullOrWhiteSpace(settings.EitaaBotToken),
+            _ => false
+        };
+    }
+
+    private static string MaskExternalId(string id)
+        => id.Length <= 4 ? "***" : $"{id[..2]}***{id[^2..]}";
+
+    private async Task<string?> BuildBotUrlAsync(NotificationDeliveryChannel channel, string code)
+    {
+        var key = MessengerLinkService.ChannelKey(channel);
+        var bot = _router.GetByKey(key);
+        if (bot == null) return null;
+
+        var username = await bot.GetBotUsernameAsync();
+        if (string.IsNullOrWhiteSpace(username)) return null;
+
+        return channel switch
+        {
+            NotificationDeliveryChannel.Telegram => $"https://t.me/{username}?start={code}",
+            NotificationDeliveryChannel.Bale => $"https://ble.ir/{username}",
+            NotificationDeliveryChannel.Eitaa => $"https://eitaa.com/{username}",
+            _ => null
+        };
+    }
+}
+
+public sealed class AdminEndpointRequest
+{
+    public string? ExternalId { get; set; }
 }

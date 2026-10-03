@@ -19,15 +19,18 @@ public class MessengerWebhookController : ControllerBase
     private readonly IConfiguration _config;
     private readonly ILogger<MessengerWebhookController> _logger;
     private readonly MessengerRouter _router;
+    private readonly MessengerLinkService _linkService;
 
     public MessengerWebhookController(ErrorServiceDbContext db, IHubContext<ChatHub> hub,
-        IConfiguration config, ILogger<MessengerWebhookController> logger, MessengerRouter router)
+        IConfiguration config, ILogger<MessengerWebhookController> logger, MessengerRouter router,
+        MessengerLinkService linkService)
     {
         _db = db;
         _hub = hub;
         _config = config;
         _logger = logger;
         _router = router;
+        _linkService = linkService;
     }
 
     [HttpPost("{channel}")]
@@ -85,9 +88,40 @@ public class MessengerWebhookController : ControllerBase
         if (payload?.Message == null)
             return Ok();
 
-        // Optional group restriction (if configured, only accept group messages)
         var groupId = GetGroupId(channelService, settings);
         var actualChatId = payload.Message.Chat?.Id.ToString();
+
+        // اتصال کاربر به پیام‌رسان برای دریافت اعلان (کد یک‌بارمصرف از پروفایل)
+        var chatType = payload.Message.Chat?.Type;
+        var isGroupLike = chatType is "group" or "supergroup" or "channel";
+        if (!isGroupLike && payload.Message.Chat != null && (string.IsNullOrEmpty(groupId) || actualChatId != groupId))
+        {
+            var linkChannel = MessengerLinkService.ParseChannel(channel);
+            var rawText = payload.Message.Text ?? payload.Message.Caption;
+            if (linkChannel.HasValue && MessengerLinkService.ExtractCode(rawText) != null)
+            {
+                var from = payload.Message.From;
+                var fullName = string.Join(" ", new[] { from?.FirstName, from?.LastName }
+                    .Where(x => !string.IsNullOrWhiteSpace(x)));
+                var (handled, reply) = await _linkService.TryHandleMessageAsync(
+                    linkChannel.Value, rawText, payload.Message.Chat.Id,
+                    !string.IsNullOrWhiteSpace(fullName) ? fullName : from?.Username);
+                if (handled)
+                {
+                    try
+                    {
+                        await channelService.SendTextToChatAsync(payload.Message.Chat.Id, reply);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "{Channel} webhook: failed to send link reply", channel);
+                    }
+                    return Ok();
+                }
+            }
+        }
+
+        // Optional group restriction (if configured, only accept group messages)
         if (!string.IsNullOrEmpty(groupId) && actualChatId != groupId)
         {
             _logger.LogWarning("{Channel} webhook: chat ID mismatch (expected={Expected}, received={Received})", channel, groupId, actualChatId);

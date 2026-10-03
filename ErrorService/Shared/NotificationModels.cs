@@ -1,5 +1,22 @@
 namespace ErrorService.Shared;
 
+public static class NotificationChannelFlags
+{
+    public const int Internal = 1;
+    public const int Bale = 2;
+    public const int Telegram = 4;
+    public const int Eitaa = 8;
+    public const int All = Internal | Bale | Telegram | Eitaa;
+
+    public static int FlagFor(int deliveryChannel) => deliveryChannel switch
+    {
+        1 => Bale,
+        2 => Telegram,
+        3 => Eitaa,
+        _ => Internal
+    };
+}
+
 public sealed class NotificationDto
 {
     public long Id { get; set; }
@@ -46,6 +63,25 @@ public sealed class NotificationCreateRequest
     public List<string> PhoneNumbers { get; set; } = new();
     public List<int> PurchasedProductIds { get; set; } = new();
     public bool BroadcastToAdmins { get; set; }
+    public int Channels { get; set; } = NotificationChannelFlags.Internal;
+
+    public bool BaleEnabled
+    {
+        get => (Channels & NotificationChannelFlags.Bale) != 0;
+        set => Channels = value ? Channels | NotificationChannelFlags.Bale : Channels & ~NotificationChannelFlags.Bale;
+    }
+
+    public bool TelegramEnabled
+    {
+        get => (Channels & NotificationChannelFlags.Telegram) != 0;
+        set => Channels = value ? Channels | NotificationChannelFlags.Telegram : Channels & ~NotificationChannelFlags.Telegram;
+    }
+
+    public bool EitaaEnabled
+    {
+        get => (Channels & NotificationChannelFlags.Eitaa) != 0;
+        set => Channels = value ? Channels | NotificationChannelFlags.Eitaa : Channels & ~NotificationChannelFlags.Eitaa;
+    }
 }
 
 public sealed class NotificationRuleDto
@@ -60,8 +96,27 @@ public sealed class NotificationRuleDto
     public string BodyTemplate { get; set; } = string.Empty;
     public string? ActionUrlTemplate { get; set; }
     public bool BroadcastToAdmins { get; set; }
+    public int Channels { get; set; } = NotificationChannelFlags.Internal;
     public List<string> Placeholders { get; set; } = new();
     public DateTimeOffset UpdatedAt { get; set; }
+
+    public bool BaleEnabled
+    {
+        get => (Channels & NotificationChannelFlags.Bale) != 0;
+        set => Channels = value ? Channels | NotificationChannelFlags.Bale : Channels & ~NotificationChannelFlags.Bale;
+    }
+
+    public bool TelegramEnabled
+    {
+        get => (Channels & NotificationChannelFlags.Telegram) != 0;
+        set => Channels = value ? Channels | NotificationChannelFlags.Telegram : Channels & ~NotificationChannelFlags.Telegram;
+    }
+
+    public bool EitaaEnabled
+    {
+        get => (Channels & NotificationChannelFlags.Eitaa) != 0;
+        set => Channels = value ? Channels | NotificationChannelFlags.Eitaa : Channels & ~NotificationChannelFlags.Eitaa;
+    }
 }
 
 public sealed class NotificationRuleUpdateRequest
@@ -72,4 +127,57 @@ public sealed class NotificationRuleUpdateRequest
     public string BodyTemplate { get; set; } = string.Empty;
     public string? ActionUrlTemplate { get; set; }
     public bool BroadcastToAdmins { get; set; }
+    public int Channels { get; set; } = NotificationChannelFlags.Internal;
+}
+
+public sealed class UserNotificationSettingsDto
+{
+    public int Channels { get; set; }
+    public List<MessengerEndpointDto> Endpoints { get; set; } = new();
+}
+
+public sealed class UserNotificationSettingsUpdateRequest
+{
+    public int Channels { get; set; }
+}
+
+public sealed class MessengerEndpointDto
+{
+    public int Channel { get; set; }
+    public string ChannelKey { get; set; } = string.Empty;
+    public string ChannelTitle { get; set; } = string.Empty;
+    public bool Available { get; set; }
+    public bool Connected { get; set; }
+    public string? ExternalIdMasked { get; set; }
+    public string? ExternalUserName { get; set; }
+    public DateTimeOffset? VerifiedAt { get; set; }
+}
+
+public sealed class MessengerLinkCodeDto
+{
+    public int Channel { get; set; }
+    public string ChannelKey { get; set; } = string.Empty;
+    public string ChannelTitle { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public DateTimeOffset ExpiresAt { get; set; }
+    public string? BotUrl { get; set; }
+}
+
+public sealed class MessengerChannelStatusDto
+{
+    public int Channel { get; set; }
+    public string ChannelKey { get; set; } = string.Empty;
+    public string ChannelTitle { get; set; } = string.Empty;
+    public bool BotConfigured { get; set; }
+    public bool NotificationsEnabled { get; set; }
+    public int ConnectedUserCount { get; set; }
+}
+
+public sealed class ChannelPreviewDto
+{
+    public int Channel { get; set; }
+    public string ChannelKey { get; set; } = string.Empty;
+    public string ChannelTitle { get; set; } = string.Empty;
+    public bool Available { get; set; }
+    public int Count { get; set; }
 }

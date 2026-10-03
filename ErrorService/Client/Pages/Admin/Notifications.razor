@@ -367,6 +367,42 @@
                                 </div>
                             </div>
 
+                            <div class="wz-label" style="margin-top:14px;">کانال‌های ارسال <span>علاوه بر اعلان درون‌برنامه‌ای</span></div>
+                            <div class="rv-channels">
+                                <label class="rv-channel on locked">
+                                    <input type="checkbox" checked disabled />
+                                    <span class="rv-channel__t"><span class="oi oi-bell"></span> درون‌برنامه‌ای</span>
+                                    <span class="rv-channel__n">همیشه</span>
+                                </label>
+                                @foreach (var cp in (channelPreview ?? new List<ChannelPreviewDto>()))
+                                {
+                                    var bound = cp.Channel switch
+                                    {
+                                        1 => request.BaleEnabled,
+                                        2 => request.TelegramEnabled,
+                                        _ => request.EitaaEnabled
+                                    };
+                                    <label class="rv-channel @(bound ? "on" : "") @(!cp.Available ? "off" : "")">
+                                        <input type="checkbox" disabled="@(!cp.Available)" checked="@bound" @onchange="e => SetRequestChannel(cp.Channel, e.Value as bool? ?? false)" />
+                                        <span class="rv-channel__t">@cp.ChannelTitle</span>
+                                        <span class="rv-channel__n">
+                                            @if (!cp.Available) { <text>ربات تنظیم نشده</text> }
+                                            else { <text>@cp.Count.ToString("N0") نفر</text> }
+                                        </span>
+                                    </label>
+                                }
+                                @if (channelPreview == null)
+                                {
+                                    <button type="button" class="ntf-btn ntf-btn--soft" disabled="@previewLoading" @onclick="LoadPreviewAsync">
+                                        @(previewLoading ? "در حال محاسبه..." : "محاسبه ظرفیت پیام‌رسان‌ها")
+                                    </button>
+                                }
+                                <p class="rv-channels__h">
+                                    <span class="oi oi-info"></span>
+                                    ارسال خارجی فقط برای کاربرانی انجام می‌شود که خودشان آن پیام‌رسان را در «تنظیمات اعلان» پروفایلشان روشن کرده و متصل باشند.
+                                </p>
+                            </div>
+
                             @if (!string.IsNullOrWhiteSpace(error)) { <div class="ntf-alert ntf-alert--error"><span class="oi oi-warning"></span> @error</div> }
                             @if (!string.IsNullOrWhiteSpace(success)) { <div class="ntf-alert ntf-alert--success"><span class="oi oi-check"></span> @success</div> }
                         </div>
@@ -501,6 +537,25 @@
                 <b>پویا</b> یعنی شدت اعلان را خود رویداد تعیین می‌کند؛ غیرفعال کردن یک رویداد یعنی اعلانی برای آن ساخته نشود.
             </div>
 
+            @if (messengerStatus != null)
+            {
+                <div class="rl-mstates">
+                    @foreach (var st in messengerStatus)
+                    {
+                        <span class="rl-mstate @(st.BotConfigured && st.NotificationsEnabled ? "on" : "")">
+                            <span class="oi @(st.BotConfigured && st.NotificationsEnabled ? "oi-check" : "oi-x")"></span>
+                            <b>@st.ChannelTitle</b>
+                            <i>
+                                @if (!st.BotConfigured) { <text>ربات تنظیم نشده</text> }
+                                else if (!st.NotificationsEnabled) { <text>ارسال اعلان خاموش</text> }
+                                else { <text>@st.ConnectedUserCount کاربر متصل</text> }
+                            </i>
+                        </span>
+                    }
+                    <span class="rl-mstate__h">اتصال کاربران از پروفایل آن‌ها (تنظیمات اعلان) انجام می‌شود.</span>
+                </div>
+            }
+
             @if (!string.IsNullOrWhiteSpace(rulesError))
             {
                 <div class="ntf-alert ntf-alert--error"><span class="oi oi-warning"></span> @rulesError</div>
@@ -588,6 +643,23 @@
                                     {
                                         <code dir="ltr">@RenderPreview(rule, rule.ActionUrlTemplate)</code>
                                     }
+                                </div>
+
+                                <div class="rl-ch">
+                                    <span class="rl-ch__l"><span class="oi oi-envelope-closed"></span> ارسال هم‌زمان به:</span>
+                                    <label class="rl-chb on locked" title="اعلان درون‌برنامه‌ای همیشه فعال است">
+                                        <input type="checkbox" checked disabled /> درون‌برنامه‌ای
+                                    </label>
+                                    <label class="rl-chb @(rule.BaleEnabled ? "on" : "")" title="ارسال از طریق بله به کاربران متصل">
+                                        <input type="checkbox" disabled="@(!canManageRules || IsRuleSaving(rule.EventType))" checked="@rule.BaleEnabled" @onchange="e => rule.BaleEnabled = e.Value as bool? ?? false" /> بله
+                                    </label>
+                                    <label class="rl-chb @(rule.TelegramEnabled ? "on" : "")" title="ارسال از طریق تلگرام به کاربران متصل">
+                                        <input type="checkbox" disabled="@(!canManageRules || IsRuleSaving(rule.EventType))" checked="@rule.TelegramEnabled" @onchange="e => rule.TelegramEnabled = e.Value as bool? ?? false" /> تلگرام
+                                    </label>
+                                    <label class="rl-chb @(rule.EitaaEnabled ? "on" : "")" title="ارسال از طریق ایتا به کاربران متصل">
+                                        <input type="checkbox" disabled="@(!canManageRules || IsRuleSaving(rule.EventType))" checked="@rule.EitaaEnabled" @onchange="e => rule.EitaaEnabled = e.Value as bool? ?? false" /> ایتا
+                                    </label>
+                                    <span class="rl-ch__h">دریافت هر پیام‌رسان را کاربر در «تنظیمات اعلان» پروفایل خود روشن می‌کند.</span>
                                 </div>
 
                                 <div class="rl-foot">
@@ -1233,9 +1305,35 @@
     .rl-pv__l { display: flex; align-items: center; gap: 7px; font-size: .7rem; font-weight: 800; color: var(--bs-secondary-color); margin-bottom: 6px; }
     .rl-pv b { display: block; font-size: .88rem; }
     .rl-pv p { font-size: .8rem; line-height: 1.8; margin: 5px 0 0; color: color-mix(in srgb, var(--bs-body-color) 85%, transparent); }
-    .rl-pv code { display: inline-block; margin-top: 7px; font-size: .72rem; direction: ltr; color: #16a34a; background: #16a34a10; border-radius: 7px; padding: 3px 8px; }
+.rl-pv code { display: inline-block; margin-top: 7px; font-size: .72rem; direction: ltr; color: #16a34a; background: #16a34a10; border-radius: 7px; padding: 3px 8px; }
 
-    .rl-foot { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; margin-top: 13px; padding-top: 12px; border-top: 1px dashed var(--bs-border-color); }
+.rl-ch { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 12px; padding: 9px 11px; border: 1px solid var(--bs-border-color); border-radius: 12px; background: color-mix(in srgb, var(--bs-body-color) 3%, transparent); }
+.rl-ch__l { display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; font-weight: 800; color: var(--bs-secondary-color); }
+.rl-chb { display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; font-weight: 700; margin: 0; padding: 4px 10px; border: 1px solid var(--bs-border-color); border-radius: 999px; background: var(--bs-body-bg); cursor: pointer; transition: all .15s; }
+.rl-chb input { width: 15px; height: 15px; accent-color: #0d6efd; margin: 0; }
+.rl-chb.on { border-color: #0d6efd; color: #0d6efd; background: #0d6efd10; }
+.rl-chb.locked { opacity: .8; cursor: default; border-color: #16a34a66; color: #16a34a; background: #16a34a10; }
+.rl-ch__h { flex-basis: 100%; font-size: .7rem; color: var(--bs-secondary-color); }
+
+.rl-mstates { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 14px; }
+.rl-mstate { display: inline-flex; align-items: center; gap: 6px; font-size: .74rem; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--bs-border-color); background: color-mix(in srgb, var(--bs-body-color) 4%, transparent); color: var(--bs-secondary-color); }
+.rl-mstate .oi { font-size: .8rem; }
+.rl-mstate b { font-weight: 800; }
+.rl-mstate i { font-style: normal; }
+.rl-mstate.on { border-color: #16a34a55; color: #16a34a; background: #16a34a10; }
+.rl-mstate__h { font-size: .7rem; color: var(--bs-secondary-color); }
+
+.rv-channels { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 8px; }
+.rv-channel { display: inline-flex; align-items: center; gap: 7px; font-size: .78rem; font-weight: 700; margin: 0; padding: 6px 12px; border: 1px solid var(--bs-border-color); border-radius: 12px; background: var(--bs-body-bg); cursor: pointer; transition: all .15s; }
+.rv-channel input { width: 15px; height: 15px; accent-color: #0d6efd; margin: 0; }
+.rv-channel.on { border-color: #0d6efd; color: #0d6efd; background: #0d6efd10; }
+.rv-channel.locked { border-color: #16a34a55; color: #16a34a; background: #16a34a10; cursor: default; }
+.rv-channel.off { opacity: .55; cursor: not-allowed; }
+.rv-channel__n { font-size: .7rem; font-weight: 700; color: var(--bs-secondary-color); }
+.rv-channel.on .rv-channel__n { color: #0d6efd; }
+.rv-channels__h { flex-basis: 100%; display: flex; align-items: center; gap: 6px; font-size: .72rem; color: var(--bs-secondary-color); margin: 4px 0 0; }
+
+.rl-foot { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; margin-top: 13px; padding-top: 12px; border-top: 1px dashed var(--bs-border-color); }
     .rl-bc { display: inline-flex; align-items: center; gap: 7px; font-size: .78rem; font-weight: 700; cursor: pointer; margin: 0; }
     .rl-bc input { width: 16px; height: 16px; accent-color: #0d6efd; }
     .rl-upd { font-size: .7rem; color: color-mix(in srgb, var(--bs-body-color) 50%, transparent); }
@@ -1309,6 +1407,8 @@
     private readonly HashSet<string> savingRules = new(StringComparer.OrdinalIgnoreCase);
     private string focusedRuleKey = string.Empty;
     private string focusedField = "body";
+    private List<MessengerChannelStatusDto>? messengerStatus;
+    private List<ChannelPreviewDto>? channelPreview;
 
     private int SelectedSegmentCount =>
         (segAllUsers ? 1 : 0) + (segAdmins ? 1 : 0) + (segSuperAdmin ? 1 : 0)
@@ -1380,10 +1480,16 @@
         }
         catch (Exception ex) { rulesError = $"دریافت تنظیمات خودکار انجام نشد: {ex.Message}"; }
         finally { rulesLoading = false; }
+
+        try
+        {
+            messengerStatus = await Http.GetFromJsonAsync<List<MessengerChannelStatusDto>>("api/notifications/admin/messenger-status");
+        }
+        catch { messengerStatus = null; }
     }
 
     private static string RuleSnapshot(NotificationRuleDto r) =>
-        $"{r.IsEnabled}|{r.Severity}|{r.TitleTemplate}|{r.BodyTemplate}|{r.ActionUrlTemplate}|{r.BroadcastToAdmins}";
+        $"{r.IsEnabled}|{r.Severity}|{r.TitleTemplate}|{r.BodyTemplate}|{r.ActionUrlTemplate}|{r.BroadcastToAdmins}|{r.Channels}";
 
     private bool IsRuleDirty(NotificationRuleDto r) =>
         ruleSnapshots.TryGetValue(r.EventType, out var snap) && snap != RuleSnapshot(r);
@@ -1589,6 +1695,17 @@
         productResults = null;
         selectedProducts = new();
         previewCount = null;
+        channelPreview = null;
+    }
+
+    private void SetRequestChannel(int channel, bool enabled)
+    {
+        switch (channel)
+        {
+            case 1: request.BaleEnabled = enabled; break;
+            case 2: request.TelegramEnabled = enabled; break;
+            default: request.EitaaEnabled = enabled; break;
+        }
     }
 
     private bool HasAnySegment =>
@@ -1611,7 +1728,8 @@
             IncludeWorkshopUsers = segWorkshop,
             WorkshopId = segWorkshop ? wsId : null,
             PhoneNumbers = segManual ? ParsePhones(recipientText) : new(),
-            PurchasedProductIds = segBuyers ? selectedProducts.Select(p => p.Id).ToList() : new()
+            PurchasedProductIds = segBuyers ? selectedProducts.Select(p => p.Id).ToList() : new(),
+            Channels = request.Channels
         };
     }
 
@@ -1692,6 +1810,17 @@
                 error = string.IsNullOrWhiteSpace(msg)
                     ? "محاسبه تعداد گیرنده انجام نشد."
                     : msg.Trim('"');
+            }
+
+            if (previewCount.HasValue)
+            {
+                try
+                {
+                    var chResp = await Http.PostAsJsonAsync("api/notifications/admin/preview-channels", BuildRequest());
+                    if (chResp.IsSuccessStatusCode)
+                        channelPreview = await chResp.Content.ReadFromJsonAsync<List<ChannelPreviewDto>>();
+                }
+                catch { channelPreview = null; }
             }
         }
         catch { previewCount = null; error = "ارتباط با سرور برقرار نشد."; }

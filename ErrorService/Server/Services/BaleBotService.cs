@@ -141,6 +141,75 @@ public sealed class BaleBotService
         await SendApiAsync(token, "sendMessage", new { chat_id = chatId.ToString(), text });
     }
 
+    public async Task<Messenger.MessengerSendResult> TrySendTextToChat(long chatId, string text)
+    {
+        var (token, _) = await GetSettingsAsync();
+        if (string.IsNullOrEmpty(token))
+            return Messenger.MessengerSendResult.Fail("توکن ربات بله تنظیم نشده است");
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient("BaleBot");
+            var url = $"https://tapi.bale.ai/bot{token}/sendMessage";
+            var json = JsonSerializer.Serialize(new { chat_id = chatId.ToString(), text });
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await client.PostAsync(url, content);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (body.Length > 0 && body[0] == '{')
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("ok", out var ok) && !ok.GetBoolean())
+                {
+                    var desc = doc.RootElement.TryGetProperty("description", out var d) ? d.GetString() : null;
+                    return Messenger.MessengerSendResult.Fail(string.IsNullOrWhiteSpace(desc) ? body : desc);
+                }
+
+                string? messageId = null;
+                if (doc.RootElement.TryGetProperty("result", out var result)
+                    && result.ValueKind == JsonValueKind.Object
+                    && result.TryGetProperty("message_id", out var messageIdElement))
+                {
+                    messageId = messageIdElement.ToString();
+                }
+                if (response.IsSuccessStatusCode)
+                    return Messenger.MessengerSendResult.Ok(messageId);
+            }
+
+            return Messenger.MessengerSendResult.Fail($"HTTP {(int)response.StatusCode}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "BaleBot: exception sending notification to chat {ChatId}", chatId);
+            return Messenger.MessengerSendResult.Fail(ex.Message);
+        }
+    }
+
+    public async Task<string?> GetBotUsernameAsync()
+    {
+        var (token, _) = await GetSettingsAsync();
+        if (string.IsNullOrEmpty(token)) return null;
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient("BaleBot");
+            var body = await client.GetStringAsync($"https://tapi.bale.ai/bot{token}/getMe");
+            if (body.Length == 0 || body[0] != '{') return null;
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("result", out var result)
+                && result.ValueKind == JsonValueKind.Object
+                && result.TryGetProperty("username", out var username))
+            {
+                return username.GetString()?.TrimStart('@');
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "BaleBot: getMe failed");
+        }
+        return null;
+    }
+
     public async Task<(bool success, string message)> SetWebhookAsync(string webhookUrl, string secret)
     {
         var (token, _) = await GetSettingsAsync();

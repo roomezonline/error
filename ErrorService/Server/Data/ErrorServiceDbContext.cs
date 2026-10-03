@@ -130,6 +130,9 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<NotificationRecipient> NotificationRecipients { get; set; }
     public DbSet<NotificationDelivery> NotificationDeliveries { get; set; }
     public DbSet<NotificationRule> NotificationRules { get; set; }
+    public DbSet<MessengerEndpoint> MessengerEndpoints { get; set; }
+    public DbSet<MessengerLinkCode> MessengerLinkCodes { get; set; }
+    public DbSet<UserNotificationSetting> UserNotificationSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -167,6 +170,10 @@ public sealed class ErrorServiceDbContext : DbContext
                 .WithMany(x => x.Deliveries)
                 .HasForeignKey(x => x.NotificationId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Recipient)
+                .WithMany()
+                .HasForeignKey(x => x.RecipientId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<NotificationRule>(entity =>
@@ -179,6 +186,30 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.BodyTemplate).IsRequired().HasMaxLength(4000);
             entity.Property(x => x.ActionUrlTemplate).HasMaxLength(500);
             entity.HasIndex(x => x.EventType).IsUnique();
+        });
+
+        modelBuilder.Entity<MessengerEndpoint>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ExternalId).IsRequired().HasMaxLength(100);
+            entity.Property(x => x.ExternalUserName).HasMaxLength(120);
+            entity.HasIndex(x => new { x.Channel, x.AppUserId }).IsUnique();
+            entity.HasIndex(x => new { x.Channel, x.ExternalId }).IsUnique();
+        });
+
+        modelBuilder.Entity<MessengerLinkCode>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).IsRequired().HasMaxLength(16);
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.HasIndex(x => new { x.AppUserId, x.Channel });
+        });
+
+        modelBuilder.Entity<UserNotificationSetting>(entity =>
+        {
+            entity.HasKey(x => x.AppUserId);
+            entity.Property(x => x.AppUserId).ValueGeneratedNever();
+            entity.ToTable("UserNotificationSettings");
         });
 
         modelBuilder.Entity<MonitoringDevice>(entity =>

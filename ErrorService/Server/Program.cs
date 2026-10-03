@@ -51,7 +51,8 @@ builder.Services.AddSingleton<ErrorService.Server.Services.IEmailService, ErrorS
 builder.Services.AddHostedService<ErrorService.Server.Services.Backup.BackupBackgroundService>();
 builder.Services.AddHostedService<ErrorService.Server.Services.PendingOrderCleanupService>();
 builder.Services.AddHostedService<ErrorService.Server.Services.MonitoringExpiryNotificationService>();
-builder.Services.AddHostedService<ErrorService.Server.Services.NotificationMaintenanceService>();
+        builder.Services.AddHostedService<ErrorService.Server.Services.NotificationMaintenanceService>();
+        builder.Services.AddHostedService<ErrorService.Server.Services.NotificationDispatcherService>();
 
 // آمار بازدید — صف غیرمسدودکننده + نوشتن دسته‌ای + نگهداری/پاک‌سازی
 builder.Services.AddSingleton<ErrorService.Server.Services.Visits.VisitTrackingService>();
@@ -89,7 +90,8 @@ builder.Services.AddScoped<BaleBotService>();
 builder.Services.AddScoped<IChatMessengerChannel, BaleMessengerChannel>();
 builder.Services.AddScoped<IChatMessengerChannel, TelegramMessengerChannel>();
 builder.Services.AddScoped<IChatMessengerChannel, EitaaMessengerChannel>();
-builder.Services.AddScoped<MessengerRouter>();
+    builder.Services.AddScoped<MessengerRouter>();
+    builder.Services.AddScoped<MessengerLinkService>();
 builder.Services.AddScoped<IChatAiService, FaqChatService>();
 builder.Services.AddScoped<IChatAiService, OpenAiCompatibleChatService>();
 builder.Services.AddScoped<ChatAiCoordinator>();

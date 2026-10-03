@@ -122,6 +122,13 @@
                                 <span class="pf-menu-badge pf-badge-red">@ActiveCouponsCount</span>
                             }
                         </button>
+
+                        <button class="pf-menu-item @(activeTab == "notify" ? "active" : "")" @onclick='() => SwitchTab("notify")'>
+                            <span class="pf-menu-icon" style="background: rgba(220,53,69,0.1); color: #dc3545;">
+                                <span class="oi oi-bell"></span>
+                            </span>
+                            <span class="pf-menu-text">تنظیمات اعلان</span>
+                        </button>
                     </div>
 
                     <!-- Logout -->
@@ -1005,6 +1012,142 @@
                                                 </div>
                                             </div>
                                         }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <!-- ══════════ NOTIFY SETTINGS ══════════ -->
+                        else if (activeTab == "notify")
+                        {
+                            <div class="pf-tab-content animate__animated animate__fadeIn">
+                                <div class="pf-tab-header">
+                                    <h5 class="pf-tab-title">
+                                        <span class="oi oi-bell"></span>
+                                        تنظیمات اعلان
+                                    </h5>
+                                    <button class="pf-refresh-btn" disabled="@isLoadingNotify" @onclick="LoadNotifySettingsAsync">
+                                        <span class="oi oi-reload"></span>
+                                    </button>
+                                </div>
+
+                                @if (isLoadingNotify)
+                                {
+                                    <div class="text-center py-4">
+                                        <div class="spinner-border spinner-border-sm text-danger"></div>
+                                    </div>
+                                }
+                                else if (notifySettings == null)
+                                {
+                                    <div class="pf-empty-state">
+                                        <span class="oi oi-bell"></span>
+                                        <p>دریافت تنظیمات اعلان ممکن نشد.</p>
+                                        <button type="button" class="pf-ntf-btn pf-ntf-btn--ghost" @onclick="LoadNotifySettingsAsync">
+                                            <span class="oi oi-reload"></span> تلاش دوباره
+                                        </button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="pf-ntf-intro">
+                                        <span class="oi oi-info"></span>
+                                        <span>
+                                            اعلان‌های مهم سایت (وضعیت سفارش، پاسخ تیکت و…) همیشه در همین پنل کاربری نمایش داده می‌شوند.
+                                            در زیر می‌توانید دریافت هم‌زمان همان اعلان‌ها را در پیام‌رسان‌های متصل روشن کنید.
+                                        </span>
+                                    </div>
+
+                                    <div class="pf-ntf-list">
+                                        @foreach (var ep in notifySettings.Endpoints)
+                                        {
+                                            var on = IsNotifyChannelOn(ep.Channel);
+                                            var connected = ep.Connected;
+                                            notifyLinkCodes.TryGetValue(ep.ChannelKey, out var link);
+
+                                            <div class="pf-ntf-card @(on ? "on" : "") @(!ep.Available ? "off" : "")">
+                                                <div class="pf-ntf-head">
+                                                    <span class="pf-ntf-ic"><span class="oi @NotifyIcon(ep.Channel)"></span></span>
+                                                    <div class="pf-ntf-info">
+                                                        <b>@ep.ChannelTitle</b>
+                                                        <i>
+                                                            @if (!ep.Available) { <text>این پیام‌رسان هنوز توسط مدیر سایت فعال نشده</text> }
+                                                            else if (connected) { <text>متصل به @ep.ExternalIdMasked</text> }
+                                                            else { <text>اتصال برقرار نشده</text> }
+                                                        </i>
+                                                    </div>
+                                                    <label class="pf-ntf-switch @(on ? "on" : "")" title="دریافت اعلان از طریق @ep.ChannelTitle">
+                                                        <input type="checkbox" disabled="@(!ep.Available || isSavingNotify)" checked="@on"
+                                                               @onchange="e => ToggleNotifyChannel(ep.Channel, e.Value as bool? ?? false)" />
+                                                        <span class="pf-ntf-slider"></span>
+                                                    </label>
+                                                </div>
+
+                                                @if (ep.Available && on && !connected)
+                                                {
+                                                    <div class="pf-ntf-warn">
+                                                        <span class="oi oi-warning"></span>
+                                                        تا زمانی که متصل نشوید، اعلانی به @ep.ChannelTitle ارسال نمی‌شود.
+                                                    </div>
+                                                }
+
+                                                @if (ep.Available && !connected)
+                                                {
+                                                    <div class="pf-ntf-actions">
+                                                        @if (link == null)
+                                                        {
+                                                            <button class="pf-ntf-btn" disabled="@(isLinking == ep.ChannelKey)" @onclick="() => StartLinkAsync(ep.ChannelKey)">
+                                                                <span class="oi oi-key"></span>
+                                                                @(isLinking == ep.ChannelKey ? "در حال دریافت کد..." : "دریافت کد اتصال")
+                                                            </button>
+                                                            <span class="pf-ntf-hint">یک کد یک‌بارمصرف ۱۵ دقیقه‌ای دریافت می‌کنید و باید آن را در چت ربات بفرستید.</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="pf-ntf-code">
+                                                                <span>کد اتصال:</span>
+                                                                <code dir="ltr">@link.Code</code>
+                                                                <i>@LinkRemainingText(ep.ChannelKey)</i>
+                                                            </div>
+                                                            @if (!string.IsNullOrWhiteSpace(link.BotUrl))
+                                                            {
+                                                                <a class="pf-ntf-btn pf-ntf-btn--open" href="@link.BotUrl" target="_blank" rel="noopener">
+                                                                    <span class="oi oi-external-link"></span> باز کردن ربات @ep.ChannelTitle
+                                                                </a>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="pf-ntf-hint">ربات @ep.ChannelTitle را باز کنید و کد را به‌صورت پیام بفرستید.</span>
+                                                            }
+                                                            <button class="pf-ntf-btn pf-ntf-btn--ghost" disabled="@(isCheckingLink == ep.ChannelKey)" @onclick="() => CheckLinkStatusAsync(ep.ChannelKey)">
+                                                                <span class="oi oi-reload"></span>
+                                                                @(isCheckingLink == ep.ChannelKey ? "در حال بررسی..." : "بررسی وضعیت اتصال")
+                                                            </button>
+                                                            <span class="pf-ntf-hint">پس از فرستادن کد، اتصال معمولاً چند ثانیه بعد برقرار می‌شود (به‌صورت خودکار بررسی می‌کنیم).</span>
+                                                        }
+                                                    </div>
+                                                }
+
+                                                @if (ep.Available && connected)
+                                                {
+                                                    <div class="pf-ntf-actions">
+                                                        <span class="pf-ntf-ok">
+                                                            <span class="oi oi-check"></span>
+                                                            متصل است @(ep.VerifiedAt.HasValue ? $"از {PersianDate.ToJalaliDateTime(ep.VerifiedAt.Value)}" : "")
+                                                        </span>
+                                                        <button class="pf-ntf-btn pf-ntf-btn--danger" disabled="@isSavingNotify" @onclick="() => DisconnectChannelAsync(ep.ChannelKey)">
+                                                            <span class="oi oi-trash"></span> قطع اتصال
+                                                        </button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+
+                                    <div class="pf-ntf-foot">
+                                        <span class="oi oi-shield"></span>
+                                        <span>
+                                            فقط خود اعلان به‌صورت پیام در پیام‌رسان ارسال می‌شود؛ اتصال هر لحظه با «قطع اتصال» قابل لغو است و پیام‌رسان دریافتی در همین سایت همیشه باقی می‌ماند.
+                                        </span>
                                     </div>
                                 }
                             </div>
@@ -2698,6 +2841,139 @@
         }
     }
 
+    /* ═══════════════ NOTIFY SETTINGS ═══════════════ */
+    .pf-ntf-intro {
+        display: flex;
+        gap: 9px;
+        align-items: flex-start;
+        font-size: 0.84rem;
+        line-height: 1.9;
+        color: #555;
+        background: #f8f9fa;
+        border: 1px solid #ececec;
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-bottom: 16px;
+    }
+
+    .pf-ntf-intro .oi { color: #dc3545; margin-top: 3px; }
+
+    .pf-ntf-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .pf-ntf-card {
+        border: 1px solid #ececec;
+        border-radius: 14px;
+        padding: 14px;
+        background: #fff;
+        transition: border-color 0.2s, background 0.2s;
+    }
+
+    .pf-ntf-card.on { border-color: rgba(220, 53, 69, 0.35); background: rgba(220, 53, 69, 0.03); }
+    .pf-ntf-card.off { opacity: 0.6; }
+
+    .pf-ntf-head { display: flex; align-items: center; gap: 11px; }
+
+    .pf-ntf-ic {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: rgba(220, 53, 69, 0.1);
+        color: #dc3545;
+        display: grid;
+        place-items: center;
+        font-size: 1rem;
+        flex-shrink: 0;
+    }
+
+    .pf-ntf-info { flex: 1; min-width: 0; }
+    .pf-ntf-info b { display: block; font-size: 0.92rem; }
+    .pf-ntf-info i { font-style: normal; font-size: 0.76rem; color: #888; }
+
+    .pf-ntf-switch { position: relative; display: inline-block; width: 44px; height: 24px; margin: 0; cursor: pointer; flex-shrink: 0; }
+    .pf-ntf-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .pf-ntf-slider { position: absolute; inset: 0; background: #ccc; border-radius: 999px; transition: background 0.2s; }
+    .pf-ntf-slider::before {
+        content: "";
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        right: 3px;
+        top: 3px;
+        background: #fff;
+        border-radius: 50%;
+        transition: transform 0.2s;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    }
+    .pf-ntf-switch.on .pf-ntf-slider { background: #dc3545; }
+    .pf-ntf-switch.on .pf-ntf-slider::before { transform: translateX(-20px); }
+    .pf-ntf-switch input:disabled + .pf-ntf-slider { opacity: 0.5; cursor: not-allowed; }
+
+    .pf-ntf-warn {
+        display: flex;
+        gap: 7px;
+        align-items: center;
+        font-size: 0.78rem;
+        color: #b45309;
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        border-radius: 10px;
+        padding: 8px 11px;
+        margin-top: 11px;
+    }
+
+    .pf-ntf-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 11px; }
+
+    .pf-ntf-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        border: 1px solid #dc3545;
+        background: #dc3545;
+        color: #fff;
+        border-radius: 9px;
+        padding: 6px 12px;
+        cursor: pointer;
+        transition: filter 0.15s;
+        text-decoration: none;
+    }
+
+    .pf-ntf-btn:hover { filter: brightness(1.07); }
+    .pf-ntf-btn:disabled { opacity: 0.6; cursor: wait; }
+    .pf-ntf-btn--ghost { background: #fff; color: #dc3545; }
+    .pf-ntf-btn--open { background: #0d6efd; border-color: #0d6efd; color: #fff; }
+    .pf-ntf-btn--danger { background: #fff; border-color: #dc3545; color: #dc3545; }
+
+    .pf-ntf-code {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.78rem;
+        background: #f8f9fa;
+        border: 1px dashed #ccc;
+        border-radius: 10px;
+        padding: 6px 11px;
+    }
+
+    .pf-ntf-code code { font-size: 1.05rem; font-weight: 800; letter-spacing: 3px; color: #dc3545; background: transparent; padding: 0; }
+    .pf-ntf-code i { font-style: normal; font-size: 0.72rem; color: #888; }
+
+    .pf-ntf-ok { display: inline-flex; gap: 6px; align-items: center; font-size: 0.78rem; color: #16a34a; font-weight: 700; }
+    .pf-ntf-hint { font-size: 0.72rem; color: #888; flex-basis: 100%; line-height: 1.8; }
+
+    .pf-ntf-foot {
+        display: flex;
+        gap: 7px;
+        align-items: flex-start;
+        font-size: 0.74rem;
+        color: #888;
+        margin-top: 16px;
+        line-height: 1.9;
+    }
+
+    .pf-ntf-foot .oi { color: #16a34a; margin-top: 3px; }
+
     @@media (min-width: 992px) {
         .pf-mobile-topbar { display: none !important; }
     }
@@ -2727,6 +3003,14 @@
     private bool isLoadingOrders = false;
     private bool isLoadingTickets = false;
     private bool isLoadingCoupons = false;
+    private bool isLoadingNotify = false;
+    private bool isSavingNotify = false;
+    private string? isLinking = null;
+    private string? isCheckingLink = null;
+    private UserNotificationSettingsDto? notifySettings;
+    private readonly Dictionary<string, MessengerLinkCodeDto> notifyLinkCodes = new();
+    private readonly Dictionary<string, int> notifyLinkRemaining = new();
+    private bool profileDisposed = false;
     private Dictionary<int, ProductAvailabilityDto> cartAvailability = new();
     private bool showRemoveUnavailableConfirm;
     private bool isCheckingCartAvailability;
@@ -2983,6 +3267,170 @@
         isLoadingCoupons = false;
     }
 
+    private async Task LoadNotifySettingsAsync()
+    {
+        isLoadingNotify = true;
+        try
+        {
+            notifySettings = await Http.GetFromJsonAsync<UserNotificationSettingsDto>("api/notifications/my-settings");
+        }
+        catch { notifySettings = null; }
+        isLoadingNotify = false;
+    }
+
+    private static int NotifyChannelFlag(int channel) => channel switch
+    {
+        1 => NotificationChannelFlags.Bale,
+        2 => NotificationChannelFlags.Telegram,
+        3 => NotificationChannelFlags.Eitaa,
+        _ => 0
+    };
+
+    private static string NotifyIcon(int channel) => channel switch
+    {
+        1 => "oi-chat",
+        2 => "oi-comment-square",
+        _ => "oi-envelope-closed"
+    };
+
+    private bool IsNotifyChannelOn(int channel) =>
+        notifySettings != null && (notifySettings.Channels & NotifyChannelFlag(channel)) != 0;
+
+    private async Task ToggleNotifyChannel(int channel, bool enabled)
+    {
+        if (notifySettings == null) return;
+
+        var mask = NotifyChannelFlag(channel);
+        var channels = enabled
+            ? notifySettings.Channels | mask
+            : notifySettings.Channels & ~mask;
+
+        isSavingNotify = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync("api/notifications/my-settings",
+                new UserNotificationSettingsUpdateRequest { Channels = channels });
+            if (resp.IsSuccessStatusCode)
+            {
+                notifySettings = await resp.Content.ReadFromJsonAsync<UserNotificationSettingsDto>() ?? notifySettings;
+                Toast.ShowSuccess(enabled ? "دریافت اعلان فعال شد." : "دریافت اعلان غیرفعال شد.");
+            }
+            else Toast.ShowError("ذخیره تنظیمات اعلان انجام نشد.");
+        }
+        catch { Toast.ShowError("ارتباط با سرور برقرار نشد."); }
+        finally { isSavingNotify = false; }
+    }
+
+    private async Task StartLinkAsync(string channelKey)
+    {
+        isLinking = channelKey;
+        try
+        {
+            var resp = await Http.PostAsync($"api/notifications/my-settings/link-code/{channelKey}", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<MessengerLinkCodeDto>();
+                if (dto != null)
+                {
+                    notifyLinkCodes[channelKey] = dto;
+                    notifyLinkRemaining[channelKey] = 15 * 60;
+                    _ = MonitorLinkAsync(channelKey);
+                }
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                Toast.ShowError(string.IsNullOrWhiteSpace(msg) ? "دریافت کد اتصال انجام نشد." : msg.Trim('"'));
+            }
+        }
+        catch { Toast.ShowError("ارتباط با سرور برقرار نشد."); }
+        finally { isLinking = null; }
+    }
+
+    private async Task MonitorLinkAsync(string channelKey)
+    {
+        while (!profileDisposed && notifyLinkCodes.ContainsKey(channelKey))
+        {
+            await Task.Delay(3000);
+            if (profileDisposed || !notifyLinkCodes.ContainsKey(channelKey)) return;
+
+            if (notifyLinkRemaining.TryGetValue(channelKey, out var left))
+            {
+                left -= 3;
+                if (left <= 0)
+                {
+                    notifyLinkCodes.Remove(channelKey);
+                    notifyLinkRemaining.Remove(channelKey);
+                    StateHasChanged();
+                    return;
+                }
+                notifyLinkRemaining[channelKey] = left;
+            }
+
+            try
+            {
+                var status = await Http.GetFromJsonAsync<MessengerEndpointDto>($"api/notifications/my-settings/link-status/{channelKey}");
+                if (status != null && status.Connected)
+                {
+                    notifyLinkCodes.Remove(channelKey);
+                    notifyLinkRemaining.Remove(channelKey);
+                    await LoadNotifySettingsAsync();
+                    Toast.ShowSuccess("اتصال برقرار شد.");
+                    StateHasChanged();
+                    return;
+                }
+            }
+            catch { }
+
+            StateHasChanged();
+        }
+    }
+
+    private string LinkRemainingText(string channelKey)
+    {
+        if (!notifyLinkRemaining.TryGetValue(channelKey, out var left) || left <= 0)
+            return "کد منقضی شده؛ کد جدید بگیرید.";
+        return $"اعتبار تا {(left / 60):00}:{(left % 60):00}";
+    }
+
+    private async Task CheckLinkStatusAsync(string channelKey)
+    {
+        isCheckingLink = channelKey;
+        try
+        {
+            var status = await Http.GetFromJsonAsync<MessengerEndpointDto>($"api/notifications/my-settings/link-status/{channelKey}");
+            if (status != null && status.Connected)
+            {
+                notifyLinkCodes.Remove(channelKey);
+                notifyLinkRemaining.Remove(channelKey);
+                await LoadNotifySettingsAsync();
+                Toast.ShowSuccess("اتصال برقرار شد.");
+            }
+            else Toast.ShowWarning("اتصال هنوز برقرار نشده؛ کد را در چت ربات بفرستید.");
+        }
+        catch { Toast.ShowError("ارتباط با سرور برقرار نشد."); }
+        finally { isCheckingLink = null; }
+    }
+
+    private async Task DisconnectChannelAsync(string channelKey)
+    {
+        isSavingNotify = true;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/notifications/my-settings/endpoint/{channelKey}");
+            if (resp.IsSuccessStatusCode)
+            {
+                notifyLinkCodes.Remove(channelKey);
+                notifyLinkRemaining.Remove(channelKey);
+                notifySettings = await resp.Content.ReadFromJsonAsync<UserNotificationSettingsDto>() ?? notifySettings;
+                Toast.ShowSuccess("اتصال قطع شد.");
+            }
+            else Toast.ShowError("قطع اتصال انجام نشد.");
+        }
+        catch { Toast.ShowError("ارتباط با سرور برقرار نشد."); }
+        finally { isSavingNotify = false; }
+    }
+
     private async Task RemoveFromWishlist(int productId)
     {
         await Ws.RemoveAsync(productId);
@@ -2995,6 +3443,7 @@
 
     public void Dispose()
     {
+        profileDisposed = true;
         Ws.OnChange -= OnWishlistChanged;
         Cart.OnChange -= OnCartChanged;
     }
@@ -3250,6 +3699,9 @@
         }
         else if (tab == "coupons" && !myCoupons.Any()) {
             await LoadCouponsAsync();
+        }
+        else if (tab == "notify" && notifySettings == null) {
+            await LoadNotifySettingsAsync();
         }
         else if (tab == "cart") {
             isCartLoading = true;

@@ -157,6 +157,22 @@
                             <input type="text" class="form-control form-control-sm" @bind="_siteEitaaGroupId" placeholder="-123456789"/>
                         </div>
                     }
+                    <div class="border-top pt-2 mt-2">
+                        <div class="fw-bold small mb-2">ارسال اعلان خودکار</div>
+                        <p class="text-muted small mb-2">فعال‌سازی زیر فقط امکان ارسال اعلان‌ها از این پیام‌رسان را باز می‌کند؛ هر کاربر در «تنظیمات اعلان» پروفایل خود انتخاب می‌کند کدام پیام‌رسان دریافت کند.</p>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chkNotifyBale" @bind="_siteNotifyBale" />
+                            <label class="form-check-label small" for="chkNotifyBale">ارسال اعلان از طریق بله</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chkNotifyTelegram" @bind="_siteNotifyTelegram" />
+                            <label class="form-check-label small" for="chkNotifyTelegram">ارسال اعلان از طریق تلگرام</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chkNotifyEitaa" @bind="_siteNotifyEitaa" />
+                            <label class="form-check-label small" for="chkNotifyEitaa">ارسال اعلان از طریق ایتا</label>
+                        </div>
+                    </div>
                     @if (_settingsLoading)
                     {
                         <div class="text-muted small">در حال بارگذاری تنظیمات...</div>
@@ -1053,6 +1069,9 @@
     private bool _siteEnableEitaa;
     private string _siteEitaaToken = "";
     private string _siteEitaaGroupId = "";
+    private bool _siteNotifyBale = true;
+    private bool _siteNotifyTelegram = true;
+    private bool _siteNotifyEitaa = true;
     private bool _siteEnableAi;
     private string _siteAiProvider = "";
     private string _siteAiApiUrl = "";
@@ -1837,6 +1856,9 @@
             _siteEnableEitaa = s.TryGetProperty("enableEitaaChat", out var ee) && ee.GetBoolean();
             _siteEitaaToken = s.TryGetProperty("eitaaBotToken", out var etk) ? etk.GetString() ?? "" : "";
             _siteEitaaGroupId = s.TryGetProperty("eitaaGroupId", out var eg) ? eg.GetString() ?? "" : "";
+            _siteNotifyBale = !s.TryGetProperty("enableBaleNotifications", out var enb) || enb.GetBoolean();
+            _siteNotifyTelegram = !s.TryGetProperty("enableTelegramNotifications", out var ent) || ent.GetBoolean();
+            _siteNotifyEitaa = !s.TryGetProperty("enableEitaaNotifications", out var ene) || ene.GetBoolean();
             _siteWelcomeMessage = s.TryGetProperty("welcomeMessage", out var wm) ? wm.GetString() ?? "" : "";
             _siteEnableAutoMessage = s.TryGetProperty("enableAutoMessage", out var am) && am.GetBoolean();
             _siteAutoMessageSeconds = s.TryGetProperty("autoMessageSeconds", out var aSec) ? aSec.GetInt32() : 60;
@@ -1869,6 +1891,9 @@
                 enableEitaaChat = _siteEnableEitaa,
                 eitaaBotToken = _siteEitaaToken,
                 eitaaGroupId = _siteEitaaGroupId,
+                enableBaleNotifications = _siteNotifyBale,
+                enableTelegramNotifications = _siteNotifyTelegram,
+                enableEitaaNotifications = _siteNotifyEitaa,
                 welcomeMessage = _siteWelcomeMessage,
                 enableAutoMessage = _siteEnableAutoMessage,
                 autoMessageSeconds = _siteAutoMessageSeconds,
