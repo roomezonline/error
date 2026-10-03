@@ -67,13 +67,21 @@
             var result = await Auth.UnifiedLoginAsync(model);
             AuthStateProvider.NotifyAuthStateChanged();
             Toast.ShowSuccess("با موفقیت وارد شدید");
-            if (result.UserType == "workshop")
+
+            var loginIdentity = ErrorService.Client.Services.JwtParser.ParseClaimsFromJwt(result.Token);
+            var hasSiteIdentity = loginIdentity.Claims.Any(c => c.Type == ClaimTypes.NameIdentifier);
+
+            if (!hasSiteIdentity)
             {
-                Nav.NavigateTo(returnUrl != null && returnUrl.StartsWith("/admin") ? returnUrl : "/admin");
+                Nav.NavigateTo("/admin");
             }
             else if (!string.IsNullOrWhiteSpace(returnUrl) && returnUrl.StartsWith("/"))
             {
                 Nav.NavigateTo(returnUrl);
+            }
+            else if (result.UserType == "workshop")
+            {
+                Nav.NavigateTo("/admin");
             }
             else
             {

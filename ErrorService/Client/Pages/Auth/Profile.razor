@@ -3311,8 +3311,8 @@
             var identity = JwtParser.ParseClaimsFromJwt(token);
             if (!identity.Claims.Any(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier))
             {
-                Toast.ShowError("با حساب کارگاه وارد شده‌اید؛ پروفایل کاربری فقط برای حساب کاربری سایت است.");
-                Nav.NavigateTo("/admin");
+                Toast.ShowError("نشست شما قدیمی است؛ لطفاً دوباره وارد شوید.");
+                Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString("/profile")}");
                 return;
             }
         }

@@ -99,105 +99,66 @@ public class AuthController : ControllerBase
     {
         var phone = request.PhoneNumber.Trim();
 
-        // Find user in both tables simultaneously
         var user = await _db.Users.FirstOrDefaultAsync(x => x.PhoneNumber == phone);
         var workshopUser = await _db.WorkshopUsers.FirstOrDefaultAsync(x => x.PhoneNumber == phone);
 
-        // Neither exists
         if (user == null && workshopUser == null)
             return BadRequest("موبایل یا رمز عبور اشتباه است");
 
-        // Site user exists — verify password
-        if (user != null)
-        {
-            if (!user.IsActive)
-                return BadRequest("حساب کاربری غیرفعال است");
-
-            var siteResult = _userHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
-            if (siteResult == PasswordVerificationResult.Failed)
-            {
-                // If workshop user also exists, try workshop password before failing
-                if (workshopUser != null)
-                {
-                    var wsVerify = _workshopHasher.VerifyHashedPassword(workshopUser, workshopUser.PasswordHash, request.Password);
-                    if (wsVerify == PasswordVerificationResult.Failed)
-                        return BadRequest("موبایل یا رمز عبور اشتباه است");
-
-                    if (!workshopUser.IsActive)
-                        return BadRequest("حساب کاربری غیرفعال است");
-
-                    var wsToken = await _jwt.CreateWorkshopTokenAsync(workshopUser);
-                    return Ok(new UnifiedAuthResponse
-                    {
-                        Token = wsToken,
-                        UserType = "workshop",
-                        FullName = workshopUser.FullName,
-                        PhoneNumber = workshopUser.PhoneNumber
-                    });
-                }
-                return BadRequest("موبایل یا رمز عبور اشتباه است");
-            }
-
-            // Site user password matched
-            // Check if user has super_admin role — super_admins ALWAYS get a site token
-            var hasSuperAdmin = await _db.AppUserRoles
-                .AnyAsync(x => x.UserId == user.Id && x.Role.Key == "super_admin");
-
-            if (hasSuperAdmin)
-            {
-                var token = await _jwt.CreateTokenAsync(user);
-                return Ok(new UnifiedAuthResponse
-                {
-                    Token = token,
-                    UserType = "site_user",
-                    FullName = user.FullName,
-                    PhoneNumber = user.PhoneNumber
-                });
-            }
-
-            // Non-super-admin site user: if they also have a workshop account, give workshop token
-            if (workshopUser != null)
-            {
-                var wsVerify = _workshopHasher.VerifyHashedPassword(workshopUser, workshopUser.PasswordHash, request.Password);
-                if (wsVerify != PasswordVerificationResult.Failed && workshopUser.IsActive)
-                {
-                    var wsToken = await _jwt.CreateWorkshopTokenAsync(workshopUser);
-                    return Ok(new UnifiedAuthResponse
-                    {
-                        Token = wsToken,
-                        UserType = "workshop",
-                        FullName = workshopUser.FullName,
-                        PhoneNumber = workshopUser.PhoneNumber
-                    });
-                }
-            }
-
-            // Regular site user only
-            var siteToken = await _jwt.CreateTokenAsync(user);
-            return Ok(new UnifiedAuthResponse
-            {
-                Token = siteToken,
-                UserType = "site_user",
-                FullName = user.FullName,
-                PhoneNumber = user.PhoneNumber
-            });
-        }
-
-        // Only workshop user exists
-        if (!workshopUser!.IsActive)
+        if (user != null && !user.IsActive)
             return BadRequest("حساب کاربری غیرفعال است");
 
-        var verify = _workshopHasher.VerifyHashedPassword(workshopUser, workshopUser.PasswordHash, request.Password);
-        if (verify == PasswordVerificationResult.Failed)
+        if (user == null && workshopUser != null && !workshopUser.IsActive)
+            return BadRequest("حساب کاربری غیرفعال است");
+
+        var siteMatch = user != null
+            && _userHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password) != PasswordVerificationResult.Failed;
+
+        var workshopMatch = workshopUser != null && workshopUser.IsActive
+            && _workshopHasher.VerifyHashedPassword(workshopUser, workshopUser.PasswordHash, request.Password) != PasswordVerificationResult.Failed;
+
+        if (!siteMatch && !workshopMatch)
             return BadRequest("موبایل یا رمز عبور اشتباه است");
 
-        var token2 = await _jwt.CreateWorkshopTokenAsync(workshopUser);
+        if (workshopUser != null && !workshopUser.IsActive)
+            workshopUser = null;
+
+        // Workshop-only member: auto-create the site side so profile/cart/notifications work too.
+        if (user == null)
+        {
+            user = new AppUser
+            {
+                FullName = workshopUser!.FullName.Trim(),
+                PhoneNumber = phone,
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            user.PasswordHash = _userHasher.HashPassword(user, Guid.NewGuid().ToString("N"));
+            _db.Users.Add(user);
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                user = await _db.Users.FirstAsync(x => x.PhoneNumber == phone);
+            }
+        }
+
+        var token = workshopUser != null
+            ? await _jwt.CreateCombinedTokenAsync(user, workshopUser)
+            : await _jwt.CreateTokenAsync(user);
+
+        var siteRoleCount = await _db.AppUserRoles
+            .CountAsync(x => x.UserId == user.Id);
+
         return Ok(new UnifiedAuthResponse
         {
-            Token = token2,
-            UserType = "workshop",
-            FullName = workshopUser.FullName,
-            PhoneNumber = workshopUser.PhoneNumber
+            Token = token,
+            UserType = workshopUser != null && siteRoleCount == 0 ? "workshop" : "site_user",
+            FullName = user.FullName,
+            PhoneNumber = user.PhoneNumber
         });
     }
 
@@ -205,7 +166,26 @@ public class AuthController : ControllerBase
     [HttpGet("me")]
     public async Task<ActionResult<UserProfileDto>> Me()
     {
-        // Check if this is a workshop token (no NameIdentifier claim)
+        // Site identity wins when present (combined tokens carry both sides).
+        var userIdStr = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrWhiteSpace(userIdStr) && int.TryParse(userIdStr, out var siteUserId))
+        {
+            var user = await _db.Users.FindAsync(siteUserId);
+            if (user != null)
+            {
+                return Ok(new UserProfileDto
+                {
+                    Id = user.Id,
+                    FullName = user.FullName,
+                    PhoneNumber = user.PhoneNumber,
+                    Email = user.Email,
+                    Address = user.Address,
+                    PostalCode = user.PostalCode
+                });
+            }
+        }
+
+        // Pure workshop token (legacy sessions without a site identity).
         var workshopIdStr = User.FindFirst("workshop_user_id")?.Value;
         if (!string.IsNullOrWhiteSpace(workshopIdStr) && int.TryParse(workshopIdStr, out var workshopUserId))
         {
@@ -219,19 +199,7 @@ public class AuthController : ControllerBase
             });
         }
 
-        var userId = GetUserId();
-        var user = await _db.Users.FindAsync(userId);
-        if (user == null) return Unauthorized();
-
-        return Ok(new UserProfileDto 
-        { 
-            Id = user.Id, 
-            FullName = user.FullName, 
-            PhoneNumber = user.PhoneNumber,
-            Email = user.Email,
-            Address = user.Address,
-            PostalCode = user.PostalCode
-        });
+        return Unauthorized();
     }
 
     [Authorize]

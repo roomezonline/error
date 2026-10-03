@@ -53,8 +53,13 @@ public class AuthService
         var resp = await _http.PostAsJsonAsync("api/auth/unified-login", request);
         var body = await ReadOrThrow<UnifiedAuthResponse>(resp);
 
-        var storageKey = body.UserType == "workshop" ? "workshop_token" : TokenKey;
+        var identity = JwtParser.ParseClaimsFromJwt(body.Token);
+        var hasSiteIdentity = identity.Claims.Any(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier);
+
+        var storageKey = hasSiteIdentity ? TokenKey : "workshop_token";
         await _storage.SetAsync(storageKey, body.Token);
+        if (hasSiteIdentity)
+            await _storage.RemoveAsync("workshop_token");
         ApplyTokenToHttp(body.Token);
         AuthStateProvider.NotifyAuthStateChanged();
 
