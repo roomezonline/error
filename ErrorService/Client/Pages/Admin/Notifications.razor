@@ -1741,7 +1741,8 @@
                     TitleTemplate = r.TitleTemplate.Trim(),
                     BodyTemplate = r.BodyTemplate.Trim(),
                     ActionUrlTemplate = string.IsNullOrWhiteSpace(r.ActionUrlTemplate) ? null : r.ActionUrlTemplate.Trim(),
-                    BroadcastToAdmins = r.BroadcastToAdmins
+                    BroadcastToAdmins = r.BroadcastToAdmins,
+                    Channels = r.Channels
                 });
             if (!resp.IsSuccessStatusCode)
             {
@@ -1759,6 +1760,7 @@
                 r.Id = updated.Id;
                 r.Group = updated.Group;
                 r.Label = updated.Label;
+                r.Channels = updated.Channels;
                 r.Placeholders = updated.Placeholders;
                 r.UpdatedAt = updated.UpdatedAt;
             }
