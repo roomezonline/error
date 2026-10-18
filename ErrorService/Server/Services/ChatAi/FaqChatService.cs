@@ -17,7 +17,7 @@ public sealed class FaqChatService : IChatAiService
 
     public string Name => "پاسخ‌گوی خودکار (سوالات پرتکرار)";
 
-    public async Task<string?> GetReplyAsync(string userMessage, string operatorName)
+    public async Task<string?> GetReplyAsync(string userMessage, string operatorName, IReadOnlyList<ChatAiTurn>? history = null)
     {
         try
         {

@@ -63,6 +63,16 @@ public class CartController : ControllerBase
         if (toRemove.Count > 0)
             _db.CartItems.RemoveRange(toRemove);
 
+        // Batch-load the products we may need instead of one FindAsync per item (N+1).
+        var missingIds = normalized
+            .Where(n => serverItems.All(s => s.ProductId != n.ProductId))
+            .Select(n => n.ProductId)
+            .Distinct()
+            .ToList();
+        var missingProducts = missingIds.Count == 0
+            ? new Dictionary<int, Product>()
+            : await _db.Products.Where(p => missingIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+
         foreach (var n in normalized)
         {
             var existing = serverItems.FirstOrDefault(s => s.ProductId == n.ProductId);
@@ -73,19 +83,17 @@ public class CartController : ControllerBase
             }
             else
             {
-                var product = await _db.Products.FindAsync(n.ProductId);
-                if (product != null)
+                if (!missingProducts.TryGetValue(n.ProductId, out var product) || product.IsDraft) continue;
+
+                _db.CartItems.Add(new CartItem
                 {
-                    _db.CartItems.Add(new CartItem
-                    {
-                        UserId = userId,
-                        ProductId = n.ProductId,
-                        ProductName = product.Name,
-                        ImageUrl = product.MainImageUrl,
-                        Price = DiscountHelper.IsActive(product) ? product.DiscountPrice!.Value : product.Price,
-                        Quantity = n.Quantity
-                    });
-                }
+                    UserId = userId,
+                    ProductId = n.ProductId,
+                    ProductName = product.Name,
+                    ImageUrl = product.MainImageUrl,
+                    Price = DiscountHelper.IsActive(product) ? product.DiscountPrice!.Value : product.Price,
+                    Quantity = n.Quantity
+                });
             }
         }
 
@@ -109,7 +117,7 @@ public class CartController : ControllerBase
         else
         {
             var product = await _db.Products.FindAsync(item.ProductId);
-            if (product == null) return NotFound();
+            if (product == null || product.IsDraft) return NotFound();
 
             _db.CartItems.Add(new CartItem
             {

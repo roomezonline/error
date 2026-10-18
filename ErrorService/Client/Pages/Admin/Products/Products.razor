@@ -1,948 +1,2742 @@
-@page "/admin/products"
-@layout AdminLayout
-@using Microsoft.AspNetCore.Authorization
-@attribute [Authorize(Policy = "perm:admin.products.manage")]
-@using ErrorService.Shared
-@using System.Net.Http.Json
-@using Microsoft.AspNetCore.Components.Forms
-@using ErrorService.Client.Utils
-
-@using ErrorService.Client.Services
-@implements IDisposable
-@inject IJSRuntime JS
-@inject ToastService ToastService
+@page "/admin/products"
+@page "/admin/products/edit/{Id:int}"
+@page "/admin/products/new"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.products.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Client.Utils
+
+@using ErrorService.Client.Services
+@implements IDisposable
+@inject IJSRuntime JS
+@inject ToastService ToastService
+@inject NavigationManager NavManager
 
 <PageTitle>محصولات | ارورسرویس</PageTitle>
-
-<div class="admin-container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3 class="admin-page-title m-0">مدیریت محصولات</h3>
-        <button class="btn btn-primary shadow-sm rounded-3" @onclick="NewProduct">
-            <span class="oi oi-plus me-1"></span> افزودن محصول جدید
-        </button>
-    </div>
-
-    <ConfirmDialog IsVisible="showConfirm" 
-                   Title="حذف محصول" 
-                   Message=@($"آیا از حذف محصول \"{itemToDelete?.Name}\" اطمینان دارید؟")
-                   OnResult="HandleDeleteResult" />
-
-    @if (showEditor)
-    {
-        <div @ref="editorCard" class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h5 class="m-0">@(editingId == 0 ? "ایجاد محصول جدید" : "ویرایش محصول")</h5>
-                <button class="btn-close" @onclick="CloseEditor"></button>
-            </div>
-
-            <EditForm Model="model" OnValidSubmit="SaveProduct">
-                <DataAnnotationsValidator />
-                <div class="row g-3">
-                    <div class="col-md-8">
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">نام محصول</label>
-                            <InputText @bind-Value="model.Name" class="form-control rounded-3" />
-                            <ValidationMessage For="@(() => model.Name)" class="text-danger small" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">کد محصول - SKU (اختیاری)</label>
-                            <InputText @bind-Value="model.Sku" class="form-control rounded-3 ltr" placeholder="مثال: ERR-SENS-001" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">توضیحات</label>
-                            <div class="editor-container">
-                                <textarea id="tiny-editor-product" class="form-control">@model.Description</textarea>
-                            </div>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">قیمت (تومان)</label>
-                                <input type="text" class="form-control rounded-3 price-input-ltr" id="price-input"
-                                       value="@(model.Price > 0 ? model.Price.ToString("N0") : "")" />
-                                <ValidationMessage For="@(() => model.Price)" class="text-danger small" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">نوع تخفیف</label>
-                                <div class="d-flex gap-3 flex-wrap align-items-center pt-1">
-                                    <label class="form-check form-check-inline m-0">
-                                        <input type="radio" class="form-check-input" name="discountType" value="" checked="@(discountTypeInput == DiscountTypeNone)" @onchange="() => SetDiscountType(DiscountTypeNone)" />
-                                        <span class="form-check-label small fw-bold">بدون تخفیف</span>
-                                    </label>
-                                    <label class="form-check form-check-inline m-0">
-                                        <input type="radio" class="form-check-input" name="discountType" value="permanent" checked="@(discountTypeInput == DiscountTypePermanent)" @onchange="() => SetDiscountType(DiscountTypePermanent)" />
-                                        <span class="form-check-label small fw-bold">دائمی</span>
-                                    </label>
-                                    <label class="form-check form-check-inline m-0">
-                                        <input type="radio" class="form-check-input" name="discountType" value="timed" checked="@(discountTypeInput == DiscountTypeTimed)" @onchange="() => SetDiscountType(DiscountTypeTimed)" />
-                                        <span class="form-check-label small fw-bold">زمان‌دار</span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        @if (discountTypeInput == "permanent" || discountTypeInput == "timed")
-                        {
-                            <div class="row g-3 mt-2">
-                                <div class="col-md-6">
-                                    <label class="form-label fw-bold">قیمت با تخفیف</label>
-                                    <input type="text" class="form-control rounded-3 price-input-ltr" id="discount-price-input"
-                                           value="@(model.DiscountPrice.HasValue ? model.DiscountPrice.Value.ToString("N0") : "")" />
-                                </div>
-                            </div>
-                        }
-                        @if (discountTypeInput == "timed")
-                        {
-                            <div class="row g-3 mt-2">
-                                <div class="col-md-6">
-                                    <label class="form-label fw-bold">تاریخ شروع تخفیف</label>
-                                    <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="discountStartInput" />
-                                    <div class="text-muted small mt-1">در صورت خالی بودن، از همین حالا فعال است.</div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label fw-bold">تاریخ پایان تخفیف <span class="text-danger">*</span></label>
-                                    <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="discountExpiryInput" />
-                                    <div class="text-muted small mt-1">پس از این تاریخ، قیمت اصلی نمایش داده می‌شود.</div>
-                                </div>
-                            </div>
-                        }
-                        <div class="row g-3 mt-2">
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">تاریخ و ساعت ایجاد محصول</label>
-                                <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="createdAtInput" />
-                                <div class="text-muted small mt-1">در صورت خالی بودن، زمان فعلی ثبت می‌شود.</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">دسته‌بندی</label>
-                            <InputSelect @bind-Value="model.CategoryId" class="form-select rounded-3">
-                                <option value="0">انتخاب کنید...</option>
-                                @if (categories != null)
-                                {
-                                    @foreach (var cat in categories)
-                                    {
-                                        <option value="@cat.Id">@cat.Name</option>
-                                    }
-                                }
-                            </InputSelect>
-                            <ValidationMessage For="@(() => model.CategoryId)" class="text-danger small" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">تصاویر محصول (حداکثر 4 عدد)</label>
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <ImageUploader @bind-ImageUrl="model.MainImageUrl" UploadUrl="api/products/upload" ShowCamera="false" />
-                                    <div class="text-center small text-muted">تصویر اصلی</div>
-                                </div>
-                                <div class="col-6">
-                                    <ImageUploader @bind-ImageUrl="model.ImageUrl2" UploadUrl="api/products/upload" ShowCamera="false" />
-                                    <div class="text-center small text-muted">تصویر 2</div>
-                                </div>
-                                <div class="col-6">
-                                    <ImageUploader @bind-ImageUrl="model.ImageUrl3" UploadUrl="api/products/upload" ShowCamera="false" />
-                                    <div class="text-center small text-muted">تصویر 3</div>
-                                </div>
-                                <div class="col-6">
-                                    <ImageUploader @bind-ImageUrl="model.ImageUrl4" UploadUrl="api/products/upload" ShowCamera="false" />
-                                    <div class="text-center small text-muted">تصویر 4</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="form-check form-switch mt-4">
-                            <InputCheckbox @bind-Value="model.IsAvailable" class="form-check-input" id="isAvailable" />
-                            <label class="form-check-label fw-bold" for="isAvailable">قابل فروش</label>
-                        </div>
-                        <div class="form-check form-switch mt-3">
-                            <InputCheckbox @bind-Value="model.IsFeatured" class="form-check-input" id="isFeatured" />
-                            <label class="form-check-label fw-bold" for="isFeatured">محصول مهم (نمایش در هیرو و صفحه اصلی)</label>
-                        </div>
-                        <div class="mt-3">
-                            <label class="form-label fw-bold">موجودی انبار (تعداد)</label>
-                            <InputNumber @bind-Value="model.StockQuantity" class="form-control rounded-3" min="0" />
-                            <div class="text-muted small mt-1">در صورت ۰ بودن، محصول به صورت خودکار غیرفعال می‌شود.</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="mt-4 pt-3 border-top">
-                    <button type="button" class="btn btn-sm btn-outline-secondary rounded-3 px-3" @onclick="() => showTechnical = !showTechnical">
-                        <span class="oi oi-@(showTechnical ? "chevron-top" : "chevron-bottom") me-1"></span>
-                        اطلاعات فنی
-                    </button>
-                    @if (showTechnical)
-                    {
-                        <div class="row g-3 mt-2">
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">اطلاعات سازگاری</label>
-                                <InputTextArea @bind-Value="model.CompatibilityInfo" class="form-control rounded-3" rows="3" placeholder="برندها و مدل‌های سازگار با این قطعه" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">علائم خرابی</label>
-                                <InputTextArea @bind-Value="model.FailureSymptoms" class="form-control rounded-3" rows="3" placeholder="علائمی که نشان می‌دهد این قطعه خراب است" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">لینک دیتاشیت (PDF)</label>
-                                <InputText @bind-Value="model.DatasheetUrl" class="form-control rounded-3" placeholder="https://example.com/datasheet.pdf" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">شناسه محصولات مرتبط</label>
-                                <InputText @bind-Value="model.RelatedProductIds" class="form-control rounded-3" placeholder="مثال: 5,12,23" />
-                                <div class="text-muted small mt-1">شناسه عددی محصولات مرتبط را با کاما جدا کنید.</div>
-                            </div>
-                        </div>
-                    }
-                </div>
-
-                <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
-                    <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseEditor">انصراف</button>
-                    <button type="submit" class="btn btn-primary rounded-3 px-4" disabled="@(isSaving || isUploading)">
-                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
-                        ذخیره نهایی محصول
-                    </button>
-                </div>
-            </EditForm>
-        </div>
-    }
-
-    <div class="admin-toolbar">
-        <div class="search-box">
-            <svg class="search-box__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-                <circle cx="11" cy="11" r="8"/>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            <input type="text" class="search-box__input" placeholder="جستجوی محصول..." 
-                   value="@_searchQuery" @oninput="OnSearchInput" />
-            @if (!string.IsNullOrEmpty(_searchQuery))
-            {
-                <button class="search-box__clear" @onclick="ClearSearch">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
-            }
-        </div>
-        <button type="button" class="stock-filter-chip @(_showLowStockOnly ? "stock-filter-chip--active" : "")" @onclick="ToggleLowStock">
-            <span class="oi oi-@(_showLowStockOnly ? "check" : "warning") me-1"></span>
-            موجودی کم (≤ ۵)
-        </button>
-        <button type="button" class="stock-filter-chip @(_showFeaturedOnly ? "stock-filter-chip--active" : "")" @onclick="ToggleFeaturedFilter">
-            <span class="oi oi-@(_showFeaturedOnly ? "check" : "star") me-1"></span>
-            فقط مهم‌ها
-        </button>
-        @if (products != null)
-        {
-            <span class="admin-toolbar__count">@FilteredProducts.Count از @totalCount محصول</span>
-        }
-    </div>
-
-    <div class="product-grid">
-        @if (products == null)
-        {
-            <div class="product-grid__empty">
-                <div class="spinner-border text-primary"></div>
-            </div>
-        }
-        else if (!products.Any())
-        {
-            <div class="product-grid__empty">
-                <span class="oi oi-cart" style="font-size: 2rem; opacity: 0.3;"></span>
-                <p class="text-muted mt-2 mb-0">هیچ محصولی یافت نشد.</p>
-            </div>
-        }
-        else if (!FilteredProducts.Any())
-        {
-            <div class="product-grid__empty">
-                <span class="oi oi-magnifying-glass" style="font-size: 2rem; opacity: 0.3;"></span>
-                <p class="text-muted mt-2 mb-0">محصولی با این عبارت یافت نشد.</p>
-            </div>
-        }
-        else
-        {
-            @foreach (var prod in FilteredProducts)
-            {
-                <div class="product-card">
-                    <div class="product-card__top">
-                        <div class="product-card__thumb">
-                            @if (!string.IsNullOrEmpty(prod.MainImageUrl))
-                            {
-                                <img src="@prod.MainImageUrl" onerror="this.src='/images/placeholder-product.svg'" />
-                            }
-                            else
-                            {
-                                <div class="product-card__thumb--empty">
-                                    <span class="oi oi-image"></span>
-                                </div>
-                            }
-                        </div>
-                        <div class="product-card__info">
-                            <div class="d-flex align-items-center gap-2 flex-wrap">
-                                <div class="product-card__name">@prod.Name</div>
-                                @if (prod.IsFeatured)
-                                {
-                                    <span class="badge bg-warning text-dark rounded-pill" title="محصول مهم">
-                                        <span class="oi oi-star"></span> مهم
-                                    </span>
-                                }
-                            </div>
-                            <div class="product-card__id">کد: #@prod.Id@(!string.IsNullOrWhiteSpace(prod.Sku) ? $" • {prod.Sku}" : "")</div>
-                            <div class="product-card__views"><span class="oi oi-eye"></span> @prod.ViewCount.ToString("N0") بازدید</div>
-                        </div>
-                        <span class="product-card__status @(prod.IsAvailable ? "status-available" : "status-unavailable")">
-                            @(prod.IsAvailable ? $"موجود ({prod.StockQuantity} عدد)" : "ناموجود")
-                        </span>
-                    </div>
-                    <div class="product-card__body">
-                        <div class="product-card__row">
-                            <span class="product-card__label">دسته‌بندی</span>
-                            <span class="product-card__value">@prod.CategoryName</span>
-                        </div>
-                        <div class="product-card__row">
-                            <span class="product-card__label">قیمت</span>
-                            <span class="product-card__value">
-                                @if (DiscountHelper.IsActive(prod))
-                                {
-                                    <span class="text-decoration-line-through text-muted ms-2" style="font-size:0.75rem;">@prod.Price.ToString("N0")</span>
-                                    <span class="fw-bold text-success">@DiscountHelper.GetEffectivePrice(prod).ToString("N0") <small>تومان</small></span>
-                                }
-                                else
-                                {
-                                    <span class="fw-bold">@prod.Price.ToString("N0") <small>تومان</small></span>
-                                }
-                            </span>
-                        </div>
-                        <div class="product-card__row">
-                            <span class="product-card__label">تخفیف</span>
-                            <span class="product-card__value">
-                                @if (DiscountHelper.IsTimedActive(prod))
-                                {
-                                    <span class="badge bg-primary rounded-pill">زمان‌دار تا @prod.DiscountExpiryDate!.Value.ToString("yyyy/MM/dd HH:mm")</span>
-                                }
-                                else if (DiscountHelper.IsPermanentActive(prod))
-                                {
-                                    <span class="badge bg-info text-dark rounded-pill">دائمی</span>
-                                }
-                                else if (DiscountHelper.IsExpired(prod))
-                                {
-                                    <span class="badge bg-danger rounded-pill">منقضی</span>
-                                }
-                                else if (DiscountHelper.IsScheduled(prod))
-                                {
-                                    <span class="badge bg-secondary rounded-pill">شروع نشده</span>
-                                }
-                                else
-                                {
-                                    <span class="text-muted small">—</span>
-                                }
-                            </span>
-                        </div>
-                    </div>
-                    <div class="product-card__actions">
-                        <button class="btn-icon btn-icon--edit" title="ویرایش" @onclick="() => EditProduct(prod)">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                            </svg>
-                        </button>
-                        <button class="btn-icon btn-icon--delete" title="حذف" @onclick="() => DeleteProduct(prod)">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-                                <polyline points="3 6 5 6 21 6"/>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                <line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-            }
-        }
-    </div>
-
-    @if (products != null && products.Count < totalCount)
-    {
-        <div class="text-center p-3">
-            <button class="btn btn-outline-primary btn-sm rounded-pill px-4" @onclick="() => LoadProducts(true)" disabled="@isLoadingMore">
-                @if (isLoadingMore)
-                {
-                    <span class="spinner-border spinner-border-sm me-1"></span>
-                }
-                مشاهده بیشتر (@(totalCount - products.Count) مورد باقی‌مانده)
-            </button>
-        </div>
-    }
-</div>
-
-<style>
-    .object-fit-cover { object-fit: cover; }
-    .bg-success-subtle { background-color: #d1e7dd; }
-    .bg-danger-subtle { background-color: #f8d7da; }
-    .price-input-ltr { direction: ltr; text-align: left; }
-
-    .admin-toolbar {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 20px;
-    }
-    .admin-toolbar__count {
-        font-size: 0.85rem;
-        color: #64748b;
-        white-space: nowrap;
-    }
-    .search-box {
-        position: relative;
-        flex: 1;
-        max-width: 360px;
-    }
-    .stock-filter-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 8px 14px;
-        border: 1px solid #e2e8f0;
-        background: #fff;
-        color: #94a3b8;
-        border-radius: 999px;
-        font-size: 0.78rem;
-        font-weight: 800;
-        white-space: nowrap;
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-    .stock-filter-chip--active {
-        background: #fef3c7;
-        border-color: #f59e0b;
-        color: #b45309;
-    }
-    .search-box__icon {
-        position: absolute;
-        right: 14px;
-        top: 50%;
-        transform: translateY(-50%);
-        color: #94a3b8;
-        pointer-events: none;
-    }
-    .search-box__input {
-        width: 100%;
-        padding: 8px 42px 8px 42px;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        font-size: 0.9rem;
-        background: #fff;
-        outline: none;
-        transition: border-color 0.2s;
-    }
-    .search-box__input:focus {
-        border-color: #2563eb;
-        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-    }
-    .search-box__clear {
-        position: absolute;
-        left: 8px;
-        top: 50%;
-        transform: translateY(-50%);
-        background: none;
-        border: none;
-        color: #94a3b8;
-        cursor: pointer;
-        padding: 4px;
-        display: flex;
-    }
-    .search-box__clear:hover { color: #64748b; }
-
-    .product-grid {
-        display: grid;
-        gap: 12px;
-    }
-    .product-grid__empty {
-        grid-column: 1 / -1;
-        text-align: center;
-        padding: 48px 16px;
-        background: #fff;
-        border-radius: 16px;
-        border: 1px solid #f1f5f9;
-    }
-
-    .product-card {
-        background: #fff;
-        border: 1px solid #f1f5f9;
-        border-radius: 14px;
-        overflow: hidden;
-        transition: box-shadow 0.2s, transform 0.2s;
-    }
-    .product-card:hover {
-        box-shadow: 0 4px 16px rgba(0,0,0,0.06);
-        transform: translateY(-1px);
-    }
-    .product-card__top {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 14px 14px 0;
-    }
-    .product-card__thumb {
-        width: 48px;
-        height: 48px;
-        border-radius: 10px;
-        overflow: hidden;
-        background: #f8fafc;
-        flex-shrink: 0;
-    }
-    .product-card__thumb img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-    .product-card__thumb--empty {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #cbd5e1;
-        font-size: 1.2rem;
-        background: #f8fafc;
-        border: 1px dashed #e2e8f0;
-        border-radius: 10px;
-    }
-    .product-card__info {
-        flex: 1;
-        min-width: 0;
-    }
-    .product-card__name {
-        font-weight: 700;
-        color: #0f172a;
-        font-size: 0.9rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .product-card__id {
-        font-size: 0.75rem;
-        color: #94a3b8;
-        margin-top: 1px;
-    }
-    .product-card__views {
-        font-size: 0.72rem;
-        color: #6366f1;
-        margin-top: 2px;
-        font-weight: 600;
-    }
-    .product-card__views .oi { font-size: 0.7rem; margin-left: 3px; }
-    .product-card__status {
-        font-size: 0.7rem;
-        padding: 3px 10px;
-        border-radius: 20px;
-        font-weight: 600;
-        white-space: nowrap;
-        flex-shrink: 0;
-    }
-    .status-available {
-        background: #dcfce7;
-        color: #166534;
-    }
-    .status-unavailable {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-    .product-card__body {
-        padding: 10px 14px 0;
-    }
-    .product-card__row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 4px 0;
-    }
-    .product-card__label {
-        font-size: 0.78rem;
-        color: #64748b;
-    }
-    .product-card__value {
-        font-size: 0.82rem;
-        color: #0f172a;
-        text-align: left;
-    }
-    .product-card__actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 6px;
-        padding: 10px 14px;
-        border-top: 1px solid #f8fafc;
-        margin-top: 8px;
-    }
-
-    .btn-icon {
-        width: 34px;
-        height: 34px;
-        border-radius: 10px;
-        border: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-    .btn-icon:hover { transform: scale(1.08); }
-    .btn-icon:active { transform: scale(0.95); }
-    .btn-icon--edit {
-        background: #eff6ff;
-        color: #2563eb;
-    }
-    .btn-icon--edit:hover {
-        background: #2563eb;
-        color: #fff;
-    }
-    .btn-icon--delete {
-        background: #fef2f2;
-        color: #dc2626;
-    }
-    .btn-icon--delete:hover {
-        background: #dc2626;
-        color: #fff;
-    }
-
-    @@media (min-width: 992px) {
-        .product-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
-    }
-    @@media (max-width: 991.98px) {
-        .product-grid {
-            grid-template-columns: 1fr;
-        }
-        .admin-toolbar {
-            flex-direction: column;
-            align-items: stretch;
-        }
-        .search-box { max-width: none; }
-    }
-</style>
-
-@code {
-    [Inject] private HttpClient Http { get; set; } = default!;
-    private List<ProductDto>? products;
-    private List<CategoryDto>? categories;
-    private ProductUpsertRequest model = new();
-    private bool showEditor = false;
-    private ElementReference editorCard;
-    private bool _editorScrolled;
-    private int editingId = 0;
-    private bool isSaving = false;
-    private bool isUploading = false;
-    private string createdAtInput = string.Empty;
-    private string discountStartInput = string.Empty;
-    private string discountExpiryInput = string.Empty;
-    private string discountTypeInput = "";
-    private const string DiscountTypeNone = "";
-    private const string DiscountTypePermanent = "permanent";
-    private const string DiscountTypeTimed = "timed";
-    private DotNetObjectReference<Products>? objRef;
-    private bool _tinyInitialized;
-
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadProducts();
-        await LoadCategories();
-    }
-
-    [JSInvokable]
-    public void UpdateContent(string content)
-    {
-        model.Description = content;
-        StateHasChanged();
-    }
-
-    public void Dispose() => objRef?.Dispose();
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (showEditor)
-        {
-            await Task.Delay(100);
-            await JS.InvokeVoidAsync("initJalali");
-            try { await JS.InvokeVoidAsync("formatPriceInputs"); } catch { }
-
-            if (!_editorScrolled)
-            {
-                _editorScrolled = true;
-                await JS.InvokeVoidAsync("scrollToElement", editorCard, "start");
-            }
-
-            if (!_tinyInitialized)
-            {
-                objRef ??= DotNetObjectReference.Create(this);
-                await JS.InvokeVoidAsync("initTinyMCE", "#tiny-editor-product", objRef, "/api/products/upload");
-                _tinyInitialized = true;
-            }
-        }
-        else
-        {
-            _tinyInitialized = false;
-            _editorScrolled = false;
-        }
-    }
-
-    private string? _searchQuery;
-    private bool _showLowStockOnly;
-    private bool _showFeaturedOnly;
-    private int skip = 0;
-    private int take = 10;
-    private int totalCount = 0;
-    private bool isLoadingMore = false;
-    private bool showTechnical;
-
-    private List<ProductDto> FilteredProducts
-    {
-        get
-        {
-            if (products == null) return new();
-            IEnumerable<ProductDto> list = products;
-            if (_showLowStockOnly)
-                list = list.Where(p => p.StockQuantity <= 5);
-            if (_showFeaturedOnly)
-                list = list.Where(p => p.IsFeatured);
-            if (!string.IsNullOrWhiteSpace(_searchQuery))
-            {
-                var q = _searchQuery.Trim().ToLower();
-                list = list.Where(p =>
-                    (p.Name?.ToLower().Contains(q) ?? false) ||
-                    (p.CategoryName?.ToLower().Contains(q) ?? false));
-            }
-            return list.ToList();
-        }
-    }
-
-    private void ToggleLowStock() => _showLowStockOnly = !_showLowStockOnly;
-
-    private void ToggleFeaturedFilter() => _showFeaturedOnly = !_showFeaturedOnly;
-
-    private void OnSearchInput(ChangeEventArgs e)
-    {
-        _searchQuery = e.Value?.ToString();
-    }
-
-    private void ClearSearch()
-    {
-        _searchQuery = null;
-    }
-
-    private async Task LoadProducts(bool loadMore = false)
-    {
-        if (loadMore)
-        {
-            isLoadingMore = true;
-            skip += take;
-        }
-        else
-        {
-            skip = 0;
-            products = null;
-        }
-
-        try
-        {
-            var response = await Http.GetAsync($"api/products?skip={skip}&take={take}");
-            if (response.IsSuccessStatusCode)
-            {
-                if (response.Headers.TryGetValues("X-Total-Count", out var values))
-                {
-                    int.TryParse(values.FirstOrDefault(), out totalCount);
-                }
-
-                var data = await response.Content.ReadFromJsonAsync<List<ProductDto>>();
-                if (data != null)
-                {
-                    if (loadMore && products != null)
-                    {
-                        products.AddRange(data);
-                    }
-                    else
-                    {
-                        products = data;
-                    }
-                }
-            }
-        }
-        catch
-        {
-            ToastService.ShowError("خطا در بارگذاری محصولات");
-        }
-        finally
-        {
-            isLoadingMore = false;
-        }
-    }
-
-    private async Task LoadCategories() => categories = await Http.GetFromJsonAsync<List<CategoryDto>>("api/categories");
-
-    private void NewProduct()
-    {
-        editingId = 0;
-        model = new ProductUpsertRequest { IsAvailable = true, StockQuantity = 0 };
-        createdAtInput = PersianDate.ToJalaliDateTime(DateTimeOffset.Now);
-        discountTypeInput = "";
-        discountStartInput = string.Empty;
-        discountExpiryInput = string.Empty;
-        showEditor = true;
-    }
-
-    private void EditProduct(ProductDto prod)
-    {
-        editingId = prod.Id;
-        model = new ProductUpsertRequest
-        {
-            Name = prod.Name,
-            Sku = prod.Sku,
-            Description = prod.Description,
-            Price = prod.Price,
-            DiscountPrice = prod.DiscountPrice,
-            DiscountStartDate = prod.DiscountStartDate,
-            DiscountExpiryDate = prod.DiscountExpiryDate,
-            MainImageUrl = prod.MainImageUrl,
-            ImageUrl2 = prod.ImageUrl2,
-            ImageUrl3 = prod.ImageUrl3,
-            ImageUrl4 = prod.ImageUrl4,
-            CategoryId = prod.CategoryId,
-            IsAvailable = prod.IsAvailable,
-            StockQuantity = prod.StockQuantity,
-            IsFeatured = prod.IsFeatured,
-            CompatibilityInfo = prod.CompatibilityInfo,
-            FailureSymptoms = prod.FailureSymptoms,
-            DatasheetUrl = prod.DatasheetUrl,
-            RelatedProductIds = prod.RelatedProductIds
-        };
-        createdAtInput = PersianDate.ToJalaliDateTime(prod.CreatedAt);
-        discountTypeInput = prod.DiscountExpiryDate.HasValue ? "timed" : (prod.DiscountPrice.HasValue ? "permanent" : "");
-        discountStartInput = prod.DiscountStartDate.HasValue ? PersianDate.ToJalaliDateTime(prod.DiscountStartDate.Value) : string.Empty;
-        discountExpiryInput = prod.DiscountExpiryDate.HasValue ? PersianDate.ToJalaliDateTime(prod.DiscountExpiryDate.Value) : string.Empty;
-        showEditor = true;
-        showTechnical = true;
-    }
-
-    private void CloseEditor() => showEditor = false;
-
-    private void SetDiscountType(string type) => discountTypeInput = type;
-
-    private async Task SaveProduct()
-    {
-        isSaving = true;
-        try
-        {
-            var priceRaw = await JS.InvokeAsync<string>("getPriceRawValue", "price-input");
-            if (int.TryParse(priceRaw, out var priceVal)) model.Price = priceVal;
-
-            if (discountTypeInput == "permanent" || discountTypeInput == "timed")
-            {
-                var discountRaw = await JS.InvokeAsync<string>("getPriceRawValue", "discount-price-input");
-                if (int.TryParse(discountRaw, out var discountVal))
-                {
-                    model.DiscountPrice = discountVal;
-                    if (discountVal >= model.Price && model.Price > 0)
-                    {
-                        ToastService.ShowError("قیمت با تخفیف باید کمتر از قیمت اصلی باشد");
-                        return;
-                    }
-                }
-                else
-                {
-                    ToastService.ShowError("برای تخفیف، قیمت با تخفیف الزامی است");
-                    return;
-                }
-            }
-            else
-            {
-                model.DiscountPrice = null;
-                model.DiscountStartDate = null;
-                model.DiscountExpiryDate = null;
-            }
-
-            if (discountTypeInput == "timed")
-            {
-                if (PersianDate.TryParseJalaliDateTime(discountExpiryInput, out var discountExpiry))
-                    model.DiscountExpiryDate = discountExpiry;
-                else
-                {
-                    ToastService.ShowError("برای تخفیف زمان‌دار، تاریخ پایان الزامی است");
-                    return;
-                }
-
-                if (PersianDate.TryParseJalaliDateTime(discountStartInput, out var discountStart))
-                    model.DiscountStartDate = discountStart;
-                else
-                    model.DiscountStartDate = null;
-
-                if (model.DiscountStartDate.HasValue && model.DiscountExpiryDate.Value <= model.DiscountStartDate.Value)
-                {
-                    ToastService.ShowError("تاریخ پایان باید بعد از تاریخ شروع باشد");
-                    return;
-                }
-            }
-            else if (discountTypeInput == "permanent")
-            {
-                model.DiscountStartDate = null;
-                model.DiscountExpiryDate = null;
-            }
-
-            if (PersianDate.TryParseJalaliDateTime(createdAtInput, out var createdAt))
-                model.CreatedAt = createdAt;
-            else
-                model.CreatedAt = null;
-
-            model.Description = await JS.InvokeAsync<string>("getTinyContent", "#tiny-editor-product");
-
-            HttpResponseMessage resp;
-            if (editingId == 0) resp = await Http.PostAsJsonAsync("api/products", model);
-            else resp = await Http.PutAsJsonAsync($"api/products/{editingId}", model);
-            
-            if (resp.IsSuccessStatusCode)
-            {
-                ToastService.ShowSuccess(editingId == 0 ? "محصول با موفقیت ثبت شد" : "تغییرات محصول ذخیره شد");
-                await LoadProducts();
-                showEditor = false;
-            }
-            else
-            {
-                ToastService.ShowError("خطا در ذخیره‌سازی محصول");
-            }
-        }
-        catch (Exception ex)
-        {
-            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
-        }
-        finally { isSaving = false; }
-    }
-
-    private ProductDto? itemToDelete;
-    private bool showConfirm;
-
-    private void DeleteProduct(ProductDto prod)
-    {
-        itemToDelete = prod;
-        showConfirm = true;
-    }
-
-    private async Task HandleDeleteResult(bool result)
-    {
-        showConfirm = false;
-        if (result && itemToDelete != null)
-        {
-            try
-            {
-                var response = await Http.DeleteAsync($"api/products/{itemToDelete.Id}");
-                if (response.IsSuccessStatusCode)
-                {
-                    ToastService.ShowSuccess("محصول با موفقیت حذف شد");
-                    await LoadProducts();
-                }
-                else
-                {
-                    ToastService.ShowError("خطا در حذف محصول");
-                }
-            }
-            catch (Exception ex)
-            {
-                ToastService.ShowError($"خطای سیستمی: {ex.Message}");
-            }
-        }
-        itemToDelete = null;
-    }
-}
+
+<div class="admin-container">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <h3 class="admin-page-title m-0">مدیریت محصولات</h3>
+        <div class="d-flex gap-2 flex-wrap">
+            <AuthorizeView Policy="perm:admin.orders.view">
+                <a href="/admin/shop-accounting" class="btn btn-outline-primary shadow-sm rounded-3">
+                    <span class="oi oi-calculator me-1"></span> حسابداری فروشگاه
+                </a>
+            </AuthorizeView>
+            <a href="/admin/shop-settings" class="btn btn-outline-secondary shadow-sm rounded-3">
+                <span class="oi oi-cog me-1"></span> تنظیمات فروشگاه
+            </a>
+            <button class="btn btn-primary shadow-sm rounded-3" @onclick="NewProduct">
+                <span class="oi oi-plus me-1"></span> افزودن محصول جدید
+            </button>
+        </div>
+    </div>
+
+    <AuthorizeView Policy="perm:admin.orders.view">
+        <div class="shop-kpi mb-4">
+            <div class="shop-kpi__item shop-kpi__item--info" title="مبلغ سفارش‌های امروز به تومان — سفارش لغو/رد شده حساب نمی‌شود">
+                <span class="shop-kpi__label">درآمد امروز (تومان)</span>
+                <span class="shop-kpi__value">@_acctToday.ToString("N0")</span>
+                <span class="shop-kpi__hint">بدون سفارش‌های لغو/رد شده</span>
+            </div>
+            <div class="shop-kpi__item" title="فروش قابل پرداخت از ابتدای ماه جاری">
+                <span class="shop-kpi__label">درآمد این ماه (تومان)</span>
+                <span class="shop-kpi__value">@((_acct?.SellAmount ?? 0m).ToString("N0"))</span>
+                <span class="shop-kpi__hint">بدون لغو/رد شده</span>
+            </div>
+            <div class="shop-kpi__item shop-kpi__item--ok" title="فروش تایید/تکمیل شده این ماه">
+                <span class="shop-kpi__label">تاییدشده این ماه (تومان)</span>
+                <span class="shop-kpi__value">@((_acct?.ConfirmedAmount ?? 0m).ToString("N0"))</span>
+                <span class="shop-kpi__hint">@(_acct?.ConfirmedCount ?? 0) سفارش تایید شده</span>
+            </div>
+            <div class="shop-kpi__item shop-kpi__item--warn" title="تعداد اقلام فروخته‌شده در این ماه">
+                <span class="shop-kpi__label">اقلام فروخته‌شده (ماه)</span>
+                <span class="shop-kpi__value">@((_acct?.UnitsSold ?? 0).ToString("N0"))</span>
+                <span class="shop-kpi__hint">@(_acct?.OrdersCount ?? 0) سفارش ثبت شده</span>
+            </div>
+            <div class="shop-kpi__item shop-kpi__item--danger" title="بازپرداخت‌های مرجوعی در این ماه">
+                <span class="shop-kpi__label">مرجوعی (ماه)</span>
+                <span class="shop-kpi__value">@((_acct?.RefundAmount ?? 0m).ToString("N0"))</span>
+                <span class="shop-kpi__hint">@(_acct?.ReturnsCount ?? 0) درخواست مرجوعی</span>
+            </div>
+            <button type="button" class="shop-kpi__item shop-kpi__item--acc" @onclick="GoAccounting"
+                    title="باز کردن فرم کامل حسابداری فروشگاه با انتخاب بازهٔ تاریخ">
+                <span class="shop-kpi__label">گزارش کامل مالی</span>
+                <span class="shop-kpi__value shop-kpi__value--acc">حسابداری فروشگاه</span>
+                <span class="shop-kpi__hint">کلیک: ورود به فرم حسابداری</span>
+            </button>
+        </div>
+    </AuthorizeView>
+
+    <ConfirmDialog IsVisible="showConfirm" 
+                   Title="حذف محصول" 
+                   Message=@($"آیا از حذف محصول \"{itemToDelete?.Name}\" اطمینان دارید؟")
+                   OnResult="HandleDeleteResult" />
+
+    <ConfirmDialog IsVisible="_showPointConfirm"
+                   Title="حذف رکورد تاریخچه"
+                   Message="آیا از حذف این رکورد از تاریخچه قیمت اطمینان دارید؟"
+                   OnResult="HandlePointDeleteResult" />
+
+    @if (_phModalOpen)
+    {
+        <div class="phm-backdrop" @onclick="ClosePhModal"></div>
+        <div class="phm" role="dialog" aria-modal="true">
+            <div class="phm__h">
+                <span class="oi oi-clock"></span>
+                @(_phEditingPointId > 0 ? "ویرایش رکورد تاریخچه قیمت" : "افزودن رکورد تاریخچه قیمت")
+                <button type="button" class="btn-close" @onclick="ClosePhModal"></button>
+            </div>
+            <div class="phm__b">
+                <label class="form-label fw-bold">تاریخ ثبت (شمسی)</label>
+                <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="_phDateInput" placeholder="1404/01/01" />
+                <div class="text-muted small mt-1">تاریخ ایجاد محصول به‌صورت پیش‌فرض استفاده می‌شود.</div>
+                <label class="form-label fw-bold mt-3">قیمت (تومان)</label>
+                <input id="ph-price-input" class="form-control rounded-3 price-input-ltr" autocomplete="off" @bind="_phPriceInput" />
+                <label class="form-label fw-bold mt-3">قیمت با تخفیف (اختیاری)</label>
+                <input id="ph-discount-input" class="form-control rounded-3 price-input-ltr" autocomplete="off" @bind="_phDiscountInput" placeholder="خالی = بدون تخفیف" />
+            </div>
+            <div class="phm__f">
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClosePhModal">انصراف</button>
+                <button type="button" class="btn btn-sm btn-warning" @onclick="SavePricePoint" disabled="@_phSaving">
+                    @(_phSaving ? "در حال ذخیره..." : "ذخیره رکورد")
+                </button>
+            </div>
+        </div>
+    }
+
+    @if (showEditor)
+    {
+        <div @ref="editorCard" class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="m-0">@(editingId == 0 ? "ایجاد محصول جدید" : "ویرایش محصول")</h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(model.Name))
+            {
+                <div class="pe-namechip-wrap">
+                    <span class="pe-namechip" title="@model.Name">
+                        <i class="pe-namechip__dot"></i>
+                        <span class="pe-namechip__txt">@model.Name</span>
+                    </span>
+                </div>
+            }
+
+            <EditForm Model="model" OnValidSubmit="SaveProduct">
+                <DataAnnotationsValidator />
+
+                <ul class="pe-tabs mb-4">
+                    <li><button type="button" class="pe-tabs__btn @(_tab == 0 ? "pe-tabs__btn--active" : "")" @onclick="() => _tab = 0">اطلاعات اصلی</button></li>
+                    <li><button type="button" class="pe-tabs__btn @(_tab == 1 ? "pe-tabs__btn--active" : "")" @onclick="() => _tab = 1">قیمت و تخفیف</button></li>
+                    <li><button type="button" class="pe-tabs__btn @(_tab == 2 ? "pe-tabs__btn--active" : "")" @onclick="() => _tab = 2">تصاویر محصول</button></li>
+                    <li><button type="button" class="pe-tabs__btn @(_tab == 3 ? "pe-tabs__btn--active" : "")" @onclick="() => _tab = 3">موجودی و ارسال</button></li>
+                    <li><button type="button" class="pe-tabs__btn @(_tab == 4 ? "pe-tabs__btn--active" : "")" @onclick="() => _tab = 4">مشخصات فنی</button></li>
+                </ul>
+
+                <div data-title="اطلاعات اصلی" class="pe-pane @(_tab == 0 ? "pe-pane--active" : "")">
+                    <div class="row g-3">
+                        <div class="col-md-4 order-first">
+                            <div class="pe-sec" style="--acc:#0ea5e9">
+                                <div class="pe-sec__h"><span class="oi oi-folder"></span> دسته‌بندی <i>محل نمایش محصول در فروشگاه</i></div>
+                                <div class="mb-0">
+                                    <InputSelect @bind-Value="model.CategoryId" class="form-select rounded-3">
+                                        <option value="0">انتخاب کنید...</option>
+                                        @if (categories != null)
+                                        {
+                                            @foreach (var cat in categories)
+                                            {
+                                                <option value="@cat.Id">@cat.Name (@cat.ProductCount)</option>
+                                            }
+                                        }
+                                    </InputSelect>
+                                    <ValidationMessage For="@(() => model.CategoryId)" class="text-danger small" />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-8">
+                            <div class="pe-sec" style="--acc:#6366f1">
+                                <div class="pe-sec__h"><span class="oi oi-document"></span> اطلاعات شناسه‌ای <i>نام و کد کالا</i></div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">نام محصول</label>
+                                    <InputText @bind-Value="model.Name" class="form-control rounded-3" />
+                                    <ValidationMessage For="@(() => model.Name)" class="text-danger small" />
+                                </div>
+                                <div class="mb-0">
+                                    <label class="form-label fw-bold">کد محصول - SKU (اختیاری)</label>
+                                    <InputText @bind-Value="model.Sku" class="form-control rounded-3 ltr" placeholder="مثال: ERR-SENS-001" />
+                                </div>
+                            </div>
+                            <div class="pe-sec" style="--acc:#f59e0b">
+                                <div class="pe-sec__h"><span class="oi oi-pencil"></span> توضیحات محصول <i>معرفی کامل برای مشتری</i></div>
+                                <div class="editor-container">
+                                    <textarea id="tiny-editor-product" class="form-control">@model.Description</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div data-title="قیمت و تخفیف" class="pe-pane @(_tab == 1 ? "pe-pane--active" : "")">
+                    <div class="pe-sec" style="--acc:#16a34a">
+                        <div class="pe-sec__h"><span class="oi oi-tag"></span> قیمت و تخفیف <i>قیمت اصلی و شرایط تخفیف</i></div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">قیمت (تومان)</label>
+                                <input type="text" class="form-control rounded-3 price-input-ltr" id="price-input"
+                                       value="@(model.Price > 0 ? model.Price.ToString("N0") : "")" />
+                                <ValidationMessage For="@(() => model.Price)" class="text-danger small" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">نوع تخفیف</label>
+                                <div class="d-flex gap-3 flex-wrap align-items-center pt-1">
+                                    <label class="form-check form-check-inline m-0">
+                                        <input type="radio" class="form-check-input" name="discountType" value="" checked="@(discountTypeInput == DiscountTypeNone)" @onchange="() => SetDiscountType(DiscountTypeNone)" />
+                                        <span class="form-check-label small fw-bold">بدون تخفیف</span>
+                                    </label>
+                                    <label class="form-check form-check-inline m-0">
+                                        <input type="radio" class="form-check-input" name="discountType" value="permanent" checked="@(discountTypeInput == DiscountTypePermanent)" @onchange="() => SetDiscountType(DiscountTypePermanent)" />
+                                        <span class="form-check-label small fw-bold">دائمی</span>
+                                    </label>
+                                    <label class="form-check form-check-inline m-0">
+                                        <input type="radio" class="form-check-input" name="discountType" value="timed" checked="@(discountTypeInput == DiscountTypeTimed)" @onchange="() => SetDiscountType(DiscountTypeTimed)" />
+                                        <span class="form-check-label small fw-bold">زمان‌دار</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        @if (discountTypeInput == "permanent" || discountTypeInput == "timed")
+                        {
+                            <div class="row g-3 mt-2">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">قیمت با تخفیف</label>
+                                    <input type="text" class="form-control rounded-3 price-input-ltr" id="discount-price-input"
+                                           value="@(model.DiscountPrice.HasValue ? model.DiscountPrice.Value.ToString("N0") : "")" />
+                                </div>
+                            </div>
+                        }
+                        @if (discountTypeInput == "timed")
+                        {
+                            <div class="row g-3 mt-2">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">تاریخ شروع تخفیف</label>
+                                    <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="discountStartInput" />
+                                    <div class="text-muted small mt-1">در صورت خالی بودن، از همین حالا فعال است.</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">تاریخ پایان تخفیف <span class="text-danger">*</span></label>
+                                    <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="discountExpiryInput" />
+                                    <div class="text-muted small mt-1">پس از این تاریخ، قیمت اصلی نمایش داده می‌شود.</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div class="pe-sec" style="--acc:#6366f1">
+                        <div class="pe-sec__h"><span class="oi oi-calendar"></span> زمان ثبت <i>تاریخ ایجاد این محصول</i></div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">تاریخ و ساعت ایجاد محصول</label>
+                                <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="createdAtInput" />
+                                <div class="text-muted small mt-1">در صورت خالی بودن، زمان فعلی ثبت می‌شود.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pe-sec" style="--acc:#f59e0b">
+                        <div class="pe-sec__h"><span class="oi oi-clock"></span> تاریخچه قیمت <i>تغییرات قیمت در گذشته</i></div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                @if (editingId > 0 && _priceHistory != null)
+                                {
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="text-muted small">@(_priceHistory.Count) رکورد، مرتب‌شده بر اساس تاریخ</span>
+                                        <button type="button" class="btn btn-sm btn-outline-warning" @onclick="OpenAddPricePoint">
+                                            <span class="oi oi-plus"></span> افزودن رکورد
+                                        </button>
+                                    </div>
+                                    @if (_priceHistory.Count == 0)
+                                    {
+                                        <div class="text-muted small">هنوز تغییر قیمتی ثبت نشده است.</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="price-history">
+                                            @foreach (var p in _priceHistory)
+                                            {
+                                                <div class="price-history__row">
+                                                    <span class="price-history__date">@p.DateFa</span>
+                                                    <span class="price-history__meta">
+                                                        <span class="price-history__val">@p.Price.ToString("N0") تومان</span>
+                                                        @if (p.DiscountPrice.HasValue)
+                                                        {
+                                                            <span class="price-history__disc">@p.DiscountPrice.Value.ToString("N0")</span>
+                                                        }
+                                                        @if (p.Id > 0)
+                                                        {
+                                                            <button type="button" class="price-history__edit" title="ویرایش این رکورد" @onclick="() => OpenEditPricePoint(p)" disabled="@_phSaving">
+                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                                            </button>
+                                                            <button type="button" class="price-history__del" title="حذف این رکورد" @onclick="() => RequestDeletePricePoint(p.Id)" disabled="@_deletingPoint">
+                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                                            </button>
+                                                        }
+                                                    </span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="text-muted small">پس از ذخیره محصول نمایش داده می‌شود.</div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div data-title="تصاویر محصول" class="pe-pane @(_tab == 2 ? "pe-pane--active" : "")">
+                    <div class="pe-sec" style="--acc:#7c3aed">
+                        <div class="pe-sec__h"><span class="oi oi-image"></span> گالری تصاویر <i>حداکثر ۴ تصویر برای محصول</i></div>
+                        <div class="row g-2">
+                            <div class="col-6 col-md-3">
+                                <ImageUploader @bind-ImageUrl="model.MainImageUrl" UploadUrl="api/products/upload" ShowCamera="false" />
+                                <div class="text-center small text-muted">تصویر اصلی</div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <ImageUploader @bind-ImageUrl="model.ImageUrl2" UploadUrl="api/products/upload" ShowCamera="false" />
+                                <div class="text-center small text-muted">تصویر 2</div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <ImageUploader @bind-ImageUrl="model.ImageUrl3" UploadUrl="api/products/upload" ShowCamera="false" />
+                                <div class="text-center small text-muted">تصویر 3</div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <ImageUploader @bind-ImageUrl="model.ImageUrl4" UploadUrl="api/products/upload" ShowCamera="false" />
+                                <div class="text-center small text-muted">تصویر 4</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div data-title="مشخصات فنی" class="pe-pane @(_tab == 4 ? "pe-pane--active" : "")">
+                    <div class="pe-sec" style="--acc:#6366f1">
+                        <div class="pe-sec__h"><span class="oi oi-list"></span> مشخصات فنی محصول <i>مشخصه‌های نمایشی در صفحهٔ محصول</i></div>
+                        @if (editingId == 0)
+                    {
+                        <div class="alert alert-info rounded-3 small mb-0">
+                            ابتدا محصول را ذخیره کنید، سپس مشخصات فنی را وارد نمایید.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="spec-editor">
+                            <div class="row g-2 align-items-end mb-3">
+                                <div class="col-md-5">
+                                    <label class="form-label fw-bold small mb-1">نام مشخصه</label>
+                                    <input class="form-control form-control-sm rounded-3" @bind="_newSpecName" placeholder="مثال: ولتاژ تغذیه" maxlength="120" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold small mb-1">مقدار</label>
+                                    <input class="form-control form-control-sm rounded-3" @bind="_newSpecValue" placeholder="مثال: ۱۲ ولت" maxlength="500" />
+                                </div>
+                                <div class="col-md-1">
+                                    <button type="button" class="btn btn-sm btn-primary w-100 rounded-3" @onclick="AddSpec">افزودن</button>
+                                </div>
+                            </div>
+                            @if (_specs.Count == 0)
+                            {
+                                <div class="text-muted small">مشخصه‌ای ثبت نشده است.</div>
+                            }
+                            else
+                            {
+                                <div class="spec-list">
+                                    @for (var i = 0; i < _specs.Count; i++)
+                                    {
+                                        var idx = i;
+                                        <div class="spec-list__row">
+                                            <input class="form-control form-control-sm rounded-3" value="@_specs[idx].SpecKey" maxlength="120"
+                                                   @onchange="e => _specs[idx].SpecKey = e.Value?.ToString() ?? _specs[idx].SpecKey" />
+                                            <input class="form-control form-control-sm rounded-3" value="@_specs[idx].SpecValue" maxlength="500"
+                                                   @onchange="e => _specs[idx].SpecValue = e.Value?.ToString() ?? _specs[idx].SpecValue" />
+                                            <button type="button" class="btn btn-sm btn-outline-danger rounded-3" @onclick="() => RemoveSpec(idx)">حذف</button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            <div class="d-flex align-items-center gap-3 mt-3">
+                                <button type="button" class="btn btn-sm btn-outline-primary rounded-3" @onclick="SaveSpecs" disabled="@_specsSaving">
+                                    @if (_specsSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                    ذخیره مشخصات فنی
+                                </button>
+                                <span class="text-muted small">با «ذخیره نهایی محصول» نیز مشخصات فنی ذخیره می‌شود.</span>
+                            </div>
+                        </div>
+                    }
+                    </div>
+                    <div class="pe-sec" style="--acc:#7c3aed">
+                        <div class="pe-sec__h"><span class="oi oi-wrench"></span> سازگاری و پشتیبانی <i>سازگاری، علائم خرابی و مستندات فنی</i></div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">اطلاعات سازگاری</label>
+                                <InputTextArea @bind-Value="model.CompatibilityInfo" class="form-control rounded-3" rows="3" placeholder="برندها و مدل‌های سازگار با این قطعه" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">علائم خرابی</label>
+                                <InputTextArea @bind-Value="model.FailureSymptoms" class="form-control rounded-3" rows="3" placeholder="علائمی که نشان می‌دهد این قطعه خراب است" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">لینک دیتاشیت (PDF)</label>
+                                <InputText @bind-Value="model.DatasheetUrl" class="form-control rounded-3" placeholder="https://example.com/datasheet.pdf" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">شناسه محصولات مرتبط</label>
+                                <InputText @bind-Value="model.RelatedProductIds" class="form-control rounded-3" placeholder="مثال: 5,12,23" />
+                                <div class="text-muted small mt-1">شناسه عددی محصولات مرتبط را با کاما جدا کنید.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div data-title="موجودی و ارسال" class="pe-pane @(_tab == 3 ? "pe-pane--active" : "")">
+                    <div class="pe-sec" style="--acc:#0d6efd">
+                        <div class="pe-sec__h"><span class="oi oi-eye"></span> وضعیت فروش <i>قابل فروش بودن و نمایش ویژه</i></div>
+                        <div class="d-flex gap-4 flex-wrap align-items-center">
+                            <div class="form-check form-switch m-0">
+                                <InputCheckbox @bind-Value="model.IsAvailable" class="form-check-input" id="isAvailable" />
+                                <label class="form-check-label fw-bold" for="isAvailable">قابل فروش</label>
+                            </div>
+                            <div class="form-check form-switch m-0">
+                                <InputCheckbox @bind-Value="model.IsFeatured" class="form-check-input" id="isFeatured" />
+                                <label class="form-check-label fw-bold" for="isFeatured">محصول مهم (نمایش در هیرو و صفحه اصلی)</label>
+                            </div>
+                            <div class="form-check form-switch m-0">
+                                <InputCheckbox @bind-Value="model.IsDraft" class="form-check-input" id="isDraft" />
+                                <label class="form-check-label fw-bold" for="isDraft">پیش‌نویس (عدم نمایش در فروشگاه)</label>
+                            </div>
+                        </div>
+                        <div class="text-muted small mt-2">
+                            با روشن‌کردن «پیش‌نویس»، محصول در فروشگاه برای مشتری نمایش داده نمی‌شود و قابل سفارش نیست، اما در همین لیست مدیریت باقی می‌ماند. پیش‌فرض خاموش است.
+                        </div>
+                        <div class="mt-3" style="max-width:280px">
+                            <label class="form-label fw-bold mb-1">اولویت نمایش (ترتیب دلخواه)</label>
+                            <InputNumber @bind-Value="model.SortOrder" class="form-control rounded-3" />
+                            <div class="text-muted small mt-1">عدد کوچک‌تر در «ترتیب دلخواه مدیر» جلوتر نمایش داده می‌شود؛ پیش‌فرض ۰.</div>
+                        </div>
+                    </div>
+                    <div class="pe-sec" style="--acc:#f59e0b">
+                        <div class="pe-sec__h"><span class="oi oi-box"></span> موجودی انبار <i>تعداد قابل عرضه</i></div>
+                        <div class="mb-0">
+                            <label class="form-label fw-bold">موجودی انبار (تعداد)</label>
+                            <InputNumber @bind-Value="model.StockQuantity" class="form-control rounded-3" min="0" />
+                            <div class="text-muted small mt-1">در صورت ۰ بودن، محصول به صورت خودکار غیرفعال می‌شود.</div>
+                        </div>
+                    </div>
+                    <div class="pe-sec" style="--acc:#0ea5e9">
+                        <div class="pe-sec__h"><span class="oi oi-truck"></span> زمان ارسال <i>متن نمایشی زیر قیمت در صفحه محصول</i></div>
+                        <div class="mb-0">
+                            <label class="form-label fw-bold">مهلت / زمان تقریبی ارسال</label>
+                            <InputText @bind-Value="model.EstimatedDeliveryText" maxlength="300" class="form-control rounded-3" placeholder="@StoreDefaults.DeliveryEta" />
+                            <div class="text-muted small mt-1">این متن زیر «زمان تقریبی تحویل» در صفحهٔ محصول نمایش داده می‌شود؛ اگر خالی باشد متن پیش‌فرض نمایش داده می‌شود.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pe-footer mt-4 pt-3 border-top">
+                    <div class="pe-footer__nav">
+                        @if (_tab > 0)
+                        {
+                            <button type="button" class="pe-step pe-step--prev" @onclick="() => GoStep(_tab - 1)">
+                                <svg class="pe-step__ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>
+                                <span class="pe-step__txt">
+                                    <span class="pe-step__cap">مرحلهٔ قبل · @FaNum(_tab)</span>
+                                    <span class="pe-step__title">@TabTitles[_tab - 1]</span>
+                                </span>
+                            </button>
+                        }
+                        @if (_tab < TabTitles.Length - 1)
+                        {
+                            <button type="button" class="pe-step pe-step--next" @onclick="() => GoStep(_tab + 1)">
+                                <span class="pe-step__txt">
+                                    <span class="pe-step__cap">مرحلهٔ بعد · @FaNum(_tab + 2)</span>
+                                    <span class="pe-step__title">@TabTitles[_tab + 1]</span>
+                                </span>
+                                <svg class="pe-step__ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>
+                            </button>
+                        }
+                    </div>
+                    <div class="pe-footer__actions">
+                        <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseEditor">انصراف</button>
+                        <button type="submit" class="btn btn-primary rounded-3 px-4" disabled="@(isSaving || isUploading)">
+                            @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            ذخیره نهایی محصول
+                        </button>
+                    </div>
+                </div>
+            </EditForm>
+        </div>
+    }
+
+    @if (!_editorPage)
+    {
+    @if (summary != null)
+    {
+        <div class="shop-kpi mb-4">
+            <button type="button" class="shop-kpi__item @(KpiActive("all") ? "shop-kpi__item--active" : "")"
+                    @onclick="@(() => ApplyKpi("all"))" title="نمایش همه محصولات (همه فیلترها را پاک می‌کند)">
+                <span class="shop-kpi__label">کل محصولات</span>
+                <span class="shop-kpi__value">@summary.Total.ToString("N0")</span>
+                <span class="shop-kpi__hint">کلیک: نمایش همه</span>
+            </button>
+            <button type="button" class="shop-kpi__item shop-kpi__item--ok @(KpiActive("available") ? "shop-kpi__item--active" : "")"
+                    @onclick="@(() => ApplyKpi("available"))" title="فقط محصولات فعال با موجودی بیشتر از صفر">
+                <span class="shop-kpi__label">قابل فروش</span>
+                <span class="shop-kpi__value">@summary.Available.ToString("N0")</span>
+                <span class="shop-kpi__hint">کلیک: فیلتر روی این‌ها</span>
+            </button>
+            <button type="button" class="shop-kpi__item shop-kpi__item--danger @(KpiActive("out") ? "shop-kpi__item--active" : "")"
+                    @onclick="@(() => ApplyKpi("out"))" title="فقط محصولاتی که موجودی‌شان صفر است">
+                <span class="shop-kpi__label">ناموجود (موجودی صفر)</span>
+                <span class="shop-kpi__value">@summary.OutOfStock.ToString("N0")</span>
+                <span class="shop-kpi__hint">کلیک: فیلتر روی این‌ها</span>
+            </button>
+            <button type="button" class="shop-kpi__item shop-kpi__item--warn @(KpiActive("low") ? "shop-kpi__item--active" : "")"
+                    @onclick="@(() => ApplyKpi("low"))" title="موجودی بیشتر از صفر و حداکثر @summary.LowStockThreshold عدد">
+                <span class="shop-kpi__label">موجودی کم (≤ @summary.LowStockThreshold)</span>
+                <span class="shop-kpi__value">@summary.LowStock.ToString("N0")</span>
+                <span class="shop-kpi__hint">کلیک: فیلتر روی این‌ها</span>
+            </button>
+            <button type="button" class="shop-kpi__item @(KpiActive("discounted") ? "shop-kpi__item--active" : "")"
+                    @onclick="@(() => ApplyKpi("discounted"))" title="فقط محصولاتی که هم‌اکنون تخفیف فعال دارند">
+                <span class="shop-kpi__label">تخفیف‌دار (فعال)</span>
+                <span class="shop-kpi__value">@summary.Discounted.ToString("N0")</span>
+                <span class="shop-kpi__hint">کلیک: فیلتر روی این‌ها</span>
+            </button>
+            <div class="shop-kpi__item shop-kpi__item--info" title="مجموع ارزش ریالی موجودی انبار بر اساس قیمت فعلی — فقط اطلاع‌رسانی است">
+                <span class="shop-kpi__label">ارزش موجودی (تومان)</span>
+                <span class="shop-kpi__value">@summary.InventoryValue.ToString("N0")</span>
+                <span class="shop-kpi__hint">بدون فیلتر — فقط اطلاعات</span>
+            </div>
+            <button type="button" class="shop-kpi__item @(summary.EmptyCategoryCount > 0 ? "shop-kpi__item--warn" : "")"
+                    @onclick="GoCategories" title="دسته‌بندی‌هایی که هیچ محصولی ندارند — رفتن به مدیریت دسته‌بندی‌ها">
+                <span class="shop-kpi__label">دسته‌بندی خالی (بدون محصول)</span>
+                <span class="shop-kpi__value">@summary.EmptyCategoryCount.ToString("N0") / @summary.CategoryCount.ToString("N0")</span>
+                <span class="shop-kpi__hint">کلیک: رفتن به دسته‌بندی‌ها</span>
+            </button>
+        </div>
+    }
+
+    <div class="admin-toolbar">
+        <div class="search-box">
+            <svg class="search-box__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" class="search-box__input" placeholder="جستجوی محصول..." 
+                   value="@_searchQuery" @oninput="OnSearchInput" />
+            @if (!string.IsNullOrEmpty(_searchQuery))
+            {
+                <button class="search-box__clear" @onclick="ClearSearch">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            }
+        </div>
+                <select class="filter-select" value="@_categoryIdFilter" @onchange="OnCategoryChanged">
+
+            <option value="0">همه دسته‌بندی‌ها</option>
+
+            @if (categories != null)
+
+            {
+
+                @foreach (var c in categories)
+
+                {
+
+                    <option value="@c.Id">@c.Name (@c.ProductCount)</option>
+
+                }
+
+            }
+
+        </select>
+
+        <select class="filter-select" value="@_statusFilter" @onchange="OnStatusChanged">
+
+            <option value="all">همه وضعیت‌ها</option>
+
+            <option value="available">قابل فروش</option>
+
+            <option value="unavailable">ناموجود</option>
+
+        </select>
+
+        <select class="filter-select" value="@_stockFilter" @onchange="OnStockChanged">
+
+            <option value="all">همه سطوح موجودی</option>
+
+            <option value="in">موجودی کافی</option>
+
+            <option value="low">موجودی کم</option>
+
+            <option value="out">صفر</option>
+
+        </select>
+
+        <select class="filter-select" value="@_sort" @onchange="OnSortChanged">
+
+            <option value="newest">جدیدترین</option>
+
+            <option value="oldest">قدیمی‌ترین</option>
+
+            <option value="name_asc">نام (الفبا)</option>
+
+            <option value="price_asc">ارزان‌ترین</option>
+
+            <option value="price_desc">گران‌ترین</option>
+
+            <option value="stock_asc">کمترین موجودی</option>
+
+            <option value="views">پربازدیدترین</option>
+
+        </select>
+
+        <button type="button" class="stock-filter-chip @(_showFeaturedOnly ? "stock-filter-chip--active" : "")" @onclick="ToggleFeaturedFilter">
+
+            <span class="oi oi-@(_showFeaturedOnly ? "check" : "star") me-1"></span>
+
+            فقط مهم‌ها
+
+        </button>
+
+        <button type="button" class="stock-filter-chip @(_onlyDiscounted ? "stock-filter-chip--active" : "")" @onclick="ToggleDiscountedFilter" title="فقط محصولاتی که تخفیف فعال دارند">
+
+            <span class="oi oi-@(_onlyDiscounted ? "check" : "tag") me-1"></span>
+
+            فقط تخفیف‌دار
+
+        </button>
+
+        <button type="button" class="stock-filter-chip" @onclick="ResetFilters" title="حذف همه فیلترها">
+
+            <span class="oi oi-reload me-1"></span>
+
+            پاک‌کردن
+
+        </button>
+
+        @if (products != null)
+
+        {
+
+            <span class="admin-toolbar__count">@products.Count از @totalCount محصول</span>
+
+        }
+
+        <div class="view-switch ms-auto">
+
+            <button type="button" class="view-switch__btn @(_viewMode == "table" ? "view-switch__btn--active" : "")" @onclick="() => ToggleView(false)" title="نمای جدول">
+
+                <span class="oi oi-list"></span>
+
+            </button>
+
+            <button type="button" class="view-switch__btn @(_viewMode == "card" ? "view-switch__btn--active" : "")" @onclick="() => ToggleView(true)" title="نمای کارت">
+
+                <span class="oi oi-grid-three-up"></span>
+
+            </button>
+
+        </div>
+    </div>
+
+    @if (_viewMode == "table" && products != null && FilteredProducts.Any())
+    {
+        <div class="ptable">
+            <div class="ptable__head">
+                <span>کالا</span>
+                <span>دسته‌بندی</span>
+                <span>قیمت (تومان)</span>
+                <span>موجودی</span>
+                <span>وضعیت</span>
+                <span>بازدید</span>
+                <span>عملیات</span>
+            </div>
+            @foreach (var prod in FilteredProducts)
+            {
+                <div class="ptable__row @(prod.IsDraft ? "ptable__row--draft" : "")">
+                    <div class="ptable__cell ptable__cell--product">
+                        <div class="ptable__thumb">
+                            @if (!string.IsNullOrEmpty(prod.MainImageUrl))
+                            {
+                                <img src="@prod.MainImageUrl" onerror="this.src='/images/placeholder-product.svg'" />
+                            }
+                        </div>
+                        <div class="ptable__meta">
+                            <div class="ptable__name">@prod.Name</div>
+                            <div class="ptable__sub">#@prod.Id@(!string.IsNullOrWhiteSpace(prod.Sku) ? $" · {prod.Sku}" : "")</div>
+                        </div>
+                    </div>
+                    <div class="ptable__cell ptable__cell--cat">@(string.IsNullOrWhiteSpace(prod.CategoryName) ? "—" : prod.CategoryName)</div>
+                    <div class="ptable__cell ptable__cell--price">
+                        <svg class="ptable__price-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z" />
+                            <circle cx="7" cy="7" r="1.5" />
+                        </svg>
+                        @if (DiscountHelper.IsActive(prod))
+                        {
+                            <span class="ptable__old">@prod.Price.ToString("N0")</span>
+                            <span class="ptable__now">@DiscountHelper.GetEffectivePrice(prod).ToString("N0")<span class="ptable__unit"> تومان</span></span>
+                        }
+                        else
+                        {
+                            <span class="ptable__now">@prod.Price.ToString("N0")<span class="ptable__unit"> تومان</span></span>
+                        }
+                    </div>
+                    <div class="ptable__cell ptable__cell--stock">
+                        <span class="ptable__lbl">موجودی: </span>
+                        <span class="stock-pill @(prod.StockQuantity <= 0 ? "stock-pill--out" : prod.StockQuantity <= 5 ? "stock-pill--low" : "stock-pill--ok")">@prod.StockQuantity</span>
+                    </div>
+                    <div class="ptable__cell ptable__cell--status">
+                        @if (prod.IsDraft)
+                        {
+                            <span class="badge bg-secondary rounded-pill" title="پیش‌نویس — در فروشگاه نمایش داده نمی‌شود">پیش‌نویس</span>
+                        }
+                        else
+                        {
+                            <span class="product-card__status @(prod.IsAvailable ? "status-available" : "status-unavailable")">@(prod.IsAvailable ? "موجود" : "ناموجود")</span>
+                        }
+                    </div>
+                    <div class="ptable__cell ptable__cell--views"><span class="ptable__lbl">بازدید: </span>@prod.ViewCount.ToString("N0")</div>
+                    <div class="ptable__cell ptable__cell--actions">
+                        <button class="btn-icon btn-icon--edit" title="ویرایش" @onclick="() => EditProduct(prod)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                        </button>
+                        <button class="btn-icon btn-icon--delete" title="حذف" @onclick="() => DeleteProduct(prod)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                <line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="product-grid @((_viewMode == "table" && FilteredProducts.Any()) ? "product-grid--hidden" : "")">
+        @if (products == null)
+        {
+            <div class="product-grid__empty">
+                <div class="spinner-border text-primary"></div>
+            </div>
+        }
+        else if (!products.Any())
+        {
+            <div class="product-grid__empty">
+                <span class="oi oi-cart" style="font-size: 2rem; opacity: 0.3;"></span>
+                <p class="text-muted mt-2 mb-0">هیچ محصولی یافت نشد.</p>
+            </div>
+        }
+        else if (!FilteredProducts.Any())
+        {
+            <div class="product-grid__empty">
+                <span class="oi oi-magnifying-glass" style="font-size: 2rem; opacity: 0.3;"></span>
+                <p class="text-muted mt-2 mb-0">محصولی با این عبارت یافت نشد.</p>
+            </div>
+        }
+        else
+        {
+            @foreach (var prod in FilteredProducts)
+            {
+                <div class="product-card @(prod.IsDraft ? "product-card--draft" : "")">
+                    <div class="product-card__top">
+                        <div class="product-card__thumb">
+                            @if (!string.IsNullOrEmpty(prod.MainImageUrl))
+                            {
+                                <img src="@prod.MainImageUrl" onerror="this.src='/images/placeholder-product.svg'" />
+                            }
+                            else
+                            {
+                                <div class="product-card__thumb--empty">
+                                    <span class="oi oi-image"></span>
+                                </div>
+                            }
+                        </div>
+                        <div class="product-card__info">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <div class="product-card__name">@prod.Name</div>
+                                @if (prod.IsFeatured)
+                                {
+                                    <span class="badge bg-warning text-dark rounded-pill" title="محصول مهم">
+                                        <span class="oi oi-star"></span> مهم
+                                    </span>
+                                }
+                                @if (prod.IsDraft)
+                                {
+                                    <span class="badge bg-secondary rounded-pill" title="پیش‌نویس — در فروشگاه نمایش داده نمی‌شود">
+                                        <span class="oi oi-pencil"></span> پیش‌نویس
+                                    </span>
+                                }
+                            </div>
+                            <div class="product-card__id">کد: #@prod.Id@(!string.IsNullOrWhiteSpace(prod.Sku) ? $" • {prod.Sku}" : "")</div>
+                            <div class="product-card__views"><span class="oi oi-eye"></span> @prod.ViewCount.ToString("N0") بازدید</div>
+                        </div>
+                        <span class="product-card__status @(prod.IsAvailable ? "status-available" : "status-unavailable")">
+                            @(prod.IsAvailable ? $"موجود ({prod.StockQuantity} عدد)" : "ناموجود")
+                        </span>
+                    </div>
+                    <div class="product-card__body">
+                        <div class="product-card__row">
+                            <span class="product-card__label">دسته‌بندی</span>
+                            <span class="product-card__value">@prod.CategoryName</span>
+                        </div>
+                        <div class="product-card__row">
+                            <span class="product-card__label">قیمت</span>
+                            <span class="product-card__value">
+                                @if (DiscountHelper.IsActive(prod))
+                                {
+                                    <span class="text-decoration-line-through text-muted ms-2" style="font-size:0.75rem;">@prod.Price.ToString("N0")</span>
+                                    <span class="fw-bold text-success">@DiscountHelper.GetEffectivePrice(prod).ToString("N0") <small>تومان</small></span>
+                                }
+                                else
+                                {
+                                    <span class="fw-bold">@prod.Price.ToString("N0") <small>تومان</small></span>
+                                }
+                            </span>
+                        </div>
+                        <div class="product-card__row">
+                            <span class="product-card__label">تخفیف</span>
+                            <span class="product-card__value">
+                                @if (DiscountHelper.IsTimedActive(prod))
+                                {
+                                    <span class="badge bg-primary rounded-pill">زمان‌دار تا @prod.DiscountExpiryDate!.Value.ToString("yyyy/MM/dd HH:mm")</span>
+                                }
+                                else if (DiscountHelper.IsPermanentActive(prod))
+                                {
+                                    <span class="badge bg-info text-dark rounded-pill">دائمی</span>
+                                }
+                                else if (DiscountHelper.IsExpired(prod))
+                                {
+                                    <span class="badge bg-danger rounded-pill">منقضی</span>
+                                }
+                                else if (DiscountHelper.IsScheduled(prod))
+                                {
+                                    <span class="badge bg-secondary rounded-pill">شروع نشده</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted small">—</span>
+                                }
+                            </span>
+                        </div>
+                    </div>
+                    <div class="product-card__actions">
+                        <button class="btn-icon btn-icon--edit" title="ویرایش" @onclick="() => EditProduct(prod)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                        </button>
+                        <button class="btn-icon btn-icon--delete" title="حذف" @onclick="() => DeleteProduct(prod)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                <line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    @if (products != null && products.Any() && TotalPages > 1)
+    {
+        <div class="pager">
+            <button class="btn btn-outline-secondary btn-sm rounded-pill" @onclick="() => GoPage(page - 1)" disabled="@(page <= 1 || isLoadingMore)">
+                <span class="oi oi-chevron-left"></span> قبلی
+            </button>
+            <span class="pager__info">صفحه @(page) از @(TotalPages)</span>
+            <button class="btn btn-outline-secondary btn-sm rounded-pill" @onclick="() => GoPage(page + 1)" disabled="@(page >= TotalPages || isLoadingMore)">
+                بعدی <span class="oi oi-chevron-right"></span>
+            </button>
+        </div>
+    }
+    }
+</div>
+
+<style>
+    .object-fit-cover { object-fit: cover; }
+    .bg-success-subtle { background-color: #d1e7dd; }
+    .bg-danger-subtle { background-color: #f8d7da; }
+    .price-input-ltr { direction: ltr; text-align: left; }
+
+    .pe-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        border-bottom: 1px solid #e8edf3;
+    }
+    .pe-tabs__btn {
+        border: 0;
+        background: transparent;
+        padding: 10px 16px;
+        font-size: 0.82rem;
+        font-weight: 800;
+        color: #64748b;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        transition: all 0.15s;
+    }
+    .pe-tabs__btn:hover { color: #4f46e5; }
+    .pe-tabs__btn--active { color: #4f46e5; border-bottom-color: #4f46e5; }
+
+    .pe-namechip-wrap { display: flex; margin-bottom: 14px; }
+    .pe-namechip {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        max-width: min(100%, 520px);
+        padding: 5px 13px;
+        border: 1.5px dashed #a5b4fc;
+        background: linear-gradient(135deg, #eef2ff 0%, #f8fafc 100%);
+        color: #3730a3;
+        font-size: 0.8rem;
+        font-weight: 800;
+        border-radius: 999px;
+        box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);
+        animation: peChipIn 0.18s ease;
+    }
+    .pe-namechip__dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+        flex: 0 0 auto;
+    }
+    .pe-namechip__txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    @@keyframes peChipIn {
+        from { opacity: 0; transform: translateY(-4px) scale(0.96); }
+        to { opacity: 1; transform: none; }
+    }
+
+    /* همه تب‌ها همزمان رندر می‌شوند و فقط با CSS نمایش داده/پنهان می‌شوند
+       تا مقادیر فرم (قیمت، توضیحات، وضعیت فروش و...) هنگام جابه‌جایی تب از بین نرود */
+    .pe-pane { display: none; }
+    .pe-pane--active { display: block; }
+
+    /* ناوبری مرحله‌ای انتهای فرم: مرحله قبلی/بعدی (با عنوان تب) کنار انصراف و ذخیره */
+    .pe-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .pe-footer__nav { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pe-footer__actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pe-step {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        border-radius: 14px;
+        padding: 8px 15px;
+        cursor: pointer;
+        transition: all 0.15s;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        text-align: start;
+    }
+    .pe-step:hover {
+        border-color: #c7d2fe;
+        background: #eef2ff;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 14px rgba(79, 70, 229, 0.14);
+    }
+    .pe-step__ico { width: 16px; height: 16px; flex: 0 0 auto; color: #4f46e5; }
+    .pe-step__txt { display: flex; flex-direction: column; gap: 2px; line-height: 1.25; min-width: 0; }
+    .pe-step__cap { font-size: 0.66rem; font-weight: 800; color: #94a3b8; }
+    .pe-step__title { font-size: 0.83rem; font-weight: 900; color: #4338ca; white-space: nowrap; }
+    .pe-step--next {
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        border-color: transparent;
+        box-shadow: 0 6px 14px rgba(79, 70, 229, 0.28);
+    }
+    .pe-step--next .pe-step__cap { color: rgba(255, 255, 255, 0.72); }
+    .pe-step--next .pe-step__title { color: #fff; }
+    .pe-step--next .pe-step__ico { color: #fff; }
+    .pe-step--next:hover {
+        background: linear-gradient(135deg, #4f46e5 0%, #6d3ef5 100%);
+        border-color: transparent;
+        box-shadow: 0 8px 18px rgba(79, 70, 229, 0.36);
+    }
+
+    /* سکشن‌بندی فرم: هر بخش داخل باکس نقطه‌چین با پس‌زمینه رنگی ملایم (مثل فرم اعلانات) */
+    .pe-sec {
+        --acc: #0d6efd;
+        margin-bottom: 14px;
+        padding: 14px 16px;
+        background: color-mix(in srgb, var(--acc) 6%, #ffffff);
+        border: 1.5px dashed color-mix(in srgb, var(--acc) 45%, transparent);
+        border-radius: 16px;
+    }
+    .pe-sec:last-child { margin-bottom: 0; }
+    .pe-sec__h {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+        font-size: 0.92rem;
+        font-weight: 900;
+        color: var(--acc);
+    }
+    .pe-sec__h .oi { font-size: 1rem; }
+    .pe-sec__h i {
+        font-style: normal;
+        font-size: 0.74rem;
+        font-weight: 700;
+        color: #64748b;
+    }
+    .pe-sec__h i::before { content: "- "; color: var(--acc); }
+
+    /* موبایل: تب‌ها به صورت شبکه دوستونهٔ شماره‌دار، تمام‌عرض و با حالت فعال پررنگ؛
+       عنوان تب فعال نیز بالای محتوا نمایش داده می‌شود تا کاربر جهت خود را گم نکند */
+    @@media (max-width: 767.98px) {
+        .pe-sec { padding: 12px 13px; margin-bottom: 11px; border-radius: 14px; }
+        .pe-sec__h { font-size: 0.86rem; margin-bottom: 10px; }
+        .pe-sec__h i { font-size: 0.7rem; }
+        .pe-namechip { font-size: 0.74rem; padding: 4px 10px; gap: 6px; max-width: 100%; }
+        .pe-namechip-wrap { margin-bottom: 11px; }
+        .pe-tabs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            padding: 10px;
+            background: #f8fafc;
+            border: 1px solid #e8edf3;
+            border-radius: 16px;
+            counter-reset: pe-tab;
+        }
+        .pe-tabs li { display: flex; }
+        .pe-tabs li:last-child { grid-column: 1 / -1; }
+        .pe-tabs__btn {
+            counter-increment: pe-tab;
+            width: 100%;
+            border: 1px solid #e2e8f0;
+            background: #fff;
+            border-radius: 12px;
+            margin-bottom: 0;
+            padding: 10px 8px;
+            font-size: 0.78rem;
+            font-weight: 800;
+            color: #64748b;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+        }
+        .pe-tabs__btn::before {
+            content: counter(pe-tab);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            flex: 0 0 auto;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #64748b;
+            font-size: 0.66rem;
+            font-weight: 900;
+        }
+        .pe-tabs__btn:hover { color: #4338ca; border-color: #c7d2fe; }
+        .pe-tabs__btn--active {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            border-color: transparent;
+            color: #fff;
+            box-shadow: 0 6px 14px rgba(79, 70, 229, 0.32);
+        }
+        .pe-tabs__btn--active::before { background: rgba(255, 255, 255, 0.24); color: #fff; }
+        .pe-tabs__btn--active:hover { color: #fff; }
+
+        .pe-pane--active::before {
+            content: attr(data-title);
+            display: block;
+            font-size: 0.92rem;
+            font-weight: 900;
+            color: #0f172a;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #eef2ff;
+        }
+
+        /* موبایل: فوتر مرحله‌ای تمام‌عرض — ردیف اول مرحله قبل/بعد، ردیف دوم انصراف/ذخیره */
+        .pe-footer { flex-direction: column; align-items: stretch; gap: 10px; }
+        .pe-footer__nav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .pe-footer__nav .pe-step:only-child { grid-column: 1 / -1; }
+        .pe-footer__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .pe-footer__actions .btn { width: 100%; margin: 0; padding: 11px 6px; font-weight: 800; }
+        .pe-step { width: 100%; justify-content: center; padding: 9px 8px; border-radius: 13px; }
+        .pe-step__ico { width: 15px; height: 15px; }
+        .pe-step__cap { font-size: 0.63rem; }
+        .pe-step__title { font-size: 0.78rem; }
+    }
+
+    .price-history { border: 1px solid #e8edf3; border-radius: 12px; overflow: hidden; }
+    .price-history__row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 7px 12px;
+        font-size: 0.78rem;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .price-history__row:last-child { border-bottom: 0; }
+    .price-history__date { color: #64748b; direction: ltr; }
+    .price-history__meta { display: flex; align-items: center; gap: 8px; }
+    .price-history__val { font-weight: 900; color: #0f172a; }
+    .price-history__disc { color: #b91c1c; background: #fef2f2; padding: 1px 8px; border-radius: 999px; font-weight: 800; }
+    .price-history__del {
+        border: 1px solid #fecaca;
+        background: #fff;
+        color: #dc2626;
+        width: 24px;
+        height: 24px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        cursor: pointer;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .price-history__del:hover:not(:disabled) { background: #dc2626; color: #fff; border-color: #dc2626; }
+    .price-history__del:disabled { opacity: .5; cursor: wait; }
+    .price-history__edit {
+        border: 1px solid #fde68a;
+        background: #fff;
+        color: #d97706;
+        width: 24px;
+        height: 24px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        cursor: pointer;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .price-history__edit:hover:not(:disabled) { background: #d97706; color: #fff; border-color: #d97706; }
+    .price-history__edit:disabled { opacity: .5; cursor: wait; }
+
+    .phm-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, .45);
+        z-index: 1055;
+    }
+    .phm {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: min(440px, calc(100vw - 32px));
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, .25);
+        z-index: 1060;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        animation: phmIn .18s ease;
+    }
+    @@keyframes phmIn { from { opacity: 0; transform: translate(-50%, -46%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+    .phm__h {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 16px;
+        font-weight: 900;
+        border-bottom: 1px solid #f1f5f9;
+        color: #0f172a;
+    }
+    .phm__h .btn-close { margin-right: auto; }
+    .phm__b { padding: 16px; }
+    .phm__f {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 16px;
+        border-top: 1px solid #f1f5f9;
+        background: #fafbfc;
+    }
+
+    .spec-list { display: flex; flex-direction: column; gap: 8px; }
+    .spec-list__row {
+        display: grid;
+        grid-template-columns: 1fr 1.4fr auto;
+        gap: 8px;
+        align-items: center;
+    }
+    .spec-editor { max-width: 900px; }
+
+    .shop-kpi {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+    }
+    .shop-kpi__item {
+        background: #fff;
+        border: 1px solid #e8edf3;
+        border-radius: 14px;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        width: 100%;
+        font: inherit;
+        text-align: start;
+        cursor: default;
+        transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+    }
+    button.shop-kpi__item { cursor: pointer; }
+    button.shop-kpi__item:hover {
+        border-color: #c7d2fe;
+        box-shadow: 0 6px 16px rgba(79, 70, 229, 0.12);
+        transform: translateY(-1px);
+    }
+    .shop-kpi__item--active {
+        border-color: #4f46e5 !important;
+        background: #eef2ff !important;
+        box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.28);
+    }
+    .shop-kpi__item--active .shop-kpi__label { color: #4338ca; }
+    .shop-kpi__item--active .shop-kpi__value { color: #4338ca !important; }
+    .shop-kpi__label { font-size: 0.72rem; color: #64748b; font-weight: 700; }
+    .shop-kpi__value { font-size: 1.15rem; font-weight: 900; color: #0f172a; direction: ltr; text-align: right; }
+    .shop-kpi__hint {
+        font-size: 0.63rem;
+        color: #a5b4fc;
+        font-weight: 800;
+        margin-top: auto;
+        line-height: 1.4;
+    }
+    .shop-kpi__item--info .shop-kpi__hint { color: #94a3b8; }
+    .shop-kpi__item--ok { border-color: #86efac; background: #f0fdf4; }
+    .shop-kpi__item--ok .shop-kpi__value { color: #15803d; }
+    .shop-kpi__item--danger { border-color: #fca5a5; background: #fef2f2; }
+    .shop-kpi__item--danger .shop-kpi__value { color: #b91c1c; }
+    .shop-kpi__item--warn { border-color: #fcd34d; background: #fffbeb; }
+    .shop-kpi__item--warn .shop-kpi__value { color: #b45309; }
+    .shop-kpi__item--acc {
+        border-color: #c7d2fe;
+        background: linear-gradient(180deg, #eef2ff 0%, #fff 70%);
+        cursor: pointer;
+    }
+    .shop-kpi__item--acc:hover { border-color: #4f46e5; box-shadow: 0 6px 16px rgba(79,70,229,.14); transform: translateY(-1px); }
+    .shop-kpi__value--acc { font-size: 0.95rem; color: #4338ca; direction: rtl !important; }
+
+    .filter-select {
+        appearance: none;
+        -webkit-appearance: none;
+        padding: 8px 30px 8px 12px;
+        border: 1px solid #e2e8f0;
+        background: #fff url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='3'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") no-repeat left 10px center;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 800;
+        color: #475569;
+        cursor: pointer;
+        max-width: 200px;
+        min-width: 150px;
+        flex: 0 0 auto;
+        transition: all 0.15s;
+    }
+    .filter-select:hover { border-color: #cbd5e1; background-color: #f8fafc; }
+    .filter-select:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15); }
+
+    .view-switch {
+        display: inline-flex;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        overflow: hidden;
+        background: #fff;
+    }
+    .view-switch__btn {
+        border: 0;
+        background: transparent;
+        padding: 8px 14px;
+        color: #94a3b8;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        transition: all 0.15s;
+    }
+    .view-switch__btn:hover { color: #475569; background: #f8fafc; }
+    .view-switch__btn--active { background: #4f46e5; color: #fff; }
+
+    .product-grid--hidden { display: none !important; }
+
+    .ptable {
+        background: #fff;
+        border: 1px solid #e8edf3;
+        border-radius: 16px;
+        overflow: hidden;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+    }
+    .ptable__head, .ptable__row {
+        display: grid;
+        grid-template-columns: minmax(220px, 2.2fr) 1fr 150px 90px 110px 80px 110px;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+    }
+    .ptable__head {
+        background: #f8fafc;
+        border-bottom: 1px solid #e8edf3;
+        font-size: 0.72rem;
+        font-weight: 900;
+        color: #64748b;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+    .ptable__row {
+        border-bottom: 1px solid #f1f5f9;
+        font-size: 0.82rem;
+        color: #334155;
+        transition: background 0.12s;
+    }
+    .ptable__row:last-child { border-bottom: 0; }
+    .ptable__row:hover { background: #f8fafc; }
+    .ptable__row--draft { opacity: 0.7; background: #f8fafc; }
+    .ptable__cell { min-width: 0; }
+    .ptable__cell--product { display: flex; align-items: center; gap: 10px; }
+    .ptable__thumb {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #f1f5f9;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .ptable__thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .ptable__meta { min-width: 0; }
+    .ptable__name {
+        font-weight: 800;
+        color: #0f172a;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .ptable__sub { font-size: 0.7rem; color: #94a3b8; direction: ltr; text-align: right; }
+    .ptable__cell--price { display: flex; flex-direction: column; align-items: flex-end; direction: ltr; }
+    .ptable__old { font-size: 0.7rem; color: #94a3b8; text-decoration: line-through; }
+    .ptable__now { font-weight: 900; color: #0f172a; }
+    .ptable__cell--actions { display: flex; gap: 6px; justify-content: flex-start; }
+    .ptable__unit, .ptable__lbl { display: none; }
+    .ptable__price-ico { display: none; }
+
+    /* تبلت: ستون «بازدید» حذف و عرض ستون‌ها جمع‌وجور می‌شود تا ردیف‌ها به‌هم نریزند */
+    @@media (max-width: 991.98px) {
+        .ptable__head, .ptable__row {
+            grid-template-columns: minmax(170px, 2fr) minmax(90px, 1fr) 120px 74px 92px 92px;
+            gap: 8px;
+            padding: 10px 12px;
+        }
+        .ptable__head span:nth-child(6),
+        .ptable__row > .ptable__cell:nth-child(6) { display: none; }
+    }
+
+    /* موبایل: کارت جمع‌وجور — ردیف ۱ عنوان+شناسه (فول‌عرض)، ردیف ۲ قیمت+موجودی (دو ستون)،
+       ردیف ۳ وضعیت+دسته‌بندی+دکمه‌ها؛ تصویر و بازدید در موبایل نمایش داده نمی‌شوند */
+    @@media (max-width: 767.98px) {
+        .ptable {
+            background: transparent;
+            border: 0;
+            box-shadow: none;
+            border-radius: 0;
+            overflow: visible;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .ptable__head { display: none; }
+        .ptable__row {
+            display: grid;
+            grid-template-columns: auto auto minmax(0, 1fr);
+            grid-template-areas:
+                "title  title  title"
+                "price  price  stock"
+                "status cat    acts";
+            gap: 10px;
+            padding: 12px 13px;
+            background: #fff;
+            border: 1px solid #edf0f6;
+            border-radius: 16px;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+            font-size: 0.84rem;
+            align-items: center;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .ptable__row:last-child { border-bottom: 1px solid #edf0f6; }
+        .ptable__row:hover {
+            background: #fff;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 22px rgba(15, 23, 42, 0.1);
+        }
+        .ptable__cell--product { grid-area: title; display: flex; min-width: 0; }
+        .ptable__cell--actions { grid-area: acts; justify-self: end; align-self: center; gap: 8px; }
+        .ptable__cell--actions .btn-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+        }
+        .ptable__cell--price {
+            grid-area: price;
+            justify-self: start;
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            max-width: 100%;
+            padding: 7px 13px;
+            border-radius: 12px;
+            background: #eef2ff;
+            border: 1.5px dashed #6366f1;
+        }
+        .ptable__price-ico {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            color: #4f46e5;
+            flex: 0 0 auto;
+        }
+        .ptable__cell--stock { grid-area: stock; justify-self: end; align-self: center; }
+        .ptable__cell--status { grid-area: status; justify-self: start; }
+        .ptable__cell--cat {
+            grid-area: cat;
+            justify-self: start;
+            font-size: 0.68rem; color: #64748b; background: #f1f5f9;
+            border-radius: 999px; padding: 2px 9px; white-space: nowrap;
+            max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+        }
+        .ptable__cell--views { display: none; }
+
+        .ptable__unit { font-size: 0.66rem; font-weight: 700; color: #94a3b8; }
+        .ptable__lbl { display: inline; }
+        .ptable__cell--price .ptable__now { color: #4338ca; font-size: 0.95rem; font-weight: 900; }
+        .ptable__cell--price .ptable__unit { display: inline; color: #64748b; font-size: 0.68rem; font-weight: 800; }
+        .ptable__cell--price .ptable__old { color: #94a3b8; font-size: 0.72rem; }
+        .ptable__thumb { display: none; }
+        .ptable__meta { flex: 1 1 auto; min-width: 0; }
+        .ptable__name {
+            font-size: 0.87rem;
+            line-height: 1.45;
+            white-space: normal;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .ptable__sub { font-size: 0.68rem; }
+    }
+    .stock-pill {
+        display: inline-block;
+        min-width: 46px;
+        text-align: center;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 900;
+        direction: ltr;
+    }
+    .stock-pill--ok { background: #ecfdf5; color: #047857; }
+    .stock-pill--low { background: #fffbeb; color: #b45309; }
+    .stock-pill--out { background: #fef2f2; color: #b91c1c; }
+
+    .pager {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 14px;
+    }
+    .pager__info { font-size: 0.82rem; color: #64748b; font-weight: 800; }
+
+    .admin-toolbar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 20px;
+        background: #fff;
+        border: 1px solid #e8edf3;
+        border-radius: 16px;
+        padding: 12px;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+    }
+    .admin-toolbar__count {
+        font-size: 0.85rem;
+        color: #64748b;
+        white-space: nowrap;
+        font-weight: 800;
+        margin-inline-start: auto;
+    }
+    .search-box {
+        position: relative;
+        flex: 1 1 280px;
+        min-width: 240px;
+        max-width: 420px;
+    }
+    .stock-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 8px 14px;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        color: #475569;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 800;
+        white-space: nowrap;
+        flex: 0 0 auto;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .stock-filter-chip:hover { border-color: #94a3b8; background: #f8fafc; color: #1e293b; }
+    .stock-filter-chip--active {
+        background: #fef3c7;
+        border-color: #f59e0b;
+        color: #b45309;
+    }
+    .search-box__icon {
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #94a3b8;
+        pointer-events: none;
+    }
+    .search-box__input {
+        width: 100%;
+        padding: 10px 44px 10px 44px;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        font-size: 0.92rem;
+        font-weight: 700;
+        color: #0f172a;
+        background: #f8fafc;
+        outline: none;
+        transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+    }
+    .search-box__input::placeholder { color: #64748b; font-weight: 700; opacity: 1; }
+    .search-box__input:hover { border-color: #94a3b8; }
+    .search-box__input:focus {
+        background: #fff;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .search-box__clear {
+        position: absolute;
+        left: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #94a3b8;
+        cursor: pointer;
+        padding: 4px;
+        display: flex;
+    }
+    .search-box__clear:hover { color: #64748b; }
+
+    .product-grid {
+        display: grid;
+        gap: 12px;
+    }
+    .product-grid__empty {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 48px 16px;
+        background: #fff;
+        border-radius: 16px;
+        border: 1px solid #f1f5f9;
+    }
+
+    .product-card {
+        background: #fff;
+        border: 1px solid #f1f5f9;
+        border-radius: 14px;
+        overflow: hidden;
+        transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .product-card:hover {
+        box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+        transform: translateY(-1px);
+    }
+    .product-card--draft {
+        opacity: 0.72;
+        border-style: dashed;
+        border-color: #cbd5e1;
+    }
+    .product-card__top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 14px 0;
+    }
+    .product-card__thumb {
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #f8fafc;
+        flex-shrink: 0;
+    }
+    .product-card__thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .product-card__thumb--empty {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #cbd5e1;
+        font-size: 1.2rem;
+        background: #f8fafc;
+        border: 1px dashed #e2e8f0;
+        border-radius: 10px;
+    }
+    .product-card__info {
+        flex: 1;
+        min-width: 0;
+    }
+    .product-card__name {
+        font-weight: 700;
+        color: #0f172a;
+        font-size: 0.9rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .product-card__id {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        margin-top: 1px;
+    }
+    .product-card__views {
+        font-size: 0.72rem;
+        color: #6366f1;
+        margin-top: 2px;
+        font-weight: 600;
+    }
+    .product-card__views .oi { font-size: 0.7rem; margin-left: 3px; }
+    .product-card__status {
+        font-size: 0.7rem;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-weight: 600;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    .status-available {
+        background: #dcfce7;
+        color: #166534;
+    }
+    .status-unavailable {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    .product-card__body {
+        padding: 10px 14px 0;
+    }
+    .product-card__row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 4px 0;
+    }
+    .product-card__label {
+        font-size: 0.78rem;
+        color: #64748b;
+    }
+    .product-card__value {
+        font-size: 0.82rem;
+        color: #0f172a;
+        text-align: left;
+    }
+    .product-card__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        padding: 10px 14px;
+        border-top: 1px solid #f8fafc;
+        margin-top: 8px;
+    }
+
+    .btn-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        border: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .btn-icon:hover { transform: scale(1.08); }
+    .btn-icon:active { transform: scale(0.95); }
+    .btn-icon--edit {
+        background: #eff6ff;
+        color: #2563eb;
+    }
+    .btn-icon--edit:hover {
+        background: #2563eb;
+        color: #fff;
+    }
+    .btn-icon--delete {
+        background: #fef2f2;
+        color: #dc2626;
+    }
+    .btn-icon--delete:hover {
+        background: #dc2626;
+        color: #fff;
+    }
+
+    @@media (min-width: 992px) {
+        .product-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+    @@media (max-width: 991.98px) {
+        .product-grid {
+            grid-template-columns: 1fr;
+        }
+        .admin-toolbar {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 10px;
+            padding: 12px 10px;
+        }
+        .search-box {
+            max-width: none;
+            min-width: 0;
+            flex: 1 1 auto;
+            width: 100%;
+        }
+        .filter-select {
+            max-width: none;
+            min-width: 0;
+            width: 100%;
+            flex: 0 0 auto;
+        }
+        .stock-filter-chip {
+            width: 100%;
+            flex: 0 0 auto;
+            justify-content: center;
+        }
+        .admin-toolbar__count {
+            margin-inline-start: 0;
+            text-align: center;
+        }
+        .view-switch {
+            margin-inline-start: 0 !important;
+            align-self: center;
+        }
+        .shop-kpi {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .shop-kpi__label { font-size: 0.7rem; }
+        .shop-kpi__hint { font-size: 0.6rem; }
+    }
+    @@media (max-width: 380px) {
+        .shop-kpi { grid-template-columns: 1fr; }
+    }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private List<ProductDto>? products;
+    private List<CategoryDto>? categories;
+    private ProductUpsertRequest model = new();
+    private bool showEditor = false;
+    private ElementReference editorCard;
+    private bool _editorScrolled;
+    private int editingId = 0;
+    private bool isSaving = false;
+    private bool isUploading = false;
+    private string createdAtInput = string.Empty;
+    private string discountStartInput = string.Empty;
+    private string discountExpiryInput = string.Empty;
+    private string discountTypeInput = "";
+    private const string DiscountTypeNone = "";
+    private const string DiscountTypePermanent = "permanent";
+    private const string DiscountTypeTimed = "timed";
+    private DotNetObjectReference<Products>? objRef;
+    private bool _tinyInitialized;
+
+    private string? _routeKey;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var saved = await JS.InvokeAsync<string>("localStorage.getItem", "adminProductsView");
+            if (saved == "card" || saved == "table") _viewMode = saved;
+        }
+        catch { }
+
+        try { await LoadCategories(); } catch { categories ??= new List<CategoryDto>(); }
+
+        try { await LoadAccounting(); } catch { _acct = null; }
+
+        NavManager.LocationChanged += OnLocationChanged;
+        await HandleRouteAsync();
+    }
+
+    protected override async Task OnParametersSetAsync() => await HandleRouteAsync();
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => _ = InvokeAsync(async () =>
+        {
+            await HandleRouteAsync();
+            StateHasChanged();
+        });
+
+    private async Task HandleRouteAsync()
+    {
+        var rel = NavManager.ToBaseRelativePath(NavManager.Uri).TrimEnd('/');
+        if (string.Equals(rel, _routeKey, StringComparison.OrdinalIgnoreCase)) return;
+        _routeKey = rel;
+
+        if (rel.EndsWith("admin/products/new", StringComparison.OrdinalIgnoreCase))
+        {
+            _editorPage = true;
+            InitNewEditor();
+            return;
+        }
+
+        if (Id > 0)
+        {
+            _editorPage = true;
+            await OpenEditorById(Id);
+            return;
+        }
+
+        if (_editorPage || showEditor)
+        {
+            _editorPage = false;
+            showEditor = false;
+            _tab = 0;
+        }
+
+        await LoadProducts();
+        await LoadSummary();
+    }
+
+    [JSInvokable]
+    public void UpdateContent(string content)
+    {
+        model.Description = content;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        objRef?.Dispose();
+        NavManager.LocationChanged -= OnLocationChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (showEditor)
+        {
+            await Task.Delay(100);
+            await JS.InvokeVoidAsync("initJalali");
+            try { await JS.InvokeVoidAsync("formatPriceInputs"); } catch { }
+
+            if (!_editorScrolled)
+            {
+                _editorScrolled = true;
+                await JS.InvokeVoidAsync("scrollToElement", editorCard, "start");
+            }
+
+            if (!_tinyInitialized)
+            {
+                objRef ??= DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("initTinyMCE", "#tiny-editor-product", objRef, "/api/products/upload");
+                _tinyInitialized = true;
+            }
+        }
+        else
+        {
+            _tinyInitialized = false;
+            _editorScrolled = false;
+        }
+    }
+
+    private string? _searchQuery;
+    private bool _showFeaturedOnly;
+    private int totalCount = 0;
+    private bool isLoadingMore = false;
+    private bool showTechnical;
+
+    private int _categoryIdFilter;
+
+    private string _statusFilter = "all";
+
+    private string _stockFilter = "all";
+    private bool _onlyDiscounted;
+
+    private string _sort = "newest";
+
+    private string _viewMode = "table";
+
+    private int page = 1;
+
+    private int pageSize = 24;
+
+    private ProductAdminSummaryDto? summary;
+
+    private System.Threading.CancellationTokenSource? _searchCts;
+
+    [Parameter]
+    public int Id { get; set; }
+
+    private bool _editorPage;
+    private int _tab;
+    private static readonly string[] TabTitles = { "اطلاعات اصلی", "قیمت و تخفیف", "تصاویر محصول", "موجودی و ارسال", "مشخصات فنی" };
+
+    private static string FaNum(int value)
+    {
+        var chars = value.ToString().ToCharArray();
+        for (var i = 0; i < chars.Length; i++) chars[i] = (char)('۰' + (chars[i] - '0'));
+        return new string(chars);
+    }
+
+    private async Task GoStep(int tab)
+    {
+        if (tab < 0 || tab >= TabTitles.Length) return;
+        _tab = tab;
+        try { await JS.InvokeVoidAsync("scrollToElement", editorCard, "start"); } catch { }
+    }
+    private List<ProductSpecDto> _specs = new();
+    private string _newSpecName = "";
+    private string _newSpecValue = "";
+    private bool _specsSaving;
+    private string _specsSig = "";
+    private List<ProductPricePointDto>? _priceHistory;
+
+    private ShopAccountingDto? _acct;
+
+    private decimal _acctToday => _acct?.Daily is { Count: > 0 } days ? days[^1].Amount : 0m;
+
+    private async Task LoadAccounting()
+    {
+        try
+        {
+            _acct = await Http.GetFromJsonAsync<ShopAccountingDto>("api/orders/admin/accounting?preset=month");
+        }
+        catch { _acct = null; }
+    }
+
+    private void GoAccounting() => NavManager.NavigateTo("/admin/shop-accounting");
+
+    private List<ProductDto> FilteredProducts
+    {
+        get
+        {
+            if (products == null) return new();
+            IEnumerable<ProductDto> list = products;
+            if (_showFeaturedOnly)
+                list = list.Where(p => p.IsFeatured);
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.Trim().ToLower();
+                list = list.Where(p =>
+                    (p.Name?.ToLower().Contains(q) ?? false) ||
+                    (p.CategoryName?.ToLower().Contains(q) ?? false));
+            }
+            return list.ToList();
+        }
+    }
+
+    private void ToggleLowStock() { }
+
+    private async Task ToggleFeaturedFilter()
+    {
+        _showFeaturedOnly = !_showFeaturedOnly;
+        page = 1;
+        await LoadProducts();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString();
+        _ = DebouncedSearch();
+    }
+
+    private async Task DebouncedSearch()
+    {
+        _searchCts?.Cancel();
+        _searchCts = new System.Threading.CancellationTokenSource();
+        var token = _searchCts.Token;
+        try
+        {
+            await Task.Delay(300, token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        if (token.IsCancellationRequested) return;
+        page = 1;
+        await LoadProducts();
+    }
+
+    private async Task ClearSearch()
+    {
+        _searchQuery = null;
+        page = 1;
+        await LoadProducts();
+    }
+
+    private async Task LoadProducts()
+
+    {
+
+        isLoadingMore = true;
+
+        try
+
+        {
+
+            var q = new List<string> { $"page={page}", $"pageSize={pageSize}" };
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery)) q.Add("search=" + Uri.EscapeDataString(_searchQuery.Trim()));
+
+            if (_categoryIdFilter > 0) q.Add($"categoryId={_categoryIdFilter}");
+
+            if (_statusFilter != "all") q.Add("status=" + Uri.EscapeDataString(_statusFilter));
+
+            if (_stockFilter != "all") q.Add("stock=" + Uri.EscapeDataString(_stockFilter));
+
+            if (_showFeaturedOnly) q.Add("featured=true");
+
+            if (_onlyDiscounted) q.Add("onlyDiscounted=true");
+
+            if (!string.IsNullOrWhiteSpace(_sort) && _sort != "newest") q.Add("sort=" + Uri.EscapeDataString(_sort));
+
+            var response = await Http.GetAsync("api/products/admin/list?" + string.Join("&", q));
+
+            if (response.IsSuccessStatusCode)
+
+            {
+
+                if (response.Headers.TryGetValues("X-Total-Count", out var values))
+
+                {
+
+                    int.TryParse(values.FirstOrDefault(), out totalCount);
+
+                }
+
+                products = await response.Content.ReadFromJsonAsync<List<ProductDto>>() ?? new List<ProductDto>();
+
+            }
+
+            else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+
+            {
+
+                ToastService.ShowError("برای مشاهده این بخش دسترسی کافی ندارید.");
+
+                products = new List<ProductDto>();
+
+            }
+
+            else
+
+            {
+
+                ToastService.ShowError("خطا در بارگذاری محصولات");
+
+            }
+
+        }
+
+        catch
+
+        {
+
+            ToastService.ShowError("خطا در بارگذاری محصولات");
+
+        }
+
+        finally
+
+        {
+
+            isLoadingMore = false;
+
+        }
+
+    }
+
+
+
+    private async Task LoadSummary()
+
+    {
+
+        try
+
+        {
+
+            summary = await Http.GetFromJsonAsync<ProductAdminSummaryDto>("api/products/admin/summary");
+
+        }
+
+        catch { summary = null; }
+
+    }
+
+
+
+    private async Task OnCategoryChanged(ChangeEventArgs e)
+
+    {
+
+        _categoryIdFilter = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
+
+        page = 1;
+
+        await LoadProducts();
+
+    }
+
+
+
+    private async Task OnStatusChanged(ChangeEventArgs e)
+
+    {
+
+        var v = e.Value?.ToString();
+
+        _statusFilter = string.IsNullOrWhiteSpace(v) ? "all" : v!;
+
+        page = 1;
+
+        await LoadProducts();
+
+    }
+
+
+
+    private async Task OnStockChanged(ChangeEventArgs e)
+
+    {
+
+        var v = e.Value?.ToString();
+
+        _stockFilter = string.IsNullOrWhiteSpace(v) ? "all" : v!;
+
+        page = 1;
+
+        await LoadProducts();
+
+    }
+
+
+
+    private async Task OnSortChanged(ChangeEventArgs e)
+
+    {
+
+        var v = e.Value?.ToString();
+
+        _sort = string.IsNullOrWhiteSpace(v) ? "newest" : v!;
+
+        page = 1;
+
+        await LoadProducts();
+
+    }
+
+
+
+    private async Task GoPage(int target)
+
+    {
+
+        var next = Math.Max(1, target);
+
+        if (next == page) return;
+
+        page = next;
+
+        await LoadProducts();
+
+        try { await JS.InvokeVoidAsync("window.scrollTo", 0, 0); } catch { }
+
+    }
+
+
+
+    private async Task ToggleView(bool card)
+
+    {
+
+        _viewMode = card ? "card" : "table";
+
+        try { await JS.InvokeVoidAsync("localStorage.setItem", "adminProductsView", _viewMode); } catch { }
+
+    }
+
+
+
+    private async Task ToggleDiscountedFilter()
+    {
+        _onlyDiscounted = !_onlyDiscounted;
+        page = 1;
+        await LoadProducts();
+    }
+
+    private void GoCategories() => NavManager.NavigateTo("/admin/categories");
+
+    private bool KpiActive(string key) => key switch
+    {
+        "all" => _statusFilter == "all"
+                 && _stockFilter == "all"
+                 && !_onlyDiscounted
+                 && !_showFeaturedOnly
+                 && _categoryIdFilter == 0
+                 && string.IsNullOrWhiteSpace(_searchQuery),
+        "available" => _statusFilter == "available" && _stockFilter == "all" && !_onlyDiscounted,
+        "out" => _stockFilter == "out" && !_onlyDiscounted,
+        "low" => _stockFilter == "low" && !_onlyDiscounted,
+        "discounted" => _onlyDiscounted,
+        _ => false
+    };
+
+    private async Task ApplyKpi(string key)
+    {
+        _searchQuery = null;
+        _categoryIdFilter = 0;
+        _showFeaturedOnly = false;
+        _statusFilter = "all";
+        _stockFilter = "all";
+        _onlyDiscounted = false;
+
+        switch (key)
+        {
+            case "available": _statusFilter = "available"; break;
+            case "out": _stockFilter = "out"; break;
+            case "low": _stockFilter = "low"; break;
+            case "discounted": _onlyDiscounted = true; break;
+        }
+
+        page = 1;
+        await LoadProducts();
+    }
+
+    private async Task ResetFilters()
+
+    {
+
+        _searchQuery = null;
+
+        _categoryIdFilter = 0;
+
+        _statusFilter = "all";
+
+        _stockFilter = "all";
+
+        _sort = "newest";
+
+        _showFeaturedOnly = false;
+        _onlyDiscounted = false;
+
+        page = 1;
+
+        await LoadProducts();
+
+    }
+
+
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+    private async Task LoadCategories() => categories = await Http.GetFromJsonAsync<List<CategoryDto>>("api/categories?includeInactive=true");
+
+    private void NewProduct()
+    {
+        var rel = NavManager.ToBaseRelativePath(NavManager.Uri).TrimEnd('/');
+        if (rel.EndsWith("admin/products/new", StringComparison.OrdinalIgnoreCase))
+        {
+            InitNewEditor();
+            StateHasChanged();
+            return;
+        }
+        NavManager.NavigateTo("/admin/products/new");
+    }
+
+    private void InitNewEditor()
+    {
+        editingId = 0;
+        model = new ProductUpsertRequest { IsAvailable = true, StockQuantity = 0, EstimatedDeliveryText = StoreDefaults.DeliveryEta };
+        createdAtInput = PersianDate.ToJalaliDateTime(DateTimeOffset.Now);
+        discountTypeInput = "";
+        discountStartInput = string.Empty;
+        discountExpiryInput = string.Empty;
+        _specs = new();
+        _specsSig = "";
+        _priceHistory = null;
+        _tab = 0;
+        showEditor = true;
+    }
+
+    private void EditProduct(ProductDto prod) => NavManager.NavigateTo($"/admin/products/edit/{prod.Id}");
+
+    private async Task OpenEditorById(int id)
+    {
+        var prod = (products?.FirstOrDefault(p => p.Id == id)) ?? await Http.GetFromJsonAsync<ProductDto>($"api/products/admin/{id}");
+        if (prod == null)
+        {
+            ToastService.ShowError("محصول مورد نظر یافت نشد");
+            NavManager.NavigateTo("/admin/products");
+            return;
+        }
+        InitEditEditor(prod);
+        await LoadSpecs();
+        await LoadPriceHistory();
+    }
+
+    private void InitEditEditor(ProductDto prod)
+    {
+        editingId = prod.Id;
+        model = new ProductUpsertRequest
+        {
+            Name = prod.Name,
+            Sku = prod.Sku,
+            Description = prod.Description,
+            Price = prod.Price,
+            DiscountPrice = prod.DiscountPrice,
+            DiscountStartDate = prod.DiscountStartDate,
+            DiscountExpiryDate = prod.DiscountExpiryDate,
+            MainImageUrl = prod.MainImageUrl,
+            ImageUrl2 = prod.ImageUrl2,
+            ImageUrl3 = prod.ImageUrl3,
+            ImageUrl4 = prod.ImageUrl4,
+            CategoryId = prod.CategoryId,
+            IsAvailable = prod.IsAvailable,
+            IsDraft = prod.IsDraft,
+            StockQuantity = prod.StockQuantity,
+            IsFeatured = prod.IsFeatured,
+            SortOrder = prod.SortOrder,
+            CompatibilityInfo = prod.CompatibilityInfo,
+            FailureSymptoms = prod.FailureSymptoms,
+            DatasheetUrl = prod.DatasheetUrl,
+            RelatedProductIds = prod.RelatedProductIds,
+            EstimatedDeliveryText = prod.EstimatedDeliveryText
+        };
+        createdAtInput = PersianDate.ToJalaliDateTime(prod.CreatedAt);
+        discountTypeInput = prod.DiscountExpiryDate.HasValue ? "timed" : (prod.DiscountPrice.HasValue ? "permanent" : "");
+        discountStartInput = prod.DiscountStartDate.HasValue ? PersianDate.ToJalaliDateTime(prod.DiscountStartDate.Value) : string.Empty;
+        discountExpiryInput = prod.DiscountExpiryDate.HasValue ? PersianDate.ToJalaliDateTime(prod.DiscountExpiryDate.Value) : string.Empty;
+        _tab = 0;
+        showEditor = true;
+        showTechnical = true;
+    }
+
+    private static string SpecsSig(List<ProductSpecDto>? specs) =>
+        specs is null || specs.Count == 0 ? "" :
+        string.Join('\u001f', specs.Select(s => $"{s.SpecKey}\u001e{s.SpecValue}"));
+
+    private async Task LoadSpecs()
+    {
+        try
+        {
+            _specs = await Http.GetFromJsonAsync<List<ProductSpecDto>>($"api/products/{editingId}/specs") ?? new();
+        }
+        catch { _specs = new(); }
+        _specsSig = SpecsSig(_specs);
+    }
+
+    private async Task SaveSpecsSilentlyAsync()
+    {
+        if (editingId == 0) return;
+        var sig = SpecsSig(_specs);
+        if (sig == _specsSig) return;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"api/products/{editingId}/specs", new ProductSpecsUpsertRequest { Specs = _specs });
+            if (resp.IsSuccessStatusCode) _specsSig = sig;
+            else ToastService.ShowError("مشخصات فنی ذخیره نشد");
+        }
+        catch { ToastService.ShowError("خطا در ذخیره مشخصات فنی"); }
+    }
+
+    private void AddSpec()
+    {
+        var k = (_newSpecName ?? "").Trim();
+        var v = (_newSpecValue ?? "").Trim();
+        if (k.Length == 0 || v.Length == 0)
+        {
+            ToastService.ShowError("نام و مقدار مشخصه را وارد کنید");
+            return;
+        }
+        if (_specs.Count >= 60)
+        {
+            ToastService.ShowError("حداکثر ۶۰ مشخصه مجاز است");
+            return;
+        }
+        _specs.Add(new ProductSpecDto { ProductId = editingId, SpecKey = k.Substring(0, Math.Min(120, k.Length)), SpecValue = v.Substring(0, Math.Min(500, v.Length)) });
+        _newSpecName = "";
+        _newSpecValue = "";
+    }
+
+    private void RemoveSpec(int index)
+    {
+        if (index >= 0 && index < _specs.Count) _specs.RemoveAt(index);
+    }
+
+    private async Task SaveSpecs()
+    {
+        _specsSaving = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"api/products/{editingId}/specs", new ProductSpecsUpsertRequest { Specs = _specs });
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("مشخصات فنی ذخیره شد");
+                await LoadSpecs();
+            }
+            else ToastService.ShowError("خطا در ذخیره مشخصات فنی");
+        }
+        catch (Exception ex) { ToastService.ShowError($"خطای سیستمی: {ex.Message}"); }
+        finally { _specsSaving = false; }
+    }
+
+    private bool _deletingPoint;
+    private bool _showPointConfirm;
+    private int _pointToDelete;
+    private bool _phModalOpen;
+    private bool _phSaving;
+    private int _phEditingPointId;
+    private string _phDateInput = "";
+    private string _phPriceInput = "";
+    private string _phDiscountInput = "";
+
+    private void OpenAddPricePoint()
+    {
+        if (editingId <= 0) return;
+        _phEditingPointId = 0;
+        _phDateInput = PersianDate.ToJalaliDateTime(model.CreatedAt ?? DateTimeOffset.Now);
+        _phPriceInput = model.Price > 0 ? model.Price.ToString("N0") : "";
+        _phDiscountInput = model.DiscountPrice.HasValue ? model.DiscountPrice.Value.ToString("N0") : "";
+        _phModalOpen = true;
+    }
+
+    private void OpenEditPricePoint(ProductPricePointDto p)
+    {
+        _phEditingPointId = p.Id;
+        _phDateInput = PersianDate.ToJalaliDateTime(p.RecordedAt);
+        _phPriceInput = p.Price.ToString("N0");
+        _phDiscountInput = p.DiscountPrice.HasValue ? p.DiscountPrice.Value.ToString("N0") : "";
+        _phModalOpen = true;
+    }
+
+    private void ClosePhModal()
+    {
+        _phModalOpen = false;
+        _phEditingPointId = 0;
+    }
+
+    private async Task SavePricePoint()
+    {
+        if (_phSaving || editingId <= 0) return;
+
+        if (!PersianDate.TryParseJalaliDateTime(_phDateInput, out var phDate))
+        {
+            ToastService.ShowError("تاریخ شمسی معتبر وارد کنید (مثلاً 1404/01/01)");
+            return;
+        }
+
+        var phPriceRaw = await JS.InvokeAsync<string>("getPriceRawValue", "ph-price-input");
+        if (string.IsNullOrWhiteSpace(phPriceRaw) || !int.TryParse(phPriceRaw.Trim(), out var phPrice) || phPrice <= 0)
+        {
+            ToastService.ShowError("قیمت رکورد باید بزرگتر از صفر باشد");
+            return;
+        }
+
+        decimal? phDiscount = null;
+        var phDiscountRaw = await JS.InvokeAsync<string>("getPriceRawValue", "ph-discount-input");
+        if (!string.IsNullOrWhiteSpace(phDiscountRaw))
+        {
+            if (!int.TryParse(phDiscountRaw.Trim(), out var phDiscountVal) || phDiscountVal <= 0)
+            {
+                ToastService.ShowError("قیمت با تخفیف معتبر نیست");
+                return;
+            }
+            if (phDiscountVal >= phPrice)
+            {
+                ToastService.ShowError("قیمت با تخفیف باید کمتر از قیمت اصلی باشد");
+                return;
+            }
+            phDiscount = phDiscountVal;
+        }
+
+        var phPayload = new ProductPricePointRequest { Price = phPrice, DiscountPrice = phDiscount, RecordedAt = phDate };
+
+        _phSaving = true;
+        try
+        {
+            HttpResponseMessage phResp = _phEditingPointId > 0
+                ? await Http.PutAsJsonAsync($"api/products/{editingId}/price-history/{_phEditingPointId}", phPayload)
+                : await Http.PostAsJsonAsync($"api/products/{editingId}/price-history", phPayload);
+
+            if (phResp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(_phEditingPointId > 0 ? "رکورد ویرایش شد" : "رکورد افزوده شد");
+                await LoadPriceHistory();
+                ClosePhModal();
+            }
+            else
+            {
+                var phError = await phResp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(phError) ? "ذخیره رکورد ناموفق بود" : phError);
+            }
+        }
+        catch { ToastService.ShowError("خطا در ذخیره رکورد"); }
+        finally { _phSaving = false; }
+    }
+
+    private void RequestDeletePricePoint(int pointId)
+    {
+        if (_deletingPoint || editingId <= 0) return;
+        _pointToDelete = pointId;
+        _showPointConfirm = true;
+    }
+
+    private async Task HandlePointDeleteResult(bool result)
+    {
+        _showPointConfirm = false;
+        if (!result || _pointToDelete <= 0) return;
+        await DeletePricePoint(_pointToDelete);
+        _pointToDelete = 0;
+    }
+
+    private async Task LoadPriceHistory()
+    {
+        try
+        {
+            _priceHistory = await Http.GetFromJsonAsync<List<ProductPricePointDto>>($"api/products/{editingId}/price-history");
+        }
+        catch { _priceHistory = null; }
+    }
+
+    private async Task DeletePricePoint(int pointId)
+    {
+        if (_deletingPoint || editingId <= 0) return;
+        _deletingPoint = true;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/products/{editingId}/price-history/{pointId}");
+            if (resp.IsSuccessStatusCode)
+            {
+                await LoadPriceHistory();
+                ToastService.ShowSuccess("رکورد حذف شد");
+            }
+            else ToastService.ShowError("حذف رکورد ناموفق بود");
+        }
+        catch { ToastService.ShowError("خطا در حذف رکورد"); }
+        finally { _deletingPoint = false; }
+    }
+
+    private void CloseEditor()
+    {
+        if (_editorPage)
+        {
+            NavManager.NavigateTo("/admin/products");
+            return;
+        }
+        showEditor = false;
+    }
+
+    private void SetDiscountType(string type) => discountTypeInput = type;
+
+    private async Task SaveProduct()
+    {
+        isSaving = true;
+        try
+        {
+            var priceRaw = await JS.InvokeAsync<string>("getPriceRawValue", "price-input");
+            if (string.IsNullOrWhiteSpace(priceRaw) || !int.TryParse(priceRaw.Trim(), out var priceVal) || priceVal <= 0)
+            {
+                ToastService.ShowError("قیمت محصول معتبر نیست؛ لطفاً قیمت را وارد کنید");
+                return;
+            }
+            model.Price = priceVal;
+
+            if (discountTypeInput == "permanent" || discountTypeInput == "timed")
+            {
+                var discountRaw = await JS.InvokeAsync<string>("getPriceRawValue", "discount-price-input");
+                if (string.IsNullOrWhiteSpace(discountRaw))
+                {
+                    if (!model.DiscountPrice.HasValue)
+                    {
+                        ToastService.ShowError("برای تخفیف، قیمت با تخفیف الزامی است");
+                        return;
+                    }
+                }
+                else if (int.TryParse(discountRaw.Trim(), out var discountVal) && discountVal > 0)
+                {
+                    model.DiscountPrice = discountVal;
+                    if (discountVal >= model.Price)
+                    {
+                        ToastService.ShowError("قیمت با تخفیف باید کمتر از قیمت اصلی باشد");
+                        return;
+                    }
+                }
+                else
+                {
+                    ToastService.ShowError("قیمت با تخفیف معتبر نیست");
+                    return;
+                }
+            }
+            else
+            {
+                model.DiscountPrice = null;
+                model.DiscountStartDate = null;
+                model.DiscountExpiryDate = null;
+            }
+
+            if (discountTypeInput == "timed")
+            {
+                if (PersianDate.TryParseJalaliDateTime(discountExpiryInput, out var discountExpiry))
+                    model.DiscountExpiryDate = discountExpiry;
+                else
+                {
+                    ToastService.ShowError("برای تخفیف زمان‌دار، تاریخ پایان الزامی است");
+                    return;
+                }
+
+                if (PersianDate.TryParseJalaliDateTime(discountStartInput, out var discountStart))
+                    model.DiscountStartDate = discountStart;
+                else
+                    model.DiscountStartDate = null;
+
+                if (model.DiscountStartDate.HasValue && model.DiscountExpiryDate.Value <= model.DiscountStartDate.Value)
+                {
+                    ToastService.ShowError("تاریخ پایان باید بعد از تاریخ شروع باشد");
+                    return;
+                }
+            }
+            else if (discountTypeInput == "permanent")
+            {
+                model.DiscountStartDate = null;
+                model.DiscountExpiryDate = null;
+            }
+
+            if (PersianDate.TryParseJalaliDateTime(createdAtInput, out var createdAt))
+                model.CreatedAt = createdAt;
+            else
+                model.CreatedAt = null;
+
+            var tinyContent = await JS.InvokeAsync<string>("getTinyContent", "#tiny-editor-product");
+            if (!string.IsNullOrEmpty(tinyContent)) model.Description = tinyContent;
+
+            HttpResponseMessage resp;
+            if (editingId == 0) resp = await Http.PostAsJsonAsync("api/products", model);
+            else resp = await Http.PutAsJsonAsync($"api/products/{editingId}", model);
+            
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(editingId == 0 ? "محصول با موفقیت ثبت شد" : "تغییرات محصول ذخیره شد");
+                await SaveSpecsSilentlyAsync();
+                if (_editorPage)
+                {
+                    NavManager.NavigateTo("/admin/products");
+                    return;
+                }
+                await LoadProducts();
+                await LoadSummary();
+                showEditor = false;
+            }
+            else
+            {
+                ToastService.ShowError("خطا در ذخیره‌سازی محصول");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+        }
+        finally { isSaving = false; }
+    }
+
+    private ProductDto? itemToDelete;
+    private bool showConfirm;
+
+    private void DeleteProduct(ProductDto prod)
+    {
+        itemToDelete = prod;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool result)
+    {
+        showConfirm = false;
+        if (result && itemToDelete != null)
+        {
+            try
+            {
+                var response = await Http.DeleteAsync($"api/products/{itemToDelete.Id}");
+                if (response.IsSuccessStatusCode)
+                {
+                    ToastService.ShowSuccess("محصول با موفقیت حذف شد");
+                    await LoadProducts();
+                }
+                else
+                {
+                    ToastService.ShowError("خطا در حذف محصول");
+                }
+            }
+            catch (Exception ex)
+            {
+                ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+            }
+        }
+        itemToDelete = null;
+    }
+}

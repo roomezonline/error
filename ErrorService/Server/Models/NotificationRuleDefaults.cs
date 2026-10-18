@@ -210,6 +210,24 @@ public static class NotificationRuleDefaults
             "/admin/sms", NotificationSeverity.Warning, true, true,
             new[] { "Balance" }),
 
+        new("sms.charge.requested", "پیامک", "درخواست شارژ پیامک",
+            "درخواست شارژ پیامک ثبت شد",
+            "درخواست شارژ به مبلغ {Amount} تومان ثبت شد و در انتظار بررسی است.",
+            "/admin/sms", NotificationSeverity.Info, true, true,
+            new[] { "Amount", "RequestId" }),
+
+        new("sms.charge.approved", "پیامک", "تأیید شارژ پیامک",
+            "درخواست شارژ پیامک تأیید شد",
+            "درخواست شارژ شما به مبلغ {Amount} تومان تأیید شد و به اعتبار پیامک اضافه شد. موجودی فعلی: {Balance} تومان.",
+            "/admin/sms", NotificationSeverity.Success, true, false,
+            new[] { "Amount", "Balance", "RequestId" }),
+
+        new("sms.charge.rejected", "پیامک", "رد شارژ پیامک",
+            "درخواست شارژ پیامک رد شد",
+            "درخواست شارژ شما به مبلغ {Amount} تومان رد شد. دلیل: {Reason}",
+            "/admin/sms", NotificationSeverity.Warning, true, false,
+            new[] { "Amount", "Reason", "RequestId" }),
+
         new("backup.failed", "پشتیبان‌گیری", "خطای پشتیبان‌گیری",
             "پشتیبان‌گیری ناموفق بود",
             "پشتیبان‌گیری پایگاه داده با خطا مواجه شد: {Error}",
@@ -262,7 +280,13 @@ public static class NotificationRuleDefaults
             "گفتگو به شما منتقل شد",
             "گفتگوی #{SessionId} با {UserName} به شما منتقل شد.",
             "/admin/chat", NotificationSeverity.Info, true, false,
-            new[] { "SessionId", "UserName" })
+            new[] { "SessionId", "UserName" }),
+
+        new("product.restocked", "فروشگاه", "موجود شدن کالا",
+            "کالای مورد نظرتان موجود شد",
+            "کالای «{ProductName}» موجود شد؛ همین حالا سفارش دهید.",
+            "/products/{ProductId}", NotificationSeverity.Success, true, false,
+            new[] { "ProductName", "ProductId", "StockQuantity" })
     };
 
     private static readonly Dictionary<string, string[]> PlaceholderMap =

@@ -322,6 +322,7 @@ public class TechnicalController : ControllerBase
     [OutputCache(Duration = 600, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<IEnumerable<object>>> GetRecentErrorCodes([FromQuery] int take = 3)
     {
+        take = Math.Clamp(take, 1, 100);
         return await _context.ErrorCodes
             .OrderByDescending(e => e.Id)
             .Take(take)

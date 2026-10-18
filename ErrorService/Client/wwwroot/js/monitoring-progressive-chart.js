@@ -1,5 +1,10 @@
 var progressiveChart = null;
 
+// Temperature display bounds: line is clamped at +100, tooltip shows "بیش از +100"
+var _PROG_TEMP_MAX = 100;
+var _PROG_TEMP_MIN = -50;
+var _PROG_TEMP_OVERFLOW_TEXT = 'بیش از +100';
+
 // ── State ──
 var _progState = {
     timestamps: [],
@@ -223,7 +228,13 @@ function _liveAppendDelta(data, lastEpoch) {
         for (var k = 0; k < n; k++) {
             var raw = src ? src[keepIdx[k]] : null;
             var y = mapper ? mapper(raw) : raw;
-            ds.data.push({ x: keepEpoch[k], y: y });
+            if (dsIdx === 0 || dsIdx === 1) {
+                var pt = { x: keepEpoch[k], y: y, __raw: raw };
+                if (typeof raw === 'number' && raw > _PROG_TEMP_MAX) pt.y = _PROG_TEMP_MAX;
+                ds.data.push(pt);
+            } else {
+                ds.data.push({ x: keepEpoch[k], y: y });
+            }
         }
     }
 
@@ -480,6 +491,13 @@ function _epochToFaAxisStr(epochMs) {
 function _buildXY(dataArray, timestamps) {
     return (dataArray || []).map(function(v, i) {
         return { x: timestamps[i], y: v };
+    });
+}
+
+function _buildTempXY(dataArray, timestamps) {
+    return (dataArray || []).map(function(v, i) {
+        var clamp = (typeof v === 'number' && v > _PROG_TEMP_MAX) ? _PROG_TEMP_MAX : v;
+        return { x: timestamps[i], y: clamp, __raw: v };
     });
 }
 
@@ -1641,8 +1659,8 @@ function _updateChartData(data) {
 
     // Build {x,y} datasets
     progressiveChart.data.labels = [];
-    progressiveChart.data.datasets[0].data = _buildXY(data.temperatureRef, epochTs);
-    progressiveChart.data.datasets[1].data = _buildXY(data.temperatureFreez, epochTs);
+    progressiveChart.data.datasets[0].data = _buildTempXY(data.temperatureRef, epochTs);
+    progressiveChart.data.datasets[1].data = _buildTempXY(data.temperatureFreez, epochTs);
     progressiveChart.data.datasets[2].data = _buildXY((data.power || []).map(function(v) { return v === 1 ? 1.0 : 0; }), epochTs);
     progressiveChart.data.datasets[3].data = _buildXY((data.motor || []).map(function(v) { return v === 1 ? 0.9 : 0; }), epochTs);
     progressiveChart.data.datasets[4].data = _buildXY((data.heater1 || []).map(function(v) { return v === 1 ? 0.8 : 0; }), epochTs);
@@ -1971,7 +1989,7 @@ window.monitoringProgressiveChart = {
                     yAxes: [{
                         id: 'y-temp', position: 'left',
                         gridLines: { display: true, color: 'rgba(0,0,0,0.06)', drawBorder: true },
-                        ticks: { fontColor: '#0ea5e9', fontFamily: 'Vazirmatn, sans-serif', fontSize: 12, fontStyle: 'bold', beginAtZero: false, padding: 8, callback: function (v) { return v + '°'; } },
+                        ticks: { min: _PROG_TEMP_MIN, max: _PROG_TEMP_MAX, fontColor: '#0ea5e9', fontFamily: 'Vazirmatn, sans-serif', fontSize: 12, fontStyle: 'bold', beginAtZero: false, padding: 8, callback: function (v) { return v + '°'; } },
                         scaleLabel: { display: true, labelString: 'Temperature (°C)', fontColor: '#94a3b8', fontFamily: 'Vazirmatn, sans-serif', fontSize: 11 }
                     }, {
                         id: 'y-eq', position: 'right',
@@ -2037,6 +2055,12 @@ window.monitoringProgressiveChart = {
                             }
                             if (ds === 6) return rle + label + ': ' + (typeof v === 'number' ? v.toFixed(1) : v) + ' W' + pdf;
                             if (ds === 7) return rle + label + ': ' + (typeof v === 'number' ? v.toFixed(2) : v) + ' A' + pdf;
+                            if (ds === 0 || ds === 1) {
+                                var dsPt = data.datasets[ds].data[item.index];
+                                var tempRaw = dsPt ? dsPt.__raw : v;
+                                if (typeof tempRaw === 'number' && tempRaw > _PROG_TEMP_MAX)
+                                    return rle + label + ': ' + _PROG_TEMP_OVERFLOW_TEXT + pdf;
+                            }
                             return rle + label + ': ' + (typeof v === 'number' ? v.toFixed(1) : v) + '°C' + pdf;
                         }
                     }

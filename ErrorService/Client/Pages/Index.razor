@@ -13,6 +13,23 @@
 
 <PublicHero />
 
+<section class="container home-seo-intro" aria-labelledby="home-intro-title">
+    <div class="home-seo-intro__card">
+        <div class="home-seo-intro__icon" aria-hidden="true">
+            <span class="oi oi-wrench"></span>
+        </div>
+        <div class="home-seo-intro__body">
+            <span class="home-seo-intro__eyebrow">آشنایی با ارورسرویس</span>
+            <h2 id="home-intro-title">مرجع تخصصی تعمیرات و قطعات لوازم خانگی</h2>
+            <div class="home-seo-intro__text">
+                <p>ارورسرویس برای عیب‌یابی و تعمیر لوازم خانگی طراحی شده است. در این سایت می‌توانید کدهای خطای یخچال، ماشین لباسشویی، ظرفشویی و دیگر دستگاه‌ها را پیدا کنید. توضیحات هر کد با زبان ساده ارائه می‌شود. راهنمای بررسی اولیه نیز به شما کمک می‌کند مشکل دستگاه را بهتر بشناسید.</p>
+                <p>اگر به تعمیرکار نیاز دارید، درخواست تعمیر خود را آنلاین ثبت کنید. اطلاعات درخواست برای بررسی کارشناس ارسال می‌شود. روند پیگیری برای شما شفاف است. هدف ما کاهش زمان عیب‌یابی و ارائه خدمات مطمئن در محل است.</p>
+                <p class="home-seo-intro__last">در فروشگاه ارورسرویس، قطعات یدکی و تجهیزات فنی با توضیحات کاربردی عرضه می‌شوند. بخش آکادمی نیز آموزش‌های تعمیرات و نکات فنی را ارائه می‌کند. برای شروع می‌توانید از <a class="home-seo-intro__chip" href="/technical/error-codes">بانک کدهای خطا</a>، <a class="home-seo-intro__chip" href="/products">فروشگاه</a> یا <a class="home-seo-intro__chip" href="/admission/repair">ثبت درخواست تعمیر</a> استفاده کنید.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
 <nav class="container py-3" dir="rtl" aria-label="بخش‌های اصلی ارورسرویس">
     <div class="row g-2 justify-content-center">
         <div class="col-6 col-md-4 col-lg-2">
@@ -106,6 +123,16 @@ else
             case SiteHomeModuleKey.LatestProducts:
                 <LatestProducts />
                 break;
+            case SiteHomeModuleKey.BestSellers:
+                <ProductRow Title="پرفروش‌ترین محصولات"
+                            Subtitle="محصولاتی که بیشترین فروش را داشته‌اند"
+                            Endpoint="api/products/bestsellers" />
+                break;
+            case SiteHomeModuleKey.Restocked:
+                <ProductRow Title="محصولات تازه و موجود"
+                            Subtitle="تازه‌ترین محصولاتی که هم‌اکنون در انبار موجود هستند"
+                            Endpoint="api/products/restocked" />
+                break;
             case SiteHomeModuleKey.HomeCategories:
                 <HomeCategories Categories="categories" />
                 break;
@@ -132,6 +159,175 @@ else
 }
 
 }
+
+<style>
+    /* ── Home SEO intro (under hero) ── */
+    .home-seo-intro {
+        margin-top: 10px;
+        margin-bottom: 6px;
+    }
+
+    .home-seo-intro__card {
+        position: relative;
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid rgba(37, 99, 235, 0.10);
+        border-radius: 20px;
+        padding: 22px 22px 20px;
+        box-shadow: 0 8px 26px rgba(15, 23, 42, 0.06);
+        overflow: hidden;
+    }
+
+    .home-seo-intro__card::before {
+        content: "";
+        position: absolute;
+        inset-inline-start: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: linear-gradient(180deg, #2563eb, #38bdf8);
+    }
+
+    .home-seo-intro__card::after {
+        content: "";
+        position: absolute;
+        inset-inline-end: -70px;
+        top: -70px;
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(37, 99, 235, 0.10), rgba(37, 99, 235, 0) 70%);
+        pointer-events: none;
+    }
+
+    .home-seo-intro__icon {
+        flex: 0 0 auto;
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: rgba(37, 99, 235, 0.10);
+        color: #2563eb;
+        font-size: 1.35rem;
+        margin-top: 2px;
+        z-index: 1;
+    }
+
+    .home-seo-intro__body {
+        flex: 1 1 auto;
+        min-width: 0;
+        z-index: 1;
+    }
+
+    .home-seo-intro__eyebrow {
+        display: inline-block;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #2563eb;
+        background: rgba(37, 99, 235, 0.08);
+        border: 1px dashed rgba(37, 99, 235, 0.40);
+        border-radius: 999px;
+        padding: 3px 12px;
+        margin-bottom: 9px;
+    }
+
+    .home-seo-intro__body h2 {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.9;
+        margin: 0 0 12px;
+        padding-bottom: 11px;
+        border-bottom: 1px dashed rgba(15, 23, 42, 0.16);
+    }
+
+    .home-seo-intro__text p {
+        font-size: 0.93rem;
+        line-height: 2.15;
+        color: #475569;
+        text-align: justify;
+        margin: 0 0 11px;
+    }
+
+    .home-seo-intro__text p:last-child {
+        margin-bottom: 0;
+    }
+
+    .home-seo-intro__text a.home-seo-intro__chip {
+        display: inline-block;
+        padding: 1px 12px;
+        margin: 2px 2px;
+        border: 1px dashed #93c5fd;
+        background: #eff6ff;
+        color: #1d4ed8;
+        border-radius: 999px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        line-height: 1.9;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: all 0.18s ease;
+    }
+
+    .home-seo-intro__text a.home-seo-intro__chip:hover,
+    .home-seo-intro__text a.home-seo-intro__chip:focus {
+        background: #2563eb;
+        border-color: #2563eb;
+        border-style: solid;
+        color: #ffffff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+    }
+
+    @@media (max-width: 575.98px) {
+        .home-seo-intro {
+            margin-top: 6px;
+        }
+
+        .home-seo-intro__card {
+            flex-direction: column;
+            gap: 12px;
+            padding: 16px 16px 15px;
+            border-radius: 16px;
+        }
+
+        .home-seo-intro__icon {
+            width: 40px;
+            height: 40px;
+            font-size: 1.15rem;
+            border-radius: 12px;
+            margin-top: 0;
+        }
+
+        .home-seo-intro__eyebrow {
+            font-size: 0.7rem;
+            padding: 2px 10px;
+            margin-bottom: 7px;
+        }
+
+        .home-seo-intro__body h2 {
+            font-size: 1rem;
+            line-height: 1.8;
+            margin-bottom: 10px;
+            padding-bottom: 9px;
+        }
+
+        .home-seo-intro__text p {
+            font-size: 0.88rem;
+            line-height: 2.05;
+            text-align: start;
+            margin-bottom: 9px;
+        }
+
+        .home-seo-intro__text a.home-seo-intro__chip {
+            font-size: 0.8rem;
+            padding: 1px 10px;
+        }
+    }
+</style>
 
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
@@ -174,30 +370,61 @@ else
                 };
             }
 
-            var showCategories = orderedModules.Any(m => m.Key == SiteHomeModuleKey.HomeCategories && m.IsEnabled);
-            if (showCategories)
-            {
-                categories = await Http.GetFromJsonAsync<List<CategoryDto>>("api/categories");
-            }
-
-            var showNews = orderedModules.Any(m => m.Key == SiteHomeModuleKey.LatestNews && m.IsEnabled);
-            if (showNews)
-            {
-                var list = await Http.GetFromJsonAsync<List<NewsDto>>("api/news?onlyPublished=true&skip=0&take=1");
-                hasPublishedNews = list != null && list.Count > 0;
-            }
+            // Modules introduced by the store upgrade: keep them present and driven by
+            // the «تنظیمات فروشگاه» toggles, regardless of the persisted HomeModules list.
+            if (orderedModules.All(m => m.Key != SiteHomeModuleKey.BestSellers))
+                orderedModules.Add(new() { Key = SiteHomeModuleKey.BestSellers, IsEnabled = settings?.EnableHomeBestSellers ?? true, SortOrder = 31 });
             else
-            {
-                hasPublishedNews = false;
-            }
+                foreach (var m in orderedModules.Where(m => m.Key == SiteHomeModuleKey.BestSellers))
+                    m.IsEnabled = settings?.EnableHomeBestSellers ?? true;
+
+            if (orderedModules.All(m => m.Key != SiteHomeModuleKey.Restocked))
+                orderedModules.Add(new() { Key = SiteHomeModuleKey.Restocked, IsEnabled = settings?.EnableHomeRestocked ?? true, SortOrder = 32 });
+            else
+                foreach (var m in orderedModules.Where(m => m.Key == SiteHomeModuleKey.Restocked))
+                    m.IsEnabled = settings?.EnableHomeRestocked ?? true;
+
+            orderedModules = orderedModules.OrderBy(x => x.SortOrder).ToList();
+
+            // Render the hero and the configured shell as soon as settings are
+            // available. Categories/news are below-the-fold and must not delay
+            // the first paint or LCP of the home page.
+            isInitialLoading = false;
+            _ = LoadSecondaryHomeDataAsync(orderedModules);
         }
         catch
         {
             hasPublishedNews = false;
-        }
-        finally
-        {
             isInitialLoading = false;
+        }
+    }
+
+    private async Task LoadSecondaryHomeDataAsync(List<SiteHomeModuleDto> modules)
+    {
+        try
+        {
+            var showCategories = modules.Any(m => m.Key == SiteHomeModuleKey.HomeCategories && m.IsEnabled);
+            var showNews = modules.Any(m => m.Key == SiteHomeModuleKey.LatestNews && m.IsEnabled);
+
+            // These requests are independent. Running them together shortens the
+            // secondary loading path without changing data or ordering.
+            var categoriesTask = showCategories
+                ? Http.GetFromJsonAsync<List<CategoryDto>>("api/categories")
+                : Task.FromResult<List<CategoryDto>?>(null);
+            var newsTask = showNews
+                ? Http.GetFromJsonAsync<List<NewsDto>>("api/news?onlyPublished=true&skip=0&take=1")
+                : Task.FromResult<List<NewsDto>?>(null);
+
+            await Task.WhenAll(categoriesTask, newsTask);
+
+            categories = await categoriesTask;
+            var news = await newsTask;
+            hasPublishedNews = showNews && news is { Count: > 0 };
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            hasPublishedNews = false;
         }
     }
 

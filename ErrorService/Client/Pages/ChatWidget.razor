@@ -12,27 +12,62 @@
     return;
 }
 
-<div class="chat-widget @(_isOpen ? "chat-open" : "") @(_onlineAdminsCount == 0 && _settingsLoaded ? "chat-offline" : "")">
+<div class="chat-widget @(_isOpen ? "chat-open" : "") @(_onlineAdminsCount == 0 && _settingsLoaded ? "chat-offline" : "") @((_isOpen && _winMode == "max") ? "chat-win-max" : "")">
     @if (!_isOpen)
     {
-        <button class="chat-fab" @onclick="ToggleOpen" title="پشتیبانی آنلاین">
-            <svg class="chat-fab-icon" width="28" height="28" viewBox="0 0 24 24" fill="none">
-                <path d="M4 13a5.5 5.5 0 0 1 5.5-5.5h5A5.5 5.5 0 0 1 20 13v1.7a2.6 2.6 0 0 1-2.6 2.6H9.4l-3.64 2.43A.9.9 0 0 1 4 19V13Z" fill="#fff"/>
-                <circle class="chat-dot1" cx="9.2" cy="11.6" r="1.15" fill="#4361ee"/>
-                <circle class="chat-dot2" cx="12" cy="11.6" r="1.15" fill="#4361ee"/>
-                <circle class="chat-dot3" cx="14.8" cy="11.6" r="1.15" fill="#4361ee"/>
-                <path d="M12.6 2v2M11.4 3h2.4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
+        <button class="chat-fab @(UseOperatorImage ? "chat-fab--avatar" : "")" @onclick="ToggleOpen" title="پشتیبانی آنلاین">
+            @if (UseOperatorImage)
+            {
+                <img class="chat-fab-img" src="@_settings.ChatOperatorImageUrl" alt="پشتیبانی" @onerror="() => _fabImgFailed = true" />
+            }
+            else
+            {
+                <svg class="chat-fab-icon" width="28" height="28" viewBox="0 0 24 24" fill="none">
+                    <path d="M4 13a5.5 5.5 0 0 1 5.5-5.5h5A5.5 5.5 0 0 1 20 13v1.7a2.6 2.6 0 0 1-2.6 2.6H9.4l-3.64 2.43A.9.9 0 0 1 4 19V13Z" fill="#fff"/>
+                    <circle class="chat-dot1" cx="9.2" cy="11.6" r="1.15" fill="#4361ee"/>
+                    <circle class="chat-dot2" cx="12" cy="11.6" r="1.15" fill="#4361ee"/>
+                    <circle class="chat-dot3" cx="14.8" cy="11.6" r="1.15" fill="#4361ee"/>
+                    <path d="M12.6 2v2M11.4 3h2.4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+            }
             <svg class="chat-fab-ring" width="64" height="64" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="29" stroke="currentColor" stroke-width="2" opacity=".35"/></svg>
             @if (_unreadCount > 0)
             {
                 <span class="chat-badge">@_unreadCount</span>
             }
         </button>
+        @if (_showGreeting)
+        {
+            <div class="chat-greet" @onclick="ToggleOpen">
+                <button class="chat-greet__close" title="بستن" @onclick="DismissGreeting" @onclick:stopPropagation><span class="oi oi-x"></span></button>
+                <div class="chat-greet__row">
+                    <span class="chat-greet__avatar">
+                        @if (UseOperatorImage)
+                        {
+                            <img src="@_settings.ChatOperatorImageUrl" alt="" @onerror="() => _fabImgFailed = true" />
+                        }
+                        else
+                        {
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <path d="M4 13a5.5 5.5 0 0 1 5.5-5.5h5A5.5 5.5 0 0 1 20 13v1.7a2.6 2.6 0 0 1-2.6 2.6H9.4l-3.64 2.43A.9.9 0 0 1 4 19V13Z" fill="#fff"/>
+                                <circle cx="9.2" cy="11.6" r="1.15" fill="#4361ee"/>
+                                <circle cx="12" cy="11.6" r="1.15" fill="#4361ee"/>
+                                <circle cx="14.8" cy="11.6" r="1.15" fill="#4361ee"/>
+                            </svg>
+                        }
+                    </span>
+                    <div class="chat-greet__text">
+                        <b>پشتیبانی ارورسرویس</b>
+                        <p>@GreetingText</p>
+                    </div>
+                </div>
+                <span class="chat-greet__cta">برای گفتگو کلیک کنید 💬</span>
+            </div>
+        }
     }
     else
     {
-        <div class="chat-panel">
+        <div class="chat-panel @PanelClass">
             <div class="chat-header">
                 <div class="d-flex align-items-center gap-2">
                     <span class="fw-bold">پشتیبانی آنلاین</span>
@@ -41,7 +76,25 @@
                         @(_onlineAdminsCount > 0 ? "اپراتور آنلاین" : "اپراتور آفلاین")
                     </span>
                 </div>
-                <button class="chat-header-btn" @onclick="ToggleOpen" title="بستن"><span class="oi oi-x"></span></button>
+                <div class="chat-header-btns">
+                    @if (_winMode == "min")
+                    {
+                        <button class="chat-header-btn" @onclick="RestoreWin" title="بازگردانی پنجره"><span class="oi oi-fullscreen-exit"></span></button>
+                    }
+                    else
+                    {
+                        <button class="chat-header-btn chat-win-ctl" @onclick="MinimizeWin" title="کوچک‌نمایی"><span class="oi oi-minus"></span></button>
+                        @if (_winMode == "max")
+                        {
+                            <button class="chat-header-btn chat-win-ctl" @onclick="RestoreWin" title="بازگردانی به اندازه عادی"><span class="oi oi-fullscreen-exit"></span></button>
+                        }
+                        else
+                        {
+                            <button class="chat-header-btn chat-win-ctl" @onclick="MaximizeWin" title="بزرگ‌نمایی"><span class="oi oi-fullscreen-enter"></span></button>
+                        }
+                    }
+                    <button class="chat-header-btn" @onclick="CloseWin" title="بستن"><span class="oi oi-x"></span></button>
+                </div>
             </div>
 
             @if (_status == ChatWidgetStatus.UserInfo)
@@ -158,7 +211,7 @@
                             }
                             else if (msg.MessageType == ChatMessageTypeDto.System)
                             {
-                                <div class="chat-bubble chat-bubble-system">@msg.Content</div>
+                                <div class="chat-bubble chat-bubble-system">@((MarkupString)LinkifyContent(msg.Content))</div>
                             }
                             <div class="chat-time">
                             @if (IsUserLike(msg))
@@ -198,9 +251,27 @@
                             <div class="chat-bubble chat-typing"><span></span><span></span><span></span></div>
                         </div>
                     }
+                    @if (_aiTyping)
+                    {
+                        <div class="chat-msg chat-msg-op">
+                            <div class="chat-bubble chat-typing chat-typing-ai">
+                                <span></span><span></span><span></span>
+                                <em class="chat-typing-label">دستیار در حال نوشتن پاسخ است...</em>
+                            </div>
+                        </div>
+                    }
                 </div>
 
                 <div class="chat-footer">
+                    @if (_status == ChatWidgetStatus.Active && _recState == RecOrder.Idle && _suggestedTopics.Count > 0 && !_messages.Any(m => m.SenderType == ChatSenderTypeDto.User))
+                    {
+                        <div class="chat-chips">
+                            @foreach (var topic in _suggestedTopics)
+                            {
+                                <button class="chat-chip" @onclick="() => SendChip(topic)">@topic</button>
+                            }
+                        </div>
+                    }
                     @if (_emojiOpen)
                     {
                         <div class="chat-emoji-panel">
@@ -231,6 +302,50 @@
                                 <button class="chat-rec-btn del" @onclick="DiscardPendingVoice" title="حذف"><span class="oi oi-x"></span></button>
                             </div>
                         </div>
+                    }
+                    @if (_aiQuota is { assistantEnabled: true } q)
+                    {
+                        @if (q.isGuest && !q.guestEnabled)
+                        {
+                            <div class="chat-quota chat-quota--guest">
+                                <span class="chat-quota-ico">🤖</span>
+                                <span class="chat-quota-text">با عضویت رایگان، گفتگو با دستیار هوشمند فعال می‌شود.</span>
+                                <a class="chat-quota-link" href="@q.registerUrl">عضویت</a>
+                            </div>
+                        }
+                        else if (q.isGuest)
+                        {
+                            <div class="chat-quota">
+                                <span class="chat-quota-ico">🤖</span>
+                                <span class="chat-quota-text">دستیار هوشمند فعال است — تا پایان این گفتگو @ToFa(q.remainingInSession) پاسخ باقی مانده.</span>
+                                <a class="chat-quota-link chat-quota-link--muted" href="@q.registerUrl">عضویت</a>
+                            </div>
+                        }
+                        else if (q.assistantAvailable && q.dailyLimit > 0)
+                        {
+                            var pct = q.dailyLimit > 0 ? Math.Clamp(q.usedToday * 100 / q.dailyLimit, 0, 100) : 0;
+                            <div class="chat-quota @(q.remainingToday <= 0 ? "chat-quota--empty" : "")">
+                                <span class="chat-quota-ico">🤖</span>
+                                <span class="chat-quota-text">
+                                    اعتبار امروز: <b>@ToFa(q.usedToday)</b> از <b>@ToFa(q.dailyLimit)</b> پاسخ مصرف شده — <b>@ToFa(q.remainingToday ?? 0)</b> باقی مانده
+                                </span>
+                                <span class="chat-quota-bar"><span class="chat-quota-bar-fill" style="width:@pct%"></span></span>
+                            </div>
+                            @if (q.remainingToday <= 0)
+                            {
+                                <div class="chat-quota chat-quota--warn">
+                                    <span class="chat-quota-ico">⏳</span>
+                                    <span class="chat-quota-text">سقف روزانه شما تکمیل شد؛ فردا دوباره فعال می‌شود. همین حالا با اپراتور انسانی گفتگو کنید.</span>
+                                </div>
+                            }
+                        }
+                        else if (q.memberDisabled)
+                        {
+                            <div class="chat-quota chat-quota--warn">
+                                <span class="chat-quota-ico">⛔</span>
+                                <span class="chat-quota-text">دستیار هوشمند برای حساب شما غیرفعال است؛ با اپراتور انسانی گفتگو کنید.</span>
+                            </div>
+                        }
                     }
                     <div class="chat-input-row">
                         <input class="chat-input" value="@_inputText" @oninput="OnInputChanged"
@@ -319,8 +434,36 @@
     @@keyframes chat-dot { 0%, 60%, 100% { opacity: .2; } 30% { opacity: 1; } }
     @@keyframes chat-badge-pop { from { transform: scale(0); } to { transform: scale(1); } }
     .chat-badge { position: absolute; top: -4px; right: -4px; background: #dc3545; color: #fff; border-radius: 50%; width: 24px; height: 24px; font-size: .72rem; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; z-index: 4; box-shadow: 0 3px 10px rgba(220,53,69,.45); animation: chat-badge-pop .4s cubic-bezier(.34,1.56,.64,1); }
+    .chat-fab--avatar { background: linear-gradient(135deg,#0d6efd 0%,#4361ee 55%,#7c3aed 100%); padding: 3px; overflow: visible; animation: chat-fab-in .55s cubic-bezier(.34,1.56,.64,1), chat-avatar-glow 2.6s ease-in-out infinite; }
+    .chat-fab--avatar::before { display: block; content: ''; position: absolute; top: -5px; left: -5px; right: auto; bottom: auto; width: calc(100% + 10px); height: calc(100% + 10px); border-radius: 50%; background: conic-gradient(from 0deg, #0d6efd, #7c3aed, #22d3ee, #34d399, #0d6efd); z-index: 0; filter: none; transform: none; animation: chat-ring-spin 4s linear infinite, chat-ring-pulse 2.4s ease-in-out infinite; }
+    .chat-fab--avatar::after { display: none; }
+    .chat-fab--avatar:hover::before { animation: chat-ring-spin 1.6s linear infinite, chat-ring-pulse 1.2s ease-in-out infinite; }
+    .chat-fab-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; position: relative; z-index: 2; border: 2px solid #fff; }
+    @@keyframes chat-ring-spin { to { transform: rotate(360deg); } }
+    @@keyframes chat-ring-pulse { 0%, 100% { opacity: .85; filter: blur(0); } 50% { opacity: 1; filter: blur(.5px); } }
+    @@keyframes chat-avatar-glow { 0%, 100% { box-shadow: 0 6px 24px rgba(67,97,238,.5), 0 0 0 0 rgba(124,58,237,.45); } 50% { box-shadow: 0 8px 30px rgba(67,97,238,.65), 0 0 0 12px rgba(124,58,237,0); } }
+    .chat-greet { position: absolute; bottom: calc(100% + 14px); left: 0; width: 280px; max-width: calc(100vw - 40px); background: #fff; border: 1px solid #e8edf5; border-radius: 18px; box-shadow: 0 12px 40px rgba(15,23,42,.16), 0 4px 12px rgba(13,110,253,.12); padding: 14px 14px 12px; cursor: pointer; direction: rtl; z-index: 9998; animation: chat-greet-in .45s cubic-bezier(.34,1.56,.64,1); }
+    .chat-greet::after { content: ''; position: absolute; bottom: -7px; left: 26px; width: 14px; height: 14px; background: #fff; border-right: 1px solid #e8edf5; border-bottom: 1px solid #e8edf5; border-radius: 0 0 4px 0; transform: rotate(45deg); }
+    @@keyframes chat-greet-in { from { opacity: 0; transform: translateY(10px) scale(.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .chat-greet__close { position: absolute; top: 8px; left: 8px; border: none; background: #f1f5f9; color: #94a3b8; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: .62rem; transition: .15s; z-index: 1; }
+    .chat-greet__close:hover { background: #e2e8f0; color: #475569; }
+    .chat-greet__row { display: flex; align-items: flex-start; gap: 10px; }
+    .chat-greet__avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg,#0d6efd,#7c3aed); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 3px 10px rgba(13,110,253,.35); overflow: hidden; }
+    .chat-greet__avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    .chat-greet__text { min-width: 0; padding-left: 20px; }
+    .chat-greet__text b { display: block; font-size: .78rem; color: #1e293b; margin-bottom: 2px; }
+    .chat-greet__text p { margin: 0; font-size: .78rem; line-height: 1.6; color: #64748b; }
+    .chat-greet__cta { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0; font-size: .7rem; font-weight: 700; color: #0d6efd; }
     @@keyframes chat-ring { 0%,100% { opacity: .45; transform: scale(1); } 50% { opacity: 0; transform: scale(1.18); } }
-    .chat-panel { width: 340px; height: 520px; max-height: calc(100vh - 100px); background: #fff; border-radius: 16px; box-shadow: 0 8px 40px rgba(0,0,0,.15); display: flex; flex-direction: column; overflow: hidden; animation: chat-in .25s ease; }
+    .chat-panel { width: 340px; height: 520px; max-height: calc(100vh - 100px); background: #fff; border-radius: 16px; box-shadow: 0 8px 40px rgba(0,0,0,.15); display: flex; flex-direction: column; overflow: hidden; animation: chat-in .25s ease; transition: width .22s ease, height .22s ease; }
+    .chat-panel--max { width: min(780px, calc(100vw - 40px)); height: min(86vh, 860px); max-height: calc(100vh - 48px); }
+    .chat-panel--min { height: auto; max-height: none; min-height: 0; }
+    .chat-panel--min .chat-body, .chat-panel--min .chat-footer { display: none; }
+    .chat-win-max { left: 50%; right: auto; transform: translateX(-50%); bottom: 20px; }
+    .chat-header-btns { display: flex; align-items: center; gap: 6px; }
+    .chat-header-btns .chat-header-btn { width: 28px; height: 28px; }
+    .chat-header-btns .chat-header-btn:hover { background: rgba(255,255,255,.32); transform: translateY(-1px); }
+    .chat-win-ctl { font-size: .72rem; }
     @@keyframes chat-in { from { opacity:0; transform:translateY(16px) scale(.95); } to { opacity:1; transform:translateY(0) scale(1); } }
     .chat-header { background: #0d6efd; color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
     .bale-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,255,255,.18); color: #fff; font-size: .68rem; padding: 3px 9px; border-radius: 12px; direction: rtl; }
@@ -337,6 +480,8 @@
     .chat-msg-user .chat-bubble { background: #0d6efd; color: #fff; border-bottom-left-radius: 4px; }
     .chat-msg-op .chat-bubble { background: #e9ecef; color: #212529; border-bottom-right-radius: 4px; }
     .chat-bubble-system { background: transparent; color: #6c757d; font-size: .75rem; text-align: center; padding: 4px 8px; }
+    .chat-bubble code { background: rgba(0,0,0,.14); padding: 1px 5px; border-radius: 5px; font-size: .85em; direction: ltr; unicode-bidi: embed; }
+    .chat-msg-user .chat-bubble code { background: rgba(255,255,255,.22); color: #fff; }
     .chat-bubble-deleted { background: transparent !important; color: #adb5bd !important; font-style: italic; font-size: .72rem; }
     .chat-date-sep { align-self: center; background: #e9ecef; color: #6c757d; font-size: .62rem; padding: 2px 12px; border-radius: 12px; margin: 4px 0; }
     .chat-reply-quote { background: rgba(255,255,255,.22); border-right: 3px solid rgba(255,255,255,.8); border-radius: 8px; padding: 3px 10px; margin-bottom: 4px; display: flex; gap: 6px; font-size: .68rem; }
@@ -355,13 +500,35 @@
     .chat-typing span { width: 7px; height: 7px; border-radius: 50%; background: #6c757d; animation: chat-bounce 1.4s infinite; }
     .chat-typing span:nth-child(2) { animation-delay: .2s; }
     .chat-typing span:nth-child(3) { animation-delay: .4s; }
+    .chat-typing-ai { align-items: center; gap: 5px; }
+    .chat-typing-ai span { background: #4f46e5; }
+    .chat-typing-label { font-style: normal; font-size: .72rem; color: #6b7280; margin-right: 4px; white-space: nowrap; animation: chat-fade 1.6s ease-in-out infinite; }
+    @@keyframes chat-fade { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
     @@keyframes chat-bounce { 0%,60%,100% { transform:translateY(0); } 30% { transform:translateY(-6px); } }
     .chat-footer { padding: 8px 10px; border-top: 1px solid #e9ecef; background: #fff; }
+    .chat-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 2px 4px; }
+    .chat-chip { border: 1.5px dashed #c7d2fe; background: #eef2ff; color: #4338ca; border-radius: 999px; padding: 5px 12px; font-size: .72rem; font-weight: 700; cursor: pointer; transition: all .15s; font-family: inherit; }
+    .chat-chip:hover { background: #4338ca; color: #fff; border-style: solid; border-color: #4338ca; transform: translateY(-1px); }
+    .chat-chip:active { transform: scale(.96); }
     .chat-emoji-panel { display: flex; flex-wrap: wrap; gap: 2px; max-height: 130px; overflow-y: auto; padding: 6px 4px 8px; }
     .chat-emoji-btn { background: transparent; border: none; font-size: 1.25rem; padding: 3px 5px; border-radius: 8px; cursor: pointer; transition: background .15s; flex-shrink: 0; }
     .chat-emoji-btn:hover { background: #e9ecef; }
-    .chat-offline .chat-fab { filter: grayscale(.85); animation: none; }
+    .chat-offline .chat-fab { filter: none; }
     .chat-offline .chat-fab-ring { display: none; }
+    .chat-offline .chat-fab--avatar::before { opacity: .5; }
+    .chat-quota { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 10px; background: #eef2ff; border: 1px solid #e0e7ff; margin-bottom: 8px; font-size: .72rem; color: #4338ca; animation: msgIn .2s ease; flex-wrap: wrap; }
+    .chat-quota--guest { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+    .chat-quota--warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+    .chat-quota--empty { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+    .chat-quota-ico { font-size: .95rem; flex-shrink: 0; }
+    .chat-quota-text { flex: 1; min-width: 0; line-height: 1.5; }
+    .chat-quota-text b { font-weight: 800; font-variant-numeric: tabular-nums; }
+    .chat-quota-link { flex-shrink: 0; background: #4f46e5; color: #fff; border-radius: 999px; padding: 3px 12px; font-size: .7rem; font-weight: 700; text-decoration: none; transition: .15s; }
+    .chat-quota-link:hover { background: #4338ca; color: #fff; }
+    .chat-quota-link--muted { background: transparent; color: #4f46e5; border: 1px solid #c7d2fe; }
+    .chat-quota-link--muted:hover { background: #eef2ff; }
+    .chat-quota-bar { flex-shrink: 0; width: 54px; height: 5px; border-radius: 99px; background: rgba(67,56,202,.18); overflow: hidden; }
+    .chat-quota-bar-fill { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg,#6366f1,#4f46e5); transition: width .3s ease; }
     .chat-input-row { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; position: relative; }
     .chat-input { flex: 1; min-width: 0; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 12px 16px; font-size: .92rem; outline: none; transition: border-color .2s, box-shadow .2s; min-height: 48px; }
     .chat-input:focus { border-color: #0d6efd; box-shadow: 0 0 0 3px rgba(13,110,253,.12); }
@@ -419,6 +586,8 @@
         .chat-msg-user .chat-bubble { background: #0b5ed7; color: #fff; }
         .chat-bubble-system { color: #8fa3bd; }
         .chat-footer { border-top: 1px solid #2d3b4f; background: #1e2836; }
+        .chat-chip { background: #2d3b4f; color: #c9d4e2; border-color: #4a5a72; }
+        .chat-chip:hover { background: #4f46e5; color: #fff; border-color: #4f46e5; }
         .chat-emoji-btn:hover { background: #2d3b4f; }
         .chat-input { background: #17202d; border-color: #2d3b4f; color: #e9ecef; }
         .chat-input::placeholder { color: #7d8ea3; }
@@ -432,20 +601,44 @@
         .chat-attach-arrow { color: #4a5a72; }
         .chat-time { color: #6b7d95; }
         .chat-badge { border-color: #1e2836; }
+        .chat-greet { background: #1e2836; border-color: #2d3b4f; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+        .chat-greet::after { background: #1e2836; border-color: #2d3b4f; }
+        .chat-greet__text b { color: #e9ecef; }
+        .chat-greet__text p { color: #8fa3bd; }
+        .chat-greet__cta { border-top-color: #2d3b4f; }
+        .chat-greet__close { background: #2d3b4f; color: #8fa3bd; }
+        .chat-fab-img { border-color: #1e2836; }
+        .chat-quota { background: #232f43; border-color: #33415e; color: #c9d4e2; }
+        .chat-quota--guest { background: #16301f; border-color: #1f4d30; color: #86efac; }
+        .chat-quota--warn { background: #3a2e14; border-color: #5c4a1e; color: #fcd34d; }
+        .chat-quota--empty { background: #3a1a1a; border-color: #5c2626; color: #fca5a5; }
+        .chat-quota-link--muted { color: #a5b4fc; border-color: #4a5a8a; }
+        .chat-quota-link--muted:hover { background: #2d3b5c; }
+        .chat-quota-bar { background: rgba(165,180,252,.2); }
+        .chat-quota-bar-fill { background: linear-gradient(90deg,#818cf8,#6366f1); }
     }
 
     /* ── Mobile ── */
     @@media (max-width: 480px) {
         .chat-widget { bottom: 0; left: 0; right: 0; }
-        .chat-fab { position: fixed; bottom: 80px; left: 12px; width: 56px; height: 56px; }
+        .chat-fab { position: fixed; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); left: 12px; width: 56px; height: 56px; }
+        .chat-greet { position: fixed; bottom: calc(148px + env(safe-area-inset-bottom, 0px)); left: 12px; right: 12px; width: auto; max-width: none; }
         .chat-panel { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; box-shadow: none; }
         .chat-body { padding-bottom: env(safe-area-inset-bottom, 8px); }
         .chat-footer { padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px)); }
+        .chat-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+        .chat-chips::-webkit-scrollbar { display: none; }
+        .chat-chip { white-space: nowrap; flex-shrink: 0; }
         .chat-msg { max-width: 88%; }
         .chat-input { padding: 13px 16px; font-size: 1.05rem; min-height: 52px; }
         .chat-btn { width: 46px; height: 46px; }
         .chat-btn-send { width: 50px; height: 50px; }
         .chat-media-img { max-width: 180px; max-height: 160px; }
+        .chat-win-ctl { display: none !important; }
+        .chat-win-max { left: 0; right: 0; transform: none; bottom: 0; }
+        .chat-panel--max, .chat-panel--min { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; box-shadow: none; }
+        .chat-panel--min .chat-body { display: flex; }
+        .chat-panel--min .chat-footer { display: block; }
     }
 </style>
 
@@ -456,10 +649,14 @@
     private List<ChatMessageDto> _messages = new();
     private string _inputText = "";
     private bool _operatorTyping;
+    private bool _aiTyping;
     private int _sessionId;
     private int _unreadCount;
     private string? _statusMessage;
     private bool _isOpen;
+    private string _winMode = "normal";
+    private string _winPrev = "normal";
+    private string PanelClass => _winMode == "max" ? "chat-panel--max" : _winMode == "min" ? "chat-panel--min" : "";
     private bool _voiceSupported;
     private RecOrder _recState = RecOrder.Idle;
     private int _recSeconds;
@@ -486,12 +683,56 @@
     private string _ratingComment = "";
     private int _lastSessionId;
     private int _onlineAdminsCount;
+    private bool _showGreeting;
+    private bool _fabImgFailed;
+    private List<string> _suggestedTopics = new();
+    private const string GreetingStorageKey = "es_chat_greeted_session";
+    private const string DefaultGreetingText = "به ارورسرویس خوش آمدید، چطور می‌توانم کمکتان کنم؟";
+
+    private AiQuotaInfo? _aiQuota;
+
+    private sealed class AiQuotaInfo
+    {
+        public bool assistantEnabled { get; set; }
+        public bool guestEnabled { get; set; }
+        public bool isGuest { get; set; }
+        public bool isLoggedIn { get; set; }
+        public bool memberDisabled { get; set; }
+        public int dailyLimit { get; set; }
+        public int usedToday { get; set; }
+        public int? remainingToday { get; set; }
+        public int sessionLimit { get; set; }
+        public int usedInSession { get; set; }
+        public int remainingInSession { get; set; }
+        public bool assistantAvailable { get; set; }
+        public string? registerUrl { get; set; }
+        public string? loginUrl { get; set; }
+    }
+
+    private static string ToFa(int n) => n.ToString("N0").Replace("0", "۰").Replace("1", "۱").Replace("2", "۲").Replace("3", "۳").Replace("4", "۴").Replace("5", "۵").Replace("6", "۶").Replace("7", "۷").Replace("8", "۸").Replace("9", "۹");
+
+    private async Task RefreshAiQuotaAsync()
+    {
+        try
+        {
+            var visitorId = await GetVisitorId();
+            _aiQuota = await Http.GetFromJsonAsync<AiQuotaInfo>($"api/chat/ai-quota?visitorId={visitorId}");
+        }
+        catch { }
+    }
+
+    private bool UseOperatorImage =>
+        _settingsLoaded && !string.IsNullOrWhiteSpace(_settings.ChatOperatorImageUrl) && !_fabImgFailed;
+
+    private string GreetingText =>
+        !string.IsNullOrWhiteSpace(_settings.ChatGreetingText) ? _settings.ChatGreetingText : DefaultGreetingText;
 
     protected override async Task OnInitializedAsync()
     {
             try { _settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/SiteSettings") ?? new(); }
         catch { }
         _settingsLoaded = true;
+        _suggestedTopics = ParseTopics(_settings.ChatSuggestedTopics);
 
         try
         {
@@ -526,8 +767,40 @@
             try { _voiceSupported = await JS.InvokeAsync<bool>("__chatVoiceRecorder.isSupported"); } catch { }
             _dotNetRef = DotNetObjectReference.Create(this);
             try { await JS.InvokeVoidAsync("window.__chatSetDotNetRef", _dotNetRef); } catch { }
+            _ = TryShowGreetingAsync();
             StateHasChanged();
         }
+    }
+
+    private async Task TryShowGreetingAsync()
+    {
+        try
+        {
+            await Task.Delay(2400);
+            if (!_settingsLoaded || !_settings.EnableOnlineChat) return;
+            if (!_settings.ChatGreetingEnabled) return;
+            if (!_settings.AllowGuestChat && !_isLoggedIn) return;
+            if (_isOpen) return;
+            var seen = await JS.InvokeAsync<string>("sessionStorage.getItem", GreetingStorageKey);
+            if (!string.IsNullOrEmpty(seen)) return;
+            await JS.InvokeVoidAsync("sessionStorage.setItem", GreetingStorageKey, "1");
+            _showGreeting = true;
+            await InvokeAsync(StateHasChanged);
+            _ = JS.InvokeVoidAsync("__chatPlayNotification");
+            await Task.Delay(14000);
+            if (_showGreeting)
+            {
+                _showGreeting = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch { }
+    }
+
+    private Task DismissGreeting()
+    {
+        _showGreeting = false;
+        return Task.CompletedTask;
     }
 
     private async Task CheckExistingSession()
@@ -544,6 +817,7 @@
                 if (_hub != null)
                     await _hub.InvokeAsync("JoinSession", _sessionId);
                 await LoadMessages();
+                _ = RefreshAiQuotaAsync();
                 StateHasChanged();
             }
         }
@@ -618,8 +892,13 @@
         }
 
         var visitorId = await GetVisitorId();
+        var authTok = await JS.InvokeAsync<string>("localStorage.getItem", "auth_token");
         _hub = new HubConnectionBuilder()
-            .WithUrl(Nav.ToAbsoluteUri($"/hubs/chat?visitorId={visitorId}"))
+            .WithUrl(Nav.ToAbsoluteUri($"/hubs/chat?visitorId={visitorId}"), o =>
+            {
+                if (!string.IsNullOrEmpty(authTok))
+                    o.AccessTokenProvider = () => Task.FromResult<string?>(authTok);
+            })
             .WithAutomaticReconnect()
             .Build();
 
@@ -633,8 +912,15 @@
             if (msg.SenderType == ChatSenderTypeDto.Operator)
             {
                 _operatorTyping = false;
+                _aiTyping = false;
+                if (msg.SenderId == "پاسخ خودکار") _ = RefreshAiQuotaAsync();
                 if (msg.SenderId != "پاسخ خودکار") _operatorRequested = true;
                 _ = _hub.InvokeAsync("MarkAsRead", msg.SessionId, new List<int> { msg.Id });
+            }
+            if (msg.SenderType == ChatSenderTypeDto.System)
+            {
+                _aiTyping = false;
+                _ = RefreshAiQuotaAsync();
             }
             if (!_isOpen && msg.SenderType != ChatSenderTypeDto.User)
             {
@@ -651,6 +937,15 @@
         {
             _operatorTyping = isTyping;
             InvokeAsync(StateHasChanged);
+            if (isTyping) _ = ScrollToBottom();
+        });
+
+        _hub.On<bool>("AiTyping", isTyping =>
+        {
+            _aiTyping = isTyping;
+            if (isTyping) _operatorTyping = false;
+            InvokeAsync(StateHasChanged);
+            if (isTyping) _ = ScrollToBottom();
         });
 
         _hub.On<int>("SessionClosed", sessionId =>
@@ -748,8 +1043,39 @@
         try { _onlineAdminsCount = await _hub.InvokeAsync<int>("GetPresence"); } catch { }
     }
 
+    private async Task MinimizeWin()
+    {
+        if (_winMode != "min") _winPrev = _winMode;
+        _winMode = "min";
+        StateHasChanged();
+    }
+
+    private async Task MaximizeWin()
+    {
+        if (_winMode != "max") _winPrev = _winMode;
+        _winMode = "max";
+        StateHasChanged();
+        await ScrollToBottom();
+    }
+
+    private async Task RestoreWin()
+    {
+        _winMode = string.IsNullOrEmpty(_winPrev) || _winPrev == "min" ? "normal" : _winPrev;
+        _winPrev = "normal";
+        StateHasChanged();
+        await ScrollToBottom();
+    }
+
+    private async Task CloseWin()
+    {
+        _winMode = "normal";
+        _winPrev = "normal";
+        await ToggleOpen();
+    }
+
     private async Task ToggleOpen()
     {
+        _showGreeting = false;
         _isOpen = !_isOpen;
         if (_isOpen)
         {
@@ -818,6 +1144,7 @@
             _status = ChatWidgetStatus.Active;
             _statusMessage = null;
             await LoadMessages();
+            _ = RefreshAiQuotaAsync();
         }
         catch
         {
@@ -856,12 +1183,32 @@
     private int _nextTempId = -1;
     private Queue<int> _pendingTempIds = new();
 
+    private static List<string> ParseTopics(string? raw)
+    {
+        var fallback = new List<string> { "پشتیبانی فنی و عیب‌یابی", "پیگیری سفارش", "راهنمای خرید و استعلام قیمت", "سایر موضوعات" };
+        if (string.IsNullOrWhiteSpace(raw)) return fallback;
+        var list = raw
+            .Split(new[] { ',', '،', '|', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => t.Trim())
+            .Where(t => t.Length > 0)
+            .Take(6)
+            .ToList();
+        return list.Count > 0 ? list : fallback;
+    }
+
+    private async Task SendChip(string topic)
+    {
+        _inputText = topic;
+        await SendText();
+    }
+
     private async Task SendText()
     {
         var text = _inputText.Trim();
         if (string.IsNullOrWhiteSpace(text) || _sessionId == 0) return;
         _inputText = "";
         _operatorTyping = false;
+        _aiTyping = false;
 
         var tempId = _nextTempId--;
         _pendingTempIds.Enqueue(tempId);
@@ -1213,8 +1560,12 @@
 
     private async Task ScrollToBottom()
     {
-        await Task.Delay(50);
-        await JS.InvokeVoidAsync("__chatScrollToBottom", ".chat-body");
+        foreach (var wait in new[] { 60, 240, 500, 900 })
+        {
+            await Task.Delay(wait);
+            try { await JS.InvokeVoidAsync("__chatScrollToBottom", ".chat-body"); }
+            catch { return; }
+        }
     }
 
     private void OpenImage(string? url) => _lightboxUrl = url;
@@ -1243,14 +1594,61 @@
         m.SenderType == ChatSenderTypeDto.User ||
         (m.SenderType == ChatSenderTypeDto.Operator && m.SenderId != null && m.SenderId.StartsWith("اپراتور ("));
 
+    private static readonly System.Text.RegularExpressions.Regex UrlRegex =
+        new(@"(?:https?://[^\s<>""']+|/(?:auth|account|profile|register|login)[a-z0-9/_\-]*)", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private static string ApplyMarkdown(string s)
+    {
+        // headings: ### text
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"(?m)^\s*#{1,6}\s+(.+?)\s*$", "<strong>$1</strong>");
+
+        // bullet list: - item  /  + item
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"(?m)^\s*[-+]\s+", "• ");
+
+        // bold: **text**
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\*\*(?!\s)([^*\n]+?)(?<!\s)\*\*", "<strong>$1</strong>");
+
+        // italic: *text*  and  _text_
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![*\w])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![*\w])", "<em>$1</em>");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![\w])_(?!\s)([^_\n]+?)(?<!\s)_(?![\w])", "<em>$1</em>");
+
+        // inline code: `text`
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"`([^`\n]+)`", "<code>$1</code>");
+
+        return s;
+    }
+
     private static string LinkifyContent(string? content)
     {
         if (string.IsNullOrWhiteSpace(content)) return "";
-        var escaped = System.Net.WebUtility.HtmlEncode(content);
-        return System.Text.RegularExpressions.Regex.Replace(
-            escaped,
-            @"(https?://[^\s<>""']+)",
-            "<a href=\"$1\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:inherit;text-decoration:underline;\">$1</a>");
+
+        // 1) pull URLs out first (on raw text) so encoding/markdown cannot touch them
+        var urls = new System.Collections.Generic.List<string>();
+        var src = UrlRegex.Replace(content, m =>
+        {
+            urls.Add(m.Value);
+            return "zzchaturl" + (urls.Count - 1) + "zz";
+        });
+
+        // 2) escape HTML, then render markdown
+        var s = ApplyMarkdown(System.Net.WebUtility.HtmlEncode(src));
+
+        // 3) put URLs back as safe links
+        if (urls.Count > 0)
+        {
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"zzchaturl(\d+)zz", m =>
+            {
+                if (!int.TryParse(m.Groups[1].Value, out var i) || i < 0 || i >= urls.Count) return "";
+                var u = System.Net.WebUtility.HtmlEncode(urls[i]);
+                var external = u.StartsWith("http", StringComparison.OrdinalIgnoreCase);
+                var attrs = external
+                    ? "target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:inherit;text-decoration:underline;word-break:break-all;\""
+                    : "style=\"color:inherit;text-decoration:underline;\"";
+                return "<a href=\"" + u + "\" " + attrs + ">" + u + "</a>";
+            });
+        }
+
+        return s;
     }
 
     private void SetRating(int val)

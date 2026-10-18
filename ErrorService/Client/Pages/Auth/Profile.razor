@@ -13,8 +13,10 @@
 @inject HttpClient Http
 @inject ErrorService.Client.Services.ToastService Toast
 @inject ErrorService.Client.Services.WishlistService Ws
+@inject ErrorService.Client.Services.RecentlyViewedService RecentSvc
 @inject ErrorService.Client.Services.CartService Cart
 @inject ErrorService.Client.Services.NotificationCenterService Notifs
+@inject ErrorService.Client.Services.CheckoutRecoveryService Recovery
 @inject IJSRuntime JS
 
 <PageTitle>پروفایل کاربری | ارورسرویس</PageTitle>
@@ -74,10 +76,10 @@
                                 <span class="oi oi-chat"></span>
                             </span>
                             <span class="pf-menu-text">تیکت‌ها</span>
-                            @if (ActiveTicketsCount > 0)
-                            {
-                                <span class="pf-menu-badge pf-badge-red">@ActiveTicketsCount</span>
-                            }
+                @if (UnreadTicketsCount > 0)
+                {
+                    <span class="pf-menu-badge pf-badge-red">@UnreadTicketsCount</span>
+                }
                         </button>
 
                         <button class="pf-menu-item @(activeTab == "wishlist" ? "active" : "")" @onclick='() => SwitchTab("wishlist")'>
@@ -168,6 +170,55 @@
                     }
                     else
                     {
+                        <!-- Unfinished order / abandoned cart resume -->
+                        @if (Recovery.Resume.Order is { } uo)
+                        {
+                            <div class="resume-banner resume-banner--card animate__animated animate__fadeInDown">
+                                <span class="resume-banner__icon" aria-hidden="true">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                                </span>
+                                <span class="resume-banner__text">
+                                    <strong class="resume-banner__title">سفارش شما هنوز تکمیل نشده است</strong>
+                                    <span class="resume-banner__sub">
+                                        سفارش <span dir="ltr">@uo.OrderNumber</span>
+                                        · @uo.TotalAmount.ToString("N0") تومان
+                                        · @uo.StatusLabel
+                                    </span>
+                                </span>
+                                @if (uo.NeedsPayment && uo.MinutesToAutoCancel > 0)
+                                {
+                                    <span class="resume-banner__timer">
+                                        <span class="oi oi-clock"></span>
+                                        تا لغو خودکار @uo.MinutesToAutoCancel دقیقه
+                                    </span>
+                                }
+                                <a class="resume-banner__cta" href="@uo.ResumeUrl">
+                                    @(uo.NeedsPayment ? "پرداخت و ادامه سفارش" : "مشاهده سفارش")
+                                    <span class="oi oi-arrow-left"></span>
+                                </a>
+                            </div>
+                        }
+                        else if (Recovery.Resume.HasAbandonedCart || Cart.GetTotalCount() > 0)
+                        {
+                            var _rc = Cart.GetTotalCount();
+                            if (_rc > 0)
+                            {
+                                <div class="resume-banner resume-banner--card animate__animated animate__fadeInDown">
+                                    <span class="resume-banner__icon" aria-hidden="true">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                                    </span>
+                                    <span class="resume-banner__text">
+                                        <strong class="resume-banner__title">@_rc کالا در سبد خرید شما مانده است</strong>
+                                        <span class="resume-banner__sub">اطلاعات تکمیل سفارش ذخیره شده؛ از همان‌جا ادامه دهید.</span>
+                                    </span>
+                                    <a class="resume-banner__cta" href="/checkout">
+                                        ادامه خرید
+                                        <span class="oi oi-arrow-left"></span>
+                                    </a>
+                                </div>
+                            }
+                        }
+
                         <!-- Bale connect banner -->
                         @if (!hideBaleBanner && activeTab != "bale" && baleStatus != null && !baleStatus.Connected && baleStatus.BotConfigured)
                         {
@@ -307,6 +358,81 @@
                                     </div>
                                 </div>
 
+                                <!-- Products the user follows: wishlist, recently viewed and stock alerts -->
+                                <div class="pf-section mt-4 pf-product-watch-section">
+                                    <div class="pf-section-header pf-product-watch-header">
+                                        <div>
+                                            <div class="pf-section-title">
+                                                <span class="oi oi-heart" style="color:#dc3545;"></span>
+                                                محصولات مورد توجه شما
+                                            </div>
+                                            <div class="pf-product-watch-subtitle">علاقه‌مندی‌ها، بازدیدهای اخیر و کالاهایی که برای موجود شدن دنبال می‌کنید</div>
+                                        </div>
+                                        @if (trackedProductCards.Any())
+                                        {
+                                            <span class="pf-product-watch-count">@trackedProductCards.Count کالا</span>
+                                        }
+                                    </div>
+                                    @if (isLoadingTrackedProducts)
+                                    {
+                                        <div class="pf-product-watch-loading"><span class="spinner-border spinner-border-sm text-danger"></span> در حال آماده‌سازی فهرست محصولات...</div>
+                                    }
+                                    else if (!trackedProductCards.Any())
+                                    {
+                                        <div class="pf-product-watch-empty">
+                                            <span class="oi oi-eye"></span>
+                                            <div><strong>هنوز محصولی برای نمایش ندارید</strong><small>با افزودن محصول به علاقه‌مندی‌ها یا مشاهده جزئیات آن، اینجا سریع‌تر به آن دسترسی خواهید داشت.</small></div>
+                                            <a href="/products" class="pf-product-watch-link">مشاهده فروشگاه</a>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="pf-product-watch-list">
+                                            @foreach (var item in trackedProductCards)
+                                            {
+                                                <article class="pf-product-watch-card">
+                                                    <a href="/products/@item.ProductId" class="pf-product-watch-image" aria-label="مشاهده @item.Name">
+                                                        @if (!string.IsNullOrWhiteSpace(item.ImageUrl))
+                                                        {
+                                                            <img src="@item.ImageUrl" alt="@item.Name" loading="lazy" />
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="oi oi-image"></span>
+                                                        }
+                                                    </a>
+                                                    <div class="pf-product-watch-main">
+                                                        <div class="pf-product-watch-tags">
+                                                            @if (item.IsFavorite) { <span class="pf-product-tag pf-product-tag--favorite"><span class="oi oi-heart"></span> علاقه‌مندی</span> }
+                                                            @if (item.IsRecentlyViewed) { <span class="pf-product-tag pf-product-tag--recent"><span class="oi oi-clock"></span> بازدید اخیر</span> }
+                                                            @if (item.StockAlertActive) { <span class="pf-product-tag pf-product-tag--alert"><span class="oi oi-bell"></span> اعلان فعال</span> }
+                                                        </div>
+                                                        <a href="/products/@item.ProductId" class="pf-product-watch-name">@item.Name</a>
+                                                        <div class="pf-product-watch-status @(item.IsInStock ? "is-stocked" : "is-unavailable")">
+                                                            <span class="pf-stock-dot"></span>
+                                                            @(item.IsInStock ? $"موجود · {item.StockQuantity:N0} عدد" : "فعلاً ناموجود")
+                                                        </div>
+                                                    </div>
+                                                    <div class="pf-product-watch-actions">
+                                                        <a href="/products/@item.ProductId" class="pf-product-watch-view"><span class="oi oi-external-link"></span> مشاهده</a>
+                                                        @if (!item.IsInStock)
+                                                        {
+                                                            @if (item.StockAlertActive)
+                                                            {
+                                                                <button type="button" class="pf-product-watch-alert active" @onclick="() => ToggleStockAlertAsync(item)" disabled="@item.IsAlertBusy"><span class="oi oi-bell"></span> @(item.IsAlertBusy ? "..." : "فعال")</button>
+                                                            }
+                                                            else
+                                                            {
+                                                                <button type="button" class="pf-product-watch-alert" @onclick="() => ToggleStockAlertAsync(item)" disabled="@item.IsAlertBusy"><span class="oi oi-bell"></span> @(item.IsAlertBusy ? "..." : "خبرم کن")</button>
+                                                            }
+                                                        }
+                                                    </div>
+                                                </article>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+
                                 <!-- Latest Order -->
                                 @if (myOrders.Any())
                                 {
@@ -370,7 +496,7 @@
                                                             <td class="fw-bold">#@o.OrderNumber</td>
                                                             <td>@PersianDate.ToJalaliDate(o.CreatedAt)</td>
                                                             <td><span class="pf-status-badge" style="@OrderDisplayHelper.SoftBadgeStyle(o)">@OrderDisplayHelper.Label(o)</span></td>
-                                                            <td class="fw-bold">@o.TotalAmount.ToString("N0") ریال</td>
+                                                            <td class="fw-bold">@o.TotalAmount.ToString("N0") تومان</td>
                                                             <td><button class="pf-view-btn" @onclick="() => GoToOrderDetail(o.Id)">مشاهده</button></td>
                                                         </tr>
                                                     }
@@ -459,7 +585,7 @@
                                                             <td class="fw-bold">#@o.OrderNumber</td>
                                                             <td>@PersianDate.ToJalaliDate(o.CreatedAt)</td>
                                                             <td><span class="pf-status-badge" style="@OrderDisplayHelper.SoftBadgeStyle(o)">@OrderDisplayHelper.Label(o)</span></td>
-                                                            <td class="fw-bold">@o.TotalAmount.ToString("N0") ریال</td>
+                                                            <td class="fw-bold">@o.TotalAmount.ToString("N0") تومان</td>
                                                             <td><button class="pf-view-btn" @onclick="() => GoToOrderDetail(o.Id)" @onclick:stopPropagation>مشاهده</button></td>
                                                         </tr>
 
@@ -661,7 +787,7 @@
 
                                                                         <div class="pf-order-total">
                                                                             <span>جمع کل پرداختی</span>
-                                                                            <span class="fw-bold text-danger">@o.TotalAmount.ToString("N0") ریال</span>
+                                                                            <span class="fw-bold text-danger">@o.TotalAmount.ToString("N0") تومان</span>
                                                                         </div>
                                                                     </div>
                                                                 </td>
@@ -797,51 +923,105 @@
                                     </div>
 
                                     <div class="pf-chat-area">
-                                        <!-- User Message -->
-                                        <div class="pf-chat-msg user">
-                                            <div class="pf-chat-avatar user">شما</div>
-                                            <div class="pf-chat-bubble user">
-                                                <p class="mb-0 small">@selectedTicketForProfile.Description</p>
-                                                @if (!string.IsNullOrEmpty(selectedTicketForProfile.ImageUrl))
-                                                {
-                                                    <img src="@selectedTicketForProfile.ImageUrl" class="img-fluid rounded-3 mt-2 border shadow-sm" style="max-height: 200px;" />
-                                                }
-                                                @if (!string.IsNullOrEmpty(selectedTicketForProfile.FileUrl))
-                                                {
-                                                    <div class="mt-2 p-2 bg-light rounded-3 border d-flex align-items-center gap-2">
-                                                        <span class="oi oi-file text-primary"></span>
-                                                        <span class="smaller text-truncate flex-grow-1">@selectedTicketForProfile.FileName</span>
-                                                        <a href="@selectedTicketForProfile.FileUrl" target="_blank" class="btn btn-sm btn-link p-0"><span class="oi oi-cloud-download"></span></a>
+                                        <!-- Ticket starter message -->
+                                        <div class="pf-tmsg pf-tmsg--user">
+                                            <div class="pf-tmsg__head">
+                                                <div class="pf-tmsg__who">
+                                                    <span class="pf-tmsg__role">کاربر</span>
+                                                    <div class="pf-tmsg__ident">
+                                                        <b>@(string.IsNullOrWhiteSpace(selectedTicketForProfile.UserFullName) ? "شما" : selectedTicketForProfile.UserFullName)</b>
+                                                        @if (!string.IsNullOrWhiteSpace(selectedTicketForProfile.UserEmail))
+                                                        {
+                                                            <i>@selectedTicketForProfile.UserEmail</i>
+                                                        }
                                                     </div>
-                                                }
-                                                <div class="pf-chat-time">@FormatJalaliDateTime(selectedTicketForProfile.CreatedAt)</div>
+                                                </div>
+                                                <span class="pf-tmsg__date">@FormatJalaliDateTime(selectedTicketForProfile.CreatedAt)</span>
                                             </div>
+                                            <div class="pf-tmsg__body">
+                                                <p class="mb-0">@selectedTicketForProfile.Description</p>
+                                            </div>
+                                            @if (!string.IsNullOrEmpty(selectedTicketForProfile.ImageUrl) || !string.IsNullOrEmpty(selectedTicketForProfile.FileUrl))
+                                            {
+                                                <div class="pf-tmsg__files">
+                                                    <div class="pf-tmsg__files-label"><span class="oi oi-paperclip"></span> پیوست‌ها</div>
+                                                    @if (!string.IsNullOrEmpty(selectedTicketForProfile.ImageUrl))
+                                                    {
+                                                        <a class="pf-tmsg__file" href="@selectedTicketForProfile.ImageUrl" target="_blank">
+                                                            <span class="oi oi-image"></span>
+                                                            <span>تصویر پیوستی</span>
+                                                            <span class="oi oi-cloud-download"></span>
+                                                        </a>
+                                                    }
+                                                    @if (!string.IsNullOrEmpty(selectedTicketForProfile.FileUrl))
+                                                    {
+                                                        <a class="pf-tmsg__file" href="@selectedTicketForProfile.FileUrl" target="_blank">
+                                                            <span class="oi oi-file"></span>
+                                                            <span class="text-truncate">@selectedTicketForProfile.FileName</span>
+                                                            <span class="oi oi-cloud-download"></span>
+                                                        </a>
+                                                    }
+                                                </div>
+                                            }
                                         </div>
 
                                         @foreach (var reply in selectedTicketForProfile.Replies)
                                         {
-                                            <div class="pf-chat-msg @(reply.IsAdmin ? "admin" : "user")">
-                                                <div class="pf-chat-avatar @(reply.IsAdmin ? "admin" : "user")">@(reply.IsAdmin ? "تیم" : "شما")</div>
-                                                <div class="pf-chat-bubble @(reply.IsAdmin ? "admin" : "user")">
-                                                    <p class="mb-0 small">@reply.Message</p>
-                                                    @if (!string.IsNullOrEmpty(reply.AttachmentUrl))
-                                                    {
-                                                        <div class="mt-2 p-2 @(reply.IsAdmin ? "bg-white bg-opacity-50" : "bg-light") rounded-3 border d-flex align-items-center gap-2">
-                                                            <span class="oi @(reply.AttachmentContentType?.StartsWith("image/") == true ? "oi-image" : "oi-file") text-primary"></span>
-                                                            <span class="smaller text-truncate flex-grow-1">@reply.AttachmentName</span>
-                                                            <a href="@reply.AttachmentUrl" target="_blank" class="btn btn-sm btn-link p-0"><span class="oi oi-cloud-download"></span></a>
+                                            <div class="pf-tmsg @(reply.IsAdmin ? "pf-tmsg--admin" : "pf-tmsg--user")">
+                                                <div class="pf-tmsg__head">
+                                                    <div class="pf-tmsg__who">
+                                                        <span class="pf-tmsg__role">@(reply.IsAdmin ? "پشتیبانی" : "کاربر")</span>
+                                                        <div class="pf-tmsg__ident">
+                                                            <b>@(reply.IsAdmin ? "کارشناس پشتیبانی فنی" : (string.IsNullOrWhiteSpace(selectedTicketForProfile.UserFullName) ? "شما" : selectedTicketForProfile.UserFullName))</b>
                                                         </div>
-                                                    }
-                                                    <div class="pf-chat-time @(reply.IsAdmin ? "admin" : "")">@FormatJalaliDateTime(reply.RepliedAt)</div>
+                                                    </div>
+                                                    <span class="pf-tmsg__date">@FormatJalaliDateTime(reply.RepliedAt)</span>
                                                 </div>
+                                                <div class="pf-tmsg__body">
+                                                    <p class="mb-0">@reply.Message</p>
+                                                </div>
+                                                @if (!string.IsNullOrEmpty(reply.AttachmentUrl))
+                                                {
+                                                    <div class="pf-tmsg__files">
+                                                        <div class="pf-tmsg__files-label"><span class="oi oi-paperclip"></span> پیوست‌ها</div>
+                                                        <a class="pf-tmsg__file" href="@reply.AttachmentUrl" target="_blank">
+                                                            <span class="oi @(reply.AttachmentContentType?.StartsWith("image/") == true ? "oi-image" : "oi-file")"></span>
+                                                            <span class="text-truncate">@reply.AttachmentName</span>
+                                                            <span class="oi oi-cloud-download"></span>
+                                                        </a>
+                                                    </div>
+                                                }
                                             </div>
                                         }
                                     </div>
 
-                                    <div class="pf-chat-input">
-                                        <input type="text" class="pf-form-input" placeholder="پاسخ..." @bind="replyMessage" />
-                                        <button class="pf-primary-btn" @onclick="HandleReplySubmit" disabled="@(string.IsNullOrEmpty(replyMessage) || isBusy)">ارسال</button>
+                                    <div class="pf-reply-attach-bar">
+                                        <label class="pf-reply-clip" title="پیوست مستندات">
+                                            <span class="oi oi-paperclip"></span>
+                                            <InputFile OnChange="OnReplyAttachmentSelected" class="pf-reply-clip-input" accept="image/*,.pdf,.zip,.rar,.doc,.docx,.xls,.xlsx,.txt" />
+                                        </label>
+                                        <input type="text" class="pf-form-input" placeholder="متن پاسخ..." @bind="replyMessage" @bind:event="oninput" @onkeydown="OnReplyKeyDown" />
+                                        <button class="pf-reply-send" @onclick="HandleReplySubmit" disabled="@(isBusy || (string.IsNullOrWhiteSpace(replyMessage) && string.IsNullOrEmpty(replyAttachmentUrl)))" title="ارسال پاسخ">
+                                            @if (isBusy)
+                                            {
+                                                <span class="spinner-border spinner-border-sm"></span>
+                                            }
+                                            else
+                                            {
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                    <path d="M3.4 20.4 21.85 12 3.4 3.6 3.4 10.15 15.4 12 3.4 13.85Z" fill="currentColor"/>
+                                                </svg>
+                                            }
+                                        </button>
                                     </div>
+                                    @if (!string.IsNullOrEmpty(replyAttachmentUrl))
+                                    {
+                                        <div class="pf-reply-file">
+                                            <span class="oi @(replyAttachmentType?.StartsWith("image/") == true ? "oi-image" : "oi-file")"></span>
+                                            <span class="pf-reply-file__name">@replyAttachmentName</span>
+                                            <button type="button" class="pf-reply-file__remove" title="حذف پیوست" @onclick="RemoveReplyAttachment"><span class="oi oi-x"></span></button>
+                                        </div>
+                                    }
                                 }
                             </div>
                         }
@@ -2196,6 +2376,54 @@
     .pf-coupon-status.exhausted { background: #fee2e2; color: #dc2626; }
     .pf-coupon-status.inactive { background: #f1f5f9; color: #94a3b8; }
 
+    /* ═══════════════ PRODUCT WATCHLIST / RECENTLY VIEWED ═══════════════ */
+    .pf-product-watch-section { overflow: hidden; }
+    .pf-product-watch-header { align-items: flex-start; }
+    .pf-product-watch-subtitle { color: #64748b; font-size: .76rem; margin-top: 4px; line-height: 1.7; }
+    .pf-product-watch-count { color: #dc3545; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 999px; padding: 5px 10px; font-size: .72rem; font-weight: 800; white-space: nowrap; }
+    .pf-product-watch-list { display: flex; flex-direction: column; gap: 9px; }
+    .pf-product-watch-card { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px; border: 1px solid #eef0f4; border-radius: 14px; background: linear-gradient(135deg,#fff,#fafbff); transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+    .pf-product-watch-card:hover { transform: translateY(-1px); border-color: #fecdd3; box-shadow: 0 7px 18px rgba(15,23,42,.07); }
+    .pf-product-watch-image { width: 66px; height: 66px; border-radius: 11px; background: #f8fafc; display: grid; place-items: center; overflow: hidden; color: #cbd5e1; text-decoration: none; }
+    .pf-product-watch-image img { width: 100%; height: 100%; object-fit: contain; padding: 5px; }
+    .pf-product-watch-main { min-width: 0; }
+    .pf-product-watch-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+    .pf-product-tag { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 3px 7px; font-size: .62rem; font-weight: 800; }
+    .pf-product-tag--favorite { color: #be123c; background: #fff1f2; }
+    .pf-product-tag--recent { color: #475569; background: #f1f5f9; }
+    .pf-product-tag--alert { color: #0369a1; background: #e0f2fe; }
+    .pf-product-watch-name { display: block; color: #172033; font-size: .88rem; font-weight: 900; line-height: 1.55; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pf-product-watch-name:hover { color: #dc3545; }
+    .pf-product-watch-status { display: flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 700; margin-top: 4px; }
+    .pf-product-watch-status.is-stocked { color: #15803d; }
+    .pf-product-watch-status.is-unavailable { color: #b45309; }
+    .pf-stock-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .pf-product-watch-actions { display: flex; align-items: center; gap: 6px; }
+    .pf-product-watch-view, .pf-product-watch-alert { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border-radius: 9px; padding: 6px 9px; font-size: .7rem; font-weight: 800; text-decoration: none; white-space: nowrap; }
+    .pf-product-watch-view { color: #dc3545; background: #fff1f2; }
+    .pf-product-watch-alert { border: 1px solid #bae6fd; color: #0369a1; background: #f0f9ff; cursor: pointer; }
+    .pf-product-watch-alert.active { border-color: #bbf7d0; color: #15803d; background: #f0fdf4; }
+    .pf-product-watch-alert:disabled { opacity: .6; cursor: wait; }
+    .pf-product-watch-loading, .pf-product-watch-empty { display: flex; align-items: center; gap: 10px; padding: 22px 10px; color: #64748b; font-size: .82rem; }
+    .pf-product-watch-empty { flex-wrap: wrap; }
+    .pf-product-watch-empty > .oi { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: #fff1f2; color: #dc3545; font-size: 1.1rem; }
+    .pf-product-watch-empty strong, .pf-product-watch-empty small { display: block; }
+    .pf-product-watch-empty strong { color: #334155; font-size: .83rem; }
+    .pf-product-watch-empty small { margin-top: 3px; line-height: 1.7; }
+    .pf-product-watch-link { color: #dc3545; font-weight: 800; font-size: .76rem; text-decoration: none; margin-inline-start: auto; }
+    @@media (max-width: 576px) {
+        .pf-product-watch-header { gap: 8px; }
+        .pf-product-watch-subtitle { font-size: .7rem; }
+        .pf-product-watch-card { grid-template-columns: 54px minmax(0, 1fr); gap: 9px; padding: 9px; }
+        .pf-product-watch-image { width: 54px; height: 54px; }
+        .pf-product-watch-actions { grid-column: 1 / -1; width: 100%; border-top: 1px solid #f1f5f9; padding-top: 8px; }
+        .pf-product-watch-view, .pf-product-watch-alert { flex: 1; }
+        .pf-product-watch-name { font-size: .8rem; }
+        .pf-product-tag { font-size: .58rem; }
+        .pf-product-watch-empty > div { flex: 1; min-width: 0; }
+        .pf-product-watch-link { width: 100%; text-align: center; padding-top: 4px; }
+    }
+
     /* ═══════════════ WISHLIST ═══════════════ */
     .pf-wishlist-grid {
         display: grid;
@@ -2530,56 +2758,161 @@
         margin-bottom: 12px;
     }
 
-    .pf-chat-msg {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 16px;
-    }
-    .pf-chat-msg.admin { flex-direction: row-reverse; }
-
-    .pf-chat-avatar {
-        width: 36px;
-        height: 36px;
-        border-radius: 50%;
-        display: grid;
-        place-items: center;
-        font-size: 0.6rem;
-        font-weight: 700;
-        flex-shrink: 0;
-    }
-    .pf-chat-avatar.user { background: #e9ecef; color: #495057; }
-    .pf-chat-avatar.admin { background: var(--pf-red); color: #fff; }
-
-    .pf-chat-bubble {
-        padding: 12px 16px;
-        border-radius: 16px;
-        max-width: 80%;
-    }
-    .pf-chat-bubble.user {
+    .pf-tmsg {
         background: #fff;
         border: 1px solid var(--pf-border);
-        border-bottom-right-radius: 4px;
+        border-radius: 14px;
+        margin-bottom: 14px;
+        overflow: hidden;
+        box-shadow: 0 1px 4px rgba(15,23,42,.04);
+        transition: box-shadow .2s, transform .2s;
     }
-    .pf-chat-bubble.admin {
-        background: var(--pf-red);
+    .pf-tmsg:hover { box-shadow: 0 4px 14px rgba(15,23,42,.07); }
+    .pf-tmsg--user {
+        border-right: 4px solid #2563eb;
+        background: linear-gradient(to left, rgba(37,99,235,.05), #fff 40%);
+    }
+    .pf-tmsg--admin {
+        border-left: 4px solid #6d5ce7;
+        background: linear-gradient(to right, rgba(109,92,231,.06), #fff 40%);
+    }
+    .pf-tmsg__head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 14px;
+        border-bottom: 1px dashed #e2e8f0;
+        background: #f8fafc;
+        flex-wrap: wrap;
+    }
+    .pf-tmsg--user .pf-tmsg__head {
+        background: rgba(37,99,235,.07);
+        border-bottom-color: #d7e6fb;
+    }
+    .pf-tmsg--admin .pf-tmsg__head {
+        background: rgba(109,92,231,.09);
+        border-bottom-color: #e0dafb;
+    }
+    .pf-tmsg__who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .pf-tmsg__role {
+        flex-shrink: 0;
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: .66rem;
+        font-weight: 900;
         color: #fff;
-        border-bottom-left-radius: 4px;
+        box-shadow: 0 2px 6px rgba(15,23,42,.15);
     }
-    .pf-chat-bubble.admin p { color: #fff; }
-
-    .pf-chat-time {
-        font-size: 0.62rem;
-        opacity: 0.6;
-        margin-top: 4px;
+    .pf-tmsg--user .pf-tmsg__role { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+    .pf-tmsg--admin .pf-tmsg__role { background: linear-gradient(135deg, #6d5ce7, #5b4bd5); }
+    .pf-tmsg__ident { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+    .pf-tmsg__ident b { font-size: .78rem; font-weight: 800; color: #0f172a; }
+    .pf-tmsg__ident i { font-style: normal; font-size: .64rem; color: #94a3b8; direction: ltr; unicode-bidi: isolate; text-align: right; }
+    .pf-tmsg__date { font-size: .64rem; color: #94a3b8; font-weight: 700; direction: ltr; unicode-bidi: isolate; flex-shrink: 0; }
+    .pf-tmsg__body { padding: 12px 16px; }
+    .pf-tmsg__body p { font-size: .84rem; color: #1e293b; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .pf-tmsg__files {
+        border-top: 1px dashed #e2e8f0;
+        background: rgba(255,255,255,.6);
+        padding: 8px 14px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
     }
-    .pf-chat-time.admin { color: rgba(255,255,255,0.8); }
+    .pf-tmsg__files-label { font-size: .64rem; font-weight: 800; color: #94a3b8; display: flex; align-items: center; gap: 4px; }
+    .pf-tmsg__file {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: .72rem;
+        font-weight: 700;
+        color: #4f46e5;
+        text-decoration: none;
+        background: #fff;
+        border: 1px dashed #c7d2fe;
+        border-radius: 10px;
+        padding: 6px 10px;
+        transition: all .15s;
+    }
+    .pf-tmsg__file:hover { background: #eef2ff; border-color: #4f46e5; }
+    .pf-tmsg__file .oi-cloud-download { margin-right: auto; opacity: .6; }
 
-    .pf-chat-input {
+    .pf-reply-attach-bar {
         display: flex;
         gap: 8px;
         align-items: center;
     }
-    .pf-chat-input .pf-form-input { flex: 1; }
+    .pf-reply-attach-bar .pf-form-input { flex: 1; }
+    .pf-reply-send {
+        width: 46px;
+        height: 46px;
+        flex-shrink: 0;
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(135deg, var(--pf-red), var(--pf-red-dark));
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        box-shadow: 0 3px 10px rgba(220,53,69,.3);
+        transition: transform .15s, box-shadow .15s, opacity .15s;
+    }
+    .pf-reply-send:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(220,53,69,.4); }
+    .pf-reply-send:active:not(:disabled) { transform: scale(.94); }
+    .pf-reply-send:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: not-allowed; }
+    .pf-reply-clip {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        border: 1.5px dashed #cbd5e1;
+        background: #f8fafc;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: all .15s;
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 0;
+    }
+    .pf-reply-clip:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
+    .pf-reply-clip-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+    .pf-reply-file {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        padding: 7px 12px;
+        background: #eff6ff;
+        border: 1px dashed #93c5fd;
+        border-radius: 10px;
+        font-size: .72rem;
+        font-weight: 700;
+        color: #1d4ed8;
+        animation: msgIn .18s ease;
+    }
+    .pf-reply-file__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pf-reply-file__remove {
+        border: none;
+        background: #dbeafe;
+        color: #b91c1c;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: .6rem;
+        flex-shrink: 0;
+        transition: .15s;
+    }
+    .pf-reply-file__remove:hover { background: #fecaca; }
+    @@keyframes msgIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
     /* ═══════════════ FORMS ═══════════════ */
     .pf-form-card {
@@ -2820,7 +3153,10 @@
             flex-wrap: wrap;
         }
 
-        .pf-chat-bubble { max-width: 90%; }
+        .pf-tmsg__head { padding: 8px 10px; }
+        .pf-tmsg__body { padding: 10px 12px; }
+        .pf-tmsg__body p { font-size: .8rem; }
+        .pf-tmsg__ident b { font-size: .72rem; }
 
         .pf-filter-tabs {
             flex-wrap: nowrap;
@@ -2959,6 +3295,31 @@
     }
 
     /* ── Bale connect banner ── */
+    /* ─── ادامه سفارش نیمه‌تمام (کارت داخل پروفایل) ─── */
+    .pf-content-card .resume-banner--card {
+        position: relative;
+        top: auto;
+        z-index: 1;
+        justify-content: flex-start;
+        border: none;
+        border-radius: 18px;
+        border-bottom: none;
+        padding: 16px 18px;
+        margin-bottom: 18px;
+        box-shadow: 0 12px 28px rgba(234, 88, 12, 0.32);
+    }
+    .pf-content-card .resume-banner--card .resume-banner__text {
+        flex: 1 1 auto;
+        align-items: flex-start;
+        text-align: start;
+    }
+    @@media (max-width: 767.98px) {
+        .pf-content-card .resume-banner--card {
+            padding: 14px 14px 16px;
+        }
+    }
+
+    /* ─── ربات بله ─── */
     .pf-bale-banner {
         position: relative;
         display: flex;
@@ -3075,6 +3436,10 @@
     private List<ConsultationTicket> myTickets = new();
     private List<CouponDto> myCoupons = new();
     private List<WishlistItem> wishlistItems = new();
+    private List<RecentlyViewedItem> recentlyViewedItems = new();
+    private List<ProductWatchCard> trackedProductCards = new();
+    private HashSet<int> activeStockAlertProductIds = new();
+    private bool isLoadingTrackedProducts;
     private List<CartItem> cartItems = new();
     private decimal cartTotal = 0;
     private bool isCartLoading = false;
@@ -3105,10 +3470,7 @@
         || o.Status == OrderStatus.ReceiptUploaded
         || o.Status == OrderStatus.Approved);
 
-    private int ActiveTicketsCount => myTickets.Count(t =>
-        !t.IsUserRead
-        || t.Status == TicketStatus.Pending
-        || t.Status == TicketStatus.InProgress);
+    private int UnreadTicketsCount => myTickets.Count(t => !t.IsUserRead);
 
     private int ActiveCouponsCount => myCoupons.Count(c =>
         !c.IsUsedByMe
@@ -3190,6 +3552,15 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await Recovery.RefreshAsync();
+        var tabIndex = Nav.Uri.IndexOf("?tab=", StringComparison.OrdinalIgnoreCase);
+        if (tabIndex >= 0)
+        {
+            var tabValue = Uri.UnescapeDataString(Nav.Uri[(tabIndex + 5)..]).Split('&')[0].Trim().ToLowerInvariant();
+            if (tabValue is "overview" or "orders" or "tickets" or "wishlist" or "cart" or "edit" or "password" or "coupons" or "bale")
+                activeTab = tabValue;
+        }
+
         await LoadUser();
         if (user != null)
         {
@@ -3197,6 +3568,7 @@
             await LoadBaleStatusAsync();
         }
         wishlistItems = await Ws.GetItemsAsync();
+        await LoadTrackedProductsAsync();
         Ws.OnChange += OnWishlistChanged;
 
         await Cart.InitializeAsync();
@@ -3209,6 +3581,7 @@
     private async void OnWishlistChanged()
     {
         wishlistItems = await Ws.GetItemsAsync();
+        await LoadTrackedProductsAsync();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -3372,6 +3745,88 @@
         isLoadingCoupons = false;
     }
 
+    private async Task LoadTrackedProductsAsync()
+    {
+        isLoadingTrackedProducts = true;
+        try
+        {
+            recentlyViewedItems = await RecentSvc.GetItemsAsync();
+            var activeAlerts = await Http.GetFromJsonAsync<StockAlertMineDto>("api/stock-alerts/mine");
+            activeStockAlertProductIds = activeAlerts?.ActiveProductIds?.ToHashSet() ?? new();
+
+            var ids = wishlistItems.Select(x => x.ProductId)
+                .Concat(recentlyViewedItems.Select(x => x.Id))
+                .Concat(activeStockAlertProductIds)
+                .Distinct().Take(30).ToList();
+            var requests = ids.Select(async id =>
+            {
+                try { return await Http.GetFromJsonAsync<ProductDto>($"api/products/{id}"); }
+                catch { return null; }
+            });
+            var products = (await Task.WhenAll(requests)).Where(x => x != null).Cast<ProductDto>().ToList();
+
+            trackedProductCards = products.Select(p => new ProductWatchCard
+            {
+                ProductId = p.Id,
+                Name = p.Name,
+                ImageUrl = p.MainImageUrl,
+                IsInStock = p.IsAvailable && p.StockQuantity > 0,
+                StockQuantity = p.StockQuantity,
+                IsFavorite = wishlistItems.Any(x => x.ProductId == p.Id),
+                IsRecentlyViewed = recentlyViewedItems.Any(x => x.Id == p.Id),
+                StockAlertActive = activeStockAlertProductIds.Contains(p.Id)
+            }).ToList();
+        }
+        catch { trackedProductCards = new(); }
+        finally { isLoadingTrackedProducts = false; }
+    }
+
+    private async Task ToggleStockAlertAsync(ProductWatchCard item)
+    {
+        item.IsAlertBusy = true;
+        try
+        {
+            HttpResponseMessage response;
+            if (item.StockAlertActive)
+                response = await Http.DeleteAsync($"api/stock-alerts/{item.ProductId}");
+            else
+                response = await Http.PostAsync($"api/stock-alerts/{item.ProductId}", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                item.StockAlertActive = !item.StockAlertActive;
+                if (item.StockAlertActive)
+                    Toast.ShowSuccess("اعلان موجود شدن محصول برای شما فعال شد.");
+                else
+                    Toast.ShowSuccess("اعلان موجودی این محصول غیرفعال شد.");
+            }
+            else
+            {
+                var message = await response.Content.ReadAsStringAsync();
+                Toast.ShowWarning(string.IsNullOrWhiteSpace(message) ? "تغییر وضعیت اعلان انجام نشد." : message.Trim('"'));
+            }
+        }
+        catch { Toast.ShowError("ارتباط با سرویس اعلان موجودی برقرار نشد."); }
+        finally
+        {
+            item.IsAlertBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private sealed class ProductWatchCard
+    {
+        public int ProductId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? ImageUrl { get; set; }
+        public bool IsInStock { get; set; }
+        public int StockQuantity { get; set; }
+        public bool IsFavorite { get; set; }
+        public bool IsRecentlyViewed { get; set; }
+        public bool StockAlertActive { get; set; }
+        public bool IsAlertBusy { get; set; }
+    }
+
     private async Task RemoveFromWishlist(int productId)
     {
         await Ws.RemoveAsync(productId);
@@ -3389,6 +3844,9 @@
     }
 
     private string replyMessage = "";
+    private string? replyAttachmentUrl;
+    private string? replyAttachmentName;
+    private string? replyAttachmentType;
     private ConsultationTicket newTicket = new();
     private ConsultationTicket? selectedTicketForProfile;
     private bool isCreatingNewTicket = false;
@@ -3433,14 +3891,15 @@
 
     private async Task HandleReplySubmit()
     {
-        if (selectedTicketForProfile == null || string.IsNullOrEmpty(replyMessage)) return;
+        if (selectedTicketForProfile == null) return;
+        if (string.IsNullOrWhiteSpace(replyMessage) && string.IsNullOrEmpty(replyAttachmentUrl)) return;
 
         isBusy = true;
         try
         {
             var reply = new TicketReply
             {
-                Message = replyMessage,
+                Message = replyMessage?.Trim() ?? "",
                 IsAdmin = false,
                 AttachmentUrl = replyAttachmentUrl,
                 AttachmentName = replyAttachmentName,
@@ -3454,6 +3913,7 @@
                 {
                     selectedTicketForProfile.Replies.Add(newReply);
                 }
+                selectedTicketForProfile.IsUserRead = true;
                 replyMessage = "";
                 replyAttachmentUrl = null;
                 replyAttachmentName = null;
@@ -3468,9 +3928,58 @@
         isBusy = false;
     }
 
-    private string? replyAttachmentUrl;
-    private string? replyAttachmentName;
-    private string? replyAttachmentType;
+    private async Task OnReplyAttachmentSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        isBusy = true;
+        try
+        {
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/technical/tickets/upload-attachment", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<UploadResult>();
+                if (result != null)
+                {
+                    replyAttachmentUrl = result.Url;
+                    replyAttachmentName = result.Name;
+                    replyAttachmentType = result.ContentType;
+                    Toast.ShowInfo("فایل پیوست شد");
+                }
+            }
+            else
+            {
+                Toast.ShowError("خطا در آپلود فایل");
+            }
+        }
+        catch
+        {
+            Toast.ShowError("خطا در آپلود فایل");
+        }
+        isBusy = false;
+    }
+
+    private void RemoveReplyAttachment()
+    {
+        replyAttachmentUrl = null;
+        replyAttachmentName = null;
+        replyAttachmentType = null;
+    }
+
+    private async Task OnReplyKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await HandleReplySubmit();
+        }
+    }
 
     private async Task OnAttachmentSelected(InputFileChangeEventArgs e)
     {

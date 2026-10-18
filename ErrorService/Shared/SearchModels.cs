@@ -17,3 +17,14 @@ public class SearchResponseDto
     public List<SearchResultItemDto> ErrorCodes { get; set; } = new();
     public List<SearchResultItemDto> Courses { get; set; } = new();
 }
+
+public class ProductSuggestDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Slug { get; set; }
+    public decimal Price { get; set; }
+    public decimal? DiscountPrice { get; set; }
+    public string? ImageUrl { get; set; }
+    public bool IsAvailable { get; set; }
+}

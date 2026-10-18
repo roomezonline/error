@@ -727,14 +727,8 @@
             return;
         }
 
-        _tempMin = Math.Floor(allTemps.Min());
-        _tempMax = Math.Ceiling(allTemps.Max());
-        if (_tempMax - _tempMin < 5)
-        {
-            var mid = (_tempMin + _tempMax) / 2;
-            _tempMin = mid - 3;
-            _tempMax = mid + 3;
-        }
+        _tempMin = -50;
+        _tempMax = 100;
 
         _tempYTicks = new();
         var step = Math.Max(1, Math.Round((_tempMax - _tempMin) / 4));
@@ -759,14 +753,16 @@
 
             if (t.FridgeTemp.HasValue)
             {
-                var y = svgHeight - ((t.FridgeTemp.Value - _tempMin) / (_tempMax - _tempMin) * (svgHeight - padding * 2)) - padding;
+                var fv = t.FridgeTemp.Value > 100 ? 100 : t.FridgeTemp.Value;
+                var y = svgHeight - ((fv - _tempMin) / (_tempMax - _tempMin) * (svgHeight - padding * 2)) - padding;
                 fridgePts.Add($"{xPct:F3},{y:F1}");
                 _fridgeCircles.Add(new TempCircle { X = $"{xPct:F3}", Y = $"{y:F1}" });
             }
 
             if (t.FreezerTemp.HasValue)
             {
-                var y = svgHeight - ((t.FreezerTemp.Value - _tempMin) / (_tempMax - _tempMin) * (svgHeight - padding * 2)) - padding;
+                var zv = t.FreezerTemp.Value > 100 ? 100 : t.FreezerTemp.Value;
+                var y = svgHeight - ((zv - _tempMin) / (_tempMax - _tempMin) * (svgHeight - padding * 2)) - padding;
                 freezerPts.Add($"{xPct:F3},{y:F1}");
                 _freezerCircles.Add(new TempCircle { X = $"{xPct:F3}", Y = $"{y:F1}" });
             }

@@ -47,6 +47,7 @@ public sealed class WorkshopUserDto
     public string PhoneNumber { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public bool IsTechnician { get; set; }
+    public bool IsDeleted { get; set; }
     public List<string> RoleKeys { get; set; } = new();
 }
 

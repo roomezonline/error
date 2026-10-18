@@ -7,6 +7,8 @@
 @inject HttpClient Http
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject ErrorService.Client.Services.CartService CartService
+@inject ErrorService.Client.Services.ToastService ToastService
 
 <PageTitle>جزئیات سفارش | ارورسرویس</PageTitle>
 
@@ -76,16 +78,38 @@
                 </div>
                 <div class="mod-total">
                     <span>جمع کل</span>
-                    <span class="fw-bold text-danger">@_order.TotalAmount.ToString("N0") ریال</span>
+                    <span class="fw-bold text-danger">@_order.TotalAmount.ToString("N0") تومان</span>
                 </div>
                 @if ((_order.DiscountAmount ?? 0) > 0)
                 {
                     <div class="mod-total" style="color:#16a34a;">
                         <span>تخفیف (@_order.CouponCode)</span>
-                        <span class="fw-bold">-@_order.DiscountAmount?.ToString("N0") ریال</span>
+                        <span class="fw-bold">-@_order.DiscountAmount?.ToString("N0") تومان</span>
                     </div>
                 }
             </div>
+
+            @if (CanReorder || CanReturn)
+            {
+                <div class="mod-card mt-3">
+                    <div class="mod-card-title"><span class="oi oi-wrench"></span> عملیات</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        @if (CanReorder)
+                        {
+                            <button class="btn btn-outline-primary rounded-pill px-4" @onclick="ReorderAsync" disabled="@_busy">
+                                @if (_busy && _busyAction == "reorder") { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                <span class="oi oi-cart me-1"></span> خرید مجدد این سفارش
+                            </button>
+                        }
+                        @if (CanReturn)
+                        {
+                            <button class="btn btn-outline-danger rounded-pill px-4" @onclick="() => _showReturn = true" disabled="@_busy">
+                                <span class="oi oi-action-undo me-1"></span> درخواست مرجوعی
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
 
             @if (_order.Items.Any() && !string.IsNullOrEmpty(_order.Items[0].ProductName))
             {
@@ -199,7 +223,7 @@
                         <div class="mod-info-label" style="color:#059669;">روش ارسال</div>
                         <div class="mod-info-value">
                             @_order.ShippingMethodName
-                            @if (_order.ShippingCost == 0)
+                            @if (_order.ShippingIsFree)
                             {
                                 <span class="badge bg-success ms-2">رایگان</span>
                             }
@@ -268,6 +292,28 @@
     </div>
 </div>
 
+@if (_showReturn && _order != null)
+{
+    <div class="ret-overlay" @onclick="() => _showReturn = false">
+        <div class="ret-modal" @onclick:stopPropagation="true">
+            <h5 class="fw-bold mb-1">درخواست مرجوعی سفارش</h5>
+            <div class="text-muted small mb-3" dir="ltr">@_order.OrderNumber</div>
+            <p class="small mb-2">دلیل مرجوعی را شرح دهید (حداقل ۵ کاراکتر). کارشناسان ما درخواست را بررسی می‌کنند.</p>
+            <textarea class="form-control rounded-3" rows="4" maxlength="500" @bind="_returnReason" placeholder="مثلاً: محصول با سفارش مغایرت دارد"></textarea>
+            @if (!string.IsNullOrEmpty(_returnError))
+            {
+                <div class="text-danger small mt-2">@_returnError</div>
+            }
+            <div class="d-flex gap-2 justify-content-end mt-3">
+                <button class="btn btn-light rounded-3 px-3" @onclick="() => _showReturn = false">انصراف</button>
+                <button class="btn btn-danger rounded-3 px-4" @onclick="SubmitReturnAsync" disabled="@_busy">
+                    @if (_busy && _busyAction == "return") { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    ثبت درخواست
+                </button>
+            </div>
+        </div>
+    </div>
+}
 <style>
     .mod-page { max-width: 880px; margin: 0 auto; }
     .mod-card { background: #fff; border-radius: 16px; padding: 20px; border: 1px solid rgba(0,0,0,0.06); }
@@ -351,6 +397,25 @@
 
     .ltr { direction: ltr; }
 
+    .ret-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        z-index: 1080;
+    }
+    .ret-modal {
+        background: #fff;
+        border-radius: 1rem;
+        padding: 1.25rem 1.4rem;
+        width: 100%;
+        max-width: 520px;
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.3);
+    }
+
     @@media (max-width: 576px) {
         .mod-info-grid { grid-template-columns: 1fr; }
     }
@@ -361,6 +426,19 @@
 
     private OrderDto? _order;
     private bool _loading = true;
+    private SiteSettingsDto? _shop;
+    private bool _busy;
+    private string _busyAction = "";
+    private bool _showReturn;
+    private string _returnReason = "";
+    private string _returnError = "";
+
+    private bool CanReorder => _shop != null && _shop.EnableReorder && _order != null && _order.Items.Any();
+
+    private bool CanReturn => _shop != null && _shop.EnableReturnRequests && _order != null
+        && _order.Status != OrderStatus.Cancelled
+        && _order.Status != OrderStatus.Rejected
+        && _order.Status != OrderStatus.PendingPayment;
 
     protected override async Task OnInitializedAsync()
     {
@@ -369,7 +447,90 @@
             _order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/{Id}");
         }
         catch { }
+        try
+        {
+            _shop = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+        }
+        catch { }
         _loading = false;
+    }
+
+    private async Task ReorderAsync()
+    {
+        if (_order == null || _busy) return;
+        _busy = true;
+        _busyAction = "reorder";
+        var added = 0;
+        try
+        {
+            await CartService.InitializeAsync();
+            foreach (var item in _order.Items)
+            {
+                if (item.Quantity <= 0) continue;
+                var p = await Http.GetFromJsonAsync<ProductDto>($"api/products/{item.ProductId}");
+                if (p == null || !p.IsAvailable || p.StockQuantity <= 0) continue;
+                await CartService.AddToCartAsync(p, item.Quantity);
+                added++;
+            }
+            if (added == 0)
+            {
+                ToastService.ShowError("هیچ‌کدام از اقلام این سفارش در حال حاضر موجود نیستند");
+            }
+            else
+            {
+                ToastService.ShowSuccess($"{added} قلم به سبد خرید اضافه شد");
+                Nav.NavigateTo("/cart");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در خرید مجدد: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+            _busyAction = "";
+        }
+    }
+
+    private async Task SubmitReturnAsync()
+    {
+        if (_busy) return;
+        _returnError = "";
+        var reason = (_returnReason ?? "").Trim();
+        if (reason.Length < 5)
+        {
+            _returnError = "دلیل مرجوعی باید حداقل ۵ کاراکتر باشد";
+            return;
+        }
+        _busy = true;
+        _busyAction = "return";
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"api/orders/{Id}/return-request",
+                new OrderReturnRequestDto { Reason = reason });
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("درخواست مرجوعی ثبت شد و کارشناسان ما آن را بررسی می‌کنند");
+                _showReturn = false;
+                _returnReason = "";
+                try { _order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/{Id}"); } catch { }
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                _returnError = string.IsNullOrWhiteSpace(body) ? "ثبت درخواست ممکن نشد" : body.Trim('"');
+            }
+        }
+        catch (Exception ex)
+        {
+            _returnError = $"خطای سیستمی: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+            _busyAction = "";
+        }
     }
 
     private void GoToProfile()

@@ -1,7 +1,8 @@
-const CACHE_NAME = 'errorservice-cache-v1.2.0';
+const CACHE_NAME = 'errorservice-cache-v1.7.0';
 const urlsToCache = [
     './',
     './index.html',
+    './js/inline.js',
     './manifest.json',
     './css/app.css',
     './css/theme.css',
@@ -88,17 +89,44 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    event.respondWith(
-        caches.match(event.request)
-            .then(response => {
-                if (response) return response;
-                return fetch(event.request).catch(() => {
-                    if (event.request.mode === 'navigate')
-                        return caches.match('./index.html');
-                    return new Response('', { status: 404 });
-                });
-            })
-    );
+    // Binary assets only (fonts/images/media): stale-while-revalidate.
+    // Deliberately NOT js/css/json/txt: those are un-versioned build output —
+    // serving them stale-first broke the app right after a deploy (old
+    // monitoring-details-overlay.js was served from SW cache). They now go
+    // straight to the network with no-cache revalidation (set app-side).
+    const STATIC_EXT = /\.(woff2?|ttf|otf|eot|png|jpe?g|webp|gif|svg|ico|avif|mp3|m4a|wav|mp4|webm)$/i;
+    const isStaticAsset = url.origin === self.location.origin
+        && event.request.method === 'GET'
+        && !event.request.headers.has('range')
+        && !url.pathname.startsWith('/api/')
+        && !url.pathname.startsWith('/_blazor')
+        && !url.pathname.startsWith('/hubs/')
+        && !url.pathname.startsWith('/_framework/')
+        && STATIC_EXT.test(url.pathname);
+
+    if (isStaticAsset) {
+        const cacheOpen = caches.open(CACHE_NAME);
+        const networkPromise = fetch(event.request).then(networkResponse => {
+            if (networkResponse && networkResponse.status === 200) {
+                const responseClone = networkResponse.clone();
+                return cacheOpen
+                    .then(cache => cache.put(event.request, responseClone))
+                    .catch(() => { })
+                    .then(() => networkResponse);
+            }
+            return networkResponse;
+        });
+        event.waitUntil(networkPromise.catch(() => { }));
+        event.respondWith(
+            cacheOpen
+                .then(cache => cache.match(event.request).then(cached => cached || networkPromise))
+                .catch(() => networkPromise)
+        );
+        return;
+    }
+
+    // API, hubs and anything else: not intercepted, never cached by the SW
+    return;
 });
 
 self.addEventListener('message', event => {

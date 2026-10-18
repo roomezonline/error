@@ -4,7 +4,10 @@
 @using ErrorService.Client.Shared
 @implements IDisposable
 @inject ErrorService.Client.Services.CartService CartService
+@inject ErrorService.Client.Services.WishlistService Ws
+@inject ErrorService.Client.Services.ToastService ToastService
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 
 <PageTitle>فروشگاه ارورسرویس | لوازم الکترونیک، ابزار دقیق و تعمیرات تخصصی</PageTitle>
 
@@ -12,6 +15,7 @@
     Title="ارورسرویس | لوازم الکترونیک، ابزار دقیق و تعمیرات تخصصی"
     Description="فروشگاه تخصصی لوازم الکترونیک، قطعات الکترونیکی، بردهای آماده، تجهیزات ابزار دقیق، ابزارآلات تخصصی و ملزومات فنی با بهترین قیمت و ارسال سریع"
     Keywords="لوازم الکترونیک, قطعات الکترونیکی, ابزار دقیق, تجهیزات صنعتی, بردهای آماده, ابزارآلات تخصصی"
+    CanonicalUrl="@BuildCanonicalUrl()"
     OgType="website" />
 
 <section class="sp" dir="rtl">
@@ -122,11 +126,11 @@
             <div class="sp-subcats">
                 @foreach (var cat in categories.Take(10))
                 {
-                    <a href="/products?categoryId=@cat.Id" class="sp-subcat @(selectedCategoryId == cat.Id ? "is-active" : "")" @onclick.preventsDefault="() => SelectCategory(cat.Id)">
+                    <a href="/products?categoryId=@cat.Id" @key="cat.Id" class="sp-subcat @(selectedCategoryId == cat.Id ? "is-active" : "")" @onclick.preventsDefault="() => SelectCategory(cat.Id)">
                         <div class="sp-subcat__icon">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                         </div>
-                        <span class="sp-subcat__name">@cat.Name</span>
+                        <span class="sp-subcat__name">@cat.Name@(FacetCatSuffix(cat.Id))</span>
                     </a>
                 }
                 @if (selectedCategoryId.HasValue)
@@ -165,14 +169,17 @@
                             <option value="price_asc">ارزان‌ترین</option>
                             <option value="price_desc">گران‌ترین</option>
                             <option value="discount_desc">بیشترین تخفیف</option>
+                            <option value="featured">ویژه و محبوب</option>
+                            <option value="bestselling">پرفروش‌ترین</option>
+                            <option value="manual">ترتیب دلخواه مدیر</option>
                         </select>
                         <label class="sp-toggle">
                             <input type="checkbox" @bind="onlyAvailable" />
-                            <span>فقط موجود</span>
+                            <span>فقط موجود@(FacetSuffix(facets?.AvailableCount))</span>
                         </label>
                         <label class="sp-toggle">
                             <input type="checkbox" @bind="onlyDiscounted" />
-                            <span>فقط تخفیف‌دار</span>
+                            <span>فقط تخفیف‌دار@(FacetSuffix(facets?.DiscountedCount))</span>
                         </label>
                         <button class="sp-btn-apply" @onclick="ApplyFilters">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
@@ -250,7 +257,7 @@
                     var isTimed = DiscountHelper.IsTimedActive(prod);
                     var isPermanent = DiscountHelper.IsPermanentActive(prod);
                     var isNew = (DateTimeOffset.Now - prod.CreatedAt).TotalDays <= 14;
-                    <div class="col-6 col-md-4 col-lg-3 col-xxl-2">
+                    <div class="col-6 col-md-4 col-lg-3 col-xxl-2" @key="prod.Id">
                         <a href="@SeoUrl.Product(prod.Id, prod.Slug)" class="sp-card-link" aria-label="@prod.Name">
                             <article class="sp-card @(!prod.IsAvailable ? "is-oos" : "") @(isDiscount ? "is-sale" : "")">
                                 <div class="sp-card__media">
@@ -285,17 +292,42 @@
                                             }
                                         </div>
                                     }
-                                    <button class="sp-card__wishlist" @onclick.preventsDefault="() => { }" @onclick:stopPropagation aria-label="افزودن به علاقه‌مندی">
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+                                    <button type="button" class="sp-card__wishlist @(wishIds.Contains(prod.Id) ? "is-active" : "")"
+                                            @onclick.preventsDefault="() => ToggleWishlist(prod)"
+                                            @onclick:stopPropagation
+                                            title="@(wishIds.Contains(prod.Id) ? "حذف از علاقه‌مندی" : "افزودن به علاقه‌مندی")"
+                                            aria-label="@(wishIds.Contains(prod.Id) ? "حذف از علاقه‌مندی" : "افزودن به علاقه‌مندی")">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="@(wishIds.Contains(prod.Id) ? "currentColor" : "none")" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
                                     </button>
                                     <img src="@(string.IsNullOrEmpty(prod.MainImageUrl) ? "/images/placeholder-product.svg" : prod.MainImageUrl)"
                                          loading="lazy" class="sp-card__img" alt="@prod.Name" />
                                     <div class="sp-card__cart-area">
-                                        <QuantityControl Quantity="@CartService.GetQuantity(prod.Id)"
-                                                         Disabled="@(!prod.IsAvailable || prod.StockQuantity <= 0)"
-                                                         OnAdd="() => AddToCart(prod)"
-                                                         OnIncrease="() => Increase(prod)"
-                                                         OnDecrease="() => Decrease(prod)" />
+                                        @if (!prod.IsAvailable || prod.StockQuantity <= 0)
+                                        {
+                                            @if (_stockAlertEnabled)
+                                            {
+                                                var isAlertOn = alertIds.Contains(prod.Id);
+                                                var isAlertBusy = _alertBusyIds.Contains(prod.Id);
+                                                <button type="button" class="sp-notify-btn @(isAlertOn ? "is-on" : "")"
+                                                        disabled="@isAlertBusy"
+                                                        title="خبرم کن وقتی موجود شد"
+                                                        @onclick="() => ToggleStockAlert(prod)"
+                                                        @onclick:stopPropagation
+                                                        @onclick:preventDefault>
+                                                    <span class="oi oi-bell"></span>
+                                                    @(isAlertBusy ? "..." : (isAlertOn ? "خبرم کن ✓" : "خبرم کن"))
+                                                </button>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <QuantityControl Quantity="@CartService.GetQuantity(prod.Id)"
+                                                             Disabled="@(!prod.IsAvailable || prod.StockQuantity <= 0)"
+                                                             IncreaseDisabled="@(prod.StockQuantity > 0 && CartService.GetQuantity(prod.Id) >= prod.StockQuantity)"
+                                                             OnAdd="() => AddToCart(prod)"
+                                                             OnIncrease="() => Increase(prod)"
+                                                             OnDecrease="() => Decrease(prod)" />
+                                        }
                                     </div>
                                 </div>
                                 <div class="sp-card__body">
@@ -492,10 +524,17 @@
     .sp-badge--low{background:var(--warn-bg);color:#92400e;border:1px solid rgba(217,119,6,.2)}
     .sp-card__wishlist{position:absolute;top:.5rem;left:.5rem;z-index:3;width:32px;height:32px;border-radius:50%;border:none;background:rgba(255,255,255,.85);backdrop-filter:blur(4px);color:#9ca3af;cursor:pointer;display:grid;place-items:center;transition:all .2s;box-shadow:0 2px 6px rgba(0,0,0,.08)}
     .sp-card__wishlist:hover{color:var(--sale);background:#fff;transform:scale(1.1)}
+    .sp-card__wishlist.is-active{color:#dc3545;background:#fff}
+    .sp-card__wishlist.is-active:hover{color:#dc3545;background:#ffe0e0}
     .sp-card__cart-area{position:absolute;bottom:.5rem;left:.5rem;right:.5rem;z-index:3;opacity:0;transform:translateY(8px);transition:all .25s ease}
     .sp-card:hover .sp-card__cart-area{opacity:1;transform:translateY(0)}
     .sp-card__cart-area ::deep .qc{width:100%}
     .sp-card__cart-area ::deep .qc-add,.sp-card__cart-area ::deep .qc-qty,.sp-card__cart-area ::deep .qc-badge{width:100%;justify-content:center;box-shadow:none;background:rgba(255,255,255,.96)}
+    .sp-notify-btn{display:flex;align-items:center;justify-content:center;gap:.4rem;width:100%;border:1px solid rgba(2,6,23,.08);border-radius:999px;padding:.55rem 1rem;font-size:.8rem;font-weight:900;cursor:pointer;background:rgba(255,255,255,.96);color:#0f172a;box-shadow:none;transition:all .2s}
+    .sp-notify-btn:hover{background:var(--pri-l);color:var(--pri);border-color:var(--pri)}
+    .sp-notify-btn.is-on{background:#fef3c7;color:#b45309;border-color:rgba(217,119,6,.25)}
+    .sp-notify-btn.is-on:hover{background:#fde68a;color:#92400e}
+    .sp-notify-btn:disabled{opacity:.6;cursor:wait}
     .sp-card__body{display:flex;flex-direction:column;gap:.35rem;padding:.7rem .8rem .85rem;flex:1}
     .sp-card__cat{font-size:.62rem;font-weight:800;color:var(--pri);background:var(--pri-l);border-radius:999px;padding:.12rem .5rem;align-self:flex-start;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%}
     .sp-card__title{font-size:.82rem;font-weight:800;color:var(--tx);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:0;min-height:2.46em}
@@ -548,6 +587,7 @@
         .sp-meta__hint{display:none}
         .sp-card__cart-area{opacity:1;transform:none}
         .sp-card__cart-area ::deep .qc{max-width:140px}
+        .sp-notify-btn{max-width:140px;margin:0 auto}
         .sp-card__wishlist{width:28px;height:28px}
         .sp-card__wishlist svg{width:14px;height:14px}
         .sp-subcats{gap:.35rem}
@@ -570,6 +610,8 @@
 
     html[data-theme="dark"] .sp{--bg:#0b1220;--sf:#131c2e;--sf2:#0f172a;--bd:rgba(148,163,184,.12);--tx:#e2e8f0;--mt:#94a3b8;--pri-l:#1e3a5f;--new-bg:#0f2940}
     html[data-theme="dark"] .sp-card__cart-area ::deep .qc-add,html[data-theme="dark"] .sp-card__cart-area ::deep .qc-qty,html[data-theme="dark"] .sp-card__cart-area ::deep .qc-badge{background:rgba(19,28,46,.97);color:#e2e8f0;border-color:rgba(148,163,184,.2)}
+    html[data-theme="dark"] .sp-notify-btn{background:rgba(19,28,46,.97);color:#e2e8f0;border-color:rgba(148,163,184,.2)}
+    html[data-theme="dark"] .sp-notify-btn.is-on{background:#3b2f0b;color:#fbbf24;border-color:rgba(217,119,6,.3)}
     html[data-theme="dark"] .sp-sk__img,html[data-theme="dark"] .sp-sk__line{background:linear-gradient(90deg,#1c2740 25%,#24364f 50%,#1c2740 75%);background-size:200% 100%;animation:sp-sh 1.5s infinite}
     html[data-theme="dark"] .sp-card__wishlist{background:rgba(19,28,46,.85);color:#94a3b8}
     html[data-theme="dark"] .sp-subcat{background:var(--sf);border-color:var(--bd)}
@@ -589,16 +631,18 @@
     private int totalPages = 1;
 
     private int? selectedCategoryId = null;
-    [SupplyParameterFromQuery(Name = "categoryId")]
-    private int? CategoryId { get; set; }
-    private int? _appliedCategoryId;
     private bool onlyAvailable = false;
+    private ProductFacetsDto? facets;
     private bool onlyDiscounted = false;
     private string? search;
     private decimal? minPrice;
     private decimal? maxPrice;
     private string? sort;
     private bool showFilters = true;
+
+    private static readonly string[] QueryKeys =
+        ["categoryId", "search", "sort", "minPrice", "maxPrice", "onlyAvailable", "onlyDiscounted", "page"];
+    private bool _initialized;
 
     private string minPriceText = "";
     private string maxPriceText = "";
@@ -643,21 +687,111 @@
     protected override async Task OnInitializedAsync()
     {
         CartService.OnChange += HandleCartChanged;
+        Ws.OnChange += HandleWishlistChanged;
         await LoadCategories();
+        await LoadWishlistStateAsync();
+        await LoadStockAlertMetaAsync();
 
-        if (CategoryId.HasValue)
-        {
-            selectedCategoryId = CategoryId;
-            _appliedCategoryId = CategoryId;
-        }
+        ApplyQueryToState();
+        _initialized = true;
 
-        currentPage = 1;
-        skip = 0;
         await LoadProducts();
         await LoadFeaturedHeroAsync();
         BuildHeroSlides();
         currentSlide = 0;
         StartSlideTimer();
+    }
+
+    private readonly HashSet<int> wishIds = new();
+    private readonly HashSet<int> alertIds = new();
+    private readonly HashSet<int> _alertBusyIds = new();
+    private bool _stockAlertEnabled = true;
+
+    private async Task LoadStockAlertMetaAsync()
+    {
+        try
+        {
+            var shop = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+            _stockAlertEnabled = shop?.EnableStockAlert != false;
+        }
+        catch { _stockAlertEnabled = true; }
+
+        if (!_stockAlertEnabled)
+            return;
+
+        try
+        {
+            var mine = await Http.GetFromJsonAsync<StockAlertMineDto>("api/stock-alerts/mine");
+            alertIds.Clear();
+            foreach (var id in mine?.ActiveProductIds ?? new List<int>()) alertIds.Add(id);
+        }
+        catch { alertIds.Clear(); }
+    }
+
+    private async Task ToggleStockAlert(ProductDto prod)
+    {
+        var id = prod.Id;
+        if (!_alertBusyIds.Add(id)) return;
+        StateHasChanged();
+        try
+        {
+            HttpResponseMessage resp;
+            if (alertIds.Contains(id))
+                resp = await Http.DeleteAsync($"api/stock-alerts/{id}");
+            else
+                resp = await Http.PostAsync($"api/stock-alerts/{id}", null);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                if (alertIds.Contains(id))
+                {
+                    alertIds.Remove(id);
+                    ToastService.ShowSuccess("اعلان موجودی این محصول غیرفعال شد.");
+                }
+                else
+                {
+                    alertIds.Add(id);
+                    ToastService.ShowSuccess("ثبت شد؛ هنگام موجود شدن کالا به شما اطلاع می‌دهیم.");
+                }
+            }
+            else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString(Nav.Uri)}");
+            }
+            else
+            {
+                ToastService.ShowError("تغییر وضعیت اعلان انجام نشد؛ دوباره تلاش کنید.");
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("ارتباط با سرویس اعلان موجودی برقرار نشد.");
+        }
+        finally
+        {
+            _alertBusyIds.Remove(id);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadWishlistStateAsync()
+    {
+        wishIds.Clear();
+        foreach (var item in await Ws.GetItemsAsync()) wishIds.Add(item.ProductId);
+    }
+
+    private async Task ToggleWishlist(ProductDto prod)
+    {
+        await Ws.ToggleAsync(prod.Id, prod.Name, prod.MainImageUrl, prod.Price,
+            IsDiscountActive(prod) ? prod.DiscountPrice : null, prod.DiscountStartDate, prod.DiscountExpiryDate);
+
+        if (!wishIds.Remove(prod.Id)) wishIds.Add(prod.Id);
+    }
+
+    private async void HandleWishlistChanged()
+    {
+        await LoadWishlistStateAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadFeaturedHeroAsync()
@@ -711,14 +845,12 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (CategoryId != _appliedCategoryId)
-        {
-            _appliedCategoryId = CategoryId;
-            selectedCategoryId = CategoryId;
-            currentPage = 1;
-            skip = 0;
-            await LoadProducts();
-        }
+        // فقط وقتی ناوبری بیرونی رخ داده (لینک مستقیم، back/forward) فیلترها را
+        // از URL می‌خوانیم؛ اگر با وضعیت فعلی یکسان باشد هیچ درخواستی نمی‌فرستیم.
+        if (!_initialized || QueryMatchesState()) return;
+
+        ApplyQueryToState();
+        await LoadProducts();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -787,6 +919,7 @@
         currentPage = page;
         skip = (currentPage - 1) * take;
         await LoadProducts();
+        SyncUrl();
     }
 
     private List<int> GetPageNumbers()
@@ -812,12 +945,14 @@
     private async Task LoadProducts()
     {
         products = null;
+        var query = BuildQueryString();
+        var facetsTask = Http.GetFromJsonAsync<ProductFacetsDto>($"api/products/facets?{query}");
         try
         {
-            var query = BuildQueryString();
             var response = await Http.GetAsync($"api/products?{query}");
             if (!response.IsSuccessStatusCode)
             {
+                try { facets = await facetsTask; } catch { }
                 products ??= new();
                 return;
             }
@@ -832,13 +967,20 @@
             data ??= new();
             products = data;
 
+            try { facets = await facetsTask; } catch { facets = null; }
             StartOrStopTimer();
         }
         catch
         {
             products ??= new();
+            try { facets = await facetsTask; } catch { facets = null; }
         }
     }
+
+    private static string FacetSuffix(int? count) => count.HasValue ? $" ({count.Value})" : "";
+
+    private string FacetCatSuffix(int categoryId)
+        => FacetSuffix(facets?.Categories?.FirstOrDefault(c => c.Id == categoryId)?.Count);
 
     private static bool IsDiscountActive(ProductDto prod)
         => DiscountHelper.IsActive(prod);
@@ -919,11 +1061,127 @@
         return string.Join("&", parts);
     }
 
+    private Dictionary<string, string> ReadQuery()
+    {
+        var q = System.Web.HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query);
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (int.TryParse(q["categoryId"], out var cat) && cat > 0) d["categoryId"] = cat.ToString();
+
+        var s = q["search"];
+        if (!string.IsNullOrWhiteSpace(s)) d["search"] = s.Trim();
+
+        var so = q["sort"];
+        if (!string.IsNullOrWhiteSpace(so)) d["sort"] = so.Trim();
+
+        if (decimal.TryParse(q["minPrice"], out var mn) && mn >= 0)
+            d["minPrice"] = mn.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        if (decimal.TryParse(q["maxPrice"], out var mx) && mx >= 0)
+            d["maxPrice"] = mx.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        if (string.Equals(q["onlyAvailable"], "true", StringComparison.OrdinalIgnoreCase)) d["onlyAvailable"] = "true";
+        if (string.Equals(q["onlyDiscounted"], "true", StringComparison.OrdinalIgnoreCase)) d["onlyDiscounted"] = "true";
+
+        if (int.TryParse(q["page"], out var pg) && pg > 1) d["page"] = pg.ToString();
+
+        return d;
+    }
+
+    private Dictionary<string, string> StateQuery()
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (selectedCategoryId.HasValue && selectedCategoryId.Value > 0)
+            d["categoryId"] = selectedCategoryId.Value.ToString();
+
+        if (!string.IsNullOrWhiteSpace(search)) d["search"] = search.Trim();
+        if (!string.IsNullOrWhiteSpace(sort)) d["sort"] = sort.Trim();
+        if (minPrice.HasValue && minPrice.Value >= 0)
+            d["minPrice"] = minPrice.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (maxPrice.HasValue && maxPrice.Value >= 0)
+            d["maxPrice"] = maxPrice.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (onlyAvailable) d["onlyAvailable"] = "true";
+        if (onlyDiscounted) d["onlyDiscounted"] = "true";
+        if (currentPage > 1) d["page"] = currentPage.ToString();
+
+        return d;
+    }
+
+    private bool QueryMatchesState()
+    {
+        var fromUrl = ReadQuery();
+        var fromState = StateQuery();
+
+        if (fromUrl.Count != fromState.Count) return false;
+        foreach (var kv in fromUrl)
+        {
+            if (!fromState.TryGetValue(kv.Key, out var v)) return false;
+            if (!string.Equals(v, kv.Value, StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        return true;
+    }
+
+    private void ApplyQueryToState()
+    {
+        var d = ReadQuery();
+
+        selectedCategoryId = d.TryGetValue("categoryId", out var c) && int.TryParse(c, out var ci) ? ci : null;
+        search = d.TryGetValue("search", out var s) ? s : null;
+        sort = d.TryGetValue("sort", out var so) ? so : null;
+        minPrice = d.TryGetValue("minPrice", out var mn) && decimal.TryParse(mn, out var mnm) ? mnm : null;
+        maxPrice = d.TryGetValue("maxPrice", out var mx) && decimal.TryParse(mx, out var mxv) ? mxv : null;
+        onlyAvailable = d.ContainsKey("onlyAvailable");
+        onlyDiscounted = d.ContainsKey("onlyDiscounted");
+        currentPage = d.TryGetValue("page", out var pg) && int.TryParse(pg, out var pgi) ? pgi : 1;
+
+        minPriceText = minPrice.HasValue ? FormatDigits(minPrice.Value.ToString()) : "";
+        maxPriceText = maxPrice.HasValue ? FormatDigits(maxPrice.Value.ToString()) : "";
+
+        skip = (currentPage - 1) * take;
+    }
+
+    private string BuildShareQuery()
+    {
+        var d = StateQuery();
+        var parts = new List<string>();
+        foreach (var key in QueryKeys)
+        {
+            if (d.TryGetValue(key, out var v)) parts.Add($"{key}={Uri.EscapeDataString(v)}");
+        }
+        return string.Join("&", parts);
+    }
+
+    private void SyncUrl()
+    {
+        var q = BuildShareQuery();
+        var relative = q.Length == 0 ? "products" : "products?" + q;
+        var target = new Uri(new Uri(Nav.BaseUri), relative).AbsoluteUri;
+        if (string.Equals(Nav.Uri, target, StringComparison.OrdinalIgnoreCase)) return;
+        Nav.NavigateTo(relative, replace: true);
+    }
+
+    private string BuildCanonicalUrl()
+    {
+        // جستجو در canonical نمی‌آید تا با سمت سرور یکی باشد (نتایج جستجو تکراری
+        // از دید موتور جستجو محسوب می‌شوند).
+        var d = StateQuery();
+        d.Remove("search");
+        var parts = new List<string>();
+        foreach (var key in QueryKeys)
+        {
+            if (d.TryGetValue(key, out var v)) parts.Add($"{key}={Uri.EscapeDataString(v)}");
+        }
+        var q = string.Join("&", parts);
+        return $"https://errorservice.ir/products{(q.Length > 0 ? "?" + q : "")}";
+    }
+
     private async Task ApplyFilters()
     {
         currentPage = 1;
         skip = 0;
         await LoadProducts();
+        SyncUrl();
     }
 
     private async Task ClearFilters()
@@ -940,6 +1198,7 @@
         currentPage = 1;
         skip = 0;
         await LoadProducts();
+        SyncUrl();
     }
 
     private async Task SelectCategory(int? categoryId)
@@ -948,6 +1207,7 @@
         currentPage = 1;
         skip = 0;
         await LoadProducts();
+        SyncUrl();
     }
 
     private async Task AddToCart(ProductDto prod) => await CartService.AddToCartAsync(prod, 1);
@@ -955,6 +1215,7 @@
     private async Task Increase(ProductDto prod)
     {
         var current = CartService.GetQuantity(prod.Id);
+        if (prod.StockQuantity > 0 && current >= prod.StockQuantity) return;
         await CartService.UpdateQuantityAsync(prod.Id, current + 1);
     }
 
@@ -998,5 +1259,6 @@
         timer?.Dispose();
         slideTimer?.Dispose();
         CartService.OnChange -= HandleCartChanged;
+        Ws.OnChange -= HandleWishlistChanged;
     }
 }

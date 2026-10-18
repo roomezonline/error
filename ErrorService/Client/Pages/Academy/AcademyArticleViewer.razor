@@ -370,18 +370,6 @@
 
                                             case TrainingBlockTypeDto.Embed:
                                                 <div class="media-card media-card--embed">
-                                                    <div class="media-card__header">
-                                                        <span class="media-card__badge">
-                                                            <span class="oi oi-code"></span>
-                                                            @(group.Blocks.Count > 1 ? $"کدهای جاسازی ({group.Blocks.Count})" : "کد Embed")
-                                                        </span>
-                                                        @if (!string.IsNullOrEmpty(first.Url))
-                                                        {
-                                                            <a href="@first.Url" target="_blank" class="media-card__dl" title="باز کردن لینک">
-                                                                <span class="oi oi-external-link"></span> باز کردن
-                                                            </a>
-                                                        }
-                                                    </div>
                                                     <div class="media-card__body">
                                                         <div class="media-stack">
                                                             @foreach (var block in group.Blocks)
@@ -391,7 +379,7 @@
                                                                     <div class="media-cell__title">@block.Title</div>
                                                                 }
                                                                 <div class="embed-wrapper rounded-4 overflow-hidden shadow-sm">
-                                                                    @((MarkupString)HtmlSanitizer.Sanitize(block.Content ?? ""))
+                                                                    @((MarkupString)HtmlSanitizer.Sanitize(EmbedHtml.Fix(block.Content)))
                                                                 </div>
                                                                 @if (!string.IsNullOrEmpty(block.Url))
                                                                 {
@@ -853,8 +841,43 @@
         .article-gallery__caption { padding: 0.4rem 0.5rem; }
     }
 
-    .embed-wrapper { position: relative; overflow: hidden; border-radius: 1rem; }
-    .embed-wrapper iframe { border: 0; }
+    .embed-wrapper {
+        position: relative;
+        overflow: hidden;
+        border-radius: 1rem;
+        background: #0f172a;
+        width: 100%;
+    }
+    .embed-wrapper .h_iframe-aparat_embed_frame { position: relative; width: 100%; }
+    .embed-wrapper .h_iframe-aparat_embed_frame span { display: block; width: 100%; }
+    .embed-wrapper iframe {
+        display: block;
+        width: 100% !important;
+        height: auto !important;
+        aspect-ratio: 16 / 9;
+        border: 0;
+        border-radius: 1rem;
+        background: #0f172a;
+    }
+    .embed-wrapper .h_iframe-aparat_embed_frame iframe {
+        position: absolute;
+        inset: 0;
+        height: 100% !important;
+        aspect-ratio: auto;
+    }
+
+    @@media (min-width: 992px) {
+        .embed-wrapper { max-width: 740px; margin-inline: auto; }
+    }
+
+    @@media (max-width: 575.98px) {
+        .media-card--embed { margin-inline: -0.75rem; border: 0; border-radius: 0; box-shadow: none; }
+        .media-card--embed .media-card__body { padding: 0; background: transparent; }
+        .embed-wrapper { border-radius: 0; }
+        .embed-wrapper .h_iframe-aparat_embed_frame > span { padding-top: 75% !important; }
+        .embed-wrapper .h_iframe-aparat_embed_frame iframe { border-radius: 0; }
+        .embed-wrapper iframe { aspect-ratio: 4 / 3; border-radius: 0; }
+    }
 
     .cs-wrapper { margin-top: 1.5rem; }
 

@@ -90,6 +90,7 @@ public sealed class SlidersController : ControllerBase
 
         _db.SliderItems.Add(entity);
         await _db.SaveChangesAsync(cancellationToken);
+        SeoFallbackMiddleware.InvalidateHtmlCache();
 
         return new SliderItemDto
         {
@@ -126,6 +127,7 @@ public sealed class SlidersController : ControllerBase
         entity.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync(cancellationToken);
+        SeoFallbackMiddleware.InvalidateHtmlCache();
 
         return new SliderItemDto
         {
@@ -152,6 +154,7 @@ public sealed class SlidersController : ControllerBase
 
         _db.SliderItems.Remove(entity);
         await _db.SaveChangesAsync(cancellationToken);
+        SeoFallbackMiddleware.InvalidateHtmlCache();
 
         return NoContent();
     }

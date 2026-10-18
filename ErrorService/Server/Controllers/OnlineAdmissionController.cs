@@ -290,7 +290,7 @@ public sealed class OnlineAdmissionController : ControllerBase
         if (!isExpertise && !isRepair)
             return BadRequest("این درخواست قابل ارجاع نیست");
 
-        var ws = await _db.Workshops.AsNoTracking().FirstOrDefaultAsync(x => x.Id == workshopId && x.IsActive);
+        var ws = await _db.Workshops.AsNoTracking().FirstOrDefaultAsync(x => x.Id == workshopId && x.IsActive && !x.IsDeleted);
         if (ws == null) return BadRequest("کارگاه فعال یافت نشد");
 
         // Upsert customer in target workshop by mobile

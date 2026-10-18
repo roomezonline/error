@@ -27,7 +27,7 @@
         <div class="chat-overlay" @onclick="() => _showMobileSidebar = false"></div>
     }
 
-    @* --- Settings modal --- *@
+    @* --- Settings modal (tabbed) --- *@
     @if (_showSettings)
     {
         <div class="settings-backdrop" @onclick="() => _showSettings = false"></div>
@@ -36,190 +36,680 @@
                 <h6 class="m-0 fw-bold">تنظیمات چت</h6>
                 <button class="btn-close-sm" @onclick="() => _showSettings = false"></button>
             </div>
+
+            <div class="settings-tabs">
+                <button class="settings-tab @(_settingsTab == "general" ? "active" : "")" @onclick='() => SetSettingsTab("general")'>
+                    <span class="oi oi-wrench"></span> عمومی چت
+                </button>
+                <button class="settings-tab @(_settingsTab == "bale" ? "active" : "")" @onclick='() => SetSettingsTab("bale")'>
+                    <span class="oi oi-chat"></span> بله
+                </button>
+                <button class="settings-tab @(_settingsTab == "telegram" ? "active" : "")" @onclick='() => SetSettingsTab("telegram")'>
+                    <span class="oi oi-paper-plane"></span> تلگرام
+                </button>
+                <button class="settings-tab @(_settingsTab == "ai" ? "active" : "")" @onclick='() => SetSettingsTab("ai")'>
+                    <span class="oi oi-lightbulb"></span> هوش مصنوعی
+                </button>
+            </div>
+
             <div class="settings-body">
-                <div class="mb-3">
-                    <label class="form-label small fw-bold">توکن ربات بله</label>
-                    <input type="password" class="form-control" @bind="_baleToken" placeholder="توکن ربات بله" />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label small fw-bold">شناسه گروه بله</label>
-                    <input type="text" class="form-control" @bind="_baleGroupId" placeholder="-123456789" />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label small fw-bold">توکن وب‌هوک (اختیاری)</label>
-                    <input type="text" class="form-control" @bind="_webhookSecret" placeholder="webhook_secret" />
-                </div>
-                @if (!string.IsNullOrEmpty(_webhookUrl))
+
+                @* ======== عمومی چت ======== *@
+                @if (_settingsTab == "general")
                 {
-                    <div class="mb-3 p-2 bg-light rounded-3 small">
-                        <div class="fw-bold mb-1">آدرس وب‌هوک</div>
-                        <code class="d-block text-break" dir="ltr">@_webhookUrl</code>
+                    <div class="settings-card">
+                        <div class="settings-card-title">پیام خوش‌آمدگویی</div>
+                        <textarea class="form-control form-control-sm" rows="2" @bind="_siteWelcomeMessage" placeholder="مثلاً: سلام! چطور می‌توانم کمکتان کنم؟"></textarea>
                     </div>
-                }
-                <div class="d-flex flex-wrap gap-2 mb-3">
-                    <button class="btn btn-primary btn-sm" @onclick="SaveBaleSettings" disabled="@_savingSettings">
-                        @if (_savingSettings) { <span class="spinner-border spinner-border-sm me-1"></span> }
-                        ذخیره تنظیمات
-                    </button>
-                    <button class="btn btn-outline-secondary btn-sm" @onclick="TestBaleConnection">تست اتصال</button>
-                    <button class="btn btn-outline-info btn-sm" @onclick="SetWebhook" disabled="@_settingWebhook">
-                        @if (_settingWebhook) { <span class="spinner-border spinner-border-sm me-1"></span> }
-                        ثبت وب‌هوک
-                    </button>
-                </div>
-                @if (!string.IsNullOrEmpty(_settingsMessage))
-                {
-                    <div class="alert @(_settingsSuccess ? "alert-success" : "alert-danger") py-2 small">@_settingsMessage</div>
-                }
-                <div class="border-top pt-3">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <small class="fw-bold">وضعیت وب‌هوک</small>
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="CheckWebhookStatus" disabled="@_checkingWebhookStatus">
-                            @if (_checkingWebhookStatus) { <span class="spinner-border spinner-border-sm me-1"></span> }
-                            بررسی
+
+                    <div class="settings-card">
+                        <div class="switch-row">
+                            <div class="switch-text">
+                                <div class="switch-title">پیام یادآور خودکار</div>
+                                <div class="switch-desc">اگر اپراتور پاسخ نداد، پس از مدت تعیین‌شده پیام یادآور ارسال شود.</div>
+                            </div>
+                            <label class="chat-switch">
+                                <input type="checkbox" @bind="_siteEnableAutoMessage" />
+                                <span class="chat-slider"></span>
+                            </label>
+                        </div>
+                        @if (_siteEnableAutoMessage)
+                        {
+                            <div class="field-block">
+                                <label class="field-label">مدت انتظار (ثانیه)</label>
+                                <input type="number" min="5" class="form-control form-control-sm" @bind="_siteAutoMessageSeconds" />
+                            </div>
+                        }
+                    </div>
+
+                    <div class="settings-card">
+                        <div class="switch-row">
+                            <div class="switch-text">
+                                <div class="switch-title">الزام شماره تماس</div>
+                                <div class="switch-desc">کاربر برای شروع گفتگو باید شماره موبایل خود را وارد کند.</div>
+                            </div>
+                            <label class="chat-switch">
+                                <input type="checkbox" @bind="_sitePhoneRequired" />
+                                <span class="chat-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="settings-actions">
+                        <button class="btn btn-success btn-sm" @onclick="SaveAllSettings" disabled="@(_settingsLoading || _savingSiteSettings || _savingSettings)">
+                            @if (_savingSiteSettings || _savingSettings) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            ذخیره تنظیمات
                         </button>
                     </div>
-                    @if (_webhookStatusChecked)
-                    {
-                        <div class="p-2 rounded-3 small @(_webhookStatusRegistered ? "bg-success bg-opacity-10" : "bg-warning bg-opacity-10")">
-                            @if (_webhookStatusRegistered)
-                            {
-                                <div class="text-success fw-bold">✅ وب‌هوک ثبت شده</div>
-                                <code class="d-block mt-1 text-break" dir="ltr">@_webhookStatusUrl</code>
-                                if (!string.IsNullOrEmpty(_webhookUrl) && _webhookStatusUrl != _webhookUrl)
+                }
+
+                @* ======== بله ======== *@
+                @if (_settingsTab == "bale")
+                {
+                    <div class="settings-card">
+                        <div class="switch-row">
+                            <div class="switch-text">
+                                <div class="switch-title">فعال‌سازی چت بله</div>
+                                <div class="switch-desc">شامل دریافت پیام‌های کاربران از ربات بله.</div>
+                            </div>
+                            <label class="chat-switch">
+                                <input type="checkbox" @bind="_siteEnableBale" />
+                                <span class="chat-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="field-block">
+                            <label class="field-label">توکن ربات بله</label>
+                            <input type="password" class="form-control form-control-sm" @bind="_baleToken" placeholder="توکن ربات بله" />
+                        </div>
+                        <div class="field-block">
+                            <label class="field-label">شناسه گروه بله</label>
+                            <input type="text" class="form-control form-control-sm" @bind="_baleGroupId" placeholder="-123456789" />
+                        </div>
+                        <div class="field-block">
+                            <label class="field-label">توکن وب‌هوک (اختیاری)</label>
+                            <input type="text" class="form-control form-control-sm" @bind="_webhookSecret" placeholder="webhook_secret" />
+                        </div>
+                        @if (!string.IsNullOrEmpty(_webhookUrl))
+                        {
+                            <div class="info-chip">
+                                <div class="fw-bold mb-1">آدرس وب‌هوک</div>
+                                <code class="d-block text-break" dir="ltr">@_webhookUrl</code>
+                            </div>
+                        }
+
+                        <div class="btn-row">
+                            <button class="btn btn-primary btn-sm" @onclick="SaveBaleSettings" disabled="@_savingSettings">
+                                @if (_savingSettings) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                ذخیره
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="TestBaleConnection">تست اتصال</button>
+                            <button class="btn btn-outline-info btn-sm" @onclick="SetWebhook" disabled="@_settingWebhook">
+                                @if (_settingWebhook) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                ثبت وب‌هوک
+                            </button>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_settingsMessage))
+                        {
+                            <div class="alert @(_settingsSuccess ? "alert-success" : "alert-danger") py-2 small mb-0">@_settingsMessage</div>
+                        }
+
+                        <div class="sub-sep">وضعیت وب‌هوک</div>
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <small class="text-muted">آخرین بررسی ثبت وب‌هوک</small>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="CheckWebhookStatus" disabled="@_checkingWebhookStatus">
+                                @if (_checkingWebhookStatus) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                بررسی
+                            </button>
+                        </div>
+                        @if (_webhookStatusChecked)
+                        {
+                            <div class="p-2 rounded-3 small @(_webhookStatusRegistered ? "bg-success bg-opacity-10" : "bg-warning bg-opacity-10")">
+                                @if (_webhookStatusRegistered)
                                 {
-                                    <div class="text-danger mt-1">⚠️ آدرس ثبت‌شده با آدرس فعلی مطابقت ندارد</div>
+                                    <div class="text-success fw-bold">وب‌هوک ثبت شده</div>
+                                    <code class="d-block mt-1 text-break" dir="ltr">@_webhookStatusUrl</code>
+                                    if (!string.IsNullOrEmpty(_webhookUrl) && _webhookStatusUrl != _webhookUrl)
+                                    {
+                                        <div class="text-danger mt-1">آدرس ثبت‌شده با آدرس فعلی مطابقت ندارد</div>
+                                    }
                                 }
+                                else
+                                {
+                                    <div class="text-warning fw-bold">وب‌هوک ثبت نشده</div>
+                                    <div class="text-muted mt-1">دکمه «ثبت وب‌هوک» را بزنید</div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="settings-card">
+                        <div class="switch-row">
+                            <div class="switch-text">
+                                <div class="switch-title">ارسال اعلان از طریق بله</div>
+                            </div>
+                            <label class="chat-switch">
+                                <input type="checkbox" @bind="_siteNotifyBale" />
+                                <span class="chat-slider"></span>
+                            </label>
+                        </div>
+                        @if (_siteNotifyBale)
+                        {
+                            <div class="field-block">
+                                <label class="field-label">کلید دسترسی سفیر (Api Access Key)</label>
+                                <input type="password" class="form-control form-control-sm" @bind="_siteBaleSafirKey" placeholder="از پنل کسب‌وکار بله (business.bale.ai)" />
+                                <div class="form-text small">برای ارسال بله به شماره موبایل کاربران لازم است از بخش «سفیر» پنل کسب‌وکار بله دریافت شود؛ در صورت نداشتن کلید، اعلان بله برای کاربرانی که شماره را در ربات فرستاده‌اند از خود ربات ارسال می‌شود.</div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="settings-actions">
+                        <button class="btn btn-success btn-sm" @onclick="SaveAllSettings" disabled="@(_settingsLoading || _savingSiteSettings || _savingSettings)">
+                            @if (_savingSiteSettings || _savingSettings) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            ذخیره تنظیمات
+                        </button>
+                    </div>
+                }
+
+                @* ======== تلگرام ======== *@
+                @if (_settingsTab == "telegram")
+                {
+                    <div class="settings-card">
+                        <div class="switch-row">
+                            <div class="switch-text">
+                                <div class="switch-title">فعال‌سازی چت تلگرام</div>
+                                <div class="switch-desc">دریافت و ارسال پیام از طریق ربات تلگرام.</div>
+                            </div>
+                            <label class="chat-switch">
+                                <input type="checkbox" @bind="_siteEnableTelegram" />
+                                <span class="chat-slider"></span>
+                            </label>
+                        </div>
+
+                        @if (_siteEnableTelegram)
+                        {
+                            <div class="field-block">
+                                <label class="field-label">توکن ربات تلگرام</label>
+                                <input type="password" class="form-control form-control-sm" @bind="_siteTelegramToken" placeholder="123456:ABC..." />
+                            </div>
+                            <div class="field-block">
+                                <label class="field-label">شناسه گروه تلگرام</label>
+                                <input type="text" class="form-control form-control-sm" @bind="_siteTelegramGroupId" placeholder="-100123456789" />
+                            </div>
+                        }
+                    </div>
+
+                    <div class="settings-card">
+                        <div class="switch-row">
+                            <div class="switch-text">
+                                <div class="switch-title">ارسال اعلان از طریق تلگرام</div>
+                            </div>
+                            <label class="chat-switch">
+                                <input type="checkbox" @bind="_siteNotifyTelegram" />
+                                <span class="chat-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="settings-actions">
+                        <button class="btn btn-success btn-sm" @onclick="SaveAllSettings" disabled="@(_settingsLoading || _savingSiteSettings || _savingSettings)">
+                            @if (_savingSiteSettings || _savingSettings) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            ذخیره تنظیمات
+                        </button>
+                    </div>
+                }
+
+                @* ======== هوش مصنوعی ======== *@
+                @if (_settingsTab == "ai")
+                {
+                    <div class="settings-card accent">
+                        <div class="switch-row">
+                            <div class="switch-text">
+                                <div class="switch-title">فعال بودن دستیار هوشمند</div>
+                                <div class="switch-desc">دستیار همیشه در ابتدای گفتگو فعال است و تا زمان پاسخ انسان به کاربر کمک می‌کند؛ با اولین پاسخ اپراتور یا درخواست اپراتور انسانی کنار می‌رود.</div>
+                            </div>
+                            <label class="chat-switch">
+                                <input type="checkbox" @bind="_siteEnableAi" />
+                                <span class="chat-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="info-chip">
+                            بدون تنظیم URL و کلید، فقط به سوالات پرتکرار (FAQ) پاسخ داده می‌شود.
+                        </div>
+                    </div>
+
+                    @if (_siteEnableAi)
+                    {
+                        <div class="settings-card">
+                            <div class="settings-card-title ai-title-row">
+                                <span><span class="oi oi-graph"></span> مصرف و اعتبار</span>
+                                <button class="mini-btn" @onclick="LoadAiStats" disabled="@_aiStatsLoading">
+                                    @(_aiStatsLoading ? "در حال بارگذاری..." : "به‌روزرسانی")
+                                </button>
+                            </div>
+
+                            <div class="ai-stats">
+                                <div class="ai-stat"><b>@(_aiUsage?.todayAiReplies ?? 0)</b><span>پاسخ امروز</span></div>
+                                <div class="ai-stat"><b>@(_aiUsage?.totalAiReplies ?? 0)</b><span>پاسخ کل</span></div>
+                                <div class="ai-stat"><b>@(_aiUsage?.last30AiReplies ?? 0)</b><span>۳۰ روز اخیر</span></div>
+                                <div class="ai-stat"><b>@(_aiUsage?.sessionsWithAi ?? 0)</b><span>مکالمه</span></div>
+                                <div class="ai-stat"><b>@(_aiUsage?.memberAiReplies ?? 0)</b><span>اعضا</span></div>
+                                <div class="ai-stat"><b>@(_aiUsage?.guestAiReplies ?? 0)</b><span>مهمان‌ها</span></div>
+                            </div>
+
+                            @if (_aiUsage != null)
+                            {
+                                <div class="ai-quota">
+                                    <div class="ai-quota-row">
+                                        <span>سقف روزانه هر عضو</span>
+                                        <b>@(_aiUsage.dailyLimit <= 0 ? "غیرفعال" : $"{_aiUsage.dailyLimit} پاسخ")</b>
+                                    </div>
+                                    <div class="ai-quota-row">
+                                        <span>سقف هر مکالمه</span>
+                                        <b>@(_aiUsage.sessionLimit <= 0 ? "نامحدود" : $"{_aiUsage.sessionLimit} پاسخ")</b>
+                                    </div>
+                                    <div class="ai-quota-row">
+                                        <span>امروز کل پیام‌های چت</span>
+                                        <b>@_aiUsage.allMessagesToday</b>
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="ai-credits @(_aiCreditsLoading ? "loading" : "")">
+                                <div class="ai-credits-head">
+                                    <span><span class="oi oi-credit-card"></span> اعتبار API</span>
+                                    <button class="mini-btn" @onclick="LoadAiCredits" disabled="@_aiCreditsLoading">
+                                        @(_aiCreditsLoading ? "در حال استعلام..." : "استعلام")
+                                    </button>
+                                </div>
+
+                                @if (_aiCreditsLoading)
+                                {
+                                    <div class="ai-credits-note"><span class="spinner-border spinner-border-sm"></span> در حال استعلام اعتبار از سرویس‌دهنده...</div>
+                                }
+                                else if (_aiCredits == null)
+                                {
+                                    <div class="ai-credits-note">هنوز استعلام نشده است. برای دیدن اعتبار باقی‌مانده دکمه «استعلام» را بزنید.</div>
+                                }
+                                else if (!_aiCredits.ok)
+                                {
+                                    <div class="ai-credits-note warn">@(_aiCredits.message ?? "استعلام انجام نشد.")</div>
+                                }
+                                else
+                                {
+                                    <div class="ai-credits-grid">
+                                        <div class="ai-credit ok"><b dir="ltr">@_aiCredits.remaining.ToString("0.####")</b><span>باقی‌مانده (@_aiCredits.currency)</span></div>
+                                        <div class="ai-credit used"><b dir="ltr">@_aiCredits.totalUsage.ToString("0.####")</b><span>مصرف‌شده (@_aiCredits.currency)</span></div>
+                                        <div class="ai-credit"><b dir="ltr">@_aiCredits.totalCredits.ToString("0.####")</b><span>کل شارژ (@_aiCredits.currency)</span></div>
+                                    </div>
+                                    <div class="ai-credits-bar"><div class="ai-credits-bar__fill" style="width:@(CreditsPercent)%"></div></div>
+                                    @if (_aiCredits.limit is > 0)
+                                    {
+                                        <div class="ai-credits-note ok">سقف مجاز ماهانه: @_aiCredits.limit.Value.ToString("0.####") @_aiCredits.currency</div>
+                                    }
+                                }
+                            </div>
+                        </div>
+
+                        <div class="settings-card">
+                            <div class="settings-card-title">کنترل پرسش و پاسخ</div>
+
+                            <div class="switch-row">
+                                <div class="switch-text">
+                                    <div class="switch-title">دستیار برای مهمان‌ها فعال باشد</div>
+                                    <div class="switch-desc">اگر خاموش باشد، کاربران واردنشده فقط با اپراتور انسانی گفتگو می‌کنند.</div>
+                                </div>
+                                <label class="chat-switch">
+                                    <input type="checkbox" @bind="_siteAiGuestEnabled" />
+                                    <span class="chat-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="field-block">
+                                <label class="field-label">سقف پیام روزانه هر عضو</label>
+                                <input type="number" min="0" class="form-control form-control-sm" @bind="_siteAiDailyLimit" />
+                                <div class="form-text small">تعداد پاسخ‌های دستیار در هر روز برای هر کاربر عضو. مقدار ۰ یعنی غیرفعال برای اعضا. برای هر کاربر می‌توانید در «کاربران سایت» سقف جداگانه ثبت کنید.</div>
+                            </div>
+
+                            <div class="limit-grid">
+                                <div class="limit-box">
+                                    <label class="field-label">حداکثر طول سوال (کاراکتر)</label>
+                                    <input type="number" min="50" max="4000" class="form-control form-control-sm" @bind="_siteAiMaxQuestionChars" />
+                                    <div class="form-text small">سوال‌های بلندتر پردازش نمی‌شوند.</div>
+                                </div>
+                                <div class="limit-box">
+                                    <label class="field-label">حداکثر طول پاسخ (توکن)</label>
+                                    <input type="number" min="50" max="4000" class="form-control form-control-sm" @bind="_siteAiMaxTokens" />
+                                    <div class="form-text small">هر چه کمتر، پاسخ کوتاه‌تر و ارزان‌تر.</div>
+                                </div>
+                                <div class="limit-box">
+                                    <label class="field-label">سقف پاسخ در هر مکالمه</label>
+                                    <input type="number" min="0" max="500" class="form-control form-control-sm" @bind="_siteAiSessionLimit" />
+                                    <div class="form-text small">پس از این تعداد، نوبت اپراتور انسانی است.</div>
+                                </div>
+                                <div class="limit-box">
+                                    <label class="field-label">خلاقیت پاسخ (۰ تا ۲)</label>
+                                    <input type="number" min="0" max="2" step="0.1" class="form-control form-control-sm" @bind="_siteAiTemperature" />
+                                    <div class="form-text small">۰ = دقیق و تکراری، ۱ = متعادل، ۲ = خلاق.</div>
+                                </div>
+                            </div>
+
+                            <div class="field-block">
+                                <label class="field-label">کلمات ممنوعه (جداسازی با کاما)</label>
+                                <input type="text" class="form-control form-control-sm" @bind="_siteAiBlockKeywords" placeholder="قیمت قطعی, زمان تحویل قطعی, شماره حساب" />
+                                <div class="form-text small">اگر سوال کاربر شامل یکی از این کلمات باشد، دستیار پاسخ نمی‌دهد و اپراتور انسانی وارد گفتگو می‌شود.</div>
+                            </div>
+
+
+                            <div class="field-block">
+                                <label class="field-label">موضوعات پیشنهادی (جداسازی با کاما)</label>
+                                <input type="text" class="form-control form-control-sm" @bind="_siteAiTopics" placeholder="پشتیبانی فنی و عیب‌یابی, پیگیری سفارش, راهنمای خرید و استعلام قیمت, سایر موضوعات" />
+                                <div class="form-text small">این موضوعات به‌صورت دکمه بالای فیلد چت به کاربر نمایش داده می‌شود و در پیام خوش‌آمد دستیار هم فهرست می‌شود.</div>
+                            </div>
+                        </div>
+
+                        <div class="settings-card">
+                            <div class="settings-card-title ai-title-row">
+                                <span><span class="oi oi-layers"></span> مدل فعال</span>
+                                <span class="model-active-chip" dir="ltr">@(ResolveModelValue() is { Length: > 0 } v ? v : "—")</span>
+                            </div>
+
+                            <div class="model-grid">
+                                @foreach (var m in AiModelOptions)
+                                {
+                                    var id = m.Id;
+                                    <div class="model-card @(_siteAiModelChoice == id ? "sel" : "")" role="button" tabindex="0" @onclick="() => SelectModel(id)">
+                                        <span class="model-check"><span class="oi oi-check"></span></span>
+                                        <span class="model-name" dir="ltr">@m.Label</span>
+                                        <span class="model-desc">@m.Desc</span>
+                                        <span class="model-tags">
+                                            <span class="model-tag">@m.Tier</span>
+                                            <span class="model-tag tag-speed">@m.Speed</span>
+                                        </span>
+                                        <span class="model-test-row" @onclick:stopPropagation>
+                                            <button type="button" class="model-test-btn" @onclick="() => TestModel(id)"
+                                                    disabled="@(_modelTests.TryGetValue(id, out var t) && t.Busy)"
+                                                    title="تست این مدل بدون ذخیره تنظیمات">
+                                                @if (_modelTests.TryGetValue(id, out var tb) && tb.Busy)
+                                                {
+                                                    <span class="spinner-border spinner-border-sm"></span>
+                                                    <span>در حال تست…</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="oi oi-media-play"></span>
+                                                    <span>تست مدل</span>
+                                                }
+                                            </button>
+                                            @if (_modelTests.TryGetValue(id, out var tr) && !tr.Busy && tr.Ok != null)
+                                            {
+                                                <span class="model-test-result @(tr.Ok == true ? "ok" : "fail")" title="@(tr.Reply ?? tr.Message)">
+                                                    @(tr.Ok == true
+                                                        ? $"✓ سالم ({ToFaNum(tr.Ms)}ms)"
+                                                        : $"✗ {(tr.Message?.Length > 110 ? tr.Message[..110] + "…" : tr.Message)}")
+                                                </span>
+                                            }
+                                        </span>
+                                    </div>
+                                }
+                                <div class="model-card @(_siteAiModelChoice == "__custom__" ? "sel" : "")" role="button" tabindex="0" @onclick='() => SelectModel("__custom__")'>
+                                    <span class="model-check"><span class="oi oi-check"></span></span>
+                                    <span class="model-name" dir="ltr">custom</span>
+                                    <span class="model-desc">نام دلخواه خود را وارد کنید (مثلاً از فهرست ارائه‌دهنده).</span>
+                                    <span class="model-tags"><span class="model-tag">سفارشی</span></span>
+                                    <span class="model-test-row" @onclick:stopPropagation>
+                                        <button type="button" class="model-test-btn" @onclick='() => TestModel("__custom__")'
+                                                disabled="@(_modelTests.TryGetValue("__custom__", out var tc) && tc.Busy)"
+                                                title="تست مدل سفارشی بدون ذخیره تنظیمات">
+                                            @if (_modelTests.TryGetValue("__custom__", out var tcb) && tcb.Busy)
+                                            {
+                                                <span class="spinner-border spinner-border-sm"></span>
+                                                <span>در حال تست…</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="oi oi-media-play"></span>
+                                                <span>تست مدل</span>
+                                            }
+                                        </button>
+                                        @if (_modelTests.TryGetValue("__custom__", out var tcr) && !tcr.Busy && tcr.Ok != null)
+                                        {
+                                            <span class="model-test-result @(tcr.Ok == true ? "ok" : "fail")" title="@(tcr.Reply ?? tcr.Message)">
+                                                @(tcr.Ok == true
+                                                    ? $"✓ سالم ({ToFaNum(tcr.Ms)}ms)"
+                                                    : $"✗ {(tcr.Message?.Length > 110 ? tcr.Message[..110] + "…" : tcr.Message)}")
+                                            </span>
+                                        }
+                                    </span>
+                                </div>
+                            </div>
+
+                            @if (_siteAiModelChoice == "__custom__")
+                            {
+                                <div class="field-block">
+                                    <label class="field-label">نام مدل سفارشی</label>
+                                    <input type="text" class="form-control form-control-sm" dir="ltr" @bind="_siteAiModel" placeholder="gpt-4o-mini / llama-3.1-8b / ..." />
+                                </div>
+                            }
+                        </div>
+
+                        <div class="settings-card">
+                            <div class="settings-card-title ai-title-row">
+                                <span><span class="oi oi-circle-check"></span> سرویس‌دهنده‌ها و زنجیره خودکار</span>
+                                <span class="d-flex gap-2">
+                                    <button type="button" class="mini-btn" @onclick="TestChainAsync" disabled="@(_aiProvidersLoading || _chainTesting)">
+                                        @(_chainTesting ? "در حال تست زنجیره…" : "تست زنجیره")
+                                    </button>
+                                    <button type="button" class="mini-btn" @onclick="SaveAiProvidersAsync" disabled="@(_aiProvidersLoading || _aiProvidersSaving)">
+                                        @(_aiProvidersSaving ? "در حال ذخیره…" : "ذخیره سرویس‌دهنده‌ها")
+                                    </button>
+                                </span>
+                            </div>
+
+                            <div class="form-text small mb-2">
+                                در صورت خطا یا اتمام سقف، زنجیره به‌صورت خودکار و بی‌صدا از سرویس‌دهنده ← کلید ← مدل بعدی استفاده می‌کند و کاربر فقط پاسخ نهایی را می‌بیند.
+                            </div>
+
+                            @if (_aiProvidersLoading)
+                            {
+                                <div class="text-muted small py-2"><span class="spinner-border spinner-border-sm"></span> در حال بارگذاری…</div>
                             }
                             else
                             {
-                                <div class="text-warning fw-bold">⚠️ وب‌هوک ثبت نشده</div>
-                                <div class="text-muted mt-1">دکمه "ثبت وب‌هوک" را بزنید</div>
+                                @if (_aiProviders.Count == 0 && !string.IsNullOrWhiteSpace(_siteAiApiUrl))
+                                {
+                                    <div class="alert alert-info py-2 small d-flex justify-content-between align-items-center mb-2">
+                                        <span>تنظیمات قدیمی (تک‌کلیدی) به‌عنوان fallback استفاده می‌شود. می‌توانید آن را به سرویس‌دهنده تبدیل کنید.</span>
+                                        <button type="button" class="btn btn-outline-primary btn-sm" @onclick="SeedFromLegacyAsync" disabled="@_aiProvidersSaving">تبدیل به سرویس‌دهنده</button>
+                                    </div>
+                                }
+
+                                @foreach (var p in _aiProviders)
+                                {
+                                    var pRef = p;
+                                    <div class="ai-provider-box @(pRef.Enabled ? "" : "off")">
+                                        <div class="ai-provider-head">
+                                            <label class="chat-switch mb-0" title="فعال/غیرفعال">
+                                                <input type="checkbox" @bind="pRef.Enabled" />
+                                                <span class="chat-slider"></span>
+                                            </label>
+                                            <input type="text" class="form-control form-control-sm" placeholder="نام سرویس‌دهنده" @bind="pRef.Name" />
+                                            <input type="text" class="form-control form-control-sm" dir="ltr" placeholder="https://openrouter.ai/api/v1" @bind="pRef.BaseUrl" />
+                                            <select class="form-select form-select-sm" style="max-width:130px" @bind="pRef.Kind">
+                                                <option value="openrouter">OpenRouter</option>
+                                                <option value="openai">OpenAI</option>
+                                                <option value="custom">سازگار OpenAI</option>
+                                            </select>
+                                            <span class="d-flex gap-1">
+                                                <button type="button" class="icon-btn-sm" title="بالا" @onclick="() => MoveProvider(pRef, -1)"><span class="oi oi-arrow-top"></span></button>
+                                                <button type="button" class="icon-btn-sm" title="پایین" @onclick="() => MoveProvider(pRef, 1)"><span class="oi oi-arrow-bottom"></span></button>
+                                                <button type="button" class="icon-btn-sm text-danger" title="حذف سرویس‌دهنده" @onclick="() => RemoveProvider(pRef)"><span class="oi oi-trash"></span></button>
+                                            </span>
+                                        </div>
+
+                                        @if (pRef.Kind == "openrouter")
+                                        {
+                                            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="() => LoadCatalogAsync(pRef)" disabled="@(pRef.CatalogLoading)">
+                                                    @(pRef.CatalogLoading ? "در حال دریافت…" : "دریافت مدل‌های رایگان OpenRouter")
+                                                </button>
+                                                @if (pRef.CatalogMessage != null)
+                                                {
+                                                    <small class="text-muted">@pRef.CatalogMessage</small>
+                                                }
+                                            </div>
+                                            @if (pRef.Catalog is { Count: > 0 })
+                                            {
+                                                <div class="ai-catalog">
+                                                    @foreach (var c in pRef.Catalog.Take(60))
+                                                    {
+                                                        var cat = c;
+                                                        <label class="ai-catalog-item">
+                                                            <input type="checkbox" @bind="cat.Selected" />
+                                                            <span dir="ltr">@cat.Id</span>
+                                                            <small class="text-muted">@cat.Name</small>
+                                                        </label>
+                                                    }
+                                                    <button type="button" class="btn btn-primary btn-sm mt-1" @onclick="() => AddSelectedCatalog(pRef)">
+                                                        افزودن مدل‌های انتخاب‌شده (@pRef.Catalog.Count(x => x.Selected))
+                                                    </button>
+                                                </div>
+                                            }
+                                        }
+
+                                        <div class="ai-sub-title">کلیدها (API Key)</div>
+                                        @foreach (var k in pRef.Keys)
+                                        {
+                                            var kRef = k;
+                                            <div class="ai-row @(kRef.Enabled ? "" : "off")">
+                                                <input type="checkbox" @bind="kRef.Enabled" title="فعال" />
+                                                <input type="password" class="form-control form-control-sm" dir="ltr" placeholder="sk-..." @bind="kRef.KeyValue" />
+                                                <input type="text" class="form-control form-control-sm" style="max-width:130px" placeholder="برچسب (اختیاری)" @bind="kRef.Label" />
+                                                <span class="ai-status-chip @(kRef.InCooldown ? "warn" : kRef.FailureCount > kRef.SuccessCount ? "bad" : "ok")"
+                                                      title="@(kRef.LastError ?? "")">
+                                                    @(kRef.InCooldown
+                                                        ? $"کول‌داون تا {kRef.CooldownUntil:HH:mm}"
+                                                        : $"✓{ToFaNum(kRef.SuccessCount)} ✗{ToFaNum(kRef.FailureCount)}")
+                                                </span>
+                                                <button type="button" class="icon-btn-sm text-danger" @onclick="() => pRef.Keys.Remove(kRef)"><span class="oi oi-trash"></span></button>
+                                            </div>
+                                        }
+                                        <button type="button" class="btn btn-outline-secondary btn-sm mt-1" @onclick="() => pRef.Keys.Add(new AiKeyUi())">+ افزودن کلید</button>
+
+                                        <div class="ai-sub-title mt-2">مدل‌ها</div>
+                                        @foreach (var m in pRef.Models)
+                                        {
+                                            var mRef = m;
+                                            <div class="ai-row @(mRef.Enabled ? "" : "off")">
+                                                <input type="checkbox" @bind="mRef.Enabled" title="فعال" />
+                                                <input type="text" class="form-control form-control-sm" dir="ltr" placeholder="provider/model:free" @bind="mRef.ModelId" />
+                                                <input type="text" class="form-control form-control-sm" style="max-width:130px" placeholder="نام نمایشی" @bind="mRef.Label" />
+                                                <span class="ai-status-chip @(mRef.InCooldown ? "warn" : mRef.FailureCount > mRef.SuccessCount ? "bad" : "ok")"
+                                                      title="@(mRef.LastError ?? "")">
+                                                    @(mRef.InCooldown
+                                                        ? $"کول‌داون تا {mRef.CooldownUntil:HH:mm}"
+                                                        : $"✓{ToFaNum(mRef.SuccessCount)} ✗{ToFaNum(mRef.FailureCount)}")
+                                                </span>
+                                                <button type="button" class="icon-btn-sm text-danger" @onclick="() => pRef.Models.Remove(mRef)"><span class="oi oi-trash"></span></button>
+                                            </div>
+                                        }
+                                        <button type="button" class="btn btn-outline-secondary btn-sm mt-1" @onclick="() => pRef.Models.Add(new AiModelUi())">+ افزودن مدل</button>
+                                    </div>
+                                }
+
+                                <button type="button" class="btn btn-outline-primary btn-sm mt-2" @onclick="AddProvider">
+                                    <span class="oi oi-plus"></span> افزودن سرویس‌دهنده
+                                </button>
+                            }
+
+                            @if (_chainTesting)
+                            {
+                                <div class="text-muted small mt-2"><span class="spinner-border spinner-border-sm"></span> در حال تست کاندیدها (تا ۳۰ ثانیه)…</div>
+                            }
+                            @if (_chainMessage != null)
+                            {
+                                <div class="alert @(_chainOk == true ? "alert-success" : _chainOk == false ? "alert-danger" : "alert-info") py-2 small mt-2 mb-0">@_chainMessage</div>
+                            }
+                            @if (_chainResults is { Count: > 0 })
+                            {
+                                <div class="ai-chain-results mt-2">
+                                    @foreach (var r in _chainResults)
+                                    {
+                                        <div class="ai-chain-row @(r.Ok ? "ok" : "fail")">
+                                            <span class="chain-provider">@r.Provider</span>
+                                            <span class="chain-model" dir="ltr">@r.Model</span>
+                                            <span class="chain-key" dir="ltr">@r.Key</span>
+                                            <span class="chain-status">@r.Message</span>
+                                            <span class="chain-ms">@ToFaNum(r.Ms)ms</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_aiProvidersMessage))
+                            {
+                                <div class="alert @(_aiProvidersOk == true ? "alert-success" : "alert-danger") py-2 small mt-2 mb-0">@_aiProvidersMessage</div>
                             }
                         </div>
-                    }
-                </div>
 
-                @* --- General chat settings --- *@
-                <div class="border-top pt-3 mt-3">
-                    <div class="fw-bold small mb-2">پیام‌ها</div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">پیام خوش‌آمدگویی</label>
-                        <textarea class="form-control form-control-sm" rows="2" @bind="_siteWelcomeMessage" placeholder="مثلاً: سلام! چطور می‌توانم کمکتان کنم؟"></textarea>
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="chkAutoMsg" @bind="_siteEnableAutoMessage" />
-                        <label class="form-check-label small" for="chkAutoMsg">اگر اپراتور پاسخ نداد، پس از چند ثانیه پیام یادآور ارسال شود</label>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">مدت انتظار (ثانیه)</label>
-                        <input type="number" class="form-control form-control-sm" @bind="_siteAutoMessageSeconds" />
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="chkPhoneReq" @bind="_sitePhoneRequired" />
-                        <label class="form-check-label small" for="chkPhoneReq">الزامی بودن شماره تماس کاربر برای شروع گفتگو</label>
-                    </div>
-                </div>
+                        <div class="settings-card">
+                            <div class="settings-card-title">اتصال به مدل (fallback تک‌کلیدی)</div>
 
-                <div class="border-top pt-3 mt-3">
-                    <div class="fw-bold small mb-2">پیام‌رسان‌ها</div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="chkBale" @bind="_siteEnableBale" />
-                        <label class="form-check-label small" for="chkBale">فعال بودن چت بله (شامل ورود پیام‌های بله)</label>
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="chkTelegram" @bind="_siteEnableTelegram" />
-                        <label class="form-check-label small" for="chkTelegram">فعال بودن چت تلگرام</label>
-                    </div>
-                    @if (_siteEnableTelegram)
-                    {
-                        <div class="mb-2">
-                            <label class="form-label small fw-bold">توکن ربات تلگرام</label>
-                            <input type="password" class="form-control form-control-sm" @bind="_siteTelegramToken" placeholder="123456:ABC..."/>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label small fw-bold">شناسه گروه تلگرام</label>
-                            <input type="text" class="form-control form-control-sm" @bind="_siteTelegramGroupId" placeholder="-100123456789"/>
-                        </div>
-                    }
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="chkEitaa" @bind="_siteEnableEitaa" />
-                        <label class="form-check-label small" for="chkEitaa">فعال بودن چت ایتا</label>
-                    </div>
-                    @if (_siteEnableEitaa)
-                    {
-                        <div class="mb-2">
-                            <label class="form-label small fw-bold">توکن ربات ایتا</label>
-                            <input type="password" class="form-control form-control-sm" @bind="_siteEitaaToken" placeholder="تکت ربات ایتا"/>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label small fw-bold">شناسه گروه ایتا</label>
-                            <input type="text" class="form-control form-control-sm" @bind="_siteEitaaGroupId" placeholder="-123456789"/>
-                        </div>
-                    }
-                    <div class="border-top pt-2 mt-2">
-                        <div class="fw-bold small mb-2">ارسال اعلان خودکار</div>
-                        <p class="text-muted small mb-2">ارسال اعلان‌ها یک‌طرفه و به‌صورت خودکار انجام می‌شود: بله با کلید سفیر به شماره موبایل کاربر و بدون کلید، برای کاربرانی که شماره را در ربات فرستاده‌اند از همان ربات ارسال می‌شود؛ تلگرام و ایتا به نشانی ثبت‌شده توسط مدیر.</p>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chkNotifyBale" @bind="_siteNotifyBale" />
-                            <label class="form-check-label small" for="chkNotifyBale">ارسال اعلان از طریق بله</label>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label small fw-bold">کلید دسترسی سفیر (Api Access Key)</label>
-                            <input type="password" class="form-control form-control-sm" @bind="_siteBaleSafirKey" placeholder="از پنل کسب‌وکار بله (business.bale.ai)" />
-                            <div class="form-text small">برای ارسال بله به شماره موبایل کاربران لازم است از بخش «سفیر» پنل کسب‌وکار بله دریافت شود؛ در صورت نداشتن کلید، اعلان بله برای کاربرانی که شماره را در ربات فرستاده‌اند از خود ربات ارسال می‌شود.</div>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chkNotifyTelegram" @bind="_siteNotifyTelegram" />
-                            <label class="form-check-label small" for="chkNotifyTelegram">ارسال اعلان از طریق تلگرام</label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chkNotifyEitaa" @bind="_siteNotifyEitaa" />
-                            <label class="form-check-label small" for="chkNotifyEitaa">ارسال اعلان از طریق ایتا</label>
-                        </div>
-                    </div>
-                    @if (_settingsLoading)
-                    {
-                        <div class="text-muted small">در حال بارگذاری تنظیمات...</div>
-                    }
-                    <button class="btn btn-success btn-sm w-100" @onclick="SaveChatSiteSettings" disabled="@_settingsLoading">
-                        @if (_savingSiteSettings) { <span class="spinner-border spinner-border-sm me-1"></span> }
-                        ذخیره تنظیمات چت
-                    </button>
-                    @if (!string.IsNullOrEmpty(_siteSettingsMessage))
-                    {
-                        <div class="alert @(_siteSettingsSuccess ? "alert-success" : "alert-danger") py-2 small mt-2">@_siteSettingsMessage</div>
-                    }
-                </div>
+                            <div class="form-text small mb-2">
+                                اگر سرویس‌دهنده‌ای در بخش بالا ثبت نشده باشد، از این پیکربندی استفاده می‌شود.
+                            </div>
 
-                <div class="border-top pt-3 mt-3">
-                    <div class="fw-bold small mb-2">دستیار هوشمند (پاسخ خودکار)</div>
-                    <p class="text-muted small mb-2">اگر اپراتور آنلاین نباشد، سامانه به سوالات کاربر پاسخ می‌دهد. بدون تنظیم URL و کلید، سامانه به سوالات پرتکرار (FAQ) پاسخ می‌دهد.</p>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="chkAi" @bind="_siteEnableAi" />
-                        <label class="form-check-label small" for="chkAi">فعال بودن دستیار هوشمند</label>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">ارائه‌دهنده</label>
-                        <input type="text" class="form-control form-control-sm" @bind="_siteAiProvider" placeholder="مثلاً: openai / groq / سرویس ایرانی" />
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">آدرس API (پایان: /chat/completions/)</label>
-                        <input type="text" class="form-control form-control-sm" @bind="_siteAiApiUrl" placeholder="https://api.example.com/v1" />
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">مدل</label>
-                        <input type="text" class="form-control form-control-sm" @bind="_siteAiModel" placeholder="gpt-4o-mini / llama-3.1-8b / ..." />
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">کلید API</label>
-                        <input type="password" class="form-control form-control-sm" @bind="_siteAiApiKey" placeholder="sk-..." />
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">دستور سیستم (Prompt)</label>
-                        <textarea class="form-control form-control-sm" rows="2" @bind="_siteAiSystemPrompt" placeholder="شما پشتیبان فروشگاه هستید..."></textarea>
-                    </div>
-                </div>
+                            <div class="field-block">
+                                <label class="field-label">ارائه‌دهنده</label>
+                                <input type="text" class="form-control form-control-sm" @bind="_siteAiProvider" placeholder="مثلاً: openai / openrouter / سرویس ایرانی" />
+                                <div class="form-text small">برای OpenRouter می‌توانید خالی بگذارید؛ از روی آدرس API تشخیص داده می‌شود.</div>
+                            </div>
+                            <div class="field-block">
+                                <label class="field-label">آدرس API (پایانه: /chat/completions)</label>
+                                <input type="text" class="form-control form-control-sm" dir="ltr" @bind="_siteAiApiUrl" placeholder="https://openrouter.ai/api/v1" />
+                                @if (_siteAiApiUrl.Contains("openrouter.ai", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <div class="form-text small text-success">OpenRouter شناسایی شد — استعلام اعتبار و مدل‌های رایگان فعال است.</div>
+                                }
+                            </div>
+
+                            <div class="field-block">
+                                <label class="field-label">کلید API</label>
+                                <input type="password" class="form-control form-control-sm" @bind="_siteAiApiKey" placeholder="sk-..." />
+                            </div>
+                            <div class="field-block">
+                                <label class="field-label">دستور سیستم (Prompt)</label>
+                                <textarea class="form-control form-control-sm" rows="3" @bind="_siteAiSystemPrompt" placeholder="شما پشتیبان فروشگاه هستید..."></textarea>
+                            </div>
+
+                            <div class="btn-row">
+                                <button class="btn btn-outline-primary btn-sm" @onclick="TestAiConnection" disabled="@_aiTestBusy">
+                                    @(_aiTestBusy ? "در حال تست..." : "تست مدل انتخابی (با تنظیمات فعلی فرم)")
+                                </button>
+                            </div>
+                            @if (_aiTestMessage != null)
+                            {
+                                <div class="alert @(_aiTestOk == true ? "alert-success" : "alert-danger") py-2 small mb-0" style="white-space:pre-line">@_aiTestMessage</div>
+                            }
+                        </div>
+
+                        <div class="settings-actions">
+                            <button class="btn btn-success btn-sm" @onclick="SaveAllSettings" disabled="@(_settingsLoading || _savingSiteSettings || _savingSettings)">
+                                @if (_savingSiteSettings || _savingSettings) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                ذخیره تنظیمات
+                            </button>
+                        </div>
+                    }
+                }
+
+                @if (_settingsLoading)
+                {
+                    <div class="text-muted small text-center py-2">در حال بارگذاری تنظیمات...</div>
+                }
+                @if (!string.IsNullOrEmpty(_siteSettingsMessage))
+                {
+                    <div class="alert @(_siteSettingsSuccess ? "alert-success" : "alert-danger") py-2 small mb-0">@_siteSettingsMessage</div>
+                }
             </div>
         </div>
     }
@@ -285,9 +775,9 @@
         </div>
 
         <div class="sidebar-foot">
-            <button class="settings-trigger" @onclick="() => _showSettings = true">
+            <button class="settings-trigger" @onclick='() => OpenSettings("bale")'>
                 <span class="oi oi-cog"></span>
-                تنظیمات بله
+                تنظیمات چت و بله
             </button>
         </div>
     </div>
@@ -303,6 +793,9 @@
             {
                 <div class="topbar-user">
                     <div class="topbar-name">چت آنلاین</div>
+                </div>
+                <div class="topbar-actions">
+                    <button class="act-btn" @onclick='() => OpenSettings("general")' title="تنظیمات چت"><span class="oi oi-cog"></span></button>
                 </div>
             }
             else
@@ -328,6 +821,7 @@
                     }
                     <button class="act-btn delete-btn" @onclick="AskDelete" title="حذف مکالمه"><span class="oi oi-trash"></span></button>
                     <button class="act-btn ban-btn" @onclick="ToggleBan" title="بن/لغو بن کاربر"><span class="oi oi-ban"></span></button>
+                    <button class="act-btn" @onclick='() => OpenSettings("general")' title="تنظیمات چت"><span class="oi oi-cog"></span></button>
                 </div>
             }
         </div>
@@ -418,7 +912,7 @@
                             }
                             @if (msg.MessageType == ChatMessageTypeDto.Text)
                             {
-                                <div class="msg-bubble msg-text">@msg.Content</div>
+                                <div class="msg-bubble msg-text">@((MarkupString)RenderMsgHtml(msg.Content))</div>
                             }
                             else if (msg.MessageType == ChatMessageTypeDto.Image)
                             {
@@ -784,6 +1278,126 @@
     .btn-close-sm:hover { background:#e5e7eb; }
     .btn-close-sm::after { content:"✕"; }
 
+    /* ── Settings tabs / cards / switch ── */
+    .settings-tabs { display:flex; gap:6px; padding:10px 14px; border-bottom:1px solid #f0f0f0; background:#fafafa; overflow-x:auto; }
+    .settings-tab { flex:0 0 auto; display:flex; align-items:center; gap:6px; border:1px solid #e5e7eb; background:#fff; color:#6b7280; padding:7px 13px; border-radius:999px; font-size:.8rem; font-weight:600; cursor:pointer; transition:.15s; white-space:nowrap; }
+    .settings-tab:hover { border-color:#c7d2fe; color:#4f46e5; }
+    .settings-tab.active { background:#4f46e5; border-color:#4f46e5; color:#fff; box-shadow:0 4px 12px rgba(79,70,229,.28); }
+
+    .settings-card { background:#fff; border:1px solid #eef0f4; border-radius:14px; padding:14px 15px; margin-bottom:12px; box-shadow:0 1px 3px rgba(16,24,40,.04); }
+    .settings-card.accent { background:linear-gradient(180deg,#f7f8ff,#fff); border-color:#e0e4ff; }
+    .settings-card-title { font-size:.82rem; font-weight:700; color:#1f2937; margin-bottom:10px; }
+    .settings-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
+    .field-block { margin-top:10px; }
+    .field-label { display:block; font-size:.78rem; font-weight:700; color:#374151; margin-bottom:4px; }
+    .sub-sep { font-size:.78rem; font-weight:700; color:#374151; margin:14px 0 8px; padding-top:12px; border-top:1px dashed #e5e7eb; }
+    .btn-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .info-chip { margin-top:10px; padding:9px 11px; background:#f5f7ff; border:1px solid #e3e7ff; border-radius:10px; font-size:.78rem; color:#4b5563; }
+
+    /* ── AI settings: stats / credits / limits / model cards ── */
+    .ai-title-row { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .ai-title-row > span:first-child { display:inline-flex; align-items:center; gap:6px; }
+    .mini-btn { border:1px solid #dfe3ea; background:#fff; color:#4b5563; font-size:.7rem; font-weight:700; padding:4px 10px; border-radius:999px; cursor:pointer; transition:.15s; white-space:nowrap; }
+    .mini-btn:hover:not(:disabled) { background:#f5f7ff; border-color:#c7cdff; color:#4f46e5; }
+    .mini-btn:disabled { opacity:.6; cursor:default; }
+
+    .ai-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .ai-stat { background:#f7f8fc; border:1px solid #eef0f6; border-radius:12px; padding:9px 8px; text-align:center; min-width:0; }
+    .ai-stat b { display:block; font-size:1.05rem; font-weight:800; color:#4f46e5; line-height:1.3; }
+    .ai-stat span { display:block; font-size:.66rem; color:#6b7280; margin-top:2px; }
+
+    .ai-quota { margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+    .ai-quota-row { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#fbfbfd; border:1px dashed #e5e7eb; border-radius:9px; padding:6px 10px; font-size:.74rem; color:#4b5563; }
+    .ai-quota-row b { font-weight:700; color:#1f2937; }
+
+    .ai-credits { margin-top:12px; border:1px solid #e6e9f0; border-radius:12px; padding:10px 11px; background:#fcfcff; }
+    .ai-credits.loading { opacity:.85; }
+    .ai-credits-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+    .ai-credits-head > span { display:inline-flex; align-items:center; gap:6px; font-size:.78rem; font-weight:700; color:#1f2937; }
+    .ai-credits-note { font-size:.74rem; color:#6b7280; line-height:1.7; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .ai-credits-note.warn { color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:7px 9px; }
+    .ai-credits-note.ok { color:#15803d; }
+    .ai-credits-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:8px; }
+    .ai-credit { background:#fff; border:1px solid #eef0f6; border-radius:10px; padding:8px 6px; text-align:center; min-width:0; }
+    .ai-credit b { display:block; font-size:.98rem; font-weight:800; color:#1f2937; word-break:break-all; }
+    .ai-credit span { display:block; font-size:.62rem; color:#6b7280; margin-top:2px; }
+    .ai-credit.ok b { color:#16a34a; }
+    .ai-credit.used b { color:#f59e0b; }
+    .ai-credits-bar { height:7px; border-radius:999px; background:#eef0f6; overflow:hidden; }
+    .ai-credits-bar__fill { height:100%; border-radius:999px; background:linear-gradient(90deg,#4f46e5,#22d3ee); transition:width .4s ease; }
+
+    .limit-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:12px; }
+    .limit-box { min-width:0; background:#fafbfe; border:1px solid #eef0f6; border-radius:10px; padding:9px 10px; }
+    .limit-box .field-label { margin-bottom:5px; }
+    .limit-box .form-text { margin-top:4px; font-size:.68rem; }
+
+    .model-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+    .model-card { position:relative; text-align:right; background:#fff; border:1.5px solid #e5e7eb; border-radius:12px; padding:11px 12px 11px 36px; cursor:pointer; transition:.15s; font-family:inherit; color:inherit; display:block; width:100%; min-width:0; }
+    .model-card:hover { border-color:#c7cdff; background:#fbfbff; }
+    .model-card.sel { border-color:#4f46e5; background:linear-gradient(180deg,#f2f4ff,#fff); box-shadow:0 2px 10px rgba(79,70,229,.14); }
+    .model-card.sel .model-name { color:#4f46e5; }
+    .model-check { position:absolute; top:11px; left:10px; width:19px; height:19px; border-radius:50%; border:1.5px solid #d1d5db; display:flex; align-items:center; justify-content:center; font-size:.6rem; color:transparent; background:#fff; transition:.15s; }
+    .model-card.sel .model-check { background:#4f46e5; border-color:#4f46e5; color:#fff; }
+    .model-name { display:block; font-size:.78rem; font-weight:800; color:#1f2937; word-break:break-all; line-height:1.4; }
+    .model-desc { display:block; font-size:.68rem; color:#6b7280; line-height:1.6; margin-top:4px; }
+    .model-tags { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+    .model-tag { font-size:.6rem; font-weight:700; background:#f3f4f6; color:#4b5563; padding:2px 7px; border-radius:999px; }
+    .model-card.sel .model-tag { background:#e0e7ff; color:#4338ca; }
+    .model-tag.tag-speed { background:#ecfeff; color:#0e7490; }
+    .model-card.sel .model-tag.tag-speed { background:#cffafe; color:#155e75; }
+    .model-active-chip { font-size:.68rem; font-weight:700; background:#eef2ff; color:#4338ca; border:1px solid #e0e7ff; border-radius:999px; padding:3px 10px; max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .model-test-row { display:flex; align-items:center; gap:6px; margin-top:8px; flex-wrap:wrap; }
+    .model-test-btn { display:inline-flex; align-items:center; gap:5px; border:1px solid #c7d2fe; background:#eef2ff; color:#4338ca; font-size:.64rem; font-weight:700; border-radius:999px; padding:3px 10px; cursor:pointer; transition:.15s; font-family:inherit; }
+    .model-test-btn:hover:not(:disabled) { background:#4f46e5; border-color:#4f46e5; color:#fff; }
+    .model-test-btn:disabled { opacity:.6; cursor:default; }
+    .model-test-btn .spinner-border { width:.7rem; height:.7rem; border-width:.12em; }
+    .model-test-result { font-size:.62rem; font-weight:700; border-radius:8px; padding:3px 8px; max-width:100%; line-height:1.6; word-break:break-word; white-space:normal; }
+    .model-test-result.ok { background:#ecfdf5; color:#047857; }
+    .model-test-result.fail { background:#fef2f2; color:#b91c1c; }
+
+    /* ── AI providers chain ── */
+    .ai-provider-box { border:1.5px solid #e5e7eb; border-radius:12px; padding:10px 12px; margin-bottom:10px; background:#fafbff; }
+    .ai-provider-box.off { opacity:.55; }
+    .ai-provider-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+    .ai-provider-head .form-control { max-width:200px; }
+    .ai-sub-title { font-size:.72rem; font-weight:700; color:#4338ca; margin-bottom:5px; }
+    .ai-row { display:flex; align-items:center; gap:7px; padding:5px 0; flex-wrap:wrap; }
+    .ai-row.off { opacity:.5; }
+    .ai-row .form-control { max-width:240px; }
+    .ai-status-chip { font-size:.62rem; font-weight:700; border-radius:999px; padding:2px 9px; white-space:nowrap; }
+    .ai-status-chip.ok { background:#ecfdf5; color:#047857; }
+    .ai-status-chip.warn { background:#fffbeb; color:#b45309; }
+    .ai-status-chip.bad { background:#fef2f2; color:#b91c1c; }
+    .icon-btn-sm { border:none; background:#f3f4f6; color:#6b7280; width:26px; height:26px; border-radius:7px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:.15s; font-size:.7rem; }
+    .icon-btn-sm:hover { background:#e5e7eb; }
+    .icon-btn-sm.text-danger:hover { background:#fee2e2; color:#dc2626; }
+    .ai-catalog { max-height:230px; overflow:auto; border:1px solid #e5e7eb; border-radius:9px; background:#fff; padding:8px; margin-bottom:8px; }
+    .ai-catalog-item { display:flex; align-items:center; gap:8px; font-size:.72rem; padding:3px 2px; cursor:pointer; margin:0; }
+    .ai-catalog-item span { direction:ltr; font-family:ui-monospace,monospace; }
+    .ai-chain-results { border:1px solid #e5e7eb; border-radius:9px; overflow:hidden; }
+    .ai-chain-row { display:flex; align-items:center; gap:10px; padding:6px 10px; font-size:.7rem; border-bottom:1px solid #f3f4f6; flex-wrap:wrap; }
+    .ai-chain-row:last-child { border-bottom:none; }
+    .ai-chain-row.ok { background:#f0fdf4; }
+    .ai-chain-row.fail { background:#fef2f2; }
+    .chain-provider { font-weight:700; color:#1f2937; }
+    .chain-model { font-family:ui-monospace,monospace; color:#4338ca; }
+    .chain-key { color:#9ca3af; }
+    .chain-status { flex:1; min-width:120px; color:#6b7280; word-break:break-word; }
+    .chain-ms { color:#9ca3af; font-size:.64rem; }
+
+    .switch-row { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .switch-text { min-width:0; }
+    .switch-title { font-size:.82rem; font-weight:700; color:#1f2937; }
+    .switch-desc { font-size:.74rem; color:#6b7280; margin-top:3px; line-height:1.6; }
+
+    .chat-switch { position:relative; display:inline-block; width:44px; height:24px; flex:0 0 auto; margin-top:2px; }
+    .chat-switch input { opacity:0; width:0; height:0; }
+    .chat-slider { position:absolute; inset:0; background:#d1d5db; border-radius:999px; cursor:pointer; transition:.2s; }
+    .chat-slider::before { content:""; position:absolute; height:18px; width:18px; right:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 3px rgba(0,0,0,.25); }
+    .chat-switch input:checked + .chat-slider { background:#4f46e5; }
+    .chat-switch input:checked + .chat-slider::before { transform:translateX(-20px); }
+    .chat-switch input:focus-visible + .chat-slider { box-shadow:0 0 0 3px rgba(79,70,229,.3); }
+
     /* ── Chat main ── */
     .chat-main { flex:1; display:flex; flex-direction:column; min-width:0; background:#fff; }
     .chat-welcome { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; background:#fafafa; }
@@ -892,9 +1506,12 @@
     .msg-op { align-self:flex-start; align-items:flex-start; }
     .msg-user { align-self:flex-end; align-items:flex-end; }
     .msg-sys { align-self:center; max-width:100%; }
-    .msg-bubble { padding:9px 14px; border-radius:15px; font-size:.85rem; line-height:1.6; word-break:break-word; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+    .msg-bubble { padding:9px 14px; border-radius:15px; font-size:.85rem; line-height:1.6; word-break:break-word; white-space:pre-wrap; box-shadow:0 1px 2px rgba(0,0,0,.05); }
     .msg-op .msg-bubble { background:linear-gradient(135deg,#6366f1,#4f46e5); color:#fff; border-bottom-right-radius:4px; }
     .msg-user .msg-bubble { background:#fff; color:#1f2937; border:1px solid #e5e7eb; border-bottom-left-radius:4px; }
+    .msg-bubble code { background:rgba(0,0,0,.12); padding:1px 5px; border-radius:5px; font-size:.85em; direction:ltr; unicode-bidi:embed; }
+    .msg-op .msg-bubble code { background:rgba(255,255,255,.22); color:#fff; }
+    .msg-bubble strong { font-weight:700; }
     .bubble-role { display:inline-block; align-self:flex-start; font-size:.58rem; font-weight:800; padding:2px 9px; border-radius:999px; margin-bottom:3px; }
     .msg-user .bubble-role { align-self:flex-end; }
     .bubble-role.role-op { background:#e0e7ff; color:#4f46e5; }
@@ -931,7 +1548,7 @@
     .chat-input-bar { display:flex; align-items:center; gap:8px; padding:12px 16px; border-top:1px solid #f0f0f0; background:#fff; }
     .input-btn { width:36px; height:36px; border-radius:50%; border:none; background:#f0f0f0; color:#6b7280; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:.15s; font-size:.85rem; flex-shrink:0; }
     .input-btn:hover { background:#e5e7eb; }
-    .input-field { flex:1; border:1.5px solid #e5e7eb; border-radius:24px; padding:9px 16px; font-size:.85rem; outline:none; transition:border-color .2s; }
+    .input-field { flex:1; min-width:0; border:1.5px solid #e5e7eb; border-radius:24px; padding:9px 16px; font-size:.85rem; outline:none; transition:border-color .2s; }
     .input-field:focus { border-color:#4f46e5; }
     .send-btn { width:40px; height:40px; border-radius:50%; border:none; background:#4f46e5; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:.15s; flex-shrink:0; }
     .send-btn:hover { background:#4338ca; }
@@ -958,13 +1575,14 @@
         .sidebar-foot { padding:12px 14px; padding-bottom:max(12px, env(safe-area-inset-bottom)); }
         .settings-trigger { padding:12px; border-radius:14px; font-size:.85rem; }
 
-        .chat-topbar { padding:10px 12px; padding-top:max(10px, env(safe-area-inset-top)); min-height:54px; }
+        .chat-topbar { padding:10px 12px; padding-top:max(10px, env(safe-area-inset-top)); min-height:54px; gap:8px; }
         .btn-back { width:40px; height:40px; font-size:1rem; }
-        .topbar-name { font-size:.95rem; }
-        .topbar-actions { gap:4px; }
+        .topbar-name { font-size:.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .topbar-detail { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .topbar-actions { gap:4px; flex-wrap:wrap; justify-content:flex-end; }
         .topbar-actions .act-btn { width:38px; height:38px; font-size:.9rem; }
 
-        .messages-area { padding:12px 12px; gap:8px; }
+        .messages-area { padding:12px 12px; gap:8px; min-width:0; overflow-x:hidden; }
         .msg { max-width:86%; }
         .msg-img { max-width:170px; max-height:150px; }
         .msg-head { gap:6px; }
@@ -973,11 +1591,11 @@
         .msg-time { font-size:.64rem; }
         .msg-act { width:34px; height:34px; font-size:.78rem; border-radius:9px; background:#f3f4f6; }
 
-        .chat-input-area { padding-bottom: env(safe-area-inset-bottom); }
-        .chat-input-bar { padding:10px 10px; gap:6px; }
-        .input-btn { width:42px; height:42px; font-size:.95rem; }
-        .input-field { padding:11px 14px; font-size:.92rem; }
-        .send-btn { width:44px; height:44px; font-size:1rem; }
+        .chat-input-area { padding-bottom:0; }
+        .chat-input-bar { padding:10px 10px; padding-bottom:max(10px, env(safe-area-inset-bottom)); gap:6px; flex-wrap:nowrap; }
+        .input-btn { width:40px; height:40px; font-size:.92rem; }
+        .input-field { min-width:0; padding:10px 12px; font-size:.9rem; }
+        .send-btn { width:42px; height:42px; font-size:1rem; }
         .reply-bar { padding:8px 12px 0; }
         .canned-panel { max-height:42vh; }
         .canned-body { padding:6px 10px 10px; }
@@ -993,9 +1611,36 @@
     @@media(max-width:480px) {
         .msg { max-width:88%; }
         .msg-img { max-width:140px; max-height:130px; }
-        .topbar-actions .act-btn { width:36px; height:36px; }
+        .topbar-actions .act-btn { width:34px; height:34px; font-size:.85rem; }
         .session-row { padding:10px 12px; }
         .sidebar-head { padding:12px 10px 10px; }
+        .chat-input-bar { padding:8px 8px; padding-bottom:max(8px, env(safe-area-inset-bottom)); gap:4px; }
+        .input-btn { width:36px; height:36px; font-size:.85rem; }
+        .input-field { min-width:0; padding:9px 10px; font-size:.88rem; }
+        .send-btn { width:40px; height:40px; }
+
+        /* --- تنظیمات: تمام‌صفحه و بدون سرریز --- */
+        .settings-modal { inset:0; top:0; left:0; transform:none; width:100vw; max-width:100vw; height:100dvh; max-height:100dvh; border-radius:0; }
+        .settings-head { padding:14px 14px; border-bottom:1px solid #f0f0f0; }
+        .settings-tabs { padding:8px 10px; gap:5px; }
+        .settings-tab { padding:8px 10px; font-size:.78rem; white-space:nowrap; }
+        .settings-body { padding:12px; }
+        .settings-card { padding:12px; border-radius:12px; }
+        .switch-row { flex-direction:column; align-items:stretch; gap:8px; }
+        .field-block { min-width:0; }
+        .field-block > input, .field-block > select, .field-block > textarea, .field-block .form-control, .field-block .form-select { width:100%; min-width:0; max-width:100%; }
+        .btn-row { flex-wrap:wrap; gap:8px; }
+        .btn-row > * { flex:1 1 auto; min-width:0; }
+        .settings-actions { position:sticky; bottom:0; padding:10px 12px; margin:0 -12px -12px; background:#fff; border-top:1px solid #f0f0f0; }
+
+        .ai-stats { grid-template-columns:repeat(2,1fr); }
+        .ai-credits-grid { grid-template-columns:repeat(3,1fr); gap:5px; }
+        .ai-credit b { font-size:.82rem; }
+        .limit-grid { grid-template-columns:1fr; gap:8px; }
+        .limit-box input { width:100%; }
+        .model-grid { grid-template-columns:1fr; }
+        .model-active-chip { max-width:100%; }
+        .ai-title-row { align-items:flex-start; }
     }
 
     /* Touch devices: message actions / canned uses stay visible & tappable */
@@ -1018,6 +1663,14 @@
 
     private bool _showMobileSidebar;
     private bool _showSettings;
+    private string _settingsTab = "general";
+
+    private void OpenSettings(string tab = "general")
+    {
+        _showSettings = true;
+        SetSettingsTab(tab);
+        _ = LoadSiteChatSettings();
+    }
     private string _activeFilter = "all";
     private string _baleToken = "";
     private string _baleGroupId = "";
@@ -1079,11 +1732,503 @@
     private bool _siteNotifyEitaa = true;
     private string _siteBaleSafirKey = "";
     private bool _siteEnableAi;
+    private bool _siteAiGuestEnabled;
+    private int _siteAiDailyLimit = 3;
     private string _siteAiProvider = "";
     private string _siteAiApiUrl = "";
     private string _siteAiModel = "";
     private string _siteAiApiKey = "";
     private string _siteAiSystemPrompt = "";
+    private string _siteAiTopics = "";
+    private string _siteAiModelChoice = "auto";
+
+    private int _siteAiMaxQuestionChars = 300;
+    private int _siteAiMaxTokens = 450;
+    private int _siteAiSessionLimit = 12;
+    private double _siteAiTemperature = 0.6;
+    private string? _siteAiBlockKeywords;
+
+    private AiUsageDto? _aiUsage;
+    private AiCreditsDto? _aiCredits;
+    private bool _aiStatsLoading;
+    private bool _aiCreditsLoading;
+
+    private double CreditsPercent =>
+        _aiCredits is not { ok: true } || _aiCredits.totalCredits <= 0 ? 0
+        : Math.Clamp(Math.Round(_aiCredits.totalUsage / _aiCredits.totalCredits * 100d, 1), 0, 100);
+
+    private sealed class AiUsageDto
+    {
+        public bool enabled { get; set; }
+        public bool guestEnabled { get; set; }
+        public int dailyLimit { get; set; }
+        public int sessionLimit { get; set; }
+        public int maxTokens { get; set; }
+        public double temperature { get; set; }
+        public int maxQuestionChars { get; set; }
+        public int totalAiReplies { get; set; }
+        public int todayAiReplies { get; set; }
+        public int last30AiReplies { get; set; }
+        public int guestAiReplies { get; set; }
+        public int memberAiReplies { get; set; }
+        public int sessionsWithAi { get; set; }
+        public int allMessagesToday { get; set; }
+    }
+
+    private sealed class AiCreditsDto
+    {
+        public bool supported { get; set; }
+        public bool ok { get; set; }
+        public string? message { get; set; }
+        public string? source { get; set; }
+        public double totalCredits { get; set; }
+        public double totalUsage { get; set; }
+        public double remaining { get; set; }
+        public double? limit { get; set; }
+        public string? currency { get; set; }
+    }
+
+    private async Task LoadAiStats()
+    {
+        _aiStatsLoading = true;
+        StateHasChanged();
+        try { _aiUsage = await Http.GetFromJsonAsync<AiUsageDto>("api/chat/ai-usage"); }
+        catch { _aiUsage = null; }
+        _aiStatsLoading = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadAiCredits()
+    {
+        _aiCreditsLoading = true;
+        StateHasChanged();
+        try { _aiCredits = await Http.GetFromJsonAsync<AiCreditsDto>("api/chat/ai-credits"); }
+        catch { _aiCredits = new AiCreditsDto { supported = false, ok = false, message = "خطا در ارتباط با سرور برای استعلام اعتبار." }; }
+        _aiCreditsLoading = false;
+        StateHasChanged();
+    }
+
+    private static readonly (string Id, string Label, string Desc, string Tier, string Speed)[] AiModelOptions =
+    {
+        ("auto", "auto — خودکار", "سریع‌ترین مدل سالم شروع می‌کند و در صورت خطا به مدل باکیفیت می‌رود.", "پیشنهادی", "سریع"),
+        ("liquid/lfm-2.5-2.6b:free", "liquid/lfm-2.5-2.6b", "بسیار سریع با فارسی تمیز؛ پیش‌فرض زنجیرهٔ خودکار.", "سبک", "خیلی سریع"),
+        ("nvidia/nemotron-3-ultra-550b-a55b:free", "nemotron-3-ultra-550b", "باکیفیت‌ترین پاسخ، اما کندترین گزینه.", "باکیفیت", "کند"),
+        ("nvidia/nemotron-3-super-120b-a12b:free", "nemotron-3-super-120b", "سبک و سریع؛ گاهی پاسخ خالی برمی‌گرداند.", "متعادل", "سریع"),
+        ("nvidia/nemotron-3.5-lightning:free", "nemotron-3.5-lightning", "خیلی سریع؛ ممکن است متن انگلیسی در پاسخ نشت کند.", "سریع", "خیلی سریع")
+    };
+
+    private string ModelValueFor(string choice)
+    {
+        if (choice == "__custom__") return string.IsNullOrEmpty(_siteAiModel) ? "" : _siteAiModel;
+        return choice;
+    }
+
+    private void SelectModel(string id)
+    {
+        _siteAiModelChoice = id;
+        if (id != "__custom__") _siteAiModel = id;
+    }
+
+    private sealed class ModelTestState
+    {
+        public bool Busy { get; set; }
+        public bool? Ok { get; set; }
+        public string? Message { get; set; }
+        public long Ms { get; set; }
+        public string? Reply { get; set; }
+    }
+
+    private readonly Dictionary<string, ModelTestState> _modelTests = new();
+
+    private static string ToFaNum(long n) => n.ToString().Replace("0", "۰").Replace("1", "۱").Replace("2", "۲").Replace("3", "۳").Replace("4", "۴").Replace("5", "۵").Replace("6", "۶").Replace("7", "۷").Replace("8", "۸").Replace("9", "۹");
+
+    private async Task TestModel(string modelChoice)
+    {
+        var model = modelChoice == "__custom__" ? (_siteAiModel?.Trim() ?? "") : modelChoice;
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            _modelTests[modelChoice] = new ModelTestState { Ok = false, Message = "ابتدا نام مدل سفارشی را وارد کنید." };
+            StateHasChanged();
+            return;
+        }
+
+        _modelTests[modelChoice] = new ModelTestState { Busy = true };
+        StateHasChanged();
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/chat/ai-test", new
+            {
+                model,
+                apiUrl = _siteAiApiUrl,
+                apiKey = _siteAiApiKey,
+                temperature = _siteAiTemperature,
+                maxTokens = _siteAiMaxTokens
+            });
+            var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var ok = json.TryGetProperty("success", out var s) && s.GetBoolean();
+            var msg = json.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
+            var ms = json.TryGetProperty("elapsedMs", out var e) && e.ValueKind == JsonValueKind.Number ? e.GetInt64() : 0;
+            var reply = json.TryGetProperty("reply", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null;
+            _modelTests[modelChoice] = new ModelTestState { Busy = false, Ok = ok, Message = msg, Ms = ms, Reply = reply };
+        }
+        catch
+        {
+            _modelTests[modelChoice] = new ModelTestState { Busy = false, Ok = false, Message = "خطا در ارتباط با سرور." };
+        }
+        StateHasChanged();
+    }
+
+    private void OnModelChoiceChanged(ChangeEventArgs e)
+    {
+        SelectModel(e.Value?.ToString() ?? "auto");
+    }
+
+    // ===== سرویس‌دهنده‌های چندگانه هوش مصنوعی =====
+
+    private List<AiProviderUi> _aiProviders = new();
+    private bool _aiProvidersLoading;
+    private bool _aiProvidersSaving;
+    private bool _aiProvidersLoaded; // فقط بعد از بارگذاری موفق مجاز به ذخیره/حذف است
+    private string? _aiProvidersMessage;
+    private bool? _aiProvidersOk;
+
+    private bool _chainTesting;
+    private List<ChainResultUi>? _chainResults;
+    private string? _chainMessage;
+    private bool? _chainOk;
+
+    private sealed class AiProviderUi
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public string BaseUrl { get; set; } = "";
+        public string Kind { get; set; } = "openrouter";
+        public bool Enabled { get; set; } = true;
+        public List<AiKeyUi> Keys { get; set; } = new();
+        public List<AiModelUi> Models { get; set; } = new();
+        public List<CatalogItemUi>? Catalog { get; set; }
+        public bool CatalogLoading { get; set; }
+        public string? CatalogMessage { get; set; }
+    }
+
+    private sealed class AiKeyUi
+    {
+        public int Id { get; set; }
+        public string KeyValue { get; set; } = "";
+        public string? Label { get; set; }
+        public bool Enabled { get; set; } = true;
+        public bool InCooldown { get; set; }
+        public DateTime? CooldownUntil { get; set; }
+        public string? LastError { get; set; }
+        public long SuccessCount { get; set; }
+        public long FailureCount { get; set; }
+    }
+
+    private sealed class AiModelUi
+    {
+        public int Id { get; set; }
+        public string ModelId { get; set; } = "";
+        public string? Label { get; set; }
+        public bool Enabled { get; set; } = true;
+        public bool InCooldown { get; set; }
+        public DateTime? CooldownUntil { get; set; }
+        public string? LastError { get; set; }
+        public long SuccessCount { get; set; }
+        public long FailureCount { get; set; }
+    }
+
+    private sealed class CatalogItemUi
+    {
+        public string Id { get; set; } = "";
+        public string? Name { get; set; }
+        public bool Selected { get; set; }
+    }
+
+    private sealed class ChainResultUi
+    {
+        public string Provider { get; set; } = "";
+        public string Key { get; set; } = "";
+        public string Model { get; set; } = "";
+        public bool Ok { get; set; }
+        public string Message { get; set; } = "";
+        public long Ms { get; set; }
+    }
+
+    private async Task LoadAiProvidersAsync()
+    {
+        _aiProvidersLoading = true;
+        StateHasChanged();
+        try
+        {
+            var json = await Http.GetFromJsonAsync<JsonElement>("api/chat/ai-providers");
+            var list = new List<AiProviderUi>();
+            if (json.TryGetProperty("providers", out var provs) && provs.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var p in provs.EnumerateArray())
+                {
+                    var ui = new AiProviderUi
+                    {
+                        Id = p.TryGetProperty("id", out var pid) ? pid.GetInt32() : 0,
+                        Name = p.TryGetProperty("name", out var pn) ? pn.GetString() ?? "" : "",
+                        BaseUrl = p.TryGetProperty("baseUrl", out var pb) ? pb.GetString() ?? "" : "",
+                        Kind = p.TryGetProperty("kind", out var pk) ? pk.GetString() ?? "custom" : "custom",
+                        Enabled = !p.TryGetProperty("enabled", out var pe) || pe.GetBoolean()
+                    };
+                    if (p.TryGetProperty("keys", out var keys) && keys.ValueKind == JsonValueKind.Array)
+                        foreach (var k in keys.EnumerateArray())
+                            ui.Keys.Add(new AiKeyUi
+                            {
+                                Id = k.TryGetProperty("id", out var kid) ? kid.GetInt32() : 0,
+                                KeyValue = k.TryGetProperty("keyValue", out var kv) ? kv.GetString() ?? "" : "",
+                                Label = k.TryGetProperty("label", out var kl) ? kl.GetString() : null,
+                                Enabled = !k.TryGetProperty("enabled", out var ke) || ke.GetBoolean(),
+                                InCooldown = k.TryGetProperty("inCooldown", out var kc) && kc.GetBoolean(),
+                                CooldownUntil = k.TryGetProperty("cooldownUntil", out var kcu) && kcu.ValueKind == JsonValueKind.String
+                                    ? DateTime.TryParse(kcu.GetString(), out var kdt) ? kdt : null : null,
+                                LastError = k.TryGetProperty("lastError", out var kle) ? kle.GetString() : null,
+                                SuccessCount = k.TryGetProperty("successCount", out var ksc) && ksc.ValueKind == JsonValueKind.Number ? ksc.GetInt64() : 0,
+                                FailureCount = k.TryGetProperty("failureCount", out var kfc) && kfc.ValueKind == JsonValueKind.Number ? kfc.GetInt64() : 0
+                            });
+                    if (p.TryGetProperty("models", out var models) && models.ValueKind == JsonValueKind.Array)
+                        foreach (var m in models.EnumerateArray())
+                            ui.Models.Add(new AiModelUi
+                            {
+                                Id = m.TryGetProperty("id", out var mid) ? mid.GetInt32() : 0,
+                                ModelId = m.TryGetProperty("modelId", out var mm) ? mm.GetString() ?? "" : "",
+                                Label = m.TryGetProperty("label", out var ml) ? ml.GetString() : null,
+                                Enabled = !m.TryGetProperty("enabled", out var me) || me.GetBoolean(),
+                                InCooldown = m.TryGetProperty("inCooldown", out var mc) && mc.GetBoolean(),
+                                CooldownUntil = m.TryGetProperty("cooldownUntil", out var mcu) && mcu.ValueKind == JsonValueKind.String
+                                    ? DateTime.TryParse(mcu.GetString(), out var mdt) ? mdt : null : null,
+                                LastError = m.TryGetProperty("lastError", out var mle) ? mle.GetString() : null,
+                                SuccessCount = m.TryGetProperty("successCount", out var msc) && msc.ValueKind == JsonValueKind.Number ? msc.GetInt64() : 0,
+                                FailureCount = m.TryGetProperty("failureCount", out var mfc) && mfc.ValueKind == JsonValueKind.Number ? mfc.GetInt64() : 0
+                            });
+                    list.Add(ui);
+                }
+            }
+            _aiProviders = list;
+            _aiProvidersLoaded = true;
+        }
+        catch { }
+        _aiProvidersLoading = false;
+        StateHasChanged();
+    }
+
+    private void AddProvider() => _aiProviders.Add(new AiProviderUi { Kind = "openrouter" });
+
+    private void RemoveProvider(AiProviderUi p)
+    {
+        _aiProviders.Remove(p); // برای حذف از DB کافی است ذخیره شود (Save رکوردهای غایب را حذف می‌کند)
+    }
+
+    private void MoveProvider(AiProviderUi p, int dir)
+    {
+        var idx = _aiProviders.IndexOf(p);
+        var target = idx + dir;
+        if (idx < 0 || target < 0 || target >= _aiProviders.Count) return;
+        _aiProviders.RemoveAt(idx);
+        _aiProviders.Insert(target, p);
+    }
+
+    private async Task SeedFromLegacyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_siteAiApiUrl) || string.IsNullOrWhiteSpace(_siteAiApiKey)) return;
+        var provider = new AiProviderUi
+        {
+            Name = _siteAiApiUrl.Contains("openrouter", StringComparison.OrdinalIgnoreCase) ? "OpenRouter"
+                : _siteAiApiUrl.Contains("openai", StringComparison.OrdinalIgnoreCase) ? "OpenAI" : "سرویس‌دهنده",
+            BaseUrl = _siteAiApiUrl,
+            Kind = _siteAiApiUrl.Contains("openrouter", StringComparison.OrdinalIgnoreCase) ? "openrouter" : "custom",
+            Keys = { new AiKeyUi { KeyValue = _siteAiApiKey, Label = "کلید اصلی" } }
+        };
+        var model = ResolveModelValue();
+        if (model == "auto")
+        {
+            provider.Models.Add(new AiModelUi { ModelId = "liquid/lfm-2.5-2.6b:free", Label = "LFM 2.5 (سریع)" });
+            provider.Models.Add(new AiModelUi { ModelId = "nvidia/nemotron-3-ultra-550b-a55b:free", Label = "Nemotron Ultra (باکیفیت)" });
+        }
+        else if (!string.IsNullOrWhiteSpace(model))
+        {
+            provider.Models.Add(new AiModelUi { ModelId = model });
+        }
+        _aiProviders.Add(provider);
+        await SaveAiProvidersAsync();
+    }
+
+    private async Task SaveAiProvidersAsync()
+    {
+        if (!_aiProvidersLoaded)
+        {
+            _aiProvidersOk = false;
+            _aiProvidersMessage = "ابتدا بارگذاری سرویس‌دهنده‌ها را کامل کنید تا ذخیره ممکن باشد (جلوگیری از حذف ناخواسته).";
+            return;
+        }
+        _aiProvidersSaving = true;
+        _aiProvidersMessage = null;
+        StateHasChanged();
+        try
+        {
+            var payload = _aiProviders.Select((p, i) => new ChatAiProviderPayload
+            {
+                Id = p.Id,
+                Name = p.Name,
+                BaseUrl = p.BaseUrl,
+                Kind = p.Kind,
+                Enabled = p.Enabled,
+                Priority = i + 1,
+                Keys = p.Keys.Select((k, ki) => new ChatAiKeyPayload
+                {
+                    Id = k.Id,
+                    KeyValue = k.KeyValue,
+                    Label = k.Label,
+                    Enabled = k.Enabled,
+                    Priority = ki + 1
+                }).ToList(),
+                Models = p.Models.Select((m, mi) => new ChatAiModelPayload
+                {
+                    Id = m.Id,
+                    ModelId = m.ModelId,
+                    Label = m.Label,
+                    Enabled = m.Enabled,
+                    Priority = mi + 1
+                }).ToList()
+            }).ToList();
+
+            var resp = await Http.PutAsJsonAsync("api/chat/ai-providers", payload);
+            var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            _aiProvidersOk = resp.IsSuccessStatusCode && (!json.TryGetProperty("success", out var s) || s.GetBoolean());
+            _aiProvidersMessage = json.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String
+                ? m.GetString()
+                : (_aiProvidersOk == true ? "ذخیره شد." : "خطا در ذخیره.");
+            if (_aiProvidersOk == true) await LoadAiProvidersAsync();
+        }
+        catch
+        {
+            _aiProvidersOk = false;
+            _aiProvidersMessage = "خطا در ارتباط با سرور.";
+        }
+        _aiProvidersSaving = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadCatalogAsync(AiProviderUi p)
+    {
+        p.CatalogLoading = true;
+        p.CatalogMessage = null;
+        StateHasChanged();
+        try
+        {
+            var url = $"api/chat/ai-models/catalog?kind={Uri.EscapeDataString(p.Kind)}&baseUrl={Uri.EscapeDataString(p.BaseUrl)}";
+            var json = await Http.GetFromJsonAsync<JsonElement>(url);
+            var list = new List<CatalogItemUi>();
+            if (json.TryGetProperty("models", out var models) && models.ValueKind == JsonValueKind.Array)
+                foreach (var m in models.EnumerateArray())
+                {
+                    var id = m.TryGetProperty("id", out var mid) ? mid.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(id)) continue;
+                    if (p.Models.Any(x => string.Equals(x.ModelId, id, StringComparison.OrdinalIgnoreCase))) continue;
+                    list.Add(new CatalogItemUi { Id = id!, Name = m.TryGetProperty("name", out var nm) ? nm.GetString() : null });
+                }
+            p.Catalog = list;
+            p.CatalogMessage = json.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.String
+                ? msg.GetString()
+                : $"{list.Count} مدل دریافت شد.";
+        }
+        catch
+        {
+            p.CatalogMessage = "خطا در دریافت فهرست.";
+        }
+        p.CatalogLoading = false;
+        StateHasChanged();
+    }
+
+    private void AddSelectedCatalog(AiProviderUi p)
+    {
+        if (p.Catalog == null) return;
+        foreach (var c in p.Catalog.Where(x => x.Selected))
+            p.Models.Add(new AiModelUi { ModelId = c.Id, Label = c.Name, Enabled = true });
+        p.Catalog = null;
+        p.CatalogMessage = null;
+    }
+
+    private async Task TestChainAsync()
+    {
+        _chainTesting = true;
+        _chainResults = null;
+        _chainMessage = null;
+        StateHasChanged();
+        try
+        {
+            var payload = _aiProviders.Select((p, i) => new ChatAiProviderPayload
+            {
+                Id = p.Id,
+                Name = p.Name,
+                BaseUrl = p.BaseUrl,
+                Kind = p.Kind,
+                Enabled = p.Enabled,
+                Priority = i + 1,
+                Keys = p.Keys.Select((k, ki) => new ChatAiKeyPayload
+                {
+                    Id = k.Id,
+                    KeyValue = k.KeyValue,
+                    Label = k.Label,
+                    Enabled = k.Enabled,
+                    Priority = ki + 1
+                }).ToList(),
+                Models = p.Models.Select((m, mi) => new ChatAiModelPayload
+                {
+                    Id = m.Id,
+                    ModelId = m.ModelId,
+                    Label = m.Label,
+                    Enabled = m.Enabled,
+                    Priority = mi + 1
+                }).ToList()
+            }).ToList();
+
+            // اگر چیزی ثبت نشده، سرور از ذخیره‌شده/قدیمی تست می‌کند
+            var resp = await Http.PostAsJsonAsync("api/chat/ai-chain-test", payload.Count > 0 ? payload : null);
+            var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var results = new List<ChainResultUi>();
+            if (json.TryGetProperty("results", out var arr) && arr.ValueKind == JsonValueKind.Array)
+                foreach (var r in arr.EnumerateArray())
+                    results.Add(new ChainResultUi
+                    {
+                        Provider = r.TryGetProperty("provider", out var rp) ? rp.GetString() ?? "" : "",
+                        Key = r.TryGetProperty("key", out var rk) ? rk.GetString() ?? "" : "",
+                        Model = r.TryGetProperty("model", out var rm) ? rm.GetString() ?? "" : "",
+                        Ok = r.TryGetProperty("ok", out var ro) && ro.GetBoolean(),
+                        Message = r.TryGetProperty("message", out var rmsg) ? rmsg.GetString() ?? "" : "",
+                        Ms = r.TryGetProperty("ms", out var rms) && rms.ValueKind == JsonValueKind.Number ? rms.GetInt64() : 0
+                    });
+            _chainResults = results;
+            _chainMessage = json.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.String ? msg.GetString() : null;
+            _chainOk = json.TryGetProperty("success", out var sc) && sc.GetBoolean()
+                ? results.Any(r => r.Ok)
+                : false;
+        }
+        catch
+        {
+            _chainOk = false;
+            _chainMessage = "خطا در ارتباط با سرور.";
+        }
+        _chainTesting = false;
+        StateHasChanged();
+    }
+
+    private void SetSettingsTab(string tab)
+    {
+        _settingsTab = tab;
+        if (tab == "ai")
+        {
+            _ = LoadAiStats();
+            _ = LoadAiCredits();
+            _ = LoadAiProvidersAsync();
+        }
+    }
+    private bool _aiTestBusy;
+    private bool? _aiTestOk;
+    private string? _aiTestMessage;
     private bool _settingsLoading;
     private bool _savingSiteSettings;
     private string? _siteSettingsMessage;
@@ -1107,6 +2252,46 @@
         if (local.Date == DateTime.Today) return "امروز";
         if (local.Date == DateTime.Today.AddDays(-1)) return "دیروز";
         return local.ToString("yyyy/MM/dd");
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex UrlRegex =
+        new(@"https?://[^\s<>""']+", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static string ApplyMarkdown(string s)
+    {
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"(?m)^\s*#{1,6}\s+(.+?)\s*$", "<strong>$1</strong>");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"(?m)^\s*[-+]\s+", "• ");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\*\*(?!\s)([^*\n]+?)(?<!\s)\*\*", "<strong>$1</strong>");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![*\w])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![*\w])", "<em>$1</em>");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"(?<![\w])_(?!\s)([^_\n]+?)(?<!\s)_(?![\w])", "<em>$1</em>");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"`([^`\n]+)`", "<code>$1</code>");
+        return s;
+    }
+
+    private static string RenderMsgHtml(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return "";
+
+        var urls = new System.Collections.Generic.List<string>();
+        var src = UrlRegex.Replace(content, m =>
+        {
+            urls.Add(m.Value);
+            return "zzchaturl" + (urls.Count - 1) + "zz";
+        });
+
+        var s = ApplyMarkdown(System.Net.WebUtility.HtmlEncode(src));
+
+        if (urls.Count > 0)
+        {
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"zzchaturl(\d+)zz", m =>
+            {
+                if (!int.TryParse(m.Groups[1].Value, out var i) || i < 0 || i >= urls.Count) return "";
+                var u = System.Net.WebUtility.HtmlEncode(urls[i]);
+                return "<a href=\"" + u + "\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:inherit;text-decoration:underline;word-break:break-all;\">" + u + "</a>";
+            });
+        }
+
+        return s;
     }
 
     private List<ChatSessionDto> FilteredSessions => _activeFilter switch
@@ -1402,6 +2587,48 @@
         {
             _settingsSuccess = false;
             _settingsMessage = "خطا در ارتباط با سرور.";
+        }
+    }
+
+    private async Task TestAiConnection()
+    {
+        _aiTestBusy = true;
+        _aiTestMessage = null;
+        _aiTestOk = null;
+        StateHasChanged();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/chat/ai-test", new
+            {
+                model = ResolveModelValue(),
+                apiUrl = _siteAiApiUrl,
+                apiKey = _siteAiApiKey,
+                temperature = _siteAiTemperature,
+                maxTokens = _siteAiMaxTokens
+            });
+            var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            sw.Stop();
+            _aiTestOk = json.TryGetProperty("success", out var s) && s.GetBoolean();
+            var msg = json.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
+            var model = json.TryGetProperty("model", out var md) ? md.GetString() ?? "" : "";
+            if (!string.IsNullOrEmpty(model)) msg += $" | مدل: {model}";
+            if (json.TryGetProperty("elapsedMs", out var ems) && ems.ValueKind == JsonValueKind.Number)
+                msg += $" | زمان پاسخ: {ToFaNum(ems.GetInt64())} میلی‌ثانیه";
+            if (_aiTestOk == true && json.TryGetProperty("reply", out var r))
+                msg += "\nنمونه پاسخ: " + (r.GetString() ?? "");
+            _aiTestMessage = msg;
+            if (_aiTestOk == true) _ = LoadAiCredits();
+        }
+        catch
+        {
+            sw.Stop();
+            _aiTestOk = false;
+            _aiTestMessage = $"خطا در ارتباط با سرور ({ToFaNum(sw.ElapsedMilliseconds)} میلی‌ثانیه).";
+        }
+        finally
+        {
+            _aiTestBusy = false;
         }
     }
 
@@ -1876,6 +3103,17 @@
             _siteAiModel = s.TryGetProperty("aiModel", out var aim) ? aim.GetString() ?? "" : "";
             _siteAiApiKey = s.TryGetProperty("aiApiKey", out var aik) ? aik.GetString() ?? "" : "";
             _siteAiSystemPrompt = s.TryGetProperty("aiSystemPrompt", out var asp) ? asp.GetString() ?? "" : "";
+            _siteAiTopics = s.TryGetProperty("aiSuggestedTopics", out var ait) ? ait.GetString() ?? "" : "";
+            _siteAiGuestEnabled = s.TryGetProperty("aiGuestEnabled", out var ag) && ag.GetBoolean();
+            _siteAiDailyLimit = s.TryGetProperty("aiDailyLimit", out var adl) ? adl.GetInt32() : 3;
+            _siteAiMaxQuestionChars = s.TryGetProperty("aiMaxQuestionChars", out var amqc) ? amqc.GetInt32() : 300;
+            _siteAiMaxTokens = s.TryGetProperty("aiMaxTokens", out var amt) ? amt.GetInt32() : 450;
+            _siteAiSessionLimit = s.TryGetProperty("aiSessionLimit", out var asl) ? asl.GetInt32() : 12;
+            _siteAiTemperature = s.TryGetProperty("aiTemperature", out var at) && at.ValueKind == JsonValueKind.Number ? at.GetDouble() : 0.6;
+            _siteAiBlockKeywords = s.TryGetProperty("aiBlockKeywords", out var abk) ? abk.GetString() : null;
+
+            var modelVal = _siteAiModel;
+            _siteAiModelChoice = AiModelOptions.Any(o => o.Id == modelVal) ? modelVal : "__custom__";
         }
         catch { }
         _settingsLoading = false;
@@ -1909,9 +3147,17 @@
                 enableAiAssistant = _siteEnableAi,
                 aiProvider = _siteAiProvider,
                 aiApiUrl = _siteAiApiUrl,
-                aiModel = _siteAiModel,
+                aiModel = ResolveModelValue(),
                 aiApiKey = _siteAiApiKey,
-                aiSystemPrompt = _siteAiSystemPrompt
+                aiSystemPrompt = _siteAiSystemPrompt,
+                aiSuggestedTopics = _siteAiTopics,
+                aiGuestEnabled = _siteAiGuestEnabled,
+                aiDailyLimit = _siteAiDailyLimit,
+                aiMaxQuestionChars = _siteAiMaxQuestionChars,
+                aiMaxTokens = _siteAiMaxTokens,
+                aiSessionLimit = _siteAiSessionLimit,
+                aiTemperature = _siteAiTemperature,
+                aiBlockKeywords = _siteAiBlockKeywords
             });
             _siteSettingsSuccess = resp.IsSuccessStatusCode;
             _siteSettingsMessage = _siteSettingsSuccess ? "تنظیمات چت ذخیره شد." : "خطا در ذخیره تنظیمات.";
@@ -1922,6 +3168,27 @@
             _siteSettingsMessage = "خطا در ارتباط با سرور.";
         }
         _savingSiteSettings = false;
+    }
+
+    private string ResolveModelValue()
+    {
+        if (_siteAiModelChoice == "__custom__") return _siteAiModel?.Trim() ?? "";
+        return _siteAiModelChoice;
+    }
+
+    private async Task SaveAllSettings()
+    {
+        await SaveChatSiteSettings();
+        var siteOk = _siteSettingsSuccess;
+
+        await SaveBaleSettings();
+        var baleOk = _settingsSuccess;
+
+        _siteSettingsSuccess = siteOk && baleOk;
+        _siteSettingsMessage = (siteOk && baleOk)
+            ? "همه تنظیمات ذخیره شد."
+            : (!siteOk ? "ذخیره تنظیمات چت ناموفق بود." : "ذخیره تنظیمات بله ناموفق بود.");
+        if (siteOk && baleOk) _siteSettingsMessage = "تنظیمات ذخیره شد.";
     }
 
     private async Task PickImage()

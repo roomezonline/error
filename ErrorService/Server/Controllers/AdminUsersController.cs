@@ -31,6 +31,10 @@ public sealed class AdminUsersController : ControllerBase
 
         var q = _db.Users.AsNoTracking().AsQueryable();
 
+        // کاربران حذف‌نرم‌شده به‌صورت پیش‌فرض پنهان‌اند؛ فقط با درخواست صریح نمایش داده می‌شوند.
+        if (!query.IncludeDeleted)
+            q = q.Where(x => !x.IsDeleted);
+
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var s = query.Search.Trim();
@@ -63,9 +67,13 @@ public sealed class AdminUsersController : ControllerBase
             FullName = x.FullName,
             PhoneNumber = x.PhoneNumber,
             IsActive = x.IsActive,
+            IsDeleted = x.IsDeleted,
+            DeletedAt = x.DeletedAt,
             IsVip = vipSet.Contains(x.Id),
             PasswordPlain = x.PasswordPlain,
-            CreatedAt = x.CreatedAt
+            CreatedAt = x.CreatedAt,
+            ChatAiDisabled = x.ChatAiDisabled,
+            ChatAiDailyLimitOverride = x.ChatAiDailyLimitOverride
         }).ToList();
 
         if (query.IsVip.HasValue)
@@ -80,7 +88,7 @@ public sealed class AdminUsersController : ControllerBase
     [HttpPut("{id:int}/reset-password")]
     public async Task<IActionResult> ResetPassword(int id, [FromBody] AdminResetSiteUserPasswordRequest request)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == id);
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
         if (user == null) return NotFound();
 
         user.PasswordHash = _hasher.HashPassword(user, request.NewPassword);
@@ -95,7 +103,7 @@ public sealed class AdminUsersController : ControllerBase
     [HttpPut("{id:int}/set-active")]
     public async Task<IActionResult> SetActive(int id, [FromBody] AdminSetSiteUserActiveRequest request)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == id);
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
         if (user == null) return NotFound();
 
         user.IsActive = request.IsActive;
@@ -109,7 +117,7 @@ public sealed class AdminUsersController : ControllerBase
     [HttpPut("{id:int}/set-vip")]
     public async Task<IActionResult> SetVip(int id, [FromBody] AdminSetSiteUserVipRequest request)
     {
-        var userExists = await _db.Users.AsNoTracking().AnyAsync(x => x.Id == id);
+        var userExists = await _db.Users.AsNoTracking().AnyAsync(x => x.Id == id && !x.IsDeleted);
         if (!userExists) return NotFound();
 
         var vipRoleId = await EnsureVipRoleAsync();
@@ -132,6 +140,56 @@ public sealed class AdminUsersController : ControllerBase
                 await _db.SaveChangesAsync();
             }
         }
+
+        return NoContent();
+    }
+
+    [Authorize(Policy = "perm:admin.users.manage")]
+    [HttpPut("{id:int}/set-ai")]
+    public async Task<IActionResult> SetAi(int id, [FromBody] AdminSetSiteUserAiRequest request)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
+        if (user == null) return NotFound();
+
+        user.ChatAiDisabled = request.Disabled;
+        user.ChatAiDailyLimitOverride = request.DailyLimitOverride < 0 ? null : request.DailyLimitOverride;
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [Authorize(Policy = "perm:admin.users.manage")]
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == id);
+        if (user == null) return NotFound();
+        if (user.IsDeleted) return NoContent();
+
+        // حذف نرم: کاربر پنهان و غیرفعال می‌شود اما رکورد و سوابقش (سفارش، چت، رسید و…) حفظ می‌گردد
+        // تا در صورت اشتباه قابل بازگردانی باشد و ارجاع‌های دیتابیس یتیم نشوند.
+        user.IsDeleted = true;
+        user.DeletedAt = DateTimeOffset.UtcNow;
+        user.IsActive = false;
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [Authorize(Policy = "perm:admin.users.manage")]
+    [HttpPost("{id:int}/restore")]
+    public async Task<IActionResult> Restore(int id)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == id);
+        if (user == null) return NotFound();
+
+        user.IsDeleted = false;
+        user.DeletedAt = null;
+        user.IsActive = true;
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync();
 
         return NoContent();
     }

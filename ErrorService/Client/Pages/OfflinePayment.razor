@@ -9,6 +9,7 @@
 @inject IJSRuntime JS
 @inject ErrorService.Client.Services.ToastService ToastService
 @inject ErrorService.Client.Services.CartService CartService
+@inject ErrorService.Client.Services.CheckoutRecoveryService Recovery
 
 <HeadContent>
     <meta name="robots" content="noindex, nofollow" />
@@ -134,7 +135,7 @@
                                     </div>
                                     <div class="order-summary-row">
                                         <span>هزینه ارسال (@(order.ShippingMethodName ?? "—"))</span>
-                                        @if (order.ShippingCost == 0)
+                                        @if (order.ShippingIsFree)
                                         {
                                             <span class="text-success">رایگان</span>
                                         }
@@ -267,6 +268,11 @@
                                     <div class="field-group mb-3">
                                         <label class="field-label">شماره پیگیری <span class="optional">(اختیاری)</span></label>
                                         <input type="text" class="field-input text-center ltr" @bind="trackingNumber" placeholder="کد پیگیری یا ارجاع" inputmode="numeric" />
+                                    </div>
+
+                                    <div class="field-group mb-3">
+                                        <label class="field-label">توضیحات سفارش <span class="optional">(اختیاری)</span></label>
+                                        <textarea class="field-input" rows="3" maxlength="1000" @bind="customerNotes" placeholder="توضیح یا سفارش خاصی برای این سفارش دارید؟ (برای مدیر سفارش ارسال می‌شود)"></textarea>
                                     </div>
 
                                     <div class="upload-zone">
@@ -478,6 +484,7 @@
         background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 14px 16px;
         text-align: center; font-size: 1.1rem; font-weight: 800; letter-spacing: 2px;
         cursor: pointer; transition: all 0.15s; position: relative; color: #1e293b;
+        direction: ltr; unicode-bidi: isolate;
     }
     .bank-card-number:hover { background: #f0f4ff; border-color: var(--shop-primary, #4f46e5); color: var(--shop-primary, #4f46e5); }
 
@@ -494,7 +501,7 @@
     }
     .bank-detail:hover { background: #f0f4ff; border-color: #e0e7ff; }
     .bank-detail-label { font-size: 0.72rem; font-weight: 600; color: #94a3b8; }
-    .bank-detail-val { font-size: 0.8rem; font-weight: 700; color: #334155; }
+    .bank-detail-val { font-size: 0.8rem; font-weight: 700; color: #334155; direction: ltr; unicode-bidi: isolate; }
 
     .upload-section { margin-top: 8px; }
 
@@ -600,6 +607,7 @@
     private bool isLoading = true;
     private bool isUploading = false;
     private string? trackingNumber;
+    private string? customerNotes;
     private readonly List<SelectedReceiptFile> selectedFiles = new();
 
     private const int MaxReceiptImages = 3;
@@ -646,6 +654,7 @@
             order = await Http.GetFromJsonAsync<OrderDto>($"{OrderUrl()}");
             bankAccounts = await Http.GetFromJsonAsync<List<BankAccountDto>>("api/bankaccounts/gateway");
             trackingNumber = order?.TrackingNumber ?? trackingNumber;
+            customerNotes = order?.CustomerNotes ?? customerNotes;
         }
         catch (Exception ex) { ToastService.ShowError("خطا در دریافت اطلاعات: " + ex.Message); }
         finally { isLoading = false; }
@@ -687,12 +696,15 @@
                 content.Add(byteArrayContent, "files", f.FileName);
             }
             if (!string.IsNullOrEmpty(trackingNumber)) content.Add(new StringContent(trackingNumber), "trackingNumber");
+            if (!string.IsNullOrWhiteSpace(customerNotes)) content.Add(new StringContent(customerNotes.Trim()), "customerNotes");
             if (!string.IsNullOrWhiteSpace(AccessToken)) content.Add(new StringContent(AccessToken), "accessToken");
 
             var response = await Http.PostAsync($"api/orders/{OrderId}/receipt", content);
             if (response.IsSuccessStatusCode)
             {
                 await CartService.ClearCartAsync();
+                await Recovery.ClearPendingOrderAsync();
+                await Recovery.ClearDraftAsync();
                 var wasPending = order?.Status == OrderStatus.PendingPayment;
                 ToastService.ShowSuccess(wasPending ? "رسید پرداخت با موفقیت ثبت شد" : "رسید جدید ثبت شد");
                 order = await Http.GetFromJsonAsync<OrderDto>(OrderUrl());

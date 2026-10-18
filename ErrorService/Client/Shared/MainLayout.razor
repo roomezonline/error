@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Components.Authorization
 @using ErrorService.Shared
+@using System.Text.Json
 @using ErrorService.Client.Pages
 @inject NavigationManager Nav
 @inject HttpClient Http
@@ -8,7 +9,9 @@
 @inject ErrorService.Client.Services.NotificationCenterService Notif
 @inject ErrorService.Client.Services.ToastService ToastService
 @inject ErrorService.Client.Services.ThemeService Theme
+@inject ErrorService.Client.Services.LocalStorageService SearchStorage
 @inject ErrorService.Client.Services.AuthService Auth
+@inject ErrorService.Client.Services.CheckoutRecoveryService Recovery
 @inject ErrorService.Client.Services.JwtAuthStateProvider AuthStateProvider
 @inject IJSRuntime JS
 @implements IDisposable
@@ -21,6 +24,79 @@
             <span class="oi oi-warning me-2"></span>
             اتصال اینترنت قطع شده است. برخی امکانات ممکن است در دسترس نباشند.
             <button class="offline-banner-close" @onclick="() => _dismissedOfflineBanner = true" aria-label="بستن">×</button>
+        </div>
+    }
+    @if (ResumeOrder is { } ro && ShowResume($"o:{ro.Id}:{ro.Status}"))
+    {
+        <div class="resume-banner" role="alert">
+            <span class="resume-banner__icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+            </span>
+            <span class="resume-banner__text">
+                <strong class="resume-banner__title">سفارش شما هنوز تکمیل نشده است</strong>
+                <span class="resume-banner__sub">
+                    سفارش <span dir="ltr">@ro.OrderNumber</span>
+                    · @ro.TotalAmount.ToString("N0") تومان
+                    · @ro.StatusLabel
+                </span>
+            </span>
+            @if (ro.NeedsPayment && ro.MinutesToAutoCancel > 0)
+            {
+                <span class="resume-banner__timer">
+                    <span class="oi oi-clock"></span>
+                    تا لغو خودکار @ro.MinutesToAutoCancel دقیقه
+                </span>
+            }
+            <a class="resume-banner__cta" href="@ro.ResumeUrl">
+                @(ro.NeedsPayment ? "پرداخت و ادامه سفارش" : "مشاهده سفارش")
+                <span class="oi oi-arrow-left"></span>
+            </a>
+            <button class="resume-banner__close" @onclick="() => DismissResume(ResumeOrderKey(ro))" aria-label="بستن">×</button>
+        </div>
+    }
+    else if (ResumeCartCount > 0 && ShowResume($"c:{ResumeCartCount}"))
+    {
+        <div class="resume-banner" role="alert">
+            <span class="resume-banner__icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+            </span>
+            <span class="resume-banner__text">
+                <strong class="resume-banner__title">@ResumeCartCount کالا در سبد خرید شما مانده است</strong>
+                <span class="resume-banner__sub">اطلاعات تکمیل سفارش ذخیره شده؛ از همان‌جا ادامه دهید.</span>
+            </span>
+            <a class="resume-banner__cta" href="/checkout">
+                ادامه خرید
+                <span class="oi oi-arrow-left"></span>
+            </a>
+            <button class="resume-banner__close" @onclick="() => DismissResume(ResumeCartKey(ResumeCartCount))" aria-label="بستن">×</button>
+        </div>
+    }
+    @if (ShowInstallBanner)
+    {
+        <div class="pwa-banner" role="region" aria-label="نصب اپلیکیشن">
+            <span class="pwa-banner__icon" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+            </span>
+            <span class="pwa-banner__text">
+                <strong class="pwa-banner__title">نصب اپ ارورسرویس روی گوشی</strong>
+                <span class="pwa-banner__sub">
+                    @if (_pwaIos && !_pwaInstallable)
+                    {
+                        <text>در سافاری دکمهٔ اشتراک‌گذاری و سپس «افزودن به صفحه اصلی» را بزنید.</text>
+                    }
+                    else
+                    {
+                        <text>سریع‌تر باز می‌شود و مثل یک اپ واقعی روی صفحه‌نما نصب می‌شود.</text>
+                    }
+                </span>
+            </span>
+            @if (!(_pwaIos && !_pwaInstallable))
+            {
+                <button type="button" class="pwa-banner__cta" @onclick="InstallPublicApp">
+                    <span class="oi oi-download"></span> نصب
+                </button>
+            }
+            <button type="button" class="pwa-banner__close" @onclick="DismissPublicInstall" aria-label="بستن">×</button>
         </div>
     }
     <div class="app-header-group">
@@ -196,10 +272,48 @@
                    @onkeyup="HandleSearchKeyUp"
                    @onfocus="ShowSuggestions" />
 
-            @if (showSuggestions && !string.IsNullOrWhiteSpace(searchQuery) && searchQuery.Trim().Length >= 2)
+            @if (showSuggestions)
             {
                 <div class="search-suggest shadow-lg">
-                    @if (isSearching && suggestions == null)
+                    @if (string.IsNullOrWhiteSpace(searchQuery) || searchQuery.Trim().Length < 2)
+                    {
+                        <div class="search-discovery">
+                            <div class="search-discovery__head">
+                                <span class="search-discovery__title"><span class="oi oi-magnifying-glass"></span> جست‌وجوهای پیشنهادی</span>
+                                @if (recentSearches.Count > 0)
+                                {
+                                    <button type="button" class="search-clear-btn" @onclick="ClearRecentSearches">پاک کردن سابقه</button>
+                                }
+                            </div>
+                            @if (recentSearches.Count > 0)
+                            {
+                                <div class="search-chip-section">
+                                    <div class="search-chip-title"><span class="oi oi-clock"></span> جست‌وجوهای اخیر</div>
+                                    <div class="search-chips">
+                                        @foreach (var item in recentSearches)
+                                        {
+                                            <button type="button" class="search-chip search-chip--recent" @onclick="() => SearchFromChip(item)">
+                                                <span>@item</span><span class="oi oi-arrow-top-right"></span>
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            <div class="search-chip-section">
+                                <div class="search-chip-title"><span class="oi oi-fire"></span> برترین جست‌وجوها</div>
+                                <div class="search-chips">
+                                    @foreach (var item in popularSearches)
+                                    {
+                                        <button type="button" class="search-chip" @onclick="() => SearchFromChip(item)">
+                                            <span>@item</span><span class="oi oi-arrow-top-right"></span>
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                            <div class="search-discovery__hint">برای جست‌وجوی دقیق‌تر، نام محصول، برند یا کد خطا را وارد کنید.</div>
+                        </div>
+                    }
+                    else if (isSearching && suggestions == null)
                     {
                         <div class="p-3 text-center text-muted small">
                             <span class="spinner-border spinner-border-sm me-2"></span>
@@ -813,6 +927,27 @@
     .notif-mini__time {
         font-size: 0.7rem;
         color: #94a3b8;
+    }
+
+    .search-discovery { padding: 16px; direction: rtl; }
+    .search-discovery__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+    .search-discovery__title { display: flex; align-items: center; gap: 8px; color: var(--app-text); font-size: .9rem; font-weight: 900; }
+    .search-discovery__title .oi { color: var(--app-primary); }
+    .search-clear-btn { border: 0; background: transparent; color: var(--app-text-muted); font-size: .72rem; font-weight: 700; cursor: pointer; padding: 5px 7px; border-radius: 8px; }
+    .search-clear-btn:hover { color: #ef4444; background: rgba(239,68,68,.08); }
+    .search-chip-section { margin-top: 12px; }
+    .search-chip-title { display: flex; align-items: center; gap: 6px; color: var(--app-text-muted); font-size: .75rem; font-weight: 900; margin-bottom: 9px; }
+    .search-chip-title .oi { color: #f59e0b; }
+    .search-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .search-chip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--app-border); background: var(--app-bg); color: var(--app-text); border-radius: 999px; padding: 8px 11px; font-size: .78rem; font-weight: 700; cursor: pointer; transition: all .15s ease; }
+    .search-chip:hover { border-color: rgba(37,99,235,.35); color: var(--app-primary); background: rgba(37,99,235,.07); transform: translateY(-1px); }
+    .search-chip .oi { font-size: .65rem; color: var(--app-text-muted); }
+    .search-chip--recent { background: var(--app-surface); }
+    .search-discovery__hint { border-top: 1px solid var(--app-border); color: var(--app-text-muted); font-size: .72rem; line-height: 1.7; margin-top: 16px; padding-top: 12px; }
+    @@media (max-width: 575.98px) {
+        .search-discovery { padding: 13px; }
+        .search-chip { padding: 8px 10px; font-size: .74rem; }
+        .search-discovery__head { align-items: flex-start; }
     }
 
     .search-suggest-overlay {
@@ -1546,6 +1681,150 @@
         line-height: 1;
     }
 
+    /* ────────────── بنر ادامهٔ سفارش نیمه‌تمام ────────────── */
+    .resume-banner {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px 16px;
+        padding: 14px 22px;
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(120, 53, 15, 0.20);
+        background: linear-gradient(115deg, #f59e0b 0%, #f97316 45%, #ef4444 100%);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.30);
+        box-shadow: 0 8px 24px rgba(234, 88, 12, 0.35);
+        overflow: hidden;
+        font-size: 0.9rem;
+    }
+    .resume-banner::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(220px 90px at 90% -30%, rgba(255, 255, 255, 0.38), transparent 70%),
+            radial-gradient(200px 90px at 6% 130%, rgba(255, 255, 255, 0.24), transparent 70%);
+        pointer-events: none;
+    }
+    .resume-banner > * { position: relative; }
+    .resume-banner__icon {
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.22);
+        border: 1.5px solid rgba(255, 255, 255, 0.55);
+        animation: resumeIconPulse 2s ease-in-out infinite;
+    }
+    .resume-banner__icon svg { display: block; }
+    .resume-banner__text {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 3px;
+        min-width: 0;
+    }
+    .resume-banner__title {
+        font-size: 1.02rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        text-shadow: 0 1px 3px rgba(120, 53, 15, 0.28);
+    }
+    .resume-banner__sub {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.96);
+    }
+    .resume-banner__timer {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: 1px dashed rgba(255, 255, 255, 0.85);
+        background: rgba(255, 255, 255, 0.20);
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 800;
+        white-space: nowrap;
+        text-shadow: none;
+        animation: resumeTimerBlink 1.6s ease-in-out infinite;
+    }
+    .resume-banner__cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #fff;
+        color: #c2410c;
+        text-decoration: none;
+        text-shadow: none;
+        border-radius: 999px;
+        padding: 11px 24px;
+        font-size: 0.9rem;
+        font-weight: 800;
+        white-space: nowrap;
+        box-shadow: 0 5px 16px rgba(120, 53, 15, 0.38);
+        transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+    }
+    .resume-banner__cta:hover {
+        background: #fff7ed;
+        color: #c2410c;
+        transform: translateY(-2px);
+        box-shadow: 0 9px 22px rgba(120, 53, 15, 0.45);
+    }
+    .resume-banner__cta .oi { font-size: 0.8rem; }
+    .resume-banner__close {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.18);
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        color: #fff;
+        font-size: 1.25rem;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0;
+        transition: background 0.15s;
+    }
+    .resume-banner__close:hover { background: rgba(255, 255, 255, 0.38); }
+
+    @@keyframes resumeIconPulse {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.55); }
+        50% { transform: scale(1.08); box-shadow: 0 0 0 9px rgba(255, 255, 255, 0); }
+    }
+    @@keyframes resumeTimerBlink {
+        0%, 100% { background: rgba(255, 255, 255, 0.16); }
+        50% { background: rgba(255, 255, 255, 0.40); }
+    }
+
+    @@media (max-width: 767.98px) {
+        .resume-banner {
+            justify-content: flex-start;
+            padding: 12px 14px;
+            gap: 10px;
+        }
+        .resume-banner__icon { order: 0; width: 36px; height: 36px; }
+        .resume-banner__text { order: 1; flex: 1 1 auto; align-items: flex-start; text-align: start; }
+        .resume-banner__close { order: 2; width: 30px; height: 30px; }
+        .resume-banner__timer { order: 3; padding: 5px 12px; font-size: 0.75rem; }
+        .resume-banner__cta {
+            order: 4;
+            flex: 1 1 auto;
+            justify-content: center;
+            padding: 12px 16px;
+            font-size: 0.95rem;
+        }
+        .resume-banner__title { font-size: 0.95rem; }
+        .resume-banner__sub { font-size: 0.78rem; }
+    }
+
     .rl-commitment-drawer-btn {
         display: flex; align-items: center; gap: 12px;
         padding: 14px 16px; border-radius: 16px;
@@ -1573,6 +1852,53 @@
     .rl-commitment-drawer-arrow {
         margin-right: auto; font-size: 0.8rem; opacity: 0.6;
     }
+
+    .pwa-banner {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 8px auto 0;
+        max-width: 720px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1.5px dashed #93c5fd;
+        background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%);
+        color: #1e293b;
+    }
+    .pwa-banner__icon {
+        flex: 0 0 auto;
+        width: 38px; height: 38px;
+        display: grid; place-items: center;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+        color: #fff;
+    }
+    .pwa-banner__text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+    .pwa-banner__title { font-size: 0.85rem; font-weight: 800; color: #0f172a; }
+    .pwa-banner__sub { font-size: 0.72rem; color: #475569; line-height: 1.6; }
+    .pwa-banner__cta {
+        flex: 0 0 auto;
+        display: inline-flex; align-items: center; gap: 6px;
+        border: 0; border-radius: 999px;
+        padding: 8px 16px;
+        font-weight: 800; font-size: 0.78rem;
+        color: #fff;
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        box-shadow: 0 6px 16px -4px rgba(37, 99, 235, 0.5);
+        cursor: pointer;
+    }
+    .pwa-banner__cta:active { transform: scale(0.97); }
+    .pwa-banner__close {
+        flex: 0 0 auto;
+        border: 0; background: transparent;
+        color: #64748b; font-size: 1.1rem; line-height: 1;
+        padding: 4px 6px; cursor: pointer;
+    }
+    @@media (max-width: 480px) {
+        .pwa-banner__sub { display: none; }
+        .pwa-banner { margin: 6px auto 0; }
+    }
 </style>
 
 @code {
@@ -1586,6 +1912,38 @@
     private bool _hideBottomNav => Nav.Uri.Contains("/products/");
     private bool _isOnline = true;
     private bool _dismissedOfflineBanner;
+    private string? _resumeDismissedKey;
+
+    private bool _pwaInstallable;
+    private bool _pwaStandalone;
+    private bool _pwaIos;
+    private bool _pwaMobile;
+    private bool _pwaBannerDismissed;
+    private const long PwaPublicReminderWindowMs = 7L * 24 * 60 * 60 * 1000; // 7 روز
+
+    private bool ShowInstallBanner =>
+        _pwaMobile && !_pwaStandalone && !_pwaBannerDismissed && (_pwaInstallable || _pwaIos)
+        && !IsCheckoutFlowRoute();
+
+    private UnfinishedOrderDto? ResumeOrder => Recovery.Resume.Order;
+    private int ResumeCartCount => Recovery.Resume.Order != null ? 0 : CartService.GetTotalCount();
+
+    private bool ShowResume(string key) => !IsCheckoutFlowRoute() && _resumeDismissedKey != key;
+
+    private void DismissResume(string key) => _resumeDismissedKey = key;
+    private string ResumeOrderKey(UnfinishedOrderDto o) => $"o:{o.Id}:{o.Status}";
+    private string ResumeCartKey(int count) => $"c:{count}";
+
+    private bool IsCheckoutFlowRoute()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).ToLowerInvariant();
+        return path.StartsWith("checkout")
+            || path.StartsWith("cart")
+            || path.StartsWith("payment/")
+            || path.StartsWith("auth/")
+            || path.StartsWith("profile")
+            || path.StartsWith("admin/");
+    }
     private DotNetObjectReference<MainLayout>? _onlineRef;
 
     private async Task ToggleUserMenu()
@@ -1618,6 +1976,68 @@
 
     private void CloseNotifPanel() => showNotifPanel = false;
 
+    private async Task InitPwaInstallAsync()
+    {
+        try
+        {
+            _pwaStandalone = await JS.InvokeAsync<bool>("pwaIsStandalone")
+                || await JS.InvokeAsync<bool>("pwaPublicIsInstalled");
+            _pwaIos = await JS.InvokeAsync<bool>("pwaIsIos");
+            _pwaMobile = await JS.InvokeAsync<bool>("pwaIsMobile");
+            _pwaInstallable = await JS.InvokeAsync<bool>("getPwaInstallStatus");
+
+            var dismissedAtRaw = await JS.InvokeAsync<string>("pwaPublicGetDismissedAt");
+            if (!string.IsNullOrEmpty(dismissedAtRaw) && long.TryParse(dismissedAtRaw, out var ts))
+            {
+                var elapsed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - ts;
+                _pwaBannerDismissed = elapsed >= 0 && elapsed < PwaPublicReminderWindowMs;
+            }
+
+            if (_dotNetRef != null)
+                await JS.InvokeVoidAsync("initPublicInstallHandler", _dotNetRef);
+
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    [JSInvokable]
+    public async Task NotifyPublicInstallAvailable()
+    {
+        try { _pwaInstallable = await JS.InvokeAsync<bool>("getPwaInstallStatus"); } catch { }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task NotifyPublicInstalled()
+    {
+        _pwaStandalone = true;
+        _pwaBannerDismissed = true;
+        try { await JS.InvokeVoidAsync("pwaPublicMarkInstalled"); } catch { }
+        StateHasChanged();
+    }
+
+    private async Task InstallPublicApp()
+    {
+        try
+        {
+            if (await JS.InvokeAsync<bool>("installPWA"))
+            {
+                _pwaStandalone = true;
+                await JS.InvokeVoidAsync("pwaPublicMarkInstalled");
+            }
+        }
+        catch { }
+        StateHasChanged();
+    }
+
+    private async Task DismissPublicInstall()
+    {
+        _pwaBannerDismissed = true;
+        try { await JS.InvokeVoidAsync("pwaPublicSetDismissedAt", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()); } catch { }
+        StateHasChanged();
+    }
+
     private async Task MarkAllReads() => await Notif.MarkAllReadAsync();
 
     private async Task OpenNotif(NotificationDto item)
@@ -1643,16 +2063,24 @@
         showUserMenu = false;
         StateHasChanged();
     }
+    private const string RecentSearchesStorageKey = "errorservice_recent_searches";
     private string searchQuery = "";
     private SearchResponseDto? suggestions;
     private bool showSuggestions = false;
+    private List<string> recentSearches = new();
+    private readonly List<string> popularSearches = new()
+    {
+        "کد خطای یخچال", "قطعات یخچال", "تعمیر ماشین لباسشویی",
+        "کد خطای لباسشویی", "سنسور لوازم خانگی", "آموزش تعمیرات"
+    };
     private bool isSearching = false;
     private CancellationTokenSource? suggestCts;
 
-    private void HandleSearchKeyUp(KeyboardEventArgs e)
+    private async Task HandleSearchKeyUp(KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(searchQuery))
         {
+            await SaveRecentSearchAsync(searchQuery);
             Nav.NavigateTo($"/search?q={Uri.EscapeDataString(searchQuery)}");
             searchQuery = "";
             HideSuggestions();
@@ -1668,9 +2096,50 @@
     private void ShowSuggestions()
     {
         showSuggestions = true;
+        _ = InvokeAsync(LoadRecentSearchesAsync);
         var q = (searchQuery ?? string.Empty).Trim();
         if (q.Length >= 2 && suggestions == null && !isSearching)
             _ = InvokeAsync(() => HandleSearchInput(new ChangeEventArgs { Value = searchQuery }));
+    }
+
+    private async Task LoadRecentSearchesAsync()
+    {
+        try
+        {
+            var json = await SearchStorage.GetAsync(RecentSearchesStorageKey);
+            recentSearches = string.IsNullOrWhiteSpace(json) ? new() : JsonSerializer.Deserialize<List<string>>(json) ?? new();
+            recentSearches = recentSearches.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToList();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch { recentSearches = new(); }
+    }
+
+    private async Task SaveRecentSearchAsync(string value)
+    {
+        var q = value.Trim();
+        if (q.Length < 2) return;
+        try
+        {
+            var updated = new[] { q }.Concat(recentSearches).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToList();
+            recentSearches = updated;
+            await SearchStorage.SetAsync(RecentSearchesStorageKey, JsonSerializer.Serialize(updated));
+        }
+        catch { }
+    }
+
+    private async Task SearchFromChip(string value)
+    {
+        searchQuery = value;
+        await SaveRecentSearchAsync(value);
+        HideSuggestions();
+        Nav.NavigateTo($"/search?q={Uri.EscapeDataString(value)}");
+    }
+
+    private async Task ClearRecentSearches()
+    {
+        recentSearches.Clear();
+        try { await SearchStorage.RemoveAsync(RecentSearchesStorageKey); } catch { }
+        await InvokeAsync(StateHasChanged);
     }
 
     private void HideSuggestions()
@@ -1738,6 +2207,7 @@
     {
         if (string.IsNullOrWhiteSpace(searchQuery)) return;
         var q = searchQuery;
+        _ = SaveRecentSearchAsync(q);
         HideSuggestions();
         Nav.NavigateTo($"/search?q={Uri.EscapeDataString(q)}");
         searchQuery = "";
@@ -1750,8 +2220,10 @@
         await CartService.InitializeAsync();
         CartService.OnChange += StateHasChanged;
         Notif.OnChange += StateHasChanged;
+        Recovery.OnChange += StateHasChanged;
         Nav.LocationChanged += HandleLocationChanged;
         _ = Notif.RefreshAsync();
+        _ = Recovery.RefreshAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1785,6 +2257,7 @@
             await SetupHeaderScrollBehavior();
             try { await JS.InvokeVoidAsync("initScrollReveal"); } catch { }
             try { await InitOnlineDetection(); } catch { }
+            try { await InitPwaInstallAsync(); } catch { }
             _notifTimer = new System.Threading.Timer(async _ =>
             {
                 try { await InvokeAsync(Notif.RefreshAsync); } catch { }
@@ -1931,6 +2404,8 @@
         isNavigating = true;
         StateHasChanged();
         _ = InvokeAsync(Notif.RefreshAsync);
+        if (Recovery.Resume.HasAny)
+            _ = InvokeAsync(Recovery.RefreshAsync);
         
         Task.Run(async () => {
             await Task.Delay(800);
@@ -1947,6 +2422,7 @@
         Theme.OnChange -= StateHasChanged;
         CartService.OnChange -= StateHasChanged;
         Notif.OnChange -= StateHasChanged;
+        Recovery.OnChange -= StateHasChanged;
         Nav.LocationChanged -= HandleLocationChanged;
         _notifTimer?.Dispose();
         _dotNetRef?.Dispose();

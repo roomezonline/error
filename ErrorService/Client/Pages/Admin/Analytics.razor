@@ -231,7 +231,11 @@
                                             <a class="an-path" href="@item.LastPath" target="_blank" rel="noopener" title="@item.LastPath">@item.LastPath</a>
                                         }
                                     </td>
-                                    <td class="an-nowrap"><span class="an-views">@Fa(item.PageViews) صفحه</span></td>
+                                    <td class="an-nowrap">
+                                        <button type="button" class="an-views--btn" @onclick="() => OpenPages(item)" title="مشاهده فهرست صفحه‌های این بازدید">
+                                            <span class="oi oi-list"></span> @Fa(item.PageViews) صفحه
+                                        </button>
+                                    </td>
                                     <td class="an-nowrap an-muted-td">@FormatDuration(item.DurationMinutes)</td>
                                     <td class="an-nowrap an-muted-td">@FormatReferrer(item.Referrer)</td>
                                     <td class="an-nowrap">@FormatBrowser(item.UserAgent)</td>
@@ -247,6 +251,55 @@
                     <button class="an-page-btn" disabled="@(_page >= _totalPages)" @onclick="() => GoToPage(_page + 1)">بعدی</button>
                 </div>
             }
+        </div>
+    }
+
+    @if (_pagesOpen)
+    {
+        <div class="an-modal" @onclick="ClosePages">
+            <div class="an-modal__card" @onclick:stopPropagation="true">
+                <div class="an-modal__head">
+                    <div class="an-modal__title">
+                        <span class="oi oi-list"></span>
+                        صفحه‌های این بازدید
+                        <span class="an-modal__sub">@_pagesSubtitle</span>
+                    </div>
+                    <button type="button" class="an-modal__close" @onclick="ClosePages" title="بستن"><span class="oi oi-x"></span></button>
+                </div>
+
+                @if (_pagesLoading)
+                {
+                    <div class="an-loading an-loading--sm"><div class="spinner-border spinner-border-sm text-primary"></div><span>در حال بارگذاری...</span></div>
+                }
+                else if (_pages == null || _pages.Count == 0)
+                {
+                    <div class="an-empty">
+                        <span class="oi oi-inbox"></span>
+                        <p>جزئیات صفحه‌های این بازدید در دسترس نیست (لاگ خام فقط ۹۰ روز نگه داشته می‌شود).</p>
+                    </div>
+                }
+                else
+                {
+                    var pv = 0;
+                    <ol class="an-pages">
+                        @foreach (var pg in _pages)
+                        {
+                            pv++;
+                            <li>
+                                <a class="an-pages__item" href="@pg.Path" target="_blank" rel="noopener" title="باز کردن @pg.Path در تب جدید">
+                                    <span class="an-pages__no">@Fa(pv)</span>
+                                    <span class="an-pages__text">
+                                        <span class="an-pages__name">@(string.IsNullOrWhiteSpace(pg.Title) ? pg.Path : pg.Title)</span>
+                                        <span class="an-pages__caption">@pg.Path</span>
+                                    </span>
+                                    <span class="an-pages__time">@Fa(pg.VisitedAtLocal.ToString("HH:mm"))</span>
+                                    <span class="oi oi-arrow-right an-pages__go"></span>
+                                </a>
+                            </li>
+                        }
+                    </ol>
+                }
+            </div>
         </div>
     }
 </div>
@@ -428,6 +481,54 @@
     }
     .an-path--name { direction: rtl; text-align: right; max-width: 210px; color: #0f172a; }
     .an-path:hover { text-decoration: underline; }
+    .an-views--btn {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe;
+        padding: 4px 10px; border-radius: 7px; font-size: 11px; font-weight: 800;
+        white-space: nowrap; cursor: pointer; transition: .15s;
+    }
+    .an-views--btn:hover { background: #e0e7ff; border-color: #a5b4fc; transform: translateY(-1px); }
+
+    /* مودال صفحه‌های یک بازدید */
+    .an-modal {
+        position: fixed; inset: 0; z-index: 1080; background: rgba(15, 23, 42, .55);
+        display: flex; align-items: center; justify-content: center; padding: 18px;
+    }
+    .an-modal__card {
+        background: #fff; width: 100%; max-width: 560px; max-height: 84vh;
+        border-radius: 16px; box-shadow: 0 24px 60px rgba(15, 23, 42, .3);
+        display: flex; flex-direction: column; overflow: hidden;
+        animation: anModalIn .18s ease-out;
+    }
+    @@keyframes anModalIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+    .an-modal__head {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 14px 16px; border-bottom: 1px solid #eef1f7; background: #f8fafc;
+    }
+    .an-modal__title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 900; color: #0f172a; flex-wrap: wrap; }
+    .an-modal__title .oi { color: #6366f1; }
+    .an-modal__sub { font-size: 11.5px; font-weight: 600; color: #64748b; }
+    .an-modal__close {
+        border: 0; background: #f1f5f9; color: #475569; width: 32px; height: 32px;
+        border-radius: 9px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+        transition: .15s; flex: 0 0 auto;
+    }
+    .an-modal__close:hover { background: #fee2e2; color: #dc2626; }
+    .an-pages { list-style: none; margin: 0; padding: 10px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    .an-pages__item {
+        display: grid; grid-template-columns: 28px minmax(0, 1fr) auto 16px;
+        align-items: center; gap: 10px; padding: 9px 11px;
+        background: #f8fafc; border: 1px solid #eef1f7; border-radius: 11px;
+        text-decoration: none; transition: .15s;
+    }
+    .an-pages__item:hover { background: #eef2ff; border-color: #c7d2fe; }
+    .an-pages__no { font-size: 11.5px; font-weight: 900; color: #6366f1; }
+    .an-pages__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .an-pages__name { font-size: 12.5px; font-weight: 800; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .an-pages__caption { font-size: 11px; color: #64748b; direction: ltr; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .an-pages__item:hover .an-pages__name { color: #4338ca; text-decoration: underline; }
+    .an-pages__time { font-size: 11px; font-weight: 800; color: #64748b; white-space: nowrap; }
+    .an-pages__go { color: #94a3b8; font-size: 13px; }
     .an-guest {
         display: inline-flex; align-items: center; gap: 5px;
         background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
@@ -516,6 +617,12 @@
     private bool _filtersActive;
     private DateTime? _updatedAt;
     private string? _trendRenderKey;
+
+    // مودال صفحه‌های یک بازدید
+    private bool _pagesOpen;
+    private bool _pagesLoading;
+    private string _pagesSubtitle = "";
+    private List<VisitPageDto>? _pages;
 
     protected override async Task OnInitializedAsync()
     {
@@ -683,6 +790,36 @@
         if (page < 1 || page > _totalPages) return;
         _page = page;
         await LoadListAsync();
+    }
+
+    private async Task OpenPages(VisitListItemDto item)
+    {
+        _pagesOpen = true;
+        _pagesLoading = true;
+        _pages = null;
+        var who = string.IsNullOrWhiteSpace(item.UserName) ? "مهمان" : item.UserName;
+        _pagesSubtitle = $"{who} · {PersianDate.ToJalaliDateTime(item.VisitedAtLocal)} · {Fa(item.PageViews)} صفحه";
+        StateHasChanged();
+
+        try
+        {
+            var res = await Http.GetFromJsonAsync<VisitPagesResponse>($"api/visits/{item.Id}/pages");
+            _pages = res?.Items ?? new();
+        }
+        catch
+        {
+            _pages = new();
+        }
+        finally
+        {
+            _pagesLoading = false;
+        }
+    }
+
+    private void ClosePages()
+    {
+        _pagesOpen = false;
+        _pages = null;
     }
 
     private static string ShortJalali(string isoDate)

@@ -73,6 +73,28 @@ public class VisitListResponse
     public List<VisitListItemDto> Items { get; set; } = new();
 }
 
+/// <summary>یک صفحه‌بازدید در یک بازدید (جلسه) مشخص.</summary>
+public class VisitPageDto
+{
+    /// <summary>مسیر صفحه (بدون query/hash).</summary>
+    public string Path { get; set; } = "";
+
+    /// <summary>نام فارسی نمایشی صفحه (مثلاً «صفحه اصلی» یا نام محصول) — اگر قابل شناسایی نباشد مسیر نمایش داده می‌شود.</summary>
+    public string Title { get; set; } = "";
+
+    /// <summary>زمان دیدن صفحه (وقت تهران).</summary>
+    public DateTime VisitedAtLocal { get; set; }
+}
+
+/// <summary>فهرست صفحه‌های دیده‌شده در یک بازدید (جلسه) — به ترتیب زمان.</summary>
+public class VisitPagesResponse
+{
+    /// <summary>شناسه جلسه بازدید.</summary>
+    public long Id { get; set; }
+
+    public List<VisitPageDto> Items { get; set; } = new();
+}
+
 public class VisitTrendPointDto
 {
     public string Date { get; set; } = "";

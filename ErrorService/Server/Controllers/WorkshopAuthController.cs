@@ -28,7 +28,7 @@ public sealed class WorkshopAuthController : ControllerBase
     {
         var phone = request.PhoneNumber.Trim();
         var user = await _db.WorkshopUsers
-            .FirstOrDefaultAsync(x => x.PhoneNumber == phone);
+            .FirstOrDefaultAsync(x => x.PhoneNumber == phone && !x.IsDeleted && !x.Workshop.IsDeleted);
 
         if (user == null)
             return BadRequest("موبایل یا رمز عبور اشتباه است");
@@ -48,7 +48,7 @@ public sealed class WorkshopAuthController : ControllerBase
 
     [Authorize]
     [HttpGet("users")]
-    public async Task<ActionResult<List<WorkshopUserDto>>> GetUsers([FromQuery] int? workshopId = null)
+    public async Task<ActionResult<List<WorkshopUserDto>>> GetUsers([FromQuery] int? workshopId = null, [FromQuery] bool includeDeleted = false)
     {
         var isSuperAdmin = User.IsInRole("super_admin");
         int? targetWorkshopId = null;
@@ -64,7 +64,11 @@ public sealed class WorkshopAuthController : ControllerBase
         }
 
         var query = _db.WorkshopUsers.AsNoTracking();
-        
+
+        // پرسنل حذف‌نرم‌شده به‌صورت پیش‌فرض پنهان‌اند؛ فقط سوپرادمین می‌تواند آن‌ها را ببیند.
+        if (!(isSuperAdmin && includeDeleted))
+            query = query.Where(x => !x.IsDeleted);
+
         if (targetWorkshopId.HasValue)
         {
             query = query.Where(x => x.WorkshopId == targetWorkshopId.Value);
@@ -90,6 +94,7 @@ public sealed class WorkshopAuthController : ControllerBase
             PhoneNumber = u.PhoneNumber,
             IsActive = u.IsActive,
             IsTechnician = u.IsTechnician,
+            IsDeleted = u.IsDeleted,
             RoleKeys = roles.Where(r => r.WorkshopUserId == u.Id).Select(r => r.Role.Key).Distinct().OrderBy(x => x).ToList()
         }).ToList();
 
@@ -116,27 +121,42 @@ public sealed class WorkshopAuthController : ControllerBase
             return BadRequest("رمز عبور الزامی است");
 
         var phone = request.PhoneNumber.Trim();
-        var exists = await _db.WorkshopUsers.AnyAsync(x => x.WorkshopId == workshopId && x.PhoneNumber == phone);
-        if (exists)
+
+        var workshop = await _db.Workshops.FirstOrDefaultAsync(w => w.Id == workshopId);
+        if (workshop == null || workshop.IsDeleted)
+            return BadRequest("کارگاه معتبر نیست");
+
+        // اگر همین شماره قبلاً در این کارگاه ثبت شده باشد: اگر فعال است خطا، اگر حذف‌نرم‌شده است همان رکورد بازیابی می‌شود
+        // (به این ترتیب با ایندکس یکتای (کارگاه، موبایل) تعارضی پیش نمی‌آید و سابقه حفظ می‌گردد).
+        var existing = await _db.WorkshopUsers
+            .FirstOrDefaultAsync(x => x.WorkshopId == workshopId && x.PhoneNumber == phone);
+
+        if (existing != null && !existing.IsDeleted)
             return BadRequest("این شماره موبایل قبلاً برای این کارگاه ثبت شده است");
 
-        var user = new WorkshopUser
+        if (existing == null)
         {
-            WorkshopId = workshopId,
-            FullName = request.FullName.Trim(),
-            PhoneNumber = phone,
-            IsActive = request.IsActive,
-            IsTechnician = request.IsTechnician,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow
-        };
-        user.PasswordHash = _hasher.HashPassword(user, request.Password);
+            existing = new WorkshopUser
+            {
+                WorkshopId = workshopId,
+                PhoneNumber = phone,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            _db.WorkshopUsers.Add(existing);
+        }
 
-        _db.WorkshopUsers.Add(user);
+        existing.FullName = request.FullName.Trim();
+        existing.IsActive = request.IsActive;
+        existing.IsTechnician = request.IsTechnician;
+        existing.IsDeleted = false;
+        existing.DeletedAt = null;
+        existing.UpdatedAt = DateTimeOffset.UtcNow;
+        existing.PasswordHash = _hasher.HashPassword(existing, request.Password);
+
         await _db.SaveChangesAsync();
 
-        await SetWorkshopUserRoles(user.Id, request.RoleKeys);
-        return Ok(await BuildUserDto(user.Id));
+        await SetWorkshopUserRoles(existing.Id, request.RoleKeys);
+        return Ok(await BuildUserDto(existing.Id));
     }
 
     [Authorize(Policy = "perm:workshop.users.manage")]
@@ -152,7 +172,7 @@ public sealed class WorkshopAuthController : ControllerBase
             userQuery = userQuery.Where(x => x.WorkshopId == workshopId);
         }
 
-        var user = await userQuery.FirstOrDefaultAsync(x => x.Id == id);
+        var user = await userQuery.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
         if (user == null) return NotFound();
 
         user.FullName = request.FullName.Trim();
@@ -196,7 +216,7 @@ public sealed class WorkshopAuthController : ControllerBase
             userQuery = userQuery.Where(x => x.WorkshopId == workshopId);
         }
 
-        var userExists = await userQuery.AsNoTracking().AnyAsync(x => x.Id == id);
+        var userExists = await userQuery.AsNoTracking().AnyAsync(x => x.Id == id && !x.IsDeleted);
         if (!userExists) return NotFound();
 
         var hasRefs = await HasAnyTransactionalRefsAsync(id);
@@ -220,7 +240,7 @@ public sealed class WorkshopAuthController : ControllerBase
             userQuery = userQuery.Where(x => x.WorkshopId == workshopId);
         }
 
-        var user = await userQuery.FirstOrDefaultAsync(x => x.Id == id);
+        var user = await userQuery.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
         if (user == null) return NotFound();
 
         user.IsActive = false;
@@ -253,7 +273,7 @@ public sealed class WorkshopAuthController : ControllerBase
             userQuery = userQuery.Where(x => x.WorkshopId == workshopId);
         }
 
-        var user = await userQuery.FirstOrDefaultAsync(x => x.Id == id);
+        var user = await userQuery.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
         if (user == null) return NotFound();
 
         user.PasswordHash = _hasher.HashPassword(user, request.NewPassword);
@@ -276,7 +296,7 @@ public sealed class WorkshopAuthController : ControllerBase
             userQuery = userQuery.Where(x => x.WorkshopId == workshopId);
         }
 
-        var user = await userQuery.FirstOrDefaultAsync(x => x.Id == id);
+        var user = await userQuery.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
         if (user == null) return NotFound();
 
         user.IsActive = !user.IsActive;
@@ -299,20 +319,48 @@ public sealed class WorkshopAuthController : ControllerBase
             userQuery = userQuery.Where(x => x.WorkshopId == workshopId);
         }
 
+        var user = await userQuery.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
+        if (user == null) return NotFound();
+
+        // حذف نرم: پرسنل از همه لیست‌ها و ورود پنهان می‌شود اما رکورد و سابقه رسید/فاکتورش حفظ می‌گردد
+        // تا در صورت اشتباه قابل بازگردانی باشد و ارجاع‌ها یتیم نشوند. (force برای سازگاری نگه داشته شده و نادیده گرفته می‌شود.)
+        user.IsDeleted = true;
+        user.DeletedAt = DateTimeOffset.UtcNow;
+        user.IsActive = false;
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [Authorize(Policy = "perm:workshop.users.manage")]
+    [HttpPost("users/{id:int}/restore")]
+    public async Task<IActionResult> RestoreUser(int id)
+    {
+        var isSuperAdmin = User.IsInRole("super_admin");
+        var userQuery = _db.WorkshopUsers.AsQueryable();
+
+        if (!isSuperAdmin)
+        {
+            var workshopId = ClaimsHelper.GetWorkshopId(User);
+            userQuery = userQuery.Where(x => x.WorkshopId == workshopId);
+        }
+
         var user = await userQuery.FirstOrDefaultAsync(x => x.Id == id);
         if (user == null) return NotFound();
 
-        var hasRefs = await HasAnyTransactionalRefsAsync(id);
-        if (hasRefs && !force)
-        {
-            return Conflict("این پرسنل دارای سابقه رسید/فاکتور است و امکان حذف کامل ندارد. ابتدا آن را غیرفعال کنید.");
-        }
+        // اگر خود کارگاه حذف شده باشد، ابتدا باید کارگاه بازگردانده شود.
+        var workshopDeleted = await _db.Workshops.AsNoTracking()
+            .Where(w => w.Id == user.WorkshopId)
+            .Select(w => w.IsDeleted)
+            .FirstOrDefaultAsync();
+        if (workshopDeleted)
+            return BadRequest("کارگاه این پرسنل حذف شده است؛ ابتدا کارگاه را بازگردانید.");
 
-        // Remove roles first due to FK constraints
-        var roles = await _db.WorkshopUserRoles.Where(x => x.WorkshopUserId == id).ToListAsync();
-        _db.WorkshopUserRoles.RemoveRange(roles);
-
-        _db.WorkshopUsers.Remove(user);
+        user.IsDeleted = false;
+        user.DeletedAt = null;
+        user.IsActive = true;
+        user.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
 
         return NoContent();
@@ -372,6 +420,7 @@ public sealed class WorkshopAuthController : ControllerBase
             PhoneNumber = user.PhoneNumber,
             IsActive = user.IsActive,
             IsTechnician = user.IsTechnician,
+            IsDeleted = user.IsDeleted,
             RoleKeys = roles
         };
     }

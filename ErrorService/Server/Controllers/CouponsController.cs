@@ -4,6 +4,7 @@ using ErrorService.Server.Services;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
@@ -20,6 +21,7 @@ public class CouponsController : ControllerBase
     }
 
     [HttpPost("apply")]
+    [EnableRateLimiting("commerce")]
     public async Task<ActionResult<CouponApplyResult>> Apply([FromBody] CouponApplyRequest request)
     {
         var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code == request.Code);
@@ -121,12 +123,21 @@ public class CouponsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<CouponDto>> Create([FromBody] CouponDto dto)
     {
-        if (await _db.Coupons.AnyAsync(c => c.Code == dto.Code))
+        var code = dto.Code?.Trim();
+        if (string.IsNullOrWhiteSpace(code))
+            return BadRequest("کد تخفیف نمی‌تواند خالی باشد.");
+
+        // SERIALIZABLE: قفل محدوده روی کد، تا دو درخواست همزمان نتوانند کد تکراری
+        // ثبت کنند. (ایندکس Code عمداً unique نیست چون ممکن است ردیف تکراری قدیمی
+        // در داده وجود داشته باشد؛ یکتایی را همین‌جا تضمین می‌کنیم.)
+        await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+
+        if (await _db.Coupons.AnyAsync(c => c.Code == code))
             return BadRequest("کد تخفیف با این نام قبلاً ثبت شده است.");
 
         var coupon = new Coupon
         {
-            Code = dto.Code,
+            Code = code,
             Description = dto.Description,
             DiscountPercent = dto.DiscountPercent,
             DiscountAmount = dto.DiscountAmount,
@@ -139,6 +150,7 @@ public class CouponsController : ControllerBase
 
         _db.Coupons.Add(coupon);
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
         return CreatedAtAction(nameof(GetById), new { id = coupon.Id }, MapDto(coupon));
     }
 
@@ -146,13 +158,19 @@ public class CouponsController : ControllerBase
     [HttpPut("{id:int}")]
     public async Task<IActionResult> Update(int id, [FromBody] CouponDto dto)
     {
+        var code = dto.Code?.Trim();
+        if (string.IsNullOrWhiteSpace(code))
+            return BadRequest("کد تخفیف نمی‌تواند خالی باشد.");
+
         var coupon = await _db.Coupons.FindAsync(id);
         if (coupon == null) return NotFound();
 
-        if (await _db.Coupons.AnyAsync(c => c.Code == dto.Code && c.Id != id))
+        await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+
+        if (await _db.Coupons.AnyAsync(c => c.Code == code && c.Id != id))
             return BadRequest("کد تخفیف با این نام قبلاً ثبت شده است.");
 
-        coupon.Code = dto.Code;
+        coupon.Code = code;
         coupon.Description = dto.Description;
         coupon.DiscountPercent = dto.DiscountPercent;
         coupon.DiscountAmount = dto.DiscountAmount;
@@ -163,6 +181,7 @@ public class CouponsController : ControllerBase
         coupon.AssignedToUserId = dto.AssignedToUserId;
 
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
         return NoContent();
     }
 

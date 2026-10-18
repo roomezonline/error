@@ -1,6 +1,7 @@
 (function () {
-    if (window.mdChartOverlay) return;
-
+    // No "already defined" guard here on purpose: the lazy-loader pre-installs a
+    // window.mdChartOverlay stub, and a guard would see it and skip the real
+    // definition forever. This file is loaded exactly once (promise-cached).
     var netRef = null;
     var bound = false;
 

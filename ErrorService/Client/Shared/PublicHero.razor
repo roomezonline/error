@@ -33,15 +33,15 @@ else if (Slides.Count > 0)
                                 {
                                     <source media="(max-width: 899.98px)" srcset="@Slides[i].MobileImageUrl" />
                                 }
-                                <img class="hero__imgFg" src="@Slides[i].ImageUrl" alt="@Slides[i].Title" loading="@(i == activeIndex ? "eager" : "lazy")" decoding="async" />
+                                <img class="hero__imgFg" src="@Slides[i].ImageUrl" alt="@(string.IsNullOrWhiteSpace(Slides[i].Title) ? "ErrorService home service" : Slides[i].Title)" loading="@(i == activeIndex ? "eager" : "lazy")" fetchpriority="@(i == activeIndex ? "high" : "auto")" decoding="async" />
                             </picture>
                         </div>
 
                         <div class="hero__caption">
                             <div class="hero__contentCard">
                                 <div class="hero__typed">
-                                    <h1 class="hero__typedTitle" data-text="@Slides[i].Title"></h1>
-                                    <div class="hero__typedSubtitle" data-text="@(string.IsNullOrWhiteSpace(Slides[i].Subtitle) ? Slides[i].Tagline : Slides[i].Subtitle)"></div>
+                                    <h1 class="hero__typedTitle" data-text="@Slides[i].Title">@Slides[i].Title</h1>
+                                    <div class="hero__typedSubtitle" data-text="@(string.IsNullOrWhiteSpace(Slides[i].Subtitle) ? Slides[i].Tagline : Slides[i].Subtitle)">@(string.IsNullOrWhiteSpace(Slides[i].Subtitle) ? Slides[i].Tagline : Slides[i].Subtitle)</div>
                                 </div>
                             </div>
                         </div>

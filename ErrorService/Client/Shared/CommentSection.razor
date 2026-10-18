@@ -115,6 +115,19 @@
                 @if (_contentError) { <span class="cs-error">متن نظر الزامی است</span> }
             </div>
 
+            @if (AllowMedia)
+            {
+                <div class="cs-field">
+                    <label class="cs-label">تصویر (اختیاری)</label>
+                    <div class="cs-media">
+                        <ImageUploader @bind-ImageUrl="_form.MediaUrl"
+                                       UploadUrl="@($"{SubmitEndpoint}/upload")"
+                                       ShowCamera="false" />
+                    </div>
+                    <span class="cs-hint">تصویر مرتبط با نظر شما (JPG، PNG یا WEBP).</span>
+                </div>
+            }
+
             <div class="cs-form__actions">
                 <button class="cs-btn cs-btn--primary" @onclick="SubmitAsync" disabled="@_isSubmitting">
                     @if (_isSubmitting)
@@ -232,6 +245,17 @@
         .cs-replies { padding-right:.75rem; }
         .cs-form { padding:1.25rem; }
     }
+
+    .cs-media { max-width: 260px; }
+    .cs-comment__media { margin-top: .75rem; }
+    .cs-comment__media img, .cs-comment__media video {
+        max-width: 320px;
+        width: 100%;
+        border-radius: .75rem;
+        border: 1px solid rgba(148, 163, 184, .35);
+        display: block;
+        background: #0f172a0d;
+    }
 </style>
 
 @code {
@@ -246,6 +270,7 @@
     [Parameter] public int TotalCount { get; set; }
     [Parameter] public List<CommentDto> Comments { get; set; } = new();
     [Parameter] public bool IsDark { get; set; }
+    [Parameter] public bool AllowMedia { get; set; }
     [Parameter] public EventCallback<CommentRequest> SubmitComment { get; set; }
 
     private CommentRequest _form = new();

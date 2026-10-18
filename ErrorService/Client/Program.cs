@@ -25,7 +25,12 @@ builder.Services.AddScoped(sp =>
     var overrideHandler = sp.GetRequiredService<MethodOverrideHandler>();
     overrideHandler.InnerHandler = cacheHandler;
 
-    return new HttpClient(overrideHandler) { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) };
+    return new HttpClient(overrideHandler)
+    {
+        BaseAddress = new Uri(builder.HostEnvironment.BaseAddress),
+        // بدون timeout صریح، یک درخواست گیرکرده تا ۱۰۰ ثانیه رابط کاربری را قفل می‌کند.
+        Timeout = TimeSpan.FromSeconds(60)
+    };
 });
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<CartService>();
@@ -36,7 +41,8 @@ builder.Services.AddScoped<RecentlyViewedService>();
 builder.Services.AddScoped<LocalStorageService>();
 builder.Services.AddScoped<AdminWorkshopSelectionService>();
 builder.Services.AddScoped<CustomerSearchCacheService>();
-builder.Services.AddScoped<AuthService>();
+    builder.Services.AddScoped<AuthService>();
+    builder.Services.AddScoped<CheckoutRecoveryService>();
 builder.Services.AddScoped<ClientErrorLogger>();
 builder.Services.AddScoped<JwtAuthStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<JwtAuthStateProvider>());

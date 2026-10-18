@@ -16,22 +16,24 @@ public sealed class ChatHub : Hub
     private readonly ErrorServiceDbContext _db;
     private readonly MessengerRouter _router;
     private readonly ChatAiCoordinator _ai;
+    private readonly ChatAiResponder _aiResponder;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IHubContext<ChatHub> _hubContext;
     private readonly ILogger<ChatHub> _logger;
 
     private static readonly ConcurrentDictionary<string, int> OnlineAdmins = new();
     private static readonly ConcurrentDictionary<string, string> ConnectionVisitors = new();
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> TypingTimers = new();
-    private static readonly ConcurrentDictionary<int, byte> AiBlockedSessions = new();
-    private static readonly ConcurrentDictionary<int, SemaphoreSlim> AiLocks = new();
 
     public ChatHub(ErrorServiceDbContext db, MessengerRouter router, ChatAiCoordinator ai,
-        IServiceScopeFactory scopeFactory, ILogger<ChatHub> logger)
+        ChatAiResponder aiResponder, IServiceScopeFactory scopeFactory, IHubContext<ChatHub> hubContext, ILogger<ChatHub> logger)
     {
         _db = db;
         _router = router;
         _ai = ai;
+        _aiResponder = aiResponder;
         _scopeFactory = scopeFactory;
+        _hubContext = hubContext;
         _logger = logger;
     }
 
@@ -89,7 +91,7 @@ public sealed class ChatHub : Hub
         var visitorId = ConnectionVisitors.GetValueOrDefault(Context.ConnectionId) ?? Context.ConnectionId;
         if (session.VisitorId != visitorId && !OnlineAdmins.ContainsKey(Context.ConnectionId)) return;
 
-        AiBlockedSessions[sessionId] = 1;
+        _aiResponder.BlockSession(sessionId);
 
         var msg = new ChatMessage
         {
@@ -107,52 +109,22 @@ public sealed class ChatHub : Hub
         await Clients.Group("admins").SendAsync("OperatorRequested", sessionId);
     }
 
-    private async Task TryRunAiAsync(int sessionId, string userMessage, string userName)
+    private async Task RunAiInBackgroundAsync(int sessionId, string userMessage)
     {
         try
         {
-            if (AiBlockedSessions.ContainsKey(sessionId)) return;
-            if (OnlineAdmins.Count > 0) return;
+            if (string.IsNullOrWhiteSpace(userMessage))
+                return;
 
-            var settings = await _db.SiteSettings.FirstOrDefaultAsync();
-            if (settings?.ChatEnableAiAssistant != true) return;
-
-            if (userMessage.Length > 300) return;
-
-            var sem = AiLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
-            if (!await sem.WaitAsync(0)) return;
-            try
-            {
-                var reply = await _ai.GetReplyAsync(userMessage);
-                if (string.IsNullOrWhiteSpace(reply)) return;
-
-                AiBlockedSessions[sessionId] = 1;
-
-                var aiMsg = new ChatMessage
-                {
-                    SessionId = sessionId,
-                    SenderType = ChatSenderType.Operator,
-                    SenderId = "پاسخ خودکار",
-                    Content = reply,
-                    MessageType = ChatMessageType.Text,
-                    CreatedAt = DateTime.UtcNow
-                };
-                _db.ChatMessages.Add(aiMsg);
-                await _db.SaveChangesAsync();
-
-                await Clients.Group($"session_{sessionId}").SendAsync("NewMessage", MapMessageDto(aiMsg));
-            }
-            finally
-            {
-                sem.Release();
-            }
+            using var scope = _scopeFactory.CreateScope();
+            var responder = scope.ServiceProvider.GetRequiredService<ChatAiResponder>();
+            await responder.TryReplyAsync(sessionId, userMessage);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "ChatHub: AI reply failed for session {SessionId}", sessionId);
+            _logger.LogWarning(ex, "ChatHub: background AI reply failed for session {SessionId}", sessionId);
         }
     }
-
     private async Task SendPresenceAsync()
     {
         await Clients.Group("presence").SendAsync("PresenceChanged", OnlineAdmins.Count);
@@ -184,12 +156,22 @@ public sealed class ChatHub : Hub
             };
         }
 
+        var httpUser = Context.GetHttpContext()?.User;
+        int? userId = null;
+        if (httpUser?.Identity?.IsAuthenticated == true)
+        {
+            var uidRaw = httpUser.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                         ?? httpUser.FindFirst("sub")?.Value;
+            if (uidRaw != null && int.TryParse(uidRaw, out var uid)) userId = uid;
+        }
+
         var session = new ChatSession
         {
             VisitorId = visitorId,
             UserName = userName,
             UserEmail = userEmail,
             UserPhone = string.IsNullOrWhiteSpace(userPhone) ? null : userPhone.Trim(),
+            UserId = userId,
             Status = ChatSessionStatus.Active,
             CreatedAt = DateTime.UtcNow
         };
@@ -380,7 +362,7 @@ public sealed class ChatHub : Hub
             // Keep admin panel in sync in real-time even when the session is not open
             await Clients.Group("admins").SendAsync("NewMessage", dto);
 
-            await TryRunAiAsync(sessionId, content ?? "", userName);
+            _ = RunAiInBackgroundAsync(sessionId, content ?? "");
         }
         else
         {

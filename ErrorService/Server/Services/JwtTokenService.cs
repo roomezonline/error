@@ -176,6 +176,7 @@ public class JwtTokenService
             new(ClaimTypes.MobilePhone, user.PhoneNumber),
             new("workshop_user_id", wsUser.Id.ToString()),
             new("workshop_id", wsUser.WorkshopId.ToString()),
+            new("workshop_name", wsUser.FullName),
             new("max_rank", maxRank.ToString())
         };
 

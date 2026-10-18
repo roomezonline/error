@@ -432,7 +432,7 @@ public sealed class CustomerReceiptsController : ControllerBase
 
         if (technicianId.HasValue)
         {
-            var techOk = await _db.WorkshopUsers.AsNoTracking().AnyAsync(x => x.Id == technicianId.Value && x.WorkshopId == targetWorkshopId && x.IsTechnician);
+            var techOk = await _db.WorkshopUsers.AsNoTracking().AnyAsync(x => x.Id == technicianId.Value && x.WorkshopId == targetWorkshopId && x.IsTechnician && !x.IsDeleted);
             if (!techOk) return BadRequest("تکنسین معتبر نیست");
         }
 
@@ -686,7 +686,7 @@ public sealed class CustomerReceiptsController : ControllerBase
 
         if (technicianId.HasValue)
         {
-            var techOk = await _db.WorkshopUsers.AsNoTracking().AnyAsync(x => x.Id == technicianId.Value && x.WorkshopId == targetWorkshopId && x.IsTechnician);
+            var techOk = await _db.WorkshopUsers.AsNoTracking().AnyAsync(x => x.Id == technicianId.Value && x.WorkshopId == targetWorkshopId && x.IsTechnician && !x.IsDeleted);
             if (!techOk) return BadRequest("تکنسین معتبر نیست");
         }
 

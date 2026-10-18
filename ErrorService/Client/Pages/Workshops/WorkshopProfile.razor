@@ -1,0 +1,614 @@
+@page "/workshops/{Id:int}"
+@using ErrorService.Shared
+@using ErrorService.Client.Utils
+@using System.Text.Json
+@inject HttpClient Http
+
+<SeoHeader
+    Title="@pageTitle"
+    Description="@pageDescription"
+    Keywords="@pageKeywords"
+    OgType="profile"
+    OgImage="@ogImage"
+    CanonicalUrl="@canonicalUrl"
+    JsonLd="@jsonLd" />
+
+<div class="wsp" dir="rtl">
+    <nav class="wsp-bc" aria-label="مسیر صفحه">
+        <a href="/" class="wsp-bc__link">خانه</a>
+        <span class="wsp-bc__sep">/</span>
+        <a href="/workshops" class="wsp-bc__link">همکاران ما</a>
+        <span class="wsp-bc__sep">/</span>
+        <span class="wsp-bc__cur">@(ws?.WorkshopName ?? "صفحه همکار")</span>
+    </nav>
+
+    @if (isLoading)
+    {
+        <div class="wsp-skel" aria-hidden="true">
+            <div class="wsp-skel__hero"></div>
+            <div class="wsp-skel__line"></div>
+            <div class="wsp-skel__line wsp-skel__line--short"></div>
+            <div class="wsp-skel__grid">
+                <div class="wsp-skel__card"></div>
+                <div class="wsp-skel__card"></div>
+                <div class="wsp-skel__card"></div>
+                <div class="wsp-skel__card"></div>
+            </div>
+        </div>
+    }
+    else if (ws == null)
+    {
+        <div class="wsp-nf">
+            <span class="oi oi-warning wsp-nf__icon"></span>
+            <h1 class="wsp-nf__t">صفحه همکار مورد نظر یافت نشد</h1>
+            <p class="wsp-nf__p">این صفحه وجود ندارد یا حذف شده است. می‌توانید فهرست همکاران ارورسرویس را ببینید.</p>
+            <a href="/workshops" class="wsp-btn wsp-btn--primary">مشاهده همکاران ارورسرویس</a>
+        </div>
+    }
+    else
+    {
+        <header class="wsp-hero">
+            <div class="wsp-hero__media">
+                @if (!string.IsNullOrWhiteSpace(ws.ImageUrl))
+                {
+                    <img class="wsp-hero__img" src="@ws.ImageUrl" alt="@ws.WorkshopName" loading="eager" decoding="async" />
+                }
+                else
+                {
+                    <div class="wsp-hero__ph">@GetInitials()</div>
+                }
+                @if (ws.IsActive)
+                {
+                    <span class="wsp-hero__ribbon"><span class="wsp-hero__dot"></span> همکار فعال</span>
+                }
+            </div>
+
+            <div class="wsp-hero__body">
+                <div class="wsp-kicker">همکار رسمی ارورسرویس</div>
+                <h1 class="wsp-title">@ws.WorkshopName</h1>
+
+                <div class="wsp-meta">
+                    @if (!string.IsNullOrWhiteSpace(LocationText))
+                    {
+                        <span class="wsp-meta__i"><span class="oi oi-map-marker"></span> @LocationText</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(ws.OwnerFullName))
+                    {
+                        <span class="wsp-meta__i"><span class="oi oi-person"></span> @ws.OwnerFullName</span>
+                    }
+                </div>
+
+                <div class="wsp-actions">
+                    @if (!string.IsNullOrEmpty(TelHref))
+                    {
+                        <a class="wsp-btn wsp-btn--primary" href="@TelHref"><span class="oi oi-phone"></span> تماس با ما</a>
+                    }
+                    @if (!string.IsNullOrEmpty(MapsHref))
+                    {
+                        <a class="wsp-btn wsp-btn--ghost" href="@MapsHref" target="_blank" rel="noopener noreferrer"><span class="oi oi-external-link"></span> نمایش روی نقشه</a>
+                    }
+                </div>
+            </div>
+        </header>
+
+        <div class="wsp-grid">
+            <div class="wsp-main">
+                <section class="wsp-card">
+                    <h2 class="wsp-card__t">درباره @ws.WorkshopName</h2>
+                    <p class="wsp-card__p">@IntroText</p>
+                </section>
+
+                <div class="wsp-info">
+                    <div class="wsp-info__i">
+                        <span class="wsp-info__ic wsp-info__ic--addr"><span class="oi oi-map-marker"></span></span>
+                        <div class="wsp-info__b">
+                            <div class="wsp-info__l">آدرس</div>
+                            <div class="wsp-info__v">@ws.Address</div>
+                        </div>
+                    </div>
+
+                    <div class="wsp-info__i">
+                        <span class="wsp-info__ic wsp-info__ic--tel"><span class="oi oi-phone"></span></span>
+                        <div class="wsp-info__b">
+                            <div class="wsp-info__l">شماره تماس</div>
+                            <div class="wsp-info__v" dir="ltr"><a href="@TelHref" class="wsp-info__lnk">@ws.MobileNumber</a></div>
+                        </div>
+                    </div>
+
+                    <div class="wsp-info__i">
+                        <span class="wsp-info__ic wsp-info__ic--geo"><span class="oi oi-home"></span></span>
+                        <div class="wsp-info__b">
+                            <div class="wsp-info__l">استان و شهر</div>
+                            <div class="wsp-info__v">@(string.IsNullOrWhiteSpace(LocationText) ? "—" : LocationText)</div>
+                        </div>
+                    </div>
+
+                    <div class="wsp-info__i">
+                        <span class="wsp-info__ic wsp-info__ic--date"><span class="oi oi-clock"></span></span>
+                        <div class="wsp-info__b">
+                            <div class="wsp-info__l">تاریخ عضویت در ارورسرویس</div>
+                            <div class="wsp-info__v">@JoinedFa</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <aside class="wsp-side">
+                <div class="wsp-cta">
+                    <h3 class="wsp-cta__t">درخواست تعمیر یا کارشناسی دارید؟</h3>
+                    <p class="wsp-cta__p">درخواست خود را ثبت کنید تا نزدیک‌ترین کارشناس ارورسرویس با شما تماس بگیرد.</p>
+                    <a href="/admission/repair" class="wsp-btn wsp-btn--primary wsp-btn--block">ثبت درخواست تعمیر</a>
+                    <a href="/admission/expertise" class="wsp-btn wsp-btn--line wsp-btn--block">درخواست کارشناسی</a>
+                </div>
+
+                <div class="wsp-links">
+                    <a href="/workshops" class="wsp-links__l"><span class="oi oi-arrow-right"></span> سایر همکاران ارورسرویس</a>
+                    <a href="/products" class="wsp-links__l"><span class="oi oi-arrow-right"></span> خرید قطعات یدکی اصل</a>
+                    <a href="/technical/error-codes" class="wsp-links__l"><span class="oi oi-arrow-right"></span> بانک کدهای خطا</a>
+                </div>
+            </aside>
+        </div>
+    }
+</div>
+
+<style>
+    .wsp {
+        --wsp-blue: #2563eb;
+        --wsp-blue-dk: #1d4ed8;
+        --wsp-ink: #0f172a;
+        --wsp-muted: #64748b;
+        --wsp-line: #e2e8f0;
+        max-width: 1140px;
+        margin: 0 auto;
+        padding: 1.25rem 1rem 3.5rem;
+        font-family: Vazirmatn, Tahoma, "Segoe UI", sans-serif;
+        color: var(--wsp-ink);
+    }
+
+    .wsp-bc {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .4rem;
+        font-size: .85rem;
+        color: var(--wsp-muted);
+        margin-bottom: 1.1rem;
+    }
+    .wsp-bc__link { color: var(--wsp-muted); text-decoration: none; transition: color .15s; }
+    .wsp-bc__link:hover { color: var(--wsp-blue); }
+    .wsp-bc__cur { color: var(--wsp-ink); font-weight: 700; }
+    .wsp-bc__sep { color: #cbd5e1; }
+
+    .wsp-hero {
+        display: flex;
+        gap: 1.5rem;
+        align-items: center;
+        background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+        border: 1px solid var(--wsp-line);
+        border-radius: 20px;
+        padding: 1.6rem;
+        box-shadow: 0 10px 30px -22px rgba(15, 23, 42, .45);
+    }
+    .wsp-hero__media {
+        position: relative;
+        flex: 0 0 190px;
+        width: 190px;
+        height: 190px;
+        border-radius: 18px;
+        overflow: hidden;
+        background: #e2e8f0;
+        box-shadow: 0 12px 26px -16px rgba(37, 99, 235, .6);
+    }
+    .wsp-hero__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .wsp-hero__ph {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 3rem;
+        font-weight: 800;
+        color: #fff;
+        letter-spacing: 1px;
+        background: linear-gradient(140deg, #2563eb 0%, #7c3aed 55%, #0ea5e9 100%);
+    }
+    .wsp-hero__ribbon {
+        position: absolute;
+        bottom: .6rem;
+        right: .6rem;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        background: rgba(255, 255, 255, .94);
+        color: #15803d;
+        font-size: .74rem;
+        font-weight: 800;
+        padding: .3rem .6rem;
+        border-radius: 999px;
+        box-shadow: 0 4px 12px -6px rgba(15, 23, 42, .5);
+    }
+    .wsp-hero__dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; }
+
+    .wsp-hero__body { flex: 1 1 auto; min-width: 0; }
+    .wsp-kicker {
+        font-size: .78rem;
+        font-weight: 800;
+        color: var(--wsp-blue);
+        background: rgba(37, 99, 235, .1);
+        display: inline-block;
+        padding: .3rem .7rem;
+        border-radius: 999px;
+        margin-bottom: .7rem;
+    }
+    .wsp-title {
+        font-size: clamp(1.35rem, 3.2vw, 2rem);
+        font-weight: 800;
+        margin: 0 0 .7rem;
+        line-height: 1.5;
+        word-break: break-word;
+    }
+    .wsp-meta { display: flex; flex-wrap: wrap; gap: .5rem 1.2rem; margin-bottom: 1.1rem; color: var(--wsp-muted); font-size: .92rem; }
+    .wsp-meta__i { display: inline-flex; align-items: center; gap: .4rem; }
+    .wsp-meta__i .oi { color: var(--wsp-blue); }
+    .wsp-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+
+    .wsp-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .45rem;
+        padding: .72rem 1.35rem;
+        border-radius: 12px;
+        font-size: .93rem;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid transparent;
+        transition: transform .15s, box-shadow .15s, background .15s, color .15s;
+    }
+    .wsp-btn--primary { background: var(--wsp-blue); color: #fff; box-shadow: 0 12px 24px -16px rgba(37, 99, 235, .9); }
+    .wsp-btn--primary:hover { background: var(--wsp-blue-dk); transform: translateY(-1px); color: #fff; }
+    .wsp-btn--ghost { background: #fff; color: var(--wsp-ink); border-color: var(--wsp-line); }
+    .wsp-btn--ghost:hover { border-color: var(--wsp-blue); color: var(--wsp-blue); transform: translateY(-1px); }
+    .wsp-btn--line { background: transparent; color: var(--wsp-blue); border-color: rgba(37, 99, 235, .35); }
+    .wsp-btn--line:hover { background: rgba(37, 99, 235, .08); color: var(--wsp-blue-dk); }
+    .wsp-btn--block { width: 100%; }
+
+    .wsp-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1.25rem; margin-top: 1.4rem; }
+    .wsp-main { min-width: 0; display: flex; flex-direction: column; gap: 1.25rem; }
+
+    .wsp-card {
+        background: #fff;
+        border: 1px solid var(--wsp-line);
+        border-radius: 18px;
+        padding: 1.4rem 1.5rem;
+    }
+    .wsp-card__t { font-size: 1.1rem; font-weight: 800; margin: 0 0 .7rem; }
+    .wsp-card__p { margin: 0; color: #334155; line-height: 2.05; font-size: .96rem; }
+
+    .wsp-info { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
+    .wsp-info__i {
+        display: flex;
+        gap: .8rem;
+        align-items: flex-start;
+        background: #fff;
+        border: 1px solid var(--wsp-line);
+        border-radius: 16px;
+        padding: 1rem;
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .wsp-info__i:hover { border-color: #c7d2fe; box-shadow: 0 12px 26px -22px rgba(15, 23, 42, .6); }
+    .wsp-info__ic {
+        flex: 0 0 40px;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 1.05rem;
+    }
+    .wsp-info__ic--addr { background: linear-gradient(140deg, #2563eb, #1d4ed8); }
+    .wsp-info__ic--tel { background: linear-gradient(140deg, #16a34a, #15803d); }
+    .wsp-info__ic--geo { background: linear-gradient(140deg, #f59e0b, #d97706); }
+    .wsp-info__ic--date { background: linear-gradient(140deg, #7c3aed, #6d28d9); }
+    .wsp-info__b { min-width: 0; }
+    .wsp-info__l { font-size: .76rem; color: var(--wsp-muted); font-weight: 700; margin-bottom: .25rem; }
+    .wsp-info__v { font-size: .93rem; line-height: 1.85; font-weight: 700; word-break: break-word; }
+    .wsp-info__lnk { color: var(--wsp-ink); text-decoration: none; }
+    .wsp-info__lnk:hover { color: var(--wsp-blue); }
+
+    .wsp-side { display: flex; flex-direction: column; gap: 1rem; }
+    .wsp-cta {
+        background: linear-gradient(150deg, #1d4ed8 0%, #2563eb 45%, #0ea5e9 100%);
+        color: #fff;
+        border-radius: 18px;
+        padding: 1.4rem 1.3rem;
+        box-shadow: 0 22px 40px -30px rgba(29, 78, 216, 1);
+    }
+    .wsp-cta__t { font-size: 1.05rem; font-weight: 800; margin: 0 0 .5rem; line-height: 1.7; }
+    .wsp-cta__p { font-size: .87rem; line-height: 2; color: rgba(255, 255, 255, .88); margin: 0 0 1rem; }
+    .wsp-cta .wsp-btn--primary { background: #fff; color: var(--wsp-blue-dk); box-shadow: none; }
+    .wsp-cta .wsp-btn--primary:hover { background: #f1f5f9; color: var(--wsp-blue-dk); }
+    .wsp-cta .wsp-btn--line { color: #fff; border-color: rgba(255, 255, 255, .5); }
+    .wsp-cta .wsp-btn--line:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+    .wsp-cta .wsp-btn--block + .wsp-btn--block { margin-top: .6rem; }
+
+    .wsp-links {
+        background: #fff;
+        border: 1px solid var(--wsp-line);
+        border-radius: 18px;
+        padding: .6rem;
+        overflow: hidden;
+    }
+    .wsp-links__l {
+        display: flex;
+        align-items: center;
+        gap: .55rem;
+        padding: .8rem .8rem;
+        font-size: .89rem;
+        font-weight: 700;
+        color: var(--wsp-ink);
+        text-decoration: none;
+        border-radius: 12px;
+        transition: background .15s, color .15s;
+    }
+    .wsp-links__l .oi { color: var(--wsp-blue); font-size: .8rem; }
+    .wsp-links__l:hover { background: #f1f5f9; color: var(--wsp-blue-dk); }
+
+    .wsp-nf {
+        background: #fff;
+        border: 1px solid var(--wsp-line);
+        border-radius: 20px;
+        padding: 3rem 1.5rem;
+        text-align: center;
+    }
+    .wsp-nf__icon { font-size: 3rem; color: #f59e0b; display: block; margin-bottom: 1rem; }
+    .wsp-nf__t { font-size: 1.3rem; font-weight: 800; margin: 0 0 .6rem; }
+    .wsp-nf__p { color: var(--wsp-muted); line-height: 2; margin: 0 0 1.4rem; font-size: .95rem; }
+
+    .wsp-skel__hero { height: 230px; border-radius: 20px; background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%); background-size: 400% 100%; animation: wspShimmer 1.4s ease infinite; }
+    .wsp-skel__line { height: 18px; border-radius: 8px; background: #f1f5f9; margin-top: 1rem; }
+    .wsp-skel__line--short { width: 45%; }
+    .wsp-skel__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; margin-top: 1.2rem; }
+    .wsp-skel__card { height: 92px; border-radius: 16px; background: #f1f5f9; }
+    @@keyframes wspShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+    @@media (max-width: 991.98px) {
+        .wsp-grid { grid-template-columns: minmax(0, 1fr); }
+        .wsp-side { order: 2; }
+    }
+
+    @@media (max-width: 767.98px) {
+        .wsp { padding: 1rem .85rem 2.5rem; }
+        .wsp-hero { flex-direction: column; align-items: stretch; padding: 1.1rem; gap: 1.1rem; text-align: center; }
+        .wsp-hero__media { flex: none; width: 150px; height: 150px; margin: 0 auto; }
+        .wsp-meta { justify-content: center; }
+        .wsp-actions { justify-content: center; }
+        .wsp-actions .wsp-btn { flex: 1 1 auto; }
+        .wsp-info { grid-template-columns: minmax(0, 1fr); }
+        .wsp-card { padding: 1.1rem; }
+        .wsp-skel__grid { grid-template-columns: minmax(0, 1fr); }
+    }
+</style>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private WorkshopDto? ws;
+    private bool isLoading = true;
+
+    private string pageTitle = "همکاران ارورسرویس | تعمیر لوازم خانگی";
+    private string pageDescription = "";
+    private string pageKeywords = "";
+    private string? jsonLd;
+    private string? canonicalUrl;
+    private string? ogImage;
+
+    private const string BaseUrl = "https://errorservice.ir";
+
+    private string LocationText
+    {
+        get
+        {
+            if (ws == null) return "";
+            var parts = new[] { ws.CityName, ws.ProvinceName }
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s!.Trim())
+                .ToList();
+            return string.Join("، ", parts.Distinct());
+        }
+    }
+
+    private string TelHref
+    {
+        get
+        {
+            var m = ws?.MobileNumber?.Trim() ?? "";
+            if (m.Length == 0) return "";
+            var e164 = m.StartsWith("0", StringComparison.Ordinal) ? "+98" + m[1..] : m;
+            return "tel:" + e164;
+        }
+    }
+
+    private string MapsHref
+    {
+        get
+        {
+            if (ws == null) return "";
+            var q = string.Join(" ", new[] { ws.Address, ws.CityName, ws.ProvinceName }
+                .Where(s => !string.IsNullOrWhiteSpace(s)));
+            if (q.Length == 0) return "";
+            return "https://www.google.com/maps/search/?api=1&query=" + Uri.EscapeDataString(q);
+        }
+    }
+
+    private string JoinedFa => ws == null ? "" : PersianDate.ToLongPersianDate(ws.CreatedAt);
+
+    private string IntroText
+    {
+        get
+        {
+            if (ws == null) return "";
+            var place = string.IsNullOrWhiteSpace(LocationText) ? "ایران" : LocationText;
+            var s = $"«{ws.WorkshopName}» یکی از همکاران ارورسرویس در {place} است و در زمینه تعمیر و سرویس لوازم خانگی فعالیت می‌کند. ";
+            if (!string.IsNullOrWhiteSpace(ws.OwnerFullName))
+                s += $"مسئول این مجموعه {ws.OwnerFullName} است. ";
+            if (!string.IsNullOrWhiteSpace(ws.Address))
+                s += $"آدرس: {ws.Address}. ";
+            if (!string.IsNullOrWhiteSpace(ws.MobileNumber))
+                s += $"برای دریافت خدمات تعمیر، سرویس در منزل یا خرید قطعات یدکی می‌توانید با شماره {ws.MobileNumber} تماس بگیرید. ";
+            s += "همچنین می‌توانید درخواست تعمیر خود را از طریق همین سایت ثبت کنید تا کارشناسان ارورسرویس با شما تماس بگیرند.";
+            return s;
+        }
+    }
+
+    private string GetInitials()
+    {
+        var t = (ws?.WorkshopName ?? "").Trim();
+        if (t.Length == 0) return "WS";
+        return t.Length <= 2 ? t : t[..2];
+    }
+
+    protected override async Task OnParametersSetAsync() => await Load();
+
+    private async Task Load()
+    {
+        isLoading = true;
+        ws = null;
+
+        try
+        {
+            var resp = await Http.GetAsync($"api/workshops/{Id}");
+            if (resp.IsSuccessStatusCode)
+                ws = await resp.Content.ReadFromJsonAsync<WorkshopDto>();
+        }
+        catch
+        {
+            ws = null;
+        }
+
+        if (ws != null) BuildSeo(); else BuildNotFoundSeo();
+        isLoading = false;
+    }
+
+    private void BuildSeo()
+    {
+        var name = (ws!.WorkshopName ?? "").Trim();
+        if (name.Length == 0) name = "همکار ارورسرویس";
+        var place = LocationText;
+
+        pageTitle = place.Length == 0
+            ? $"{name} | ارورسرویس"
+            : $"{name} - تعمیر لوازم خانگی {place} | ارورسرویس";
+
+        var descParts = new List<string> { $"پروفایل «{name}»" };
+        if (place.Length > 0) descParts.Add($"همکار ارورسرویس در {place}");
+        if (!string.IsNullOrWhiteSpace(ws.Address)) descParts.Add(ws.Address!);
+        if (!string.IsNullOrWhiteSpace(ws.MobileNumber)) descParts.Add($"تماس: {ws.MobileNumber}");
+        pageDescription = Truncate(string.Join(" — ", descParts) + ". خدمات تعمیر و سرویس لوازم خانگی در محل.", 165);
+
+        var kw = new List<string> { name };
+        if (place.Length > 0)
+        {
+            kw.Add($"تعمیر لوازم خانگی {place}");
+            kw.Add($"تعمیرگاه {place}");
+            kw.Add($"سرویس در منزل {place}");
+            kw.Add("تعمیر ماشین لباسشویی");
+            kw.Add("تعمیر یخچال");
+        }
+        kw.Add("ارورسرویس");
+        pageKeywords = string.Join(", ", kw);
+
+        canonicalUrl = $"{BaseUrl}/workshops/{ws.Id}";
+        ogImage = Abs(ws.ImageUrl);
+
+        BuildJsonLd(name, place);
+    }
+
+    private void BuildNotFoundSeo()
+    {
+        pageTitle = "صفحه همکار یافت نشد | ارورسرویس";
+        pageDescription = "این صفحه وجود ندارد یا حذف شده است.";
+        pageKeywords = "404, صفحه یافت نشد, ارورسرویس";
+        canonicalUrl = $"{BaseUrl}/workshops/{Id}";
+        ogImage = "";
+        jsonLd = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "WebPage",
+            ["name"] = pageTitle,
+            ["description"] = pageDescription,
+            ["url"] = canonicalUrl
+        });
+    }
+
+    private void BuildJsonLd(string name, string place)
+    {
+        if (ws == null) return;
+
+        var url = $"{BaseUrl}/workshops/{ws.Id}";
+
+        var localBusiness = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "LocalBusiness",
+            ["name"] = name,
+            ["url"] = url,
+            ["image"] = ogImage
+        };
+
+        if (!string.IsNullOrWhiteSpace(ws.MobileNumber))
+            localBusiness["telephone"] = ws.MobileNumber;
+
+        var address = new Dictionary<string, object?>
+        {
+            ["@type"] = "PostalAddress",
+            ["addressCountry"] = "IR"
+        };
+        if (!string.IsNullOrWhiteSpace(ws.Address)) address["streetAddress"] = ws.Address;
+        if (!string.IsNullOrWhiteSpace(ws.CityName)) address["addressLocality"] = ws.CityName;
+        if (!string.IsNullOrWhiteSpace(ws.ProvinceName)) address["addressRegion"] = ws.ProvinceName;
+        localBusiness["address"] = address;
+
+        if (place.Length > 0)
+            localBusiness["areaServed"] = new Dictionary<string, object?> { ["@type"] = "City", ["name"] = place };
+
+        if (!string.IsNullOrWhiteSpace(ws.OwnerFullName))
+            localBusiness["founder"] = new Dictionary<string, object?> { ["@type"] = "Person", ["name"] = ws.OwnerFullName };
+
+        localBusiness["parentOrganization"] = new Dictionary<string, object?>
+        {
+            ["@type"] = "Organization",
+            ["name"] = "ارورسرویس",
+            ["url"] = BaseUrl
+        };
+
+        var breadcrumb = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "BreadcrumbList",
+            ["itemListElement"] = new object[]
+            {
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 1, ["name"] = "خانه", ["item"] = BaseUrl },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 2, ["name"] = "همکاران ما", ["item"] = $"{BaseUrl}/workshops" },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 3, ["name"] = name, ["item"] = url }
+            }
+        };
+
+        jsonLd = $"[{JsonSerializer.Serialize(localBusiness)},{JsonSerializer.Serialize(breadcrumb)}]";
+    }
+
+    private static string Abs(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return "";
+        if (url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return url;
+        return BaseUrl.TrimEnd('/') + "/" + url.TrimStart('/');
+    }
+
+    private static string Truncate(string text, int max)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= max ? text : text[..max].TrimEnd() + "…";
+    }
+}

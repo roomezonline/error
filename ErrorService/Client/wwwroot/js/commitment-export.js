@@ -1,17 +1,19 @@
 window.captureCommitmentPng = function (selector, fileName) {
     var el = document.querySelector(selector);
     if (!el) return;
-    html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(function (canvas) {
-        canvas.toBlob(function (blob) {
-            var link = document.createElement('a');
-            link.download = fileName || 'commitment.png';
-            link.href = URL.createObjectURL(blob);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(link.href);
+    window.__ensureGroup('html2canvas').then(function () {
+        html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(function (canvas) {
+            canvas.toBlob(function (blob) {
+                var link = document.createElement('a');
+                link.download = fileName || 'commitment.png';
+                link.href = URL.createObjectURL(blob);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href);
+            });
         });
-    });
+    }).catch(function (e) { console.error('html2canvas load failed:', e); });
 };
 
 window.printCommitment = function (selector) {
@@ -33,12 +35,14 @@ window.printCommitment = function (selector) {
 window.shareCommitment = function (selector, fileName) {
     var el = document.querySelector(selector);
     if (!el) return;
-    html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(function (canvas) {
-        canvas.toBlob(function (blob) {
-            var file = new File([blob], fileName || 'commitment.png', { type: 'image/png' });
-            if (navigator.share) {
-                navigator.share({ files: [file], title: 'تعهدنامه' }).catch(function () { });
-            }
+    window.__ensureGroup('html2canvas').then(function () {
+        html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(function (canvas) {
+            canvas.toBlob(function (blob) {
+                var file = new File([blob], fileName || 'commitment.png', { type: 'image/png' });
+                if (navigator.share) {
+                    navigator.share({ files: [file], title: 'تعهدنامه' }).catch(function () { });
+                }
+            });
         });
-    });
+    }).catch(function (e) { console.error('html2canvas load failed:', e); });
 };

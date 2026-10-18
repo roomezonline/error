@@ -19,7 +19,7 @@
                 <span class="oi oi-minus"></span>
             </button>
             <span class="qc-val">@Quantity</span>
-            <button type="button" class="qc-btn" @onclick="OnIncrease" @onclick:stopPropagation="true" @onclick:preventDefault="true" aria-label="زیاد کردن">
+            <button type="button" class="qc-btn" @onclick="OnIncrease" disabled="@IncreaseDisabled" @onclick:stopPropagation="true" @onclick:preventDefault="true" aria-label="زیاد کردن">
                 <span class="oi oi-plus"></span>
             </button>
         </div>
@@ -76,6 +76,14 @@
 
     .qc-btn:active { transform: scale(0.94); }
 
+    .qc-btn:disabled {
+        background: rgba(100, 116, 139, 0.12);
+        color: #94a3b8;
+        cursor: not-allowed;
+    }
+
+    .qc-btn:disabled:active { transform: none; }
+
     .qc-val {
         min-width: 18px;
         text-align: center;
@@ -87,6 +95,10 @@
 @code {
     [Parameter] public int Quantity { get; set; }
     [Parameter] public bool Disabled { get; set; }
+
+    // سقف موجودی: دکمه «+» غیرفعال می‌شود ولی کم کردن همچنان مجاز است
+    // تا کاربری که از سقف رد شده بتواند تعداد را اصلاح کند.
+    [Parameter] public bool IncreaseDisabled { get; set; }
 
     [Parameter] public string AddLabel { get; set; } = "افزودن";
 

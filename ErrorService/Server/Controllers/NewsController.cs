@@ -116,6 +116,8 @@ public class NewsController : ControllerBase
     [OutputCache(Duration = 120, VaryByQueryKeys = new[] { "*" })]
     public async Task<ActionResult<IEnumerable<NewsDto>>> GetNews(bool onlyPublished = false, int skip = 0, int take = 10)
     {
+        take = Math.Clamp(take, 1, 100);
+        skip = Math.Max(0, skip);
         var query = _context.News.AsQueryable();
 
         if (onlyPublished)

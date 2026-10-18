@@ -127,17 +127,34 @@
                     در حال جستجو...
                 </div>
             }
-            else if (results == null || (results.Products.Count == 0 && results.News.Count == 0))
+            else if ((suggests == null || suggests.Count == 0) &&
+                     (results == null || (results.Products.Count == 0 && results.News.Count == 0)))
             {
                 <div class="p-3 text-muted small">نتیجه‌ای یافت نشد.</div>
             }
             else
             {
-                @if (results.Products.Count > 0)
+                var searchResults = results ?? new SearchResponseDto();
+                @if (suggests != null && suggests.Count > 0)
+                {
+                    <div class="global-search__section">
+                        <div class="global-search__section-title">پیشنهاد محصولات</div>
+                        @foreach (var s in suggests)
+                        {
+                            var suggestUrl = $"/products/{s.Id}";
+                            <button type="button" class="global-search__item @(IsSelected(new SearchResultItemDto { Type = "product", Id = s.Id }) ? "is-selected" : "")" @onclick="() => Go(suggestUrl)">
+                                <div class="global-search__item-title">@s.Name</div>
+                                <div class="global-search__item-subtitle">@PriceLabel(s)</div>
+                            </button>
+                        }
+                    </div>
+                }
+
+                @if (searchResults.Products.Count > 0)
                 {
                     <div class="global-search__section">
                         <div class="global-search__section-title">محصولات</div>
-                        @foreach (var item in results.Products)
+                        @foreach (var item in searchResults.Products.Where(p => suggests == null || suggests.All(s => s.Id != p.Id)))
                         {
                             <button type="button" class="global-search__item @(IsSelected(item) ? "is-selected" : "")" @onclick="() => Go(item.Url)">
                                 <div class="global-search__item-title">@item.Title</div>
@@ -150,11 +167,11 @@
                     </div>
                 }
 
-                @if (results.News.Count > 0)
+                @if (searchResults.News.Count > 0)
                 {
                     <div class="global-search__section">
                         <div class="global-search__section-title">اخبار</div>
-                        @foreach (var item in results.News)
+                        @foreach (var item in searchResults.News)
                         {
                             <button type="button" class="global-search__item @(IsSelected(item) ? "is-selected" : "")" @onclick="() => Go(item.Url)">
                                 <div class="global-search__item-title">@item.Title</div>
@@ -179,6 +196,7 @@
     private bool isOpen;
     private bool isLoading;
     private SearchResponseDto? results;
+    private List<ProductSuggestDto>? suggests;
 
     private CancellationTokenSource? cts;
     private int selectedIndex = -1;
@@ -203,6 +221,7 @@
     {
         query = string.Empty;
         results = new SearchResponseDto();
+        suggests = null;
         isOpen = false;
         selectedIndex = -1;
     }
@@ -223,6 +242,7 @@
         if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2)
         {
             results = new SearchResponseDto();
+            suggests = null;
             isLoading = false;
             selectedIndex = -1;
             return;
@@ -232,9 +252,17 @@
         try
         {
             await Task.Delay(150, token);
-            var url = $"api/search?q={Uri.EscapeDataString(q.Trim())}&take=10";
-            var resp = await Http.GetFromJsonAsync<SearchResponseDto>(url, token);
+            var trimmed = q.Trim();
+            var searchTask = Http.GetFromJsonAsync<SearchResponseDto>($"api/search?q={Uri.EscapeDataString(trimmed)}&take=10", token);
+            var suggestTask = Http.GetFromJsonAsync<List<ProductSuggestDto>>($"api/search/suggest?q={Uri.EscapeDataString(trimmed)}", token);
+
+            SearchResponseDto? resp = null;
+            List<ProductSuggestDto>? sug = null;
+            try { resp = await searchTask; } catch (OperationCanceledException) { throw; } catch { }
+            try { sug = await suggestTask; } catch (OperationCanceledException) { throw; } catch { }
+
             results = resp ?? new SearchResponseDto();
+            suggests = sug ?? new List<ProductSuggestDto>();
             selectedIndex = GetFlatResults().Count > 0 ? 0 : -1;
         }
         catch (OperationCanceledException) { }
@@ -296,11 +324,34 @@
 
     private List<SearchResultItemDto> GetFlatResults()
     {
-        if (results == null) return new();
         var flat = new List<SearchResultItemDto>();
-        if (results.Products != null) flat.AddRange(results.Products);
-        if (results.News != null) flat.AddRange(results.News);
+        if (suggests != null)
+        {
+            foreach (var s in suggests)
+                flat.Add(new SearchResultItemDto { Type = "product", Id = s.Id, Title = s.Name, Url = $"/products/{s.Id}", ImageUrl = s.ImageUrl });
+        }
+        if (results != null)
+        {
+            if (results.Products != null)
+            {
+                foreach (var p in results.Products)
+                {
+                    if (suggests == null || suggests.All(s => s.Id != p.Id))
+                        flat.Add(p);
+                }
+            }
+            if (results.News != null) flat.AddRange(results.News);
+        }
         return flat;
+    }
+
+    private static string PriceLabel(ProductSuggestDto s)
+    {
+        var price = s.DiscountPrice.HasValue && s.DiscountPrice.Value < s.Price
+            ? s.DiscountPrice.Value
+            : s.Price;
+        var label = $"{price:N0} تومان";
+        return s.IsAvailable ? label : label + " · ناموجود";
     }
 
     private bool IsSelected(SearchResultItemDto item)

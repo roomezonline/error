@@ -22,14 +22,22 @@ public sealed class VirtualPaymentGateway : IShopPaymentGateway
         });
 
     public Task<PaymentIntentResult> VerifyCallbackAsync(PaymentCallbackPayload payload, CancellationToken ct = default)
-        => Task.FromResult(string.Equals(payload.Status, "OK", StringComparison.OrdinalIgnoreCase)
-            ? new PaymentIntentResult
-            {
-                Success = true,
-                Message = "پرداخت (تست) تایید شد.",
-                PaymentMode = "Virtual",
-                Authority = payload.Authority,
-                GatewayUrl = payload.RefId
-            }
-            : new PaymentIntentResult { Success = false, Message = "پرداخت (تست) ناموفق بود." });
+    {
+        // فقط تاییدِ صریح OK با شناسهٔ پرداخت معتبر پذیرفته می‌شود؛
+        // هر Status دیگر یا Authority خالی = پرداخت ناموفق.
+        if (!string.Equals(payload.Status, "OK", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(payload.Authority)
+            || payload.Amount < 0)
+            return Task.FromResult(new PaymentIntentResult { Success = false, Message = "پرداخت (تست) ناموفق بود." });
+
+        return Task.FromResult(new PaymentIntentResult
+        {
+            Success = true,
+            Message = "پرداخت (تست) تایید شد.",
+            PaymentMode = "Virtual",
+            Authority = payload.Authority,
+            // مرجع تراکنش برای ثبت روی سفارش (درگاه‌های واقعی همین را برمی‌گردانند)
+            GatewayUrl = string.IsNullOrWhiteSpace(payload.RefId) ? payload.Authority : payload.RefId
+        });
+    }
 }

@@ -326,6 +326,49 @@ public sealed class VisitsController : ControllerBase
         return Ok(new VisitListResponse { Total = total, TotalPageViews = totalPages, Items = items });
     }
 
+    /// <summary>
+    /// فهرست صفحه‌های دیده‌شده در یک بازدید (جلسه) — به ترتیب زمان.
+    /// چون جدول جلسه‌ها فقط «تعداد» را نگه می‌دارد، جزئیات صفحات از لاگ خام (VisitLogs)
+    /// با تطبیق شناسه بازدیدکننده و بازهٔ زمانی همان جلسه خوانده می‌شود (لاگ خام ۹۰ روز نگه داشته می‌شود).
+    /// </summary>
+    [Authorize(Policy = "perm:admin.analytics.view")]
+    [HttpGet("{id:long}/pages")]
+    public async Task<ActionResult<VisitPagesResponse>> GetVisitPages(long id)
+    {
+        var session = await _db.VisitSessions.AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => new { x.Id, x.VisitorId, x.StartedAtUtc, x.EndedAtUtc })
+            .FirstOrDefaultAsync();
+
+        if (session == null)
+            return NotFound();
+
+        var logs = await _db.VisitLogs.AsNoTracking()
+            .Where(x => x.VisitorId == session.VisitorId
+                        && x.VisitedAtUtc >= session.StartedAtUtc
+                        && x.VisitedAtUtc <= session.EndedAtUtc
+                        && !x.IsBot)
+            .OrderBy(x => x.VisitedAtUtc)
+            .Select(x => new { x.Path, x.VisitedAtUtc })
+            .ToListAsync();
+
+        var items = logs.Select(x => new VisitPageDto
+        {
+            Path = x.Path,
+            VisitedAtLocal = x.VisitedAtUtc.AddMinutes(210)
+        }).ToList();
+
+        // نام فارسی هر صفحه (صفحه اصلی، محصول، خبر، مقاله، …)
+        var titles = await VisitPathNamer.ResolveAsync(_db, items.Select(x => x.Path));
+        foreach (var item in items)
+        {
+            if (!string.IsNullOrEmpty(item.Path) && titles.TryGetValue(item.Path, out var title))
+                item.Title = title;
+        }
+
+        return Ok(new VisitPagesResponse { Id = session.Id, Items = items });
+    }
+
     [Authorize(Policy = "perm:admin.analytics.view")]
     [HttpGet("trend")]
     public async Task<ActionResult<VisitTrendResponse>> GetTrend([FromQuery] int days = 30)

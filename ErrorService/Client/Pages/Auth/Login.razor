@@ -4,6 +4,7 @@
 @inject ErrorService.Client.Services.JwtAuthStateProvider AuthStateProvider
 @inject NavigationManager Nav
 @inject ErrorService.Client.Services.ToastService Toast
+@inject ErrorService.Client.Services.CheckoutRecoveryService Recovery
 @using Microsoft.AspNetCore.Components
 @using System.Security.Claims
 
@@ -67,6 +68,10 @@
             var result = await Auth.UnifiedLoginAsync(model);
             AuthStateProvider.NotifyAuthStateChanged();
             Toast.ShowSuccess("با موفقیت وارد شدید");
+
+            await Recovery.RefreshAsync();
+            if (Recovery.Resume.Order is { } pendingOrder)
+                Toast.ShowWarning($"سفارش {pendingOrder.OrderNumber} شما هنوز تکمیل نشده است؛ برای ادامه روی بنر بالای صفحه بزنید");
 
             var loginIdentity = ErrorService.Client.Services.JwtParser.ParseClaimsFromJwt(result.Token);
             var hasSiteIdentity = loginIdentity.Claims.Any(c => c.Type == ClaimTypes.NameIdentifier);

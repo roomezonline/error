@@ -14,11 +14,13 @@ public sealed class SmsAdminController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
     private readonly ISmsService _smsService;
+    private readonly NotificationEventService _notificationEvents;
 
-    public SmsAdminController(ErrorServiceDbContext db, ISmsService smsService)
+    public SmsAdminController(ErrorServiceDbContext db, ISmsService smsService, NotificationEventService notificationEvents)
     {
         _db = db;
         _smsService = smsService;
+        _notificationEvents = notificationEvents;
     }
 
     private static SmsDeliveryStatus MapDeliveryState(byte? state) => state switch
@@ -45,7 +47,7 @@ public sealed class SmsAdminController : ControllerBase
         var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
         var totalBalance = (await _db.WorkshopSmsCredits.SumAsync(c => (decimal?)c.Balance)) ?? 0;
-        var activeWorkshops = await _db.Workshops.CountAsync(w => w.IsActive);
+        var activeWorkshops = await _db.Workshops.CountAsync(w => w.IsActive && !w.IsDeleted);
         var todaySent = await _db.SmsLogs.CountAsync(l => l.CreatedAt >= todayStart);
         var pendingCharges = await _db.SmsChargeTransactions.CountAsync(t => t.Status == SmsChargeStatus.Pending);
         var monthlyCost = (await _db.SmsLogs.Where(l => l.CreatedAt >= monthStart).SumAsync(l => (decimal?)l.Cost)) ?? 0;
@@ -66,7 +68,7 @@ public sealed class SmsAdminController : ControllerBase
     public async Task<ActionResult<List<WorkshopSmsCreditDto>>> GetAllCredits()
     {
         var tariff = (await _db.SmsSettings.FirstOrDefaultAsync())?.TariffPerSms ?? 1;
-        var workshops = await _db.Workshops.Where(w => w.IsActive).ToListAsync();
+        var workshops = await _db.Workshops.Where(w => w.IsActive && !w.IsDeleted).ToListAsync();
         var credits = await _db.WorkshopSmsCredits.Include(x => x.Workshop).ToListAsync();
 
         return Ok(workshops.Select(w =>
@@ -201,6 +203,7 @@ public sealed class SmsAdminController : ControllerBase
         tx.ReviewedAt = DateTime.UtcNow;
         tx.ReviewedByUserName = User.Identity?.Name;
 
+        decimal? newBalance = null;
         if (request.Approved)
         {
             tx.Status = SmsChargeStatus.Approved;
@@ -218,6 +221,7 @@ public sealed class SmsAdminController : ControllerBase
             }
             credit.Balance += tx.Amount;
             credit.UpdatedAt = DateTime.UtcNow;
+            newBalance = credit.Balance;
         }
         else
         {
@@ -225,6 +229,28 @@ public sealed class SmsAdminController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+
+        var eventType = request.Approved ? "sms.charge.approved" : "sms.charge.rejected";
+        var amountText = tx.Amount.ToString("N0");
+        await _notificationEvents.NotifyAsync(
+            eventType: eventType,
+            values: new Dictionary<string, string?>
+            {
+                ["Amount"] = amountText,
+                ["Balance"] = (newBalance ?? 0).ToString("N0"),
+                ["Reason"] = string.IsNullOrWhiteSpace(request.ReviewNote) ? "—" : request.ReviewNote!,
+                ["RequestId"] = tx.Id.ToString()
+            },
+            idempotencyKey: $"{eventType}:{tx.Id}:{tx.ReviewedAt?.Ticks ?? 0}",
+            fallbackSeverity: request.Approved ? NotificationSeverity.Success : NotificationSeverity.Warning,
+            fallbackTitle: request.Approved ? "درخواست شارژ پیامک تأیید شد" : "درخواست شارژ پیامک رد شد",
+            fallbackBody: request.Approved
+                ? $"درخواست شارژ شما به مبلغ {amountText} تومان تأیید شد و به اعتبار پیامک اضافه شد."
+                : $"درخواست شارژ شما به مبلغ {amountText} تومان رد شد.",
+            fallbackUrl: "/admin/sms",
+            workshopId: tx.WorkshopId);
+        await _db.SaveChangesAsync();
+
         return NoContent();
     }
 

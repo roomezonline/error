@@ -5,6 +5,7 @@ using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
@@ -27,6 +28,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [EnableRateLimiting("auth")]
     public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest request)
     {
         var phone = request.PhoneNumber.Trim();
@@ -72,12 +74,16 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [EnableRateLimiting("auth")]
     public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest request)
     {
         var phone = request.PhoneNumber.Trim();
         var user = await _db.Users.FirstOrDefaultAsync(x => x.PhoneNumber == phone);
         if (user == null)
             return BadRequest("موبایل یا رمز عبور اشتباه است");
+
+        if (user.IsDeleted)
+            return BadRequest("این حساب کاربری حذف شده است");
 
         if (!user.IsActive)
             return BadRequest("حساب کاربری غیرفعال است");
@@ -95,17 +101,18 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("unified-login")]
+    [EnableRateLimiting("auth")]
     public async Task<ActionResult<UnifiedAuthResponse>> UnifiedLogin([FromBody] LoginRequest request)
     {
         var phone = request.PhoneNumber.Trim();
 
         var user = await _db.Users.FirstOrDefaultAsync(x => x.PhoneNumber == phone);
-        var workshopUser = await _db.WorkshopUsers.FirstOrDefaultAsync(x => x.PhoneNumber == phone);
+        var workshopUser = await _db.WorkshopUsers.FirstOrDefaultAsync(x => x.PhoneNumber == phone && !x.IsDeleted && !x.Workshop.IsDeleted);
 
         if (user == null && workshopUser == null)
             return BadRequest("موبایل یا رمز عبور اشتباه است");
 
-        if (user != null && !user.IsActive)
+        if (user != null && !user.IsActive && !user.IsDeleted)
             return BadRequest("حساب کاربری غیرفعال است");
 
         if (user == null && workshopUser != null && !workshopUser.IsActive)
@@ -116,6 +123,19 @@ public class AuthController : ControllerBase
 
         var workshopMatch = workshopUser != null && workshopUser.IsActive
             && _workshopHasher.VerifyHashedPassword(workshopUser, workshopUser.PasswordHash, request.Password) != PasswordVerificationResult.Failed;
+
+        // اگر حساب سایت حذف نرم شده باشد: فقط با عضویت فعال کارگاه اجازه ورود داریم و حساب سایت خودکار بازیابی می‌شود.
+        if (user != null && user.IsDeleted)
+        {
+            if (!workshopMatch)
+                return BadRequest("این حساب کاربری حذف شده است");
+
+            user.IsDeleted = false;
+            user.DeletedAt = null;
+            user.IsActive = true;
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync();
+        }
 
         if (!siteMatch && !workshopMatch)
             return BadRequest("موبایل یا رمز عبور اشتباه است");
@@ -171,7 +191,7 @@ public class AuthController : ControllerBase
         if (!string.IsNullOrWhiteSpace(userIdStr) && int.TryParse(userIdStr, out var siteUserId))
         {
             var user = await _db.Users.FindAsync(siteUserId);
-            if (user != null)
+            if (user != null && !user.IsDeleted)
             {
                 return Ok(new UserProfileDto
                 {
@@ -190,7 +210,7 @@ public class AuthController : ControllerBase
         if (!string.IsNullOrWhiteSpace(workshopIdStr) && int.TryParse(workshopIdStr, out var workshopUserId))
         {
             var wsUser = await _db.WorkshopUsers.FindAsync(workshopUserId);
-            if (wsUser == null) return Unauthorized();
+            if (wsUser == null || wsUser.IsDeleted) return Unauthorized();
             return Ok(new UserProfileDto
             {
                 Id = wsUser.Id,
@@ -218,7 +238,7 @@ public class AuthController : ControllerBase
     {
         var userId = GetUserId();
         var user = await _db.Users.FindAsync(userId);
-        if (user == null) return Unauthorized();
+        if (user == null || user.IsDeleted) return Unauthorized();
 
         user.FullName = request.FullName.Trim();
         user.Email = request.Email?.Trim();
@@ -232,11 +252,12 @@ public class AuthController : ControllerBase
 
     [Authorize]
     [HttpPut("change-password")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
         var userId = GetUserId();
         var user = await _db.Users.FindAsync(userId);
-        if (user == null) return Unauthorized();
+        if (user == null || user.IsDeleted) return Unauthorized();
 
         var verify = _userHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);
         if (verify == PasswordVerificationResult.Failed)

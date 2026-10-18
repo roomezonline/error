@@ -192,12 +192,18 @@ public class CartService
     {
         if (quantity <= 0) return;
 
+        // سقف موجودی: تعداد نباید از موجودی انبار بیشتر شود.
+        if (product.StockQuantity > 0)
+            quantity = Math.Min(quantity, product.StockQuantity);
+
         _removed.RemoveAll(r => r.ProductId == product.Id);
 
         var existing = _items.FirstOrDefault(x => x.ProductId == product.Id);
         if (existing != null)
         {
-            existing.Quantity += quantity;
+            var target = existing.Quantity + quantity;
+            if (product.StockQuantity > 0) target = Math.Min(target, product.StockQuantity);
+            existing.Quantity = target;
         }
         else
         {

@@ -1,0 +1,162 @@
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Helpers
+@using ErrorService.Client.Services
+@inject HttpClient Http
+@inject CartService CartService
+@inject ToastService ToastService
+
+@if (_items != null && _items.Any())
+{
+    <section class="pr-row py-5 bg-light" dir="rtl">
+        <div class="container-fluid px-2 px-md-4">
+            <div class="d-flex justify-content-between align-items-center mb-4 px-2">
+                <div>
+                    <h2 class="pr-row__title fw-bold mb-1">@Title</h2>
+                    <p class="text-muted small mb-0">@Subtitle</p>
+                </div>
+                <a href="/products" class="btn btn-outline-primary rounded-pill px-4 btn-sm">مشاهده همه</a>
+            </div>
+
+            <div class="pr-row__scroll">
+                @foreach (var prod in _items)
+                {
+                    <div class="pr-row__item">
+                        <a href="@SeoUrl.Product(prod.Id, prod.Slug)" class="text-decoration-none d-block h-100">
+                            <div class="pr-card rounded-4 bg-white shadow-sm overflow-hidden h-100 border-0 @(prod.IsAvailable ? "" : "pr-card--unavailable")">
+                                <div class="pr-card__img-wrap bg-light position-relative">
+                                    @if (DiscountHelper.IsTimedActive(prod))
+                                    {
+                                        <div class="pr-card__badge">تخفیف</div>
+                                    }
+                                    else if (DiscountHelper.IsPermanentActive(prod))
+                                    {
+                                        <div class="pr-card__badge pr-card__badge--perm">ویژه</div>
+                                    }
+                                    else if (prod.IsFeatured)
+                                    {
+                                        <div class="pr-card__badge pr-card__badge--star">پیشنهاد</div>
+                                    }
+                                    @if (!prod.IsAvailable || prod.StockQuantity <= 0)
+                                    {
+                                        <span class="badge bg-secondary position-absolute top-0 end-0 m-2 rounded-pill">ناموجود</span>
+                                    }
+                                    <img src="@(string.IsNullOrEmpty(prod.MainImageUrl) ? "/images/placeholder-product.svg" : prod.MainImageUrl)"
+                                         loading="lazy" class="pr-card__img" alt="@prod.Name" />
+                                </div>
+                                <div class="pr-card__body">
+                                    <div class="pr-card__name">@prod.Name</div>
+                                    @if (!string.IsNullOrEmpty(prod.CategoryName))
+                                    {
+                                        <div class="pr-card__cat">@prod.CategoryName</div>
+                                    }
+                                    <div class="pr-card__price">
+                                        @if (DiscountHelper.IsActive(prod))
+                                        {
+                                            <span class="pr-card__price-new">@DiscountHelper.GetEffectivePrice(prod).ToString("N0")</span>
+                                            <span class="pr-card__price-old">@prod.Price.ToString("N0")</span>
+                                            <span class="pr-card__cur">تومان</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="pr-card__price-new">@prod.Price.ToString("N0")</span>
+                                            <span class="pr-card__cur">تومان</span>
+                                        }
+                                    </div>
+                                    <button type="button" class="pr-card__btn rounded-pill"
+                                            disabled="@(!prod.IsAvailable || prod.StockQuantity <= 0)"
+                                            @onclick="() => Add(prod)"
+                                            @onclick:preventDefault="true"
+                                            @onclick:stopPropagation="true">
+                                        <span class="oi oi-cart"></span>
+                                        @(CartService.HasItem(prod.Id) ? "افزوده شده" : "افزودن به سبد")
+                                    </button>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+}
+
+<style>
+    .pr-row__title { font-size: 1.35rem; }
+    .pr-row__scroll { display: flex; gap: 1rem; overflow-x: auto; padding: .25rem .5rem 1rem; scroll-snap-type: x mandatory; }
+    .pr-row__scroll::-webkit-scrollbar { height: 8px; }
+    .pr-row__scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+    .pr-row__scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 999px; }
+    .pr-row__item { flex: 0 0 250px; min-width: 250px; scroll-snap-align: start; }
+
+    .pr-card { display: flex; flex-direction: column; transition: transform .18s ease, box-shadow .18s ease; border: 1px solid #f1f5f9 !important; }
+    .pr-card:hover { transform: translateY(-4px); box-shadow: 0 14px 30px rgba(15, 23, 42, .10) !important; }
+    .pr-card--unavailable { opacity: .72; }
+
+    .pr-card__img-wrap { height: 190px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .pr-card__img { width: 100%; height: 100%; object-fit: contain; padding: .75rem; transition: transform .25s ease; }
+    .pr-card:hover .pr-card__img { transform: scale(1.05); }
+
+    .pr-card__badge {
+        position: absolute; top: .6rem; right: .6rem; z-index: 2;
+        background: linear-gradient(135deg, #ef4444, #f97316);
+        color: #fff; font-size: .7rem; font-weight: 800;
+        padding: .25rem .6rem; border-radius: 999px;
+        box-shadow: 0 4px 12px rgba(239, 68, 68, .35);
+    }
+    .pr-card__badge--perm { background: linear-gradient(135deg, #8b5cf6, #6366f1); box-shadow: 0 4px 12px rgba(99, 102, 241, .35); }
+    .pr-card__badge--star { background: linear-gradient(135deg, #0ea5e9, #2563eb); box-shadow: 0 4px 12px rgba(37, 99, 235, .35); }
+
+    .pr-card__body { padding: .9rem 1rem 1.1rem; display: flex; flex-direction: column; gap: .35rem; flex: 1; }
+    .pr-card__name { font-size: .88rem; font-weight: 700; color: #0f172a; line-height: 1.7; height: 2.9em; overflow: hidden; }
+    .pr-card__cat { font-size: .72rem; color: #94a3b8; }
+
+    .pr-card__price { display: flex; align-items: baseline; gap: .35rem; flex-wrap: wrap; margin-top: .35rem; }
+    .pr-card__price-new { font-size: 1rem; font-weight: 900; color: #dc2626; }
+    .pr-card__price-old { font-size: .75rem; color: #94a3b8; text-decoration: line-through; }
+    .pr-card__cur { font-size: .7rem; color: #64748b; }
+
+    .pr-card__btn {
+        margin-top: auto; width: 100%; border: 1px solid #dbeafe; background: #eff6ff;
+        color: #1d4ed8; font-size: .82rem; font-weight: 700; padding: .5rem .75rem;
+        cursor: pointer; transition: all .15s ease; display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+    }
+    .pr-card__btn:hover:not(:disabled) { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .pr-card__btn:disabled { opacity: .5; cursor: not-allowed; }
+</style>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string Subtitle { get; set; } = "";
+    [Parameter] public string Endpoint { get; set; } = "";
+    [Parameter] public int Take { get; set; } = 8;
+
+    private List<ProductDto>? _items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Endpoint)) return;
+        try
+        {
+            var sep = Endpoint.Contains('?') ? "&" : "?";
+            _items = await Http.GetFromJsonAsync<List<ProductDto>>($"{Endpoint}{sep}take={Take}") ?? new();
+        }
+        catch
+        {
+            _items = new List<ProductDto>();
+        }
+    }
+
+    private async Task Add(ProductDto product)
+    {
+        try
+        {
+            await CartService.AddToCartAsync(product, 1);
+            ToastService.ShowSuccess("به سبد خرید اضافه شد");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در افزودن به سبد: {ex.Message}");
+        }
+    }
+}

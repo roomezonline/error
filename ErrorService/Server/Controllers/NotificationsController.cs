@@ -479,7 +479,7 @@ public sealed class NotificationsController : ControllerBase
         }
 
         var matched = await _db.Users
-            .Where(u => u.IsActive && variants.Contains(u.PhoneNumber))
+            .Where(u => u.IsActive && !u.IsDeleted && variants.Contains(u.PhoneNumber))
             .Select(u => new { u.Id, u.PhoneNumber })
             .ToListAsync();
 
@@ -540,7 +540,7 @@ public sealed class NotificationsController : ControllerBase
             var superAdminIds = await (
                 from ur in _db.AppUserRoles
                 join u in _db.Users on ur.UserId equals u.Id
-                where u.IsActive && ur.Role.Key == "super_admin"
+                where u.IsActive && !u.IsDeleted && ur.Role.Key == "super_admin"
                 select u.Id)
                 .ToListAsync();
             recipientIds.UnionWith(superAdminIds);
@@ -553,7 +553,7 @@ public sealed class NotificationsController : ControllerBase
                 join u in _db.Users on ur.UserId equals u.Id
                 join rp in _db.RolePermissions on ur.RoleId equals rp.RoleId
                 join p in _db.Permissions on rp.PermissionId equals p.Id
-                where u.IsActive && p.Key == "admin.notifications.view"
+                where u.IsActive && !u.IsDeleted && p.Key == "admin.notifications.view"
                 select ur.UserId)
                 .Distinct()
                 .ToListAsync();
@@ -562,7 +562,7 @@ public sealed class NotificationsController : ControllerBase
 
         if (request.IncludeAllUsers)
         {
-            var allIds = await _db.Users.Where(u => u.IsActive).Select(u => u.Id).ToListAsync();
+            var allIds = await _db.Users.Where(u => u.IsActive && !u.IsDeleted).Select(u => u.Id).ToListAsync();
             recipientIds.UnionWith(allIds);
         }
 

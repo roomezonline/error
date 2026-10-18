@@ -18,7 +18,7 @@
                                     {
                                         if (cat.Icon.StartsWith("/") || cat.Icon.StartsWith("http"))
                                         {
-                                            <img src="@cat.Icon" loading="lazy" alt="@cat.Name" class="category-img" />
+                                            <img src="@cat.Icon" loading="lazy" alt="@(string.IsNullOrWhiteSpace(cat.Name) ? "Home appliance category" : cat.Name)" class="category-img" />
                                         }
                                         else
                                         {

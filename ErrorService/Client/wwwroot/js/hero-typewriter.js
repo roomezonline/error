@@ -19,7 +19,16 @@
         el.dir = rtl ? "rtl" : "ltr";
 
         el.classList.add("is-typing");
+
+        // Reserve the final height before animating so typing never pushes
+        // elements below the hero and causes layout shifts (CLS).
+        el.style.minHeight = "";
+        el.textContent = text;
+        if (el.offsetHeight > 0) {
+            el.style.minHeight = el.offsetHeight + "px";
+        }
         el.textContent = "";
+        el.style.visibility = "visible";
 
         const speed = options?.speedMs ?? 28;
         const startDelay = options?.startDelayMs ?? 0;

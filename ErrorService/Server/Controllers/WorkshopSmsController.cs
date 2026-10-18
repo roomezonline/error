@@ -13,10 +13,12 @@ namespace ErrorService.Server.Controllers;
 public sealed class WorkshopSmsController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
+    private readonly NotificationEventService _notificationEvents;
 
-    public WorkshopSmsController(ErrorServiceDbContext db)
+    public WorkshopSmsController(ErrorServiceDbContext db, NotificationEventService notificationEvents)
     {
         _db = db;
+        _notificationEvents = notificationEvents;
     }
 
     [Authorize]
@@ -326,6 +328,23 @@ public sealed class WorkshopSmsController : ControllerBase
 
         _db.SmsChargeTransactions.Add(tx);
         await _db.SaveChangesAsync();
+
+        var amountText = tx.Amount.ToString("N0");
+        await _notificationEvents.NotifyAsync(
+            eventType: "sms.charge.requested",
+            values: new Dictionary<string, string?>
+            {
+                ["Amount"] = amountText,
+                ["RequestId"] = tx.Id.ToString()
+            },
+            idempotencyKey: $"sms.charge.requested:{tx.Id}",
+            fallbackSeverity: NotificationSeverity.Info,
+            fallbackTitle: "درخواست شارژ پیامک ثبت شد",
+            fallbackBody: $"درخواست شارژ به مبلغ {amountText} تومان ثبت شد و در انتظار بررسی است.",
+            fallbackUrl: "/admin/sms",
+            workshopId: wsId);
+        await _db.SaveChangesAsync();
+
         return Ok(new { id = tx.Id });
     }
 

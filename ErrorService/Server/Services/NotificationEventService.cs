@@ -21,6 +21,14 @@ public sealed class NotificationEventService
         _logger = logger;
     }
 
+    /// <summary>
+    /// مبلغ واقعاً قابل پرداخت سفارش (مبلغ کل منهای تخفیف).
+    /// TotalAmount شامل حمل‌ونقل ولی بدون تخفیف است؛ نمایش خام آن در پیام‌ها
+    /// با مبلغی که مشتری می‌پردازد نمی‌خواند.
+    /// </summary>
+    private static decimal PayableAmount(Order order)
+        => order.TotalAmount - (order.DiscountAmount ?? 0);
+
     public Task NotifyReceiptCreatedAsync(CustomerReceipt receipt) =>
         GuardAsync("receipt.created", () => EmitAsync(
             eventType: "receipt.created",
@@ -107,7 +115,7 @@ public sealed class NotificationEventService
             values: new Dictionary<string, string?>
             {
                 ["OrderNumber"] = order.OrderNumber,
-                ["Amount"] = order.TotalAmount.ToString("N0"),
+                ["Amount"] = PayableAmount(order).ToString("N0"),
                 ["Status"] = label,
                 ["OrderId"] = order.Id.ToString()
             },
@@ -134,7 +142,7 @@ public sealed class NotificationEventService
             values: new Dictionary<string, string?>
             {
                 ["OrderNumber"] = order.OrderNumber,
-                ["Amount"] = order.TotalAmount.ToString("N0"),
+                ["Amount"] = PayableAmount(order).ToString("N0"),
                 ["Stage"] = label,
                 ["OrderId"] = order.Id.ToString()
             },
@@ -155,13 +163,13 @@ public sealed class NotificationEventService
             values: new Dictionary<string, string?>
             {
                 ["OrderNumber"] = order.OrderNumber,
-                ["Amount"] = order.TotalAmount.ToString("N0"),
+                ["Amount"] = PayableAmount(order).ToString("N0"),
                 ["OrderId"] = order.Id.ToString()
             },
             idempotencyKey: $"order.created:{order.Id}",
             legacySeverity: NotificationSeverity.Info,
             legacyTitle: "سفارش شما ثبت شد",
-            legacyBody: $"سفارش {order.OrderNumber} به مبلغ {order.TotalAmount:N0} تومان ثبت شد و در انتظار پرداخت است.",
+            legacyBody: $"سفارش {order.OrderNumber} به مبلغ {PayableAmount(order):N0} تومان ثبت شد و در انتظار پرداخت است.",
             legacyUrl: $"/my-orders/{order.Id}",
             appUserId: order.UserId));
     }
@@ -335,7 +343,7 @@ public sealed class NotificationEventService
         var appUserIds = new HashSet<int>();
         if (!appUserId.HasValue && !string.IsNullOrWhiteSpace(phone))
             appUserId = await _db.Users
-                .Where(x => x.PhoneNumber == phone && x.IsActive)
+                .Where(x => x.PhoneNumber == phone && x.IsActive && !x.IsDeleted)
                 .Select(x => (int?)x.Id)
                 .FirstOrDefaultAsync();
         if (appUserId.HasValue)
@@ -347,6 +355,7 @@ public sealed class NotificationEventService
             var users = await _db.WorkshopUsers
                 .Where(x => x.WorkshopId == workshopId.Value
                     && x.IsActive
+                    && !x.IsDeleted
                     && (!workshopUserId.HasValue || x.Id == workshopUserId.Value))
                 .Select(x => x.Id)
                 .ToListAsync();
@@ -360,7 +369,7 @@ public sealed class NotificationEventService
                 join u in _db.Users on ur.UserId equals u.Id
                 join rp in _db.RolePermissions on ur.RoleId equals rp.RoleId
                 join p in _db.Permissions on rp.PermissionId equals p.Id
-                where u.IsActive && p.Key == "admin.notifications.view"
+                where u.IsActive && !u.IsDeleted && p.Key == "admin.notifications.view"
                 select ur.UserId)
                 .Distinct()
                 .ToListAsync();

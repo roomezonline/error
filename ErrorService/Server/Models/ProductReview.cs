@@ -26,6 +26,9 @@ public sealed class ProductReview
     [Required]
     public string Content { get; set; } = string.Empty;
 
+    [MaxLength(500)]
+    public string? MediaUrl { get; set; }
+
     public bool IsApproved { get; set; } = false;
     public bool IsAdminRead { get; set; } = false;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

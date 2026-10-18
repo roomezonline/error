@@ -1,4 +1,5 @@
 using ErrorService.Server.Data;
+using ErrorService.Server.Infrastructure;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
@@ -18,10 +19,11 @@ public class SearchController : ControllerBase
     }
 
     [HttpGet]
-    [OutputCache(Duration = 180, VaryByQueryKeys = new[] { "q", "take" })]
+    [OutputCache(Duration = 180, VaryByQueryKeys = new[] { "q", "take", "skip" })]
     public async Task<ActionResult<SearchResponseDto>> Get(
         [FromQuery] string q,
         [FromQuery] int take = 8,
+        [FromQuery] int skip = 0,
         CancellationToken ct = default)
     {
         q = (q ?? string.Empty).Trim();
@@ -29,14 +31,14 @@ public class SearchController : ControllerBase
             return Ok(new SearchResponseDto());
 
         take = Math.Clamp(take, 1, 20);
+        skip = Math.Clamp(skip, 0, 500);
 
         var products = await _context.Products
             .AsNoTracking()
-            .Where(p =>
-                p.Name.Contains(q) ||
-                (p.Description != null && p.Description.Contains(q)) ||
-                (p.Category != null && p.Category.Name.Contains(q)))
+            .Where(p => !p.IsDraft)
+            .ApplyTextSearch(q)
             .OrderByDescending(p => p.CreatedAt)
+            .Skip(skip)
             .Take(take)
             .Select(p => new SearchResultItemDto
             {
@@ -57,6 +59,7 @@ public class SearchController : ControllerBase
                  (n.Summary != null && n.Summary.Contains(q)) ||
                  (n.Content != null && n.Content.Contains(q))))
             .OrderByDescending(n => n.CreatedAt)
+            .Skip(skip)
             .Take(take)
             .Select(n => new SearchResultItemDto
             {
@@ -77,6 +80,8 @@ public class SearchController : ControllerBase
                 e.DeviceType.Contains(q) ||
                 e.Description.Contains(q) ||
                 (e.TechnicalNotes != null && e.TechnicalNotes.Contains(q)))
+            .OrderBy(e => e.Id)
+            .Skip(skip)
             .Take(take)
             .Select(e => new SearchResultItemDto
             {
@@ -96,6 +101,7 @@ public class SearchController : ControllerBase
                 (c.Title.Contains(q) ||
                  (c.Summary != null && c.Summary.Contains(q))))
             .OrderByDescending(c => c.CreatedAt)
+            .Skip(skip)
             .Take(take)
             .Select(c => new SearchResultItemDto
             {
@@ -115,5 +121,48 @@ public class SearchController : ControllerBase
             ErrorCodes = errorCodes,
             Courses = courses
         });
+    }
+
+    [HttpGet("suggest")]
+    [OutputCache(Duration = 120, VaryByQueryKeys = new[] { "q" })]
+    public async Task<ActionResult<List<ProductSuggestDto>>> Suggest(
+        [FromQuery] string q,
+        CancellationToken ct = default)
+    {
+        q = (q ?? string.Empty).Trim();
+        if (q.Length < 2)
+            return Ok(new List<ProductSuggestDto>());
+
+        var variants = SearchNormalizer.QueryVariants(q);
+        while (variants.Count < 4)
+            variants.Add("\u0001");
+        var a = variants[0];
+        var b = variants[1];
+        var c = variants[2];
+        var d = variants[3];
+
+        var items = await _context.Products
+            .AsNoTracking()
+            .Where(p => !p.IsDraft &&
+                (p.Name.Contains(a) || p.Name.Contains(b) || p.Name.Contains(c) || p.Name.Contains(d) ||
+                (p.Sku != null && (p.Sku.Contains(a) || p.Sku.Contains(b) || p.Sku.Contains(c) || p.Sku.Contains(d))) ||
+                (p.Slug != null && (p.Slug.Contains(a) || p.Slug.Contains(b) || p.Slug.Contains(c) || p.Slug.Contains(d)))))
+            .OrderByDescending(p => p.Name.StartsWith(a) || (p.Sku != null && p.Sku.StartsWith(a)))
+            .ThenByDescending(p => p.IsAvailable)
+            .ThenByDescending(p => p.CreatedAt)
+            .Take(8)
+            .Select(p => new ProductSuggestDto
+            {
+                Id = p.Id,
+                Name = p.Name,
+                Slug = p.Slug,
+                Price = p.Price,
+                DiscountPrice = p.DiscountPrice,
+                ImageUrl = p.MainImageUrl,
+                IsAvailable = p.IsAvailable
+            })
+            .ToListAsync(ct);
+
+        return Ok(items);
     }
 }

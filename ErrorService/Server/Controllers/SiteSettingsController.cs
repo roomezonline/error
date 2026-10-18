@@ -12,10 +12,12 @@ namespace ErrorService.Server.Controllers;
 public sealed class SiteSettingsController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
+    private readonly IWebHostEnvironment _env;
 
-    public SiteSettingsController(ErrorServiceDbContext db)
+    public SiteSettingsController(ErrorServiceDbContext db, IWebHostEnvironment env)
     {
         _db = db;
+        _env = env;
     }
 
     [HttpGet]
@@ -88,6 +90,10 @@ public sealed class SiteSettingsController : ControllerBase
             ChatEnableAutoMessage = settings.ChatEnableAutoMessage,
             ChatAutoMessageSeconds = settings.ChatAutoMessageSeconds,
             ChatPhoneRequired = settings.ChatPhoneRequired,
+            ChatOperatorImageUrl = settings.ChatOperatorImageUrl,
+            ChatGreetingEnabled = settings.ChatGreetingEnabled,
+            ChatGreetingText = settings.ChatGreetingText,
+            ChatSuggestedTopics = settings.ChatSuggestedTopics,
             ChatEnableAiAssistant = settings.ChatEnableAiAssistant,
             ChatAiProvider = settings.ChatAiProvider,
             ChatAiApiUrl = settings.ChatAiApiUrl,
@@ -95,6 +101,25 @@ public sealed class SiteSettingsController : ControllerBase
             ChatAiApiKey = settings.ChatAiApiKey,
             ChatAiSystemPrompt = settings.ChatAiSystemPrompt,
             RequireReviewApproval = settings.RequireReviewApproval,
+            EnableProductReviews = settings.EnableProductReviews,
+            EnableReviewMedia = settings.EnableReviewMedia,
+            EnableProductQna = settings.EnableProductQna,
+            EnableSpecsTable = settings.EnableSpecsTable,
+            EnablePriceHistoryChart = settings.EnablePriceHistoryChart,
+            EnableProductBadges = settings.EnableProductBadges,
+            EnableTrustBar = settings.EnableTrustBar,
+            EnableDeliveryEta = settings.EnableDeliveryEta,
+            EnableWishlist = settings.EnableWishlist,
+            EnableStockAlert = settings.EnableStockAlert,
+            EnableRelatedProducts = settings.EnableRelatedProducts,
+            EnableRecentlyViewed = settings.EnableRecentlyViewed,
+            EnableFreeShipping = settings.EnableFreeShipping,
+            FreeShippingThreshold = settings.FreeShippingThreshold,
+            EnableReturnRequests = settings.EnableReturnRequests,
+            EnableReorder = settings.EnableReorder,
+            EnableHomeBestSellers = settings.EnableHomeBestSellers,
+            EnableHomeRestocked = settings.EnableHomeRestocked,
+            ShowEnamadSeal = settings.ShowEnamadSeal,
             HomeModules = homeModulesAvailable
                 ? settings.HomeModules
                     .OrderBy(x => x.SortOrder)
@@ -107,6 +132,38 @@ public sealed class SiteSettingsController : ControllerBase
                     .ToList()
                 : new List<SiteHomeModuleDto>()
         };
+    }
+
+    [Authorize(Policy = "perm:admin.settings.manage")]
+    [HttpPost("upload-operator-image")]
+    public async Task<IActionResult> UploadOperatorImage(IFormFile file)
+    {
+        if (file == null || file.Length <= 0)
+            return BadRequest("فایل خالی است");
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var allowed = new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg" };
+        if (!allowed.Contains(ext))
+            return BadRequest("فرمت تصویر مجاز نیست (jpg, png, webp, gif, svg)");
+
+        const int maxKb = 512;
+        if (file.Length > maxKb * 1024)
+            return BadRequest($"حجم فایل نباید بیش از {maxKb} کیلوبایت باشد");
+
+        var relativeFolder = "uploads/chat-operator";
+        var wwwroot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
+        var uploadsRoot = Path.Combine(wwwroot, relativeFolder);
+        if (!Directory.Exists(uploadsRoot))
+            Directory.CreateDirectory(uploadsRoot);
+
+        var fileName = $"{Guid.NewGuid():N}{ext}";
+        var fullPath = Path.Combine(uploadsRoot, fileName);
+        await using (var outStream = System.IO.File.Create(fullPath))
+        {
+            await file.CopyToAsync(outStream);
+        }
+
+        return Ok(new { Url = $"/{relativeFolder}/{fileName}" });
     }
 
     [Authorize(Policy = "perm:admin.settings.manage")]
@@ -207,6 +264,10 @@ public sealed class SiteSettingsController : ControllerBase
         settings.ChatEnableAutoMessage = dto.ChatEnableAutoMessage;
         settings.ChatAutoMessageSeconds = dto.ChatAutoMessageSeconds;
         settings.ChatPhoneRequired = dto.ChatPhoneRequired;
+        settings.ChatOperatorImageUrl = string.IsNullOrWhiteSpace(dto.ChatOperatorImageUrl) ? null : dto.ChatOperatorImageUrl.Trim();
+        settings.ChatGreetingEnabled = dto.ChatGreetingEnabled;
+        settings.ChatGreetingText = string.IsNullOrWhiteSpace(dto.ChatGreetingText) ? null : dto.ChatGreetingText.Trim();
+        settings.ChatSuggestedTopics = string.IsNullOrWhiteSpace(dto.ChatSuggestedTopics) ? null : dto.ChatSuggestedTopics.Trim();
         settings.ChatEnableAiAssistant = dto.ChatEnableAiAssistant;
         settings.ChatAiProvider = dto.ChatAiProvider;
         settings.ChatAiApiUrl = dto.ChatAiApiUrl;
@@ -214,6 +275,25 @@ public sealed class SiteSettingsController : ControllerBase
         settings.ChatAiApiKey = dto.ChatAiApiKey;
         settings.ChatAiSystemPrompt = dto.ChatAiSystemPrompt;
         settings.RequireReviewApproval = dto.RequireReviewApproval;
+        settings.EnableProductReviews = dto.EnableProductReviews;
+        settings.EnableReviewMedia = dto.EnableReviewMedia;
+        settings.EnableProductQna = dto.EnableProductQna;
+        settings.EnableSpecsTable = dto.EnableSpecsTable;
+        settings.EnablePriceHistoryChart = dto.EnablePriceHistoryChart;
+        settings.EnableProductBadges = dto.EnableProductBadges;
+        settings.EnableTrustBar = dto.EnableTrustBar;
+        settings.EnableDeliveryEta = dto.EnableDeliveryEta;
+        settings.EnableWishlist = dto.EnableWishlist;
+        settings.EnableStockAlert = dto.EnableStockAlert;
+        settings.EnableRelatedProducts = dto.EnableRelatedProducts;
+        settings.EnableRecentlyViewed = dto.EnableRecentlyViewed;
+        settings.EnableFreeShipping = dto.EnableFreeShipping;
+        settings.FreeShippingThreshold = dto.FreeShippingThreshold;
+        settings.EnableReturnRequests = dto.EnableReturnRequests;
+        settings.EnableReorder = dto.EnableReorder;
+        settings.EnableHomeBestSellers = dto.EnableHomeBestSellers;
+        settings.EnableHomeRestocked = dto.EnableHomeRestocked;
+        settings.ShowEnamadSeal = dto.ShowEnamadSeal;
 
         await _db.SaveChangesAsync();
         return NoContent();

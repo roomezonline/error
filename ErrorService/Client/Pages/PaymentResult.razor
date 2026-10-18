@@ -1,0 +1,144 @@
+@page "/payment/result"
+@inject NavigationManager Nav
+@inject HttpClient Http
+@inject ErrorService.Client.Services.CheckoutRecoveryService Recovery
+
+<PageTitle>نتیجه پرداخت | ارورسرویس</PageTitle>
+
+<HeadContent>
+    <meta name="robots" content="noindex, nofollow" />
+</HeadContent>
+
+<div class="pr-page" dir="rtl">
+    <div class="pr-card">
+        @if (isLoading)
+        {
+            <div class="pr-icon pr-icon--wait"><div class="spinner-border text-primary" role="status"></div></div>
+            <h1 class="pr-title">در حال بررسی پرداخت...</h1>
+            <p class="pr-desc">لطفاً چند لحظه صبر کنید.</p>
+        }
+        else if (isSuccess)
+        {
+            <div class="pr-icon pr-icon--ok"><span class="oi oi-check"></span></div>
+            <h1 class="pr-title">پرداخت با موفقیت انجام شد</h1>
+            <p class="pr-desc">@Message</p>
+            @if (OrderId.HasValue)
+            {
+                <div class="pr-meta">سفارش شماره <b>@OrderId</b></div>
+            }
+        }
+        else
+        {
+            <div class="pr-icon pr-icon--fail"><span class="oi oi-x"></span></div>
+            <h1 class="pr-title">پرداخت ناموفق بود</h1>
+            <p class="pr-desc">@Message</p>
+            @if (OrderId.HasValue)
+            {
+                <div class="pr-meta">سفارش شماره <b>@OrderId</b></div>
+            }
+        }
+
+        <div class="pr-actions">
+            @if (OrderId.HasValue)
+            {
+                <a class="pr-btn pr-btn--primary" href="/my-orders/@OrderId">مشاهده سفارش</a>
+            }
+            <a class="pr-btn pr-btn--ghost" href="/products">ادامه خرید</a>
+        </div>
+    </div>
+</div>
+
+<style>
+    .pr-page {
+        min-height: 60vh;
+        display: grid;
+        place-items: center;
+        padding: 32px 16px;
+        background: #f1f5f9;
+    }
+
+    .pr-card {
+        background: #fff;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(15, 23, 42, .08);
+        padding: 40px 24px;
+        max-width: 440px;
+        width: 100%;
+        text-align: center;
+    }
+
+    .pr-icon {
+        width: 76px;
+        height: 76px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        margin: 0 auto 18px;
+        font-size: 34px;
+        color: #fff;
+    }
+
+    .pr-icon--ok { background: #16a34a; }
+    .pr-icon--fail { background: #dc2626; }
+    .pr-icon--wait { background: #e2e8f0; }
+
+    .pr-title { font-size: 1.2rem; font-weight: 900; color: #0f172a; margin: 0 0 10px; }
+    .pr-desc { font-size: .9rem; color: #475569; line-height: 1.9; margin: 0; word-break: break-word; }
+    .pr-meta { margin-top: 14px; font-size: .82rem; color: #64748b; }
+
+    .pr-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 26px; }
+
+    .pr-btn {
+        display: block;
+        padding: 12px 18px;
+        border-radius: 999px;
+        font-weight: 800;
+        font-size: .9rem;
+        text-decoration: none;
+        transition: all .2s;
+    }
+
+    .pr-btn--primary { background: #4f46e5; color: #fff; }
+    .pr-btn--primary:hover { background: #4338ca; color: #fff; }
+    .pr-btn--ghost { background: #fff; color: #334155; border: 1px solid #e2e8f0; }
+    .pr-btn--ghost:hover { background: #f8fafc; color: #0f172a; }
+
+    @@media (max-width: 480px) {
+        .pr-card { padding: 32px 18px; }
+        .pr-title { font-size: 1.05rem; }
+    }
+</style>
+
+@code {
+    private int? OrderId;
+    private bool isSuccess;
+    private string Message = "";
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var query = System.Web.HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query);
+
+        if (int.TryParse(query["orderId"], out var orderId) && orderId > 0)
+            OrderId = orderId;
+
+        isSuccess = string.Equals(query["status"], "success", StringComparison.OrdinalIgnoreCase);
+
+        var rawMessage = query["msg"];
+        Message = string.IsNullOrWhiteSpace(rawMessage)
+            ? (isSuccess ? "پرداخت شما با موفقیت ثبت شد." : "پرداخت انجام نشد؛ می‌توانید دوباره تلاش کنید.")
+            : rawMessage!;
+
+        if (isSuccess)
+        {
+            try
+            {
+                await Recovery.ClearPendingOrderAsync();
+                await Recovery.ClearDraftAsync();
+            }
+            catch { }
+        }
+
+        isLoading = false;
+    }
+}

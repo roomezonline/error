@@ -76,6 +76,7 @@ public sealed class SensorFinderController : ControllerBase
     [OutputCache(Duration = 600)]
     public async Task<ActionResult<IEnumerable<object>>> GetRecentRecords([FromQuery] int take = 3)
     {
+        take = Math.Clamp(take, 1, 50);
         return await _db.SensorFinderRecords
             .AsNoTracking()
             .Include(x => x.Device)

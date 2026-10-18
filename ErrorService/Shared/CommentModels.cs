@@ -20,6 +20,9 @@ public sealed class CommentRequest
     [MinLength(2)]
     [MaxLength(2000)]
     public string Content { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string? MediaUrl { get; set; }
 }
 
 public sealed class CommentDto
@@ -31,6 +34,7 @@ public sealed class CommentDto
     public string Content { get; set; } = string.Empty;
     public int? Rating { get; set; }
     public string CreatedAtFa { get; set; } = string.Empty;
+    public string? MediaUrl { get; set; }
     public List<CommentDto> Replies { get; set; } = new();
 }
 

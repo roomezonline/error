@@ -31,6 +31,23 @@
             }
         </div>
         <div class="cs-comment__body">@Comment.Content</div>
+        @if (!string.IsNullOrWhiteSpace(Comment.MediaUrl))
+        {
+            <div class="cs-comment__media">
+                @if (Comment.MediaUrl.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+                     || Comment.MediaUrl.EndsWith(".webm", StringComparison.OrdinalIgnoreCase)
+                     || Comment.MediaUrl.EndsWith(".mov", StringComparison.OrdinalIgnoreCase))
+                {
+                    <video src="@Comment.MediaUrl" controls preload="metadata"></video>
+                }
+                else
+                {
+                    <a href="@Comment.MediaUrl" target="_blank" rel="noopener">
+                        <img src="@Comment.MediaUrl" alt="رسانه نظر" loading="lazy" />
+                    </a>
+                }
+            </div>
+        }
         <div class="cs-comment__footer">
             @if (OnReply.HasDelegate && !IsReply)
             {

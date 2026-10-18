@@ -24,10 +24,15 @@ public static class HtmlSanitizer
 
     private static readonly Regex TagRegex = new(@"<(\/?)(\w[\w-]*)([^>]*?)>", RegexOptions.Compiled);
     private static readonly Regex AttrRegex = new(@"(\w[\w-]*)(?:\s*=\s*(?:""([^""]*)""|'([^']*)'|(\S+)))?", RegexOptions.Compiled);
+    private static readonly Regex ScriptOrStyleBlockRegex = new(@"<\s*(style|script)\b[^>]*>.*?<\s*/\s*\1\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    private static readonly Regex ScriptOrStyleTagRegex = new(@"<\s*/?\s*(style|script)\b[^>]*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static string Sanitize(string? html)
     {
         if (string.IsNullOrEmpty(html)) return "";
+
+        html = ScriptOrStyleBlockRegex.Replace(html, "");
+        html = ScriptOrStyleTagRegex.Replace(html, "");
 
         return TagRegex.Replace(html, match =>
         {
@@ -101,7 +106,7 @@ public static class HtmlSanitizer
             "src" or "alt" or "width" or "height" or "loading" => tagName is "img" or "source" or "video" or "audio" or "iframe",
             "poster" or "preload" or "controls" or "autoplay" or "loop" or "muted" => tagName is "video" or "audio",
             "type" => tagName is "source",
-            "allowfullscreen" or "sandbox" or "referrerpolicy" or "frameborder" => tagName == "iframe",
+            "allowfullscreen" or "sandbox" or "referrerpolicy" or "frameborder" or "allow" or "allowtransparency" => tagName == "iframe",
             "colspan" or "rowspan" or "scope" => tagName is "th" or "td",
             "start" or "reversed" or "type" => tagName is "ol" or "li",
             "cite" => tagName is "blockquote" or "q",

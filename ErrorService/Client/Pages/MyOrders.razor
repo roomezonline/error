@@ -101,7 +101,7 @@
                                     <span class="oi oi-location text-success"></span>
                                     <span class="small fw-bold">@order.ShippingMethodName</span>
                                     <span class="small text-muted">—</span>
-                                    @if (order.ShippingCost == 0)
+                                    @if (order.ShippingIsFree)
                                     {
                                         <span class="small text-success fw-bold">ارسال رایگان</span>
                                     }

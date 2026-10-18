@@ -64,6 +64,7 @@ public class TrainingsController : ControllerBase
     [OutputCache(Duration = 120, VaryByQueryKeys = new[] { "take" })]
     public async Task<ActionResult<List<TrainingLessonDto>>> GetLatestLessons(int take = 4)
     {
+        take = Math.Clamp(take, 1, 50);
         return await _db.TrainingLessons
             .Where(x => x.IsPublished && x.Course.IsPublished)
             .OrderByDescending(x => x.CreatedAt)

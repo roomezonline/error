@@ -113,6 +113,7 @@ public class OrderDto
     public string? TrackingNumber { get; set; }
     public DateTimeOffset? PaymentDate { get; set; }
     public string? AdminNotes { get; set; }
+    public string? CustomerNotes { get; set; }
 
     public PaymentProvider? PaymentProvider { get; set; }
     public string? PaymentReference { get; set; }
@@ -134,6 +135,9 @@ public class OrderDto
     public int? ShippingMethodId { get; set; }
     public string? ShippingMethodName { get; set; }
     public decimal ShippingCost { get; set; }
+
+    /// <summary>هزینه ارسال این سفارش رایگان بوده است؟</summary>
+    public bool ShippingIsFree { get; set; }
 
     // Returns
     public int ReturnCount { get; set; }
@@ -259,6 +263,13 @@ public class OrderCreateRequest
     public string? CouponCode { get; set; }
 
     public int? ShippingMethodId { get; set; }
+
+    /// <summary>
+    /// کلید یکتای هر تلاش برای ثبت سفارش؛ با ارسال دوبارهٔ همان کلید،
+    /// سفارش تکراری ساخته نمی‌شود.
+    /// </summary>
+    [MaxLength(64)]
+    public string? IdempotencyKey { get; set; }
 }
 
 public class ReceiptUploadRequest
@@ -355,6 +366,9 @@ public class ShippingMethodDto
     public decimal Price { get; set; }
     public string? EstimatedDays { get; set; }
     public bool IsActive { get; set; }
+
+    /// <summary>ارسال رایگان — فقط با تیک «رایگان» هنگام تعریف.</summary>
+    public bool IsFree { get; set; }
     public int SortOrder { get; set; }
 }
 
@@ -374,6 +388,9 @@ public class ShippingMethodCreateRequest
 
     public bool IsActive { get; set; } = true;
 
+    /// <summary>ارسال رایگان — فقط با تیک «رایگان» هنگام تعریف.</summary>
+    public bool IsFree { get; set; }
+
     public int SortOrder { get; set; }
 }
 
@@ -391,6 +408,9 @@ public class OrderReturnDto
     public bool IsRefunded { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public string? CreatedBy { get; set; }
+
+    /// <summary>درخواست مرجوعی مشتری (بدون اطلاعات بانکی) — فقط توسط خود مشتری ثبت می‌شود.</summary>
+    public bool IsCustomerRequest { get; set; }
 }
 
 public class OrderReturnCreateRequest
@@ -412,6 +432,14 @@ public class OrderReturnCreateRequest
     public string? AdminNotes { get; set; }
 }
 
+public class OrderReturnRequestDto
+{
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "دلیل مرجوعی الزامی است")]
+    [System.ComponentModel.DataAnnotations.MinLength(5, ErrorMessage = "دلیل مرجوعی باید حداقل ۵ حرف باشد")]
+    [System.ComponentModel.DataAnnotations.MaxLength(500)]
+    public string Reason { get; set; } = string.Empty;
+}
+
 public class OrderReturnRefundRequest
 {
     [Required]
@@ -428,4 +456,33 @@ public class OrderReturnRefundRequest
 
     [MaxLength(1000)]
     public string? AdminNotes { get; set; }
+}
+
+/// <summary>
+/// سفارش نیمه‌تمام کاربر: ثبت شده ولی هنوز پرداخت/تایید نشده است.
+/// برای بنر «ادامه سفارش» در پروفایل، سربرگ و بعد از ورود مجدد استفاده می‌شود.
+/// </summary>
+public class UnfinishedOrderDto
+{
+    public int Id { get; set; }
+    public string OrderNumber { get; set; } = string.Empty;
+
+    /// <summary>نام وضعیت (PendingPayment / ReceiptUploaded).</summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>برچسب فارسی وضعیت.</summary>
+    public string StatusLabel { get; set; } = string.Empty;
+
+    public DateTimeOffset CreatedAt { get; set; }
+    public decimal TotalAmount { get; set; }
+    public int ItemsCount { get; set; }
+
+    /// <summary>آدرس ادامهٔ سفارش (ثبت رسید یا پرداخت مجدد).</summary>
+    public string ResumeUrl { get; set; } = string.Empty;
+
+    /// <summary>true = باید رسید آپلود/پرداخت کند؛ false = فقط منتظر تایید ادمین است.</summary>
+    public bool NeedsPayment { get; set; }
+
+    /// <summary>دقیقه‌های باقی‌مانده تا لغو خودکار (فقط برای سفارش در انتظار پرداخت).</summary>
+    public int MinutesToAutoCancel { get; set; }
 }

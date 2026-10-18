@@ -28,13 +28,13 @@ public sealed class ChatAiCoordinator
         catch { return false; }
     }
 
-    public async Task<string?> GetReplyAsync(string userMessage)
+    public async Task<string?> GetReplyAsync(string userMessage, IReadOnlyList<ChatAiTurn>? history = null)
     {
         foreach (var svc in _services)
         {
             try
             {
-                var reply = await svc.GetReplyAsync(userMessage, "");
+                var reply = await svc.GetReplyAsync(userMessage, "", history);
                 if (!string.IsNullOrWhiteSpace(reply))
                 {
                     _logger.LogInformation("ChatAi: {Name} produced a reply", svc.Name);

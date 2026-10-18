@@ -27,11 +27,21 @@ public sealed class WorkshopDto
     public string? CityName { get; set; }
     public string Address { get; set; } = string.Empty;
     public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
     public string? ImageUrl { get; set; }
     public bool ShowInCustomersRow { get; set; }
     public DateTime CreatedAt { get; set; }
     public int MaxMonitoringConnections { get; set; } = 2;
     public int MonitoringDurationHours { get; set; } = 72;
+    public List<WorkshopDeviceInfo> Devices { get; set; } = new();
+}
+
+public sealed class WorkshopDeviceInfo
+{
+    public int DeviceId { get; set; }
+    public string DeviceNumber { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
 }
 
 public sealed class WorkshopUpsertRequest

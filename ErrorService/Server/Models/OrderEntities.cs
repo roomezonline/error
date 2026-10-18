@@ -32,6 +32,11 @@ public class Order
     public OrderStatus Status { get; set; } = OrderStatus.PendingPayment;
     public OrderStage? Stage { get; set; }
     public bool StockDeducted { get; set; }
+
+    // کلید یکتای سمت کلاینت: کلیک دوباره / ارسال مجدد فرم نباید سفارش دوم بسازد
+    // (همان سفارش قبلی برگردانده می‌شود).
+    [MaxLength(64)]
+    public string? IdempotencyKey { get; set; }
     public decimal TotalAmount { get; set; }
     [Column(TypeName = "decimal(18,2)")]
     public decimal? DiscountAmount { get; set; }
@@ -84,6 +89,9 @@ public class Order
     [MaxLength(1000)]
     public string? AdminNotes { get; set; }
 
+    [MaxLength(1000)]
+    public string? CustomerNotes { get; set; }
+
     [MaxLength(64)]
     public string? AccessToken { get; set; }
 
@@ -93,6 +101,9 @@ public class Order
     public string? ShippingMethodName { get; set; }
     [Column(TypeName = "decimal(18,2)")]
     public decimal ShippingCost { get; set; }
+
+    /// <summary>آیا هزینه ارسال این سفارش رایگان بوده است؟ (از IsFree روش ارسال)</summary>
+    public bool ShippingIsFree { get; set; }
 
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
     public ICollection<OrderShipment> Shipments { get; set; } = new List<OrderShipment>();
@@ -252,6 +263,13 @@ public class ShippingMethod
 
     [MaxLength(50)]
     public string? EstimatedDays { get; set; }
+
+    /// <summary>آستانه ارسال رایگان (تومان) — وقتی EnableFreeShipping روشن باشد.</summary>
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal? FreeShippingThreshold { get; set; }
+
+    /// <summary>ارسال رایگان — فقط وقتی تیک «رایگان» هنگام تعریف زده شود.</summary>
+    public bool IsFree { get; set; }
 
     public bool IsActive { get; set; } = true;
 

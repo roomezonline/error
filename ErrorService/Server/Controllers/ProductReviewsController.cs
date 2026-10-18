@@ -4,6 +4,7 @@ using ErrorService.Server.Services;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
@@ -17,12 +18,21 @@ public sealed class ProductReviewsController : ControllerBase
     private readonly ErrorServiceDbContext _db;
     private readonly IOutputCacheStore _cacheStore;
     private readonly NotificationEventService _notificationEvents;
+    private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration _configuration;
 
-    public ProductReviewsController(ErrorServiceDbContext db, IOutputCacheStore cacheStore, NotificationEventService notificationEvents)
+    public ProductReviewsController(
+        ErrorServiceDbContext db,
+        IOutputCacheStore cacheStore,
+        NotificationEventService notificationEvents,
+        IWebHostEnvironment env,
+        IConfiguration configuration)
     {
         _db = db;
         _cacheStore = cacheStore;
         _notificationEvents = notificationEvents;
+        _env = env;
+        _configuration = configuration;
     }
 
     private async Task EvictReviewsCacheAsync()
@@ -38,10 +48,51 @@ public sealed class ProductReviewsController : ControllerBase
         return settings?.RequireReviewApproval ?? true;
     }
 
+    private async Task<(bool ReviewsEnabled, bool MediaEnabled)> GetStoreTogglesAsync()
+    {
+        var settings = await _db.SiteSettings.FirstOrDefaultAsync();
+        return (settings?.EnableProductReviews ?? true, settings?.EnableReviewMedia ?? false);
+    }
+
+    [Authorize]
+    [HttpPost("upload")]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<ActionResult<string>> UploadMedia(int productId, IFormFile? file, CancellationToken cancellationToken)
+    {
+        var (_, mediaEnabled) = await GetStoreTogglesAsync();
+        if (!mediaEnabled)
+            return BadRequest("پیوست عکس/ویدیو در دیدگاه غیرفعال است.");
+
+        if (file == null || file.Length <= 0)
+            return BadRequest("فایل خالی است یا دریافت نشد");
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var images = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
+        var videos = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".webm", ".mov" };
+        if (!images.Contains(ext) && !videos.Contains(ext))
+            return BadRequest("فرمت فایل مجاز نیست. فقط تصویر (jpg, png, webp, gif) یا ویدیو (mp4, webm, mov)");
+
+        var relativeFolder = "uploads/reviews";
+        var wwwroot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
+        if (!Directory.Exists(wwwroot)) Directory.CreateDirectory(wwwroot);
+        var uploadsRoot = Path.Combine(wwwroot, relativeFolder.Replace('/', Path.DirectorySeparatorChar));
+        if (!Directory.Exists(uploadsRoot)) Directory.CreateDirectory(uploadsRoot);
+
+        var fileName = $"{Guid.NewGuid():N}{ext}";
+        var fullPath = Path.Combine(uploadsRoot, fileName);
+        await using (var outStream = System.IO.File.Create(fullPath))
+        {
+            await file.CopyToAsync(outStream, cancellationToken);
+        }
+
+        return Ok($"/{relativeFolder}/{fileName}");
+    }
+
     [HttpGet]
     [OutputCache(Duration = 120, VaryByRouteValueNames = new[] { "productId" }, Tags = new[] { ReviewCacheTag })]
     public async Task<ActionResult<ProductReviewSummaryDto>> GetReviews(int productId)
     {
+        var (_, mediaEnabled) = await GetStoreTogglesAsync();
         var reviews = await _db.ProductReviews
             .Where(x => x.ProductId == productId && x.IsApproved)
             .OrderByDescending(x => x.CreatedAt)
@@ -53,6 +104,7 @@ public sealed class ProductReviewsController : ControllerBase
                 FullName = x.FullName,
                 Rating = x.Rating,
                 Content = x.Content,
+                MediaUrl = mediaEnabled ? x.MediaUrl : null,
                 IsApproved = x.IsApproved,
                 CreatedAtFa = x.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm")
             })
@@ -70,8 +122,13 @@ public sealed class ProductReviewsController : ControllerBase
     }
 
     [HttpPost]
+    [EnableRateLimiting("commerce")]
     public async Task<IActionResult> SubmitReview(int productId, [FromBody] ProductReviewRequest request)
     {
+        var (reviewsEnabled, mediaEnabled) = await GetStoreTogglesAsync();
+        if (!reviewsEnabled)
+            return BadRequest("ثبت دیدگاه در حال حاضر غیرفعال است.");
+
         var productTitle = await _db.Products
             .Where(x => x.Id == productId)
             .Select(x => x.Name)
@@ -96,6 +153,9 @@ public sealed class ProductReviewsController : ControllerBase
             Rating = request.Rating,
             ParentId = request.ParentId,
             Content = request.Content.Trim(),
+            MediaUrl = mediaEnabled && !string.IsNullOrWhiteSpace(request.MediaUrl)
+                ? request.MediaUrl.Trim()
+                : null,
             CreatedAt = DateTimeOffset.UtcNow,
             IsApproved = isAdminSubmitter || !requireApproval,
             IsAdminRead = isAdminSubmitter && request.ParentId.HasValue
@@ -172,6 +232,7 @@ public sealed class ProductReviewsController : ControllerBase
                 FullName = x.FullName,
                 Rating = x.Rating,
                 Content = x.Content,
+                MediaUrl = x.MediaUrl,
                 IsApproved = x.IsApproved,
                 IsAdminRead = x.IsAdminRead,
                 CreatedAtFa = x.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm")

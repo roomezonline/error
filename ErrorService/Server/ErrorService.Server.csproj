@@ -30,4 +30,14 @@
     <Copy SourceFiles="@(ServiceWorkerFile)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="false" />
   </Target>
 
+  <!--
+    هر بار publish، نام فایل‌های _framework (wasm/js/dat) به‌خاطر هش محتوا عوض می‌شود.
+    اگر در پوشه‌ای قبلاً منتشرشده publish کنیم، فایل‌های هش قدیمی باقی می‌مانند
+    (مثلاً ۷.۹ مگابایت wasm یتیم) و بی‌دلیل بارگذاری/آپلود می‌شوند.
+    پس قبل از کپی، خروجی _framework موجود در مقصد را خالی می‌کنیم.
+  -->
+  <Target Name="CleanStaleFrameworkAssetsBeforePublish" BeforeTargets="PrepareForPublish">
+    <RemoveDir Directories="$(PublishDir)wwwroot\_framework" Condition="Exists('$(PublishDir)wwwroot\_framework')" />
+  </Target>
+
 </Project>

@@ -40,7 +40,7 @@
                             <a href="@(item.IsCourse ? SeoUrl.Course(item.Id, item.Slug) : SeoUrl.Article(item.Id, item.Slug))" class="text-decoration-none">
                                 <div class="academy-card rounded-4 overflow-hidden h-100 shadow-sm border-0">
                                     <div class="academy-card__thumb position-relative">
-                                        <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-academy.svg" : item.ImageUrl)" loading="lazy" alt="@item.Title" />
+                                        <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-academy.svg" : item.ImageUrl)" loading="lazy" alt="@(string.IsNullOrWhiteSpace(item.Title) ? "Technical lesson" : item.Title)" />
                                         <div class="academy-card__badge @(item.IsCourse ? "academy-card__badge--course" : "academy-card__badge--article")">
                                             <span class="oi @(item.IsCourse ? "oi-layers" : "oi-document") me-1"></span>
                                             @(item.IsCourse ? "دوره آموزشی" : "آموزش تکی")

@@ -5,7 +5,10 @@ using ErrorService.Server.Services.Payment;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
 
@@ -17,9 +20,12 @@ public sealed class OrdersController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
     private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration _config;
     private readonly IAuthorizationService _authorizationService;
     private readonly IPaymentGatewayFactory _paymentGatewayFactory;
     private readonly NotificationEventService _notificationEvents;
+    private readonly StockAlertNotifier _stockAlerts;
+    private readonly IOutputCacheStore _outputCache;
 
     private static readonly HashSet<(OrderStatus, OrderStatus)> AllowedTransitions = new()
     {
@@ -35,17 +41,25 @@ public sealed class OrdersController : ControllerBase
         (OrderStatus.Approved, OrderStatus.Cancelled),
     };
 
-    public OrdersController(ErrorServiceDbContext db, IWebHostEnvironment env, IAuthorizationService authorizationService, IPaymentGatewayFactory paymentGatewayFactory, NotificationEventService notificationEvents)
+    public OrdersController(ErrorServiceDbContext db, IWebHostEnvironment env, IConfiguration config, IAuthorizationService authorizationService, IPaymentGatewayFactory paymentGatewayFactory, NotificationEventService notificationEvents, StockAlertNotifier stockAlerts, IOutputCacheStore outputCache)
     {
         _db = db;
         _env = env;
+        _config = config;
         _authorizationService = authorizationService;
         _paymentGatewayFactory = paymentGatewayFactory;
         _notificationEvents = notificationEvents;
+        _stockAlerts = stockAlerts;
+        _outputCache = outputCache;
     }
 
     private async Task<List<OrderItem>> LoadOrderItemsAsync(int orderId)
         => await _db.OrderItems.Where(i => i.OrderId == orderId).ToListAsync();
+
+    private async Task EvictProductsCacheAsync()
+    {
+        try { await _outputCache.EvictByTagAsync(ProductsController.CacheTag, CancellationToken.None); } catch { }
+    }
 
     private async Task RestoreStockAsync(List<OrderItem> items)
     {
@@ -54,6 +68,22 @@ public sealed class OrdersController : ControllerBase
             await _db.Database.ExecuteSqlInterpolatedAsync(
                 $"UPDATE Products SET StockQuantity = StockQuantity + {item.Quantity}, IsAvailable = 1 WHERE Id = {item.ProductId}");
         }
+
+        if (items.Count > 0)
+            await EvictProductsCacheAsync();
+    }
+
+    /// <summary>
+    /// Products of this order that are currently out-of-stock (candidates for
+    /// restock notifications once stock is restored). Call BEFORE restoring.
+    /// </summary>
+    private async Task<List<int>> GetOutOfStockProductIdsAsync(List<OrderItem> items)
+    {
+        var ids = items.Select(i => i.ProductId).Distinct().ToList();
+        return await _db.Products
+            .Where(p => ids.Contains(p.Id) && (!p.IsAvailable || p.StockQuantity <= 0))
+            .Select(p => p.Id)
+            .ToListAsync();
     }
 
     private async Task<bool> ReleaseCouponUsageAsync(int? couponId)
@@ -69,15 +99,24 @@ public sealed class OrdersController : ControllerBase
             return;
 
         var items = await LoadOrderItemsAsync(order.Id);
-        foreach (var item in items)
+        if (items.Count > 0)
         {
-            var product = await _db.Products.FindAsync(item.ProductId);
-            if (product != null)
+            // بارگذاری گروهی محصولات: به‌ازای هر قلم یک کوئری N+1 نمی‌زنیم.
+            var productIds = items.Select(i => i.ProductId).Distinct().ToList();
+            var products = await _db.Products
+                .Where(p => productIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id);
+
+            foreach (var item in items)
             {
+                if (!products.TryGetValue(item.ProductId, out var product)) continue;
                 product.StockQuantity = Math.Max(0, product.StockQuantity - item.Quantity);
                 if (product.StockQuantity == 0)
                     product.IsAvailable = false;
             }
+
+            if (items.Count > 0)
+                await EvictProductsCacheAsync();
         }
 
         order.StockDeducted = true;
@@ -139,14 +178,55 @@ public sealed class OrdersController : ControllerBase
     private static string SerializeReceiptUrls(List<string> urls)
         => urls.Count == 0 ? string.Empty : JsonSerializer.Serialize(urls);
 
-    private static string GenerateOrderNumber()
+    private async Task<string> GenerateOrderNumberAsync()
     {
-        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-        Span<char> code = stackalloc char[6];
-        for (var i = 0; i < code.Length; i++)
-            code[i] = alphabet[Random.Shared.Next(alphabet.Length)];
-        return $"ORD-{new string(code)}";
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var candidate = Random.Shared.Next(100000, 1000000).ToString();
+            if (!await _db.Orders.AnyAsync(o => o.OrderNumber == candidate))
+                return candidate;
+        }
+
+        // Extremely unlikely fallback: keep incrementing from 999999 downward until free.
+        for (var n = 999999; n >= 100000; n--)
+        {
+            var candidate = n.ToString();
+            if (!await _db.Orders.AnyAsync(o => o.OrderNumber == candidate))
+                return candidate;
+        }
+
+        throw new InvalidOperationException("هیچ شماره سفارش آزادی یافت نشد.");
     }
+
+    private static bool IsIdempotencyKeyConflict(Exception ex)
+    {
+        for (var e = ex; e != null; e = e.InnerException)
+        {
+            if (e.Message.Contains("IX_Orders_IdempotencyKey", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private Task<OrderDto?> FindOrderIdempotencyAsync(string key)
+        => _db.Orders.AsNoTracking()
+            .Where(o => o.IdempotencyKey == key)
+            .Select(o => new OrderDto
+            {
+                Id = o.Id,
+                OrderNumber = o.OrderNumber,
+                Status = o.Status,
+                TotalAmount = o.TotalAmount,
+                DiscountAmount = o.DiscountAmount,
+                CouponCode = o.CouponCode,
+                AccessToken = o.AccessToken,
+                ShippingMethodId = o.ShippingMethodId,
+                ShippingMethodName = o.ShippingMethodName,
+                ShippingCost = o.ShippingCost,                
+                ShippingIsFree = o.ShippingIsFree
+            })
+            .FirstOrDefaultAsync();
 
     private bool IsCallerAuthenticated() => User.Identity?.IsAuthenticated == true;
 
@@ -293,6 +373,7 @@ public sealed class OrdersController : ControllerBase
             TrackingNumber = order.TrackingNumber,
             PaymentDate = order.PaymentDate,
             AdminNotes = order.AdminNotes,
+            CustomerNotes = order.CustomerNotes,
             PaymentProvider = order.PaymentProvider,
             PaymentReference = order.PaymentReference,
             ShipmentCount = shipmentCount,
@@ -300,7 +381,8 @@ public sealed class OrdersController : ControllerBase
             NextAction = nextAction,
             ShippingMethodId = order.ShippingMethodId,
             ShippingMethodName = order.ShippingMethodName,
-            ShippingCost = order.ShippingCost,
+            ShippingCost = order.ShippingCost,            
+            ShippingIsFree = order.ShippingIsFree,
             ReturnCount = (returns ?? new()).Count,
             Items = items.Select(i => new OrderItemDto
             {
@@ -347,7 +429,8 @@ public sealed class OrdersController : ControllerBase
                 AdminNotes = r.AdminNotes,
                 IsRefunded = r.IsRefunded,
                 CreatedAt = r.CreatedAt,
-                CreatedBy = r.CreatedBy
+                CreatedBy = r.CreatedBy,
+                IsCustomerRequest = (r.CreatedBy ?? "").StartsWith("customer:")
             }).ToList()
         };
     }
@@ -355,6 +438,7 @@ public sealed class OrdersController : ControllerBase
     // ──────────── PUBLIC ENDPOINTS ────────────
 
     [HttpPost]
+    [EnableRateLimiting("commerce")]
     public async Task<ActionResult<OrderDto>> CreateOrder(OrderCreateRequest request)
     {
         if (!await IsGuestCheckoutAllowedAsync() && !IsCallerAuthenticated())
@@ -363,13 +447,27 @@ public sealed class OrdersController : ControllerBase
         if (request.Items == null || !request.Items.Any())
             return BadRequest("سبد خرید خالی است.");
 
+        // ── Idempotency: همان کلید دوباره = همان سفارش قبلی، نه سفارش جدید ──
+        var idemKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
+            ? null
+            : request.IdempotencyKey.Trim();
+        if (idemKey != null)
+        {
+            var replay = await FindOrderIdempotencyAsync(idemKey);
+            if (replay != null)
+                return Ok(replay);
+        }
+
         int? userId = await ResolveSiteUserIdAsync();
 
         var productIds = request.Items.Select(x => x.ProductId).Distinct().ToList();
-        var products = await _db.Products.Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+        // AsNoTracking: رزرو موجودی با SQL اتمیک انجام می‌شود و نباید نسخهٔ کش‌شدهٔ
+        // ردیابی‌شده بعداً روی آن UPDATE بنویسد.
+        var products = await _db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
 
         var now = DateTimeOffset.UtcNow;
         var orderItems = new List<OrderItem>();
+        var requestedQty = new Dictionary<int, int>();
         decimal totalAmount = 0;
         string? provinceName = null;
         string? cityName = null;
@@ -385,7 +483,15 @@ public sealed class OrdersController : ControllerBase
 
             if (!products.TryGetValue(item.ProductId, out var product))
                 return BadRequest($"محصول با شناسه {item.ProductId} یافت نشد.");
-            if (!product.IsAvailable || product.StockQuantity < item.Quantity)
+
+            if (product.IsDraft)
+                return BadRequest($"محصول «{product.Name}» در حال حاضر در فروشگاه موجود نیست.");
+
+            // جمع تعداد هر محصول در کل سبد (آیتم‌های تکراریِ یک محصول) ملاک است.
+            var wanted = requestedQty.GetValueOrDefault(item.ProductId) + item.Quantity;
+            requestedQty[item.ProductId] = wanted;
+
+            if (!product.IsAvailable || product.StockQuantity < wanted)
                 return BadRequest($"موجودی «{product.Name}» کافی نیست. موجودی فعلی: {product.StockQuantity}");
 
             var effectivePrice = DiscountHelper.IsActive(product)
@@ -406,7 +512,7 @@ public sealed class OrdersController : ControllerBase
         var order = new Order
         {
             UserId = userId,
-            OrderNumber = GenerateOrderNumber(),
+            OrderNumber = await GenerateOrderNumberAsync(),
             FullName = request.FullName,
             PhoneNumber = request.PhoneNumber,
             Email = request.Email,
@@ -420,7 +526,8 @@ public sealed class OrdersController : ControllerBase
             CreatedAt = now,
             UpdatedAt = now,
             TotalAmount = totalAmount,
-            AccessToken = Guid.NewGuid().ToString("N")
+            AccessToken = Guid.NewGuid().ToString("N"),
+            IdempotencyKey = idemKey
         };
 
         // Resolve shipping method
@@ -433,9 +540,40 @@ public sealed class OrdersController : ControllerBase
             order.ShippingMethodId = shippingMethod.Id;
             order.ShippingMethodName = shippingMethod.Name;
             order.ShippingCost = shippingMethod.Price;
+            order.ShippingIsFree = shippingMethod.IsFree;
+
+            // ارسال رایگان: وقتی مجموع کالاها از آستانهٔ تعریف‌شده در تنظیمات فروشگاه عبور کند
+            var storeSettings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
+            if (storeSettings != null
+                && storeSettings.EnableFreeShipping
+                && storeSettings.FreeShippingThreshold.HasValue
+                && storeSettings.FreeShippingThreshold.Value > 0
+                && totalAmount >= storeSettings.FreeShippingThreshold.Value)
+            {
+                order.ShippingCost = 0;
+                order.ShippingIsFree = true;
+            }
         }
 
         await using var tx = await _db.Database.BeginTransactionAsync();
+
+        // ── رزرو موجودی به‌صورت اتمیک ──
+        // کاهشِ شرطی در خودِ پایگاه‌داده، هم lost-update بین دو تایید همزمان را
+        // حذف می‌کند و هم اجازهٔ oversell نمی‌دهد. شکستِ هر ردیف = rollback کامل.
+        foreach (var item in request.Items)
+        {
+            var affected = await _db.Database.ExecuteSqlInterpolatedAsync(
+                $@"UPDATE Products
+                   SET StockQuantity = StockQuantity - {item.Quantity},
+                       IsAvailable = CASE WHEN StockQuantity <= {item.Quantity} THEN 0 ELSE IsAvailable END
+                   WHERE Id = {item.ProductId} AND IsAvailable = 1 AND StockQuantity >= {item.Quantity}");
+
+            if (affected == 0)
+                return BadRequest("موجودی محصول در این لحظه کافی نیست. لطفاً سبد خرید را به‌روزرسانی کنید.");
+        }
+
+        // از این لحظه موجودی برای این سفارش رزرو شده است؛ در تایید/پرداخت دوباره کم نمی‌شود.
+        order.StockDeducted = true;
 
         if (!string.IsNullOrWhiteSpace(request.CouponCode))
         {
@@ -469,8 +607,18 @@ public sealed class OrdersController : ControllerBase
                 order.CouponId = coupon.Id;
                 order.CouponCode = coupon.Code;
 
-                coupon.CurrentUsageCount++;
-                _db.Coupons.Update(coupon);
+                // شمارندهٔ شرطی و اتمیک: دو سفارش همزمان نمی‌توانند از سقف مجاز
+                // عبور کنند و شمارنده گم نمی‌شود (Update(coupon) حذف شد تا
+                // مقدار کش‌شدهٔ EF روی افزایشِ اتمی سوار نشود).
+                var counted = await _db.Database.ExecuteSqlInterpolatedAsync(
+                    $@"UPDATE Coupons
+                       SET CurrentUsageCount = CurrentUsageCount + 1
+                       WHERE Id = {coupon.Id}
+                         AND IsActive = 1
+                         AND (ExpiryDate IS NULL OR ExpiryDate >= {now})
+                         AND (MaxUsageCount IS NULL OR CurrentUsageCount < MaxUsageCount)");
+                if (counted == 0)
+                    return BadRequest("تعداد استفاده از این کد تخفیف به پایان رسیده است.");
             }
         }
 
@@ -482,12 +630,26 @@ public sealed class OrdersController : ControllerBase
         order.TotalAmount += order.ShippingCost;
 
         _db.Orders.Add(order);
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (idemKey != null && IsIdempotencyKeyConflict(ex))
+        {
+            // دو درخواست موازی با یک کلید: ایندکس یکتا برنده را مشخص کرده؛
+            // تراکنش برمی‌گردد (موجودی/کوپن برگردانده می‌شود) و همان سفارش برمی‌گردد.
+            var existing = await FindOrderIdempotencyAsync(idemKey);
+            if (existing != null)
+                return Ok(existing);
+            throw;
+        }
 
         await AddOrderEventAsync(order.Id, "created", null, OrderStatus.PendingPayment, "سفارش ثبت شد");
         await _db.SaveChangesAsync();
 
         await tx.CommitAsync();
+
+        await EvictProductsCacheAsync();
 
         await _notificationEvents.NotifyOrderCreatedAsync(order);
         await _db.SaveChangesAsync();
@@ -503,7 +665,8 @@ public sealed class OrdersController : ControllerBase
             AccessToken = order.AccessToken,
             ShippingMethodId = order.ShippingMethodId,
             ShippingMethodName = order.ShippingMethodName,
-            ShippingCost = order.ShippingCost
+            ShippingCost = order.ShippingCost,            
+            ShippingIsFree = order.ShippingIsFree
         });
     }
 
@@ -586,13 +749,15 @@ public sealed class OrdersController : ControllerBase
                 ReceiptImageUrl = order.ReceiptImageUrl,
                 ReceiptImageUrls = GetReceiptUrls(order),
                 TrackingNumber = order.TrackingNumber,
-                PaymentDate = order.PaymentDate,
-                AdminNotes = order.AdminNotes,
-                PaymentProvider = order.PaymentProvider,
+                    PaymentDate = order.PaymentDate,
+                    AdminNotes = order.AdminNotes,
+                    CustomerNotes = order.CustomerNotes,
+                    PaymentProvider = order.PaymentProvider,
                 PaymentReference = order.PaymentReference,
                 ShippingMethodId = order.ShippingMethodId,
                 ShippingMethodName = order.ShippingMethodName,
-                ShippingCost = order.ShippingCost,
+                ShippingCost = order.ShippingCost,                
+                ShippingIsFree = order.ShippingIsFree,
                 DiscountAmount = order.DiscountAmount,
                 CouponCode = order.CouponCode,
                 Shipments = order.Shipments.OrderBy(s => s.AttemptNumber).Select(s => new OrderShipmentDto
@@ -621,7 +786,8 @@ public sealed class OrdersController : ControllerBase
                     AdminNotes = r.AdminNotes,
                     IsRefunded = r.IsRefunded,
                     CreatedAt = r.CreatedAt,
-                    CreatedBy = r.CreatedBy
+                    CreatedBy = r.CreatedBy,
+                    IsCustomerRequest = (r.CreatedBy ?? "").StartsWith("customer:")
                 }).ToList(),
                 Items = order.Items.Select(i => new OrderItemDto
                 {
@@ -637,6 +803,59 @@ public sealed class OrdersController : ControllerBase
         await FillStageDatesAsync(orders);
         await ApplyProductImagesAsync(orders);
         return Ok(orders);
+    }
+
+    /// <summary>
+    /// سفارش‌های نیمه‌تمام کاربر (در انتظار پرداخت یا در انتظار تایید) برای بنر
+    /// «سفارش ناقص دارید» در سربرگ سایت، پروفایل و بعد از ورود مجدد.
+    /// سبک است: فقط خلاصهٔ سفارش، بدون اقلام.
+    /// </summary>
+    [Authorize]
+    [HttpGet("my/unfinished")]
+    public async Task<ActionResult<List<UnfinishedOrderDto>>> GetMyUnfinishedOrders()
+    {
+        var userId = await ResolveSiteUserIdAsync();
+        if (userId == null) return Unauthorized();
+
+        var isWorkshopToken = User.FindFirst("workshop_user_id") != null;
+        var phoneClaim = User.FindFirst(ClaimTypes.MobilePhone)?.Value;
+        var timeoutMinutes = PendingOrderTimeout.GetMinutes(_config);
+
+        var rows = await _db.Orders.AsNoTracking()
+            .Where(o => (o.UserId == userId.Value
+                         || (isWorkshopToken && o.UserId == null && o.PhoneNumber == phoneClaim))
+                        && (o.Status == OrderStatus.PendingPayment
+                            || o.Status == OrderStatus.ReceiptUploaded))
+            .OrderByDescending(o => o.CreatedAt)
+            .Select(o => new
+            {
+                o.Id,
+                o.OrderNumber,
+                o.Status,
+                o.CreatedAt,
+                o.TotalAmount,
+                ItemsCount = o.Items.Count
+            })
+            .ToListAsync();
+
+        var now = DateTimeOffset.UtcNow;
+        var result = rows.Select(o => new UnfinishedOrderDto
+        {
+            Id = o.Id,
+            OrderNumber = o.OrderNumber,
+            Status = o.Status.ToString(),
+            StatusLabel = StatusLabel(o.Status),
+            CreatedAt = o.CreatedAt,
+            TotalAmount = o.TotalAmount,
+            ItemsCount = o.ItemsCount,
+            ResumeUrl = $"/payment/offline/{o.Id}",
+            NeedsPayment = o.Status == OrderStatus.PendingPayment,
+            MinutesToAutoCancel = o.Status == OrderStatus.PendingPayment
+                ? Math.Max(0, timeoutMinutes - (int)Math.Floor((now - o.CreatedAt).TotalMinutes))
+                : 0
+        }).ToList();
+
+        return Ok(result);
     }
 
     private async Task FillStageDatesAsync(List<OrderDto> orders)
@@ -677,7 +896,7 @@ public sealed class OrdersController : ControllerBase
 
     [HttpPost("{id:int}/receipt")]
     [RequestSizeLimit(15_000_000)]
-    public async Task<IActionResult> UploadReceipt(int id, [FromForm] List<IFormFile> files, [FromForm] string? trackingNumber, [FromForm] string? accessToken)
+    public async Task<IActionResult> UploadReceipt(int id, [FromForm] List<IFormFile> files, [FromForm] string? trackingNumber, [FromForm] string? accessToken, [FromForm] string? customerNotes)
     {
         var order = await _db.Orders.FindAsync(id);
         if (order == null) return NotFound();
@@ -732,6 +951,8 @@ public sealed class OrdersController : ControllerBase
         order.ReceiptImageUrlsJson = SerializeReceiptUrls(existingUrls);
         order.ReceiptImageUrl = existingUrls[^1];
         order.TrackingNumber = trackingNumber;
+        if (!string.IsNullOrWhiteSpace(customerNotes))
+            order.CustomerNotes = customerNotes.Trim();
         order.PaymentDate = DateTimeOffset.UtcNow;
         order.Status = OrderStatus.ReceiptUploaded;
         order.UpdatedAt = DateTimeOffset.UtcNow;
@@ -750,14 +971,23 @@ public sealed class OrdersController : ControllerBase
     public async Task<ActionResult<OrderAdminSummaryDto>> GetOrderSummary()
     {
         var now = DateTimeOffset.UtcNow;
-        var todayStart = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
+        // مرز «امروز» بر اساس وقت تهران (مبنای نمایش تاریخ فارسی)، نه UTC؛
+        // قبلاً مرز نیمه‌شب UTC بود و بخشی از امروز را جا می‌انداخت.
+        var tehranOffset = TimeSpan.FromHours(3.5);
+        var tehranNow = now.ToOffset(tehranOffset);
+        var todayStart = new DateTimeOffset(tehranNow.Year, tehranNow.Month, tehranNow.Day, 0, 0, 0, tehranOffset);
 
         var totalCount = await _db.Orders.CountAsync();
         var pendingReceiptCount = await _db.Orders.CountAsync(o => o.Status == OrderStatus.ReceiptUploaded);
         var readyToShipCount = await _db.Orders.CountAsync(o => o.Status == OrderStatus.Approved && !o.Shipments.Any());
         var failedShipmentCount = await _db.Orders.CountAsync(o => o.Status == OrderStatus.Approved && o.Shipments.Any(s => s.Status == OrderShipmentStatus.Failed || s.Status == OrderShipmentStatus.Returned));
         var missingTrackingCount = await _db.Orders.CountAsync(o => o.Status == OrderStatus.Approved && o.Shipments.Any() && !o.Shipments.Any(s => s.TrackingNumber != null));
-        var todayAmount = await _db.Orders.Where(o => o.CreatedAt >= todayStart).SumAsync(o => o.TotalAmount);
+        // درآمد = مبلغ واقعاً قابل پرداخت (بدون تخفیف)؛ سفارش لغو/رد شده درآمد نیست.
+        var todayAmount = await _db.Orders
+            .Where(o => o.CreatedAt >= todayStart
+                        && o.Status != OrderStatus.Cancelled
+                        && o.Status != OrderStatus.Rejected)
+            .SumAsync(o => o.TotalAmount - (o.DiscountAmount ?? 0));
         var pendingActionCount = await _db.Orders.CountAsync(o =>
             o.Status == OrderStatus.ReceiptUploaded ||
             (o.Status == OrderStatus.Approved && !o.Shipments.Any()) ||
@@ -780,6 +1010,391 @@ public sealed class OrdersController : ControllerBase
             TodayAmount = todayAmount,
             StageCounts = stageCounts.ToDictionary(x => (int)x.Stage, x => x.Count)
         });
+    }
+
+    // ──────────── ADMIN: ACCOUNTING (گزارش مالی فروشگاه) ────────────
+
+    private static readonly TimeSpan TehranUtcOffset = TimeSpan.FromHours(3.5);
+    private static readonly PersianCalendar JalaliCalendar = new();
+
+    private static readonly Dictionary<OrderStatus, string> StatusLabels = new()
+    {
+        { OrderStatus.PendingPayment, "در انتظار پرداخت" },
+        { OrderStatus.ReceiptUploaded, "رسید آپلود شده" },
+        { OrderStatus.Approved, "تایید شده" },
+        { OrderStatus.Completed, "تکمیل شده" },
+        { OrderStatus.Rejected, "رد شده" },
+        { OrderStatus.Cancelled, "لغو شده" }
+    };
+
+    private static string StatusLabel(OrderStatus status) =>
+        StatusLabels.TryGetValue(status, out var label) ? label : status.ToString();
+
+    private static DateTimeOffset TehranDayStart(DateOnly day) =>
+        new(day.Year, day.Month, day.Day, 0, 0, 0, TehranUtcOffset);
+
+    private static string JalaliDate(DateTime day)
+    {
+        try
+        {
+            return $"{JalaliCalendar.GetYear(day):0000}/{JalaliCalendar.GetMonth(day):00}/{JalaliCalendar.GetDayOfMonth(day):00}";
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return day.ToString("yyyy/MM/dd");
+        }
+    }
+
+    private static bool TryParseYmd(string? value, out DateOnly day)
+    {
+        day = default;
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var s = value.Trim();
+        if (DateOnly.TryParseExact(s, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out day)) return true;
+        if (DateOnly.TryParseExact(s, "yyyy/MM/dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out day)) return true;
+        if (DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dto))
+        {
+            day = DateOnly.FromDateTime(dto.DateTime);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// گزارش جمع‌وجور حسابداری فروشگاه برای یک بازهٔ شمسی:
+    /// تعداد سفارش/کالای فروخته‌شده، تاییدشده، لغو/رد شده، مرجوعی و مبالغ آن‌ها.
+    /// مبنای روز، نیمه‌شب تهران است و سفارش لغو/رد شده هرگز جزو فروش حساب نمی‌شود.
+    /// </summary>
+    [Authorize(Policy = "perm:admin.orders.view")]
+    [HttpGet("admin/accounting")]
+    public async Task<ActionResult<ShopAccountingDto>> GetShopAccounting(
+        [FromQuery] string? dateFrom = null,
+        [FromQuery] string? dateTo = null,
+        [FromQuery] string? preset = null)
+    {
+        var today = DateTimeOffset.UtcNow.ToOffset(TehranUtcOffset).Date;
+        var startDay = today.AddDays(-29);
+        var endDay = today;
+        var resolvedPreset = (preset ?? "").Trim().ToLowerInvariant();
+
+        switch (resolvedPreset)
+        {
+            case "today":
+                startDay = today;
+                break;
+            case "7d":
+                startDay = today.AddDays(-6);
+                break;
+            case "30d":
+                startDay = today.AddDays(-29);
+                break;
+            case "month":
+                startDay = new DateTime(today.Year, today.Month, 1);
+                break;
+            case "year":
+                startDay = new DateTime(today.Year, 1, 1);
+                break;
+            case "all":
+                startDay = new DateTime(2015, 1, 1);
+                break;
+            default:
+                resolvedPreset = "custom";
+                if (TryParseYmd(dateFrom, out var fromDay)) startDay = fromDay.ToDateTime(TimeOnly.MinValue);
+                else startDay = today.AddDays(-29);
+                if (TryParseYmd(dateTo, out var toDay)) endDay = toDay.ToDateTime(TimeOnly.MinValue);
+                else endDay = today;
+                break;
+        }
+
+        if (startDay > endDay) (startDay, endDay) = (endDay, startDay);
+
+        var from = TehranDayStart(DateOnly.FromDateTime(startDay));
+        var toExclusive = TehranDayStart(DateOnly.FromDateTime(endDay).AddDays(1));
+        var rangeDays = (int)(toExclusive - from).TotalDays;
+        // چون روزشمار فقط روزهای دارای سفارش را برمی‌گرداند، بازهٔ بلند هم ارزان است؛
+        // سقف فقط برای جلوگیری از بازه‌های بی‌نهایت است.
+        var includeDaily = rangeDays <= 10000;
+
+        var orderRows = await _db.Orders.AsNoTracking()
+            .Where(o => o.CreatedAt >= from && o.CreatedAt < toExclusive)
+            .Select(o => new
+            {
+                o.Status,
+                o.TotalAmount,
+                o.DiscountAmount,
+                o.ShippingCost,
+                o.CreatedAt,
+                Units = o.Items.Sum(i => i.Quantity)
+            })
+            .ToListAsync();
+
+        var returnRows = await _db.OrderReturns.AsNoTracking()
+            .Where(r => r.CreatedAt >= from && r.CreatedAt < toExclusive)
+            .Select(r => new { r.IsRefunded, r.RefundAmount, r.CreatedAt })
+            .ToListAsync();
+
+        var report = new ShopAccountingDto
+        {
+            DateFrom = JalaliDate(startDay),
+            DateTo = JalaliDate(endDay),
+            Preset = resolvedPreset,
+            RangeDays = rangeDays,
+            IncludeDaily = includeDaily
+        };
+
+        var statusTotals = new Dictionary<OrderStatus, (int Count, decimal Amount)>
+        {
+            { OrderStatus.PendingPayment, (0, 0m) },
+            { OrderStatus.ReceiptUploaded, (0, 0m) },
+            { OrderStatus.Approved, (0, 0m) },
+            { OrderStatus.Completed, (0, 0m) },
+            { OrderStatus.Rejected, (0, 0m) },
+            { OrderStatus.Cancelled, (0, 0m) }
+        };
+
+        Dictionary<DateTime, ShopAccountingDayDto>? daily = includeDaily ? new() : null;
+        if (daily != null)
+        {
+            for (var day = startDay; day <= endDay; day = day.AddDays(1))
+            {
+                daily[day] = new ShopAccountingDayDto
+                {
+                    Date = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    JalaliDate = JalaliDate(day)
+                };
+            }
+        }
+
+        foreach (var row in orderRows)
+        {
+            // مبلغ قابل پرداخت = کل سفارش (با ارسال) منهای تخفیف
+            var payable = row.TotalAmount - (row.DiscountAmount ?? 0m);
+            var isActive = row.Status is not (OrderStatus.Cancelled or OrderStatus.Rejected);
+            var isConfirmed = row.Status is OrderStatus.Approved or OrderStatus.Completed;
+
+            report.OrdersCount++;
+            statusTotals[row.Status] = (statusTotals[row.Status].Count + 1, statusTotals[row.Status].Amount + payable);
+
+            if (isActive)
+            {
+                report.ActiveCount++;
+                report.GrossAmount += row.TotalAmount;
+                report.DiscountTotal += row.DiscountAmount ?? 0m;
+                report.ShippingTotal += row.ShippingCost;
+                report.SellAmount += payable;
+                report.UnitsSold += row.Units;
+
+                if (isConfirmed)
+                {
+                    report.ConfirmedCount++;
+                    report.ConfirmedAmount += payable;
+                }
+                if (row.Status == OrderStatus.Completed) report.CompletedCount++;
+                if (row.Status == OrderStatus.PendingPayment)
+                {
+                    report.PendingCount++;
+                    report.PendingAmount += payable;
+                }
+                if (row.Status == OrderStatus.ReceiptUploaded)
+                {
+                    report.ReceiptCount++;
+                    report.ReceiptAmount += payable;
+                }
+            }
+            else
+            {
+                report.CancelledAmount += payable;
+                report.UnitsCancelled += row.Units;
+                if (row.Status == OrderStatus.Cancelled) report.CancelledCount++;
+                else report.RejectedCount++;
+            }
+
+            if (daily != null)
+            {
+                var dayKey = row.CreatedAt.ToOffset(TehranUtcOffset).Date;
+                if (daily.TryGetValue(dayKey, out var bucket))
+                {
+                    bucket.OrdersCount++;
+                    if (isActive)
+                    {
+                        bucket.Units += row.Units;
+                        bucket.Amount += payable;
+                        if (isConfirmed)
+                        {
+                            bucket.ConfirmedCount++;
+                            bucket.ConfirmedAmount += payable;
+                        }
+                    }
+                    else
+                    {
+                        bucket.CancelledAmount += payable;
+                    }
+                }
+            }
+        }
+
+        foreach (var ret in returnRows)
+        {
+            report.ReturnsCount++;
+            if (ret.IsRefunded)
+            {
+                report.RefundedCount++;
+                report.RefundAmount += ret.RefundAmount;
+            }
+
+            if (daily != null)
+            {
+                var dayKey = ret.CreatedAt.ToOffset(TehranUtcOffset).Date;
+                if (daily.TryGetValue(dayKey, out var bucket))
+                    bucket.RefundAmount += ret.IsRefunded ? ret.RefundAmount : 0m;
+            }
+        }
+
+        report.NetRevenue = report.ConfirmedAmount - report.RefundAmount;
+        report.AvgOrderAmount = report.ActiveCount > 0 ? report.SellAmount / report.ActiveCount : 0m;
+
+        if (daily != null)
+        {
+            // فقط روزهایی که واقعاً سفارشی در آن‌ها ثبت شده (یا مرجوعی داشته‌اند)؛
+            // روزهای خالی و بدون سفارش در روزشمار نمایش داده نمی‌شوند.
+            report.Daily = daily.Values
+                .Where(d => d.OrdersCount > 0 || d.RefundAmount > 0)
+                .OrderBy(d => d.Date)
+                .ToList();
+        }
+
+        var statusOrder = new[]
+        {
+            OrderStatus.PendingPayment,
+            OrderStatus.ReceiptUploaded,
+            OrderStatus.Approved,
+            OrderStatus.Completed,
+            OrderStatus.Rejected,
+            OrderStatus.Cancelled
+        };
+        var statusLabels = StatusLabels;
+        report.Statuses = statusOrder
+            .Select(s => new ShopAccountingStatusDto
+            {
+                Key = s.ToString(),
+                Label = statusLabels[s],
+                Count = statusTotals[s].Count,
+                Amount = statusTotals[s].Amount
+            })
+            .ToList();
+
+        return Ok(report);
+    }
+
+    /// <summary>
+    /// جزئیات یک روز از روزشمار فروش: سفارش‌های همان روز به‌همراه اقلام، قیمت واحد،
+    /// تخفیف، هزینه ارسال، وضعیت و مرجوعی‌ها. مبنای روز، نیمه‌شب تهران است.
+    /// </summary>
+    [Authorize(Policy = "perm:admin.orders.view")]
+    [HttpGet("admin/accounting/day")]
+    public async Task<ActionResult<ShopAccountingDayDetailDto>> GetShopAccountingDay([FromQuery] string? date = null)
+    {
+        if (!TryParseYmd(date, out var day))
+            return BadRequest("تاریخ نامعتبر است.");
+
+        var from = TehranDayStart(day);
+        var toExclusive = TehranDayStart(day.AddDays(1));
+
+        var orders = await _db.Orders.AsNoTracking()
+            .Where(o => o.CreatedAt >= from && o.CreatedAt < toExclusive)
+            .Include(o => o.Items)
+            .OrderByDescending(o => o.CreatedAt)
+            .ToListAsync();
+
+        var returnRows = await _db.OrderReturns.AsNoTracking()
+            .Where(r => r.CreatedAt >= from && r.CreatedAt < toExclusive)
+            .Select(r => new
+            {
+                r.Id,
+                r.RefundAmount,
+                r.IsRefunded,
+                r.ReturnReason,
+                r.CreatedAt,
+                r.Order.OrderNumber
+            })
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync();
+
+        var detail = new ShopAccountingDayDetailDto
+        {
+            Date = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            JalaliDate = JalaliDate(day.ToDateTime(TimeOnly.MinValue))
+        };
+
+        foreach (var o in orders)
+        {
+            var payable = o.TotalAmount - (o.DiscountAmount ?? 0m);
+            var isActive = o.Status is not (OrderStatus.Cancelled or OrderStatus.Rejected);
+            var isConfirmed = o.Status is OrderStatus.Approved or OrderStatus.Completed;
+
+            detail.OrdersCount++;
+            detail.DiscountTotal += o.DiscountAmount ?? 0m;
+            detail.ShippingTotal += o.ShippingCost;
+
+            if (isActive)
+            {
+                detail.ActiveCount++;
+                detail.Amount += payable;
+                detail.Units += o.Items.Sum(i => i.Quantity);
+                if (isConfirmed)
+                {
+                    detail.ConfirmedCount++;
+                    detail.ConfirmedAmount += payable;
+                }
+            }
+            else
+            {
+                detail.CancelledCount++;
+                detail.CancelledAmount += payable;
+            }
+
+            detail.Orders.Add(new ShopAccountingOrderDto
+            {
+                Id = o.Id,
+                OrderNumber = o.OrderNumber,
+                CustomerName = o.FullName,
+                Phone = o.PhoneNumber,
+                Time = o.CreatedAt.ToOffset(TehranUtcOffset).ToString("HH:mm", CultureInfo.InvariantCulture),
+                StatusKey = o.Status.ToString(),
+                StatusLabel = StatusLabel(o.Status),
+                IsCancelled = !isActive,
+                IsConfirmed = isConfirmed,
+                CouponCode = o.CouponCode,
+                TotalAmount = o.TotalAmount,
+                DiscountAmount = o.DiscountAmount ?? 0m,
+                ShippingCost = o.ShippingCost,
+                Payable = payable,
+                Items = o.Items.Select(i => new ShopAccountingItemDto
+                {
+                    Name = i.ProductName,
+                    Quantity = i.Quantity,
+                    UnitPrice = i.Price,
+                    Total = i.Price * i.Quantity
+                }).ToList()
+            });
+        }
+
+        foreach (var r in returnRows)
+        {
+            if (r.IsRefunded) detail.RefundAmount += r.RefundAmount;
+
+            detail.Returns.Add(new ShopAccountingReturnDto
+            {
+                Id = r.Id,
+                OrderNumber = r.OrderNumber,
+                Time = r.CreatedAt.ToOffset(TehranUtcOffset).ToString("HH:mm", CultureInfo.InvariantCulture),
+                Reason = r.ReturnReason ?? "",
+                IsRefunded = r.IsRefunded,
+                RefundAmount = r.RefundAmount
+            });
+        }
+
+        return Ok(detail);
     }
 
     // ──────────── ADMIN: LIST (PAGINATED) ────────────
@@ -867,7 +1482,8 @@ public sealed class OrdersController : ControllerBase
                 PaymentReference = order.PaymentReference,
                 ShippingMethodId = order.ShippingMethodId,
                 ShippingMethodName = order.ShippingMethodName,
-                ShippingCost = order.ShippingCost,
+                ShippingCost = order.ShippingCost,                
+                ShippingIsFree = order.ShippingIsFree,
                 ShipmentCount = order.Shipments.Count,
                 LatestTrackingNumber = order.Shipments
                     .Where(s => s.TrackingNumber != null)
@@ -934,6 +1550,9 @@ public sealed class OrdersController : ControllerBase
 
         var previousStatus = order.Status;
 
+        var orderItems = await LoadOrderItemsAsync(order.Id);
+        var restockCandidates = await GetOutOfStockProductIdsAsync(orderItems);
+
         await using var tx = await _db.Database.BeginTransactionAsync();
 
         await RestoreStockForOrderAsync(order);
@@ -957,6 +1576,8 @@ public sealed class OrdersController : ControllerBase
         _db.Orders.Remove(order);
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
+
+        await _stockAlerts.NotifyRestockedAsync(restockCandidates);
         return NoContent();
     }
 
@@ -1002,6 +1623,7 @@ public sealed class OrdersController : ControllerBase
         if (order == null) return NotFound("سفارش یافت نشد");
 
         var previousStatus = order.Status;
+        var stageBeforeStatusUpdate = order.Stage;
 
         if (request.Status == previousStatus)
             return BadRequest("وضعیت سفارش قبلاً روی همین حالت تنظیم شده است.");
@@ -1012,8 +1634,24 @@ public sealed class OrdersController : ControllerBase
         if (!AllowedTransitions.Contains((previousStatus, request.Status)))
             return BadRequest("انتقال وضعیت انتخابی برای این سفارش مجاز نیست.");
 
+        // حفاظت سفارش پرداخت‌شده: اگر پولی دریافت شده (PaymentDate یا مرجع پرداخت
+        // ثبت شده)، لغو/رد فقط با ثبت دلیل در یادداشت مدیر مجاز است.
+        var paymentRecorded = order.PaymentDate.HasValue
+            || !string.IsNullOrWhiteSpace(order.PaymentReference);
+        if (request.Status is OrderStatus.Rejected or OrderStatus.Cancelled
+            && paymentRecorded
+            && string.IsNullOrWhiteSpace(request.AdminNotes))
+            return BadRequest("برای لغو یا رد سفارشِ پرداخت‌شده، ثبت دلیل در «یادداشت مدیر» الزامی است.");
+
         if (request.Status == OrderStatus.Approved && GetReceiptUrls(order).Count == 0 && order.PaymentProvider == null)
             return BadRequest("برای تایید سفارش، ابتدا باید رسید پرداخت آپلود شده باشد.");
+
+        List<int> restockCandidates = new();
+        if (request.Status is OrderStatus.Rejected or OrderStatus.Cancelled)
+        {
+            var orderItems = await LoadOrderItemsAsync(order.Id);
+            restockCandidates = await GetOutOfStockProductIdsAsync(orderItems);
+        }
 
         await using var tx = await _db.Database.BeginTransactionAsync();
 
@@ -1032,6 +1670,12 @@ public sealed class OrdersController : ControllerBase
                 order.Stage = OrderStage.PaymentConfirmed;
                 stageAssigned = true;
             }
+        }
+
+        if (request.Status == OrderStatus.Completed && order.Stage != OrderStage.Resolved)
+        {
+            order.Stage = OrderStage.Resolved;
+            stageAssigned = true;
         }
 
         order.Status = request.Status;
@@ -1058,13 +1702,28 @@ public sealed class OrdersController : ControllerBase
             { OrderStatus.Completed, "تکمیل شده" }
         };
         var statusLabel = statusLabels.TryGetValue(request.Status, out var lbl) ? lbl : request.Status.ToString();
-        await AddOrderEventAsync(order.Id, "status_changed", previousStatus, request.Status, $"تغییر وضعیت به «{statusLabel}»");
+        var autoStageNote = stageAssigned && request.Status == OrderStatus.Completed ? "؛ تنظیم خودکار مرحله «حمل شده»" : "";
+        await AddOrderEventAsync(order.Id, "status_changed", previousStatus, request.Status, $"تغییر وضعیت به «{statusLabel}»{autoStageNote}");
         await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousStatus);
         if (stageAssigned)
-            await _notificationEvents.NotifyOrderStageChangedAsync(order, null);
+        {
+            await _db.OrderEvents.AddAsync(new OrderEvent
+            {
+                OrderId = order.Id,
+                EventType = "stage_changed",
+                FromStatus = order.Status,
+                ToStatus = order.Status,
+                Message = $"تغییر مرحله به «{OrderStageInfo.Label(order.Stage!.Value)}»|{order.Stage!.Value}|{DateTimeOffset.UtcNow:O}",
+                CreatedBy = GetAdminDisplayName(),
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+            await _notificationEvents.NotifyOrderStageChangedAsync(order, stageBeforeStatusUpdate);
+        }
 
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
+
+        await _stockAlerts.NotifyRestockedAsync(restockCandidates);
         return NoContent();
     }
 
@@ -1121,6 +1780,14 @@ public sealed class OrdersController : ControllerBase
             await AddOrderEventAsync(order.Id, "status_changed", OrderStatus.Approved, OrderStatus.Completed,
                 "تغییر وضعیت به «تکمیل شده» (با رسیدن به مرحله حمل شده)");
             await _notificationEvents.NotifyOrderStatusChangedAsync(order, OrderStatus.Approved);
+        }
+        else if (order.Status == OrderStatus.Completed && request.Stage != OrderStage.Resolved)
+        {
+            order.Status = OrderStatus.Approved;
+            order.UpdatedAt = DateTimeOffset.UtcNow;
+            await AddOrderEventAsync(order.Id, "status_changed", OrderStatus.Completed, OrderStatus.Approved,
+                $"خروج از «تکمیل شده» (تغییر مرحله از «حمل شده» به «{stageLabel}»)");
+            await _notificationEvents.NotifyOrderStatusChangedAsync(order, OrderStatus.Completed);
         }
 
         await _db.SaveChangesAsync();
@@ -1461,6 +2128,73 @@ public sealed class OrdersController : ControllerBase
         return NoContent();
     }
 
+    // ──────────── RETURN REQUEST BY CUSTOMER ────────────
+
+    [Authorize]
+    [HttpPost("{orderId:int}/return-request")]
+    [EnableRateLimiting("commerce")]
+    public async Task<IActionResult> CreateReturnRequest(int orderId, [FromBody] OrderReturnRequestDto dto)
+    {
+        var settings = await _db.SiteSettings.FirstOrDefaultAsync();
+        if (settings == null || !settings.EnableReturnRequests)
+            return BadRequest("درخواست مرجوعی در حال حاضر غیرفعال است.");
+
+        var userId = await ResolveSiteUserIdAsync();
+        if (userId == null) return Unauthorized();
+
+        var order = await _db.Orders.FindAsync(orderId);
+        if (order == null) return NotFound();
+        if (order.UserId != userId) return NotFound();
+
+        if (order.Status is OrderStatus.Cancelled or OrderStatus.Rejected)
+            return BadRequest("برای سفارش لغو شده امکان درخواست مرجوعی وجود ندارد.");
+
+        var hasOpenRequest = await _db.OrderReturns
+            .AnyAsync(r => r.OrderId == orderId && !r.IsRefunded && (r.CreatedBy ?? "").StartsWith("customer:"));
+        if (hasOpenRequest)
+            return BadRequest("برای این سفارش یک درخواست مرجوعی در انتظار بررسی ثبت شده است.");
+
+        var reason = (dto.Reason ?? string.Empty).Trim();
+
+        var orderReturn = new OrderReturn
+        {
+            OrderId = orderId,
+            RefundAmount = 0,
+            ReturnReason = reason,
+            CreatedBy = $"customer:{userId}",
+            IsRefunded = false,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        _db.OrderReturns.Add(orderReturn);
+
+        await AddOrderEventAsync(orderId, "return_requested", order.Status, order.Status,
+            $"درخواست مرجوعی مشتری: {reason}");
+
+        order.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync();
+
+        await _notificationEvents.NotifyAsync(
+            eventType: "return.requested",
+            values: new Dictionary<string, string?>
+            {
+                ["OrderNumber"] = order.OrderNumber,
+                ["Reason"] = reason,
+                ["OrderId"] = order.Id.ToString()
+            },
+            idempotencyKey: $"return.requested:{orderReturn.Id}",
+            fallbackSeverity: NotificationSeverity.Warning,
+            fallbackTitle: "درخواست مرجوعی جدید",
+            fallbackBody: $"مشتری برای سفارش {order.OrderNumber} درخواست مرجوعی ثبت کرده است.",
+            fallbackUrl: $"/admin/orders/{order.Id}");
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            id = orderReturn.Id,
+            message = "درخواست مرجوعی ثبت شد و پس از بررسی از طریق پنل کاربری به شما اطلاع داده می‌شود."
+        });
+    }
+
     // ──────────── PAYMENT ENDPOINTS (UNCHANGED) ────────────
 
     [AllowAnonymous]
@@ -1531,14 +2265,28 @@ public sealed class OrdersController : ControllerBase
         if (order == null)
             return Content(PaymentResultHtml(false, "سفارش یافت نشد.", null), "text/html; charset=utf-8");
 
-        if ((order.Status is OrderStatus.Approved or OrderStatus.Completed) && !string.IsNullOrWhiteSpace(order.PaymentReference))
+        // وضعیت سفارش ملاک است، نه وجود PaymentReference: سفارشی که ادمین
+        // تایید کرده دیگر نباید از مسیر callback دوباره «پرداخت» شود.
+        if (order.Status is OrderStatus.Approved or OrderStatus.Completed)
             return Content(PaymentResultHtml(true, "این پرداخت قبلاً تایید شده است.", order), "text/html; charset=utf-8");
+
+        // سفارش لغو/رد شده نباید هرگز با یک callback قابل بازگشت به «تایید شده» باشد.
+        if (order.Status is OrderStatus.Cancelled or OrderStatus.Rejected)
+            return Content(PaymentResultHtml(false, "این سفارش لغو شده است و قابل پرداخت نیست.", order), "text/html; charset=utf-8");
 
         var providerKey = order.PaymentProvider.HasValue
             ? PaymentProviderCatalog.ToProviderKey(order.PaymentProvider.Value)
             : null;
         if (string.IsNullOrEmpty(providerKey) || providerKey == "manual")
             return Content(PaymentResultHtml(false, "شناسه درگاه برای این سفارش ثبت نشده است.", order), "text/html; charset=utf-8");
+
+        // درگاه مجازی فقط در محیط توسعه (یا با فعال‌سازی صریح Payment:AllowSimulate)
+        // معتبر است؛ همان قیدی که روی /api/payment/simulate اعمال می‌شود. بدون آن،
+        // هر بازدیدکننده‌ای با «?Status=OK» می‌توانست سفارش را پرداخت‌شده کند.
+        if (string.Equals(providerKey, "virtual", StringComparison.OrdinalIgnoreCase)
+            && !_env.IsDevelopment()
+            && !_config.GetValue("Payment:AllowSimulate", false))
+            return Content(PaymentResultHtml(false, "درگاه تست در این محیط غیرفعال است.", order), "text/html; charset=utf-8");
 
         var gateway = await _paymentGatewayFactory.GetGatewayByProviderAsync(providerKey, ct);
         if (gateway == null)
@@ -1558,6 +2306,13 @@ public sealed class OrdersController : ControllerBase
             Amount = order.TotalAmount - (order.DiscountAmount ?? 0),
             RefId = Request.Query["refNumber"].FirstOrDefault() ?? Request.Query["RefId"].FirstOrDefault()
         };
+
+        // درگاه مجازی فقط «Status=OK» را قبول می‌کند؛ بدون Authority معتبر، هر URL
+        // دست‌نوشته‌ای می‌توانست سفارش را پرداخت‌شده کند. (برای درگاه‌های واقعی
+        // الزامی نمی‌کنیم تا callback هیچ‌کدام از آن‌ها بشکند.)
+        if (string.Equals(providerKey, "virtual", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(payload.Authority))
+            return Content(PaymentResultHtml(false, "شناسه پرداخت (Authority) ارسال نشده است.", order), "text/html; charset=utf-8");
 
         var result = await gateway.VerifyCallbackAsync(payload, ct);
 
@@ -1640,10 +2395,22 @@ public sealed class OrdersController : ControllerBase
         var color = success ? "#16a34a" : "#dc2626";
         var messageText = System.Net.WebUtility.HtmlEncode(message ?? "");
 
+        // کاربر باید داخل SPA بماند؛ این صفحه فقط برای درگاه/کلاینت‌های بدون جاوااسکریپت
+        // است و بلافاصله به صفحه نتیجه پرداخت منتقل می‌کند.
+        var redirect = "";
+        if (order != null)
+        {
+            var target = $"/payment/result?orderId={order.Id}&status={(success ? "success" : "failed")}"
+                         + $"&msg={Uri.EscapeDataString(message ?? "")}";
+            redirect = $@"<meta http-equiv=""refresh"" content=""0;url={System.Net.WebUtility.HtmlEncode(target)}"">
+<script>location.replace({System.Text.Json.JsonSerializer.Serialize(target)});</script>";
+        }
+
         return $@"<!DOCTYPE html>
 <html lang=""fa"" dir=""rtl"">
 <head>
 <meta charset=""utf-8"">
+{redirect}
 <meta name=""viewport"" content=""width=device-width, initial-scale=1"">
 <title>{title} - ارورسرویس</title>
 <style>

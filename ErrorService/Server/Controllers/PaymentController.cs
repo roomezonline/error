@@ -5,6 +5,7 @@ using ErrorService.Server.Services.Payment;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
@@ -15,11 +16,15 @@ public sealed class PaymentController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
     private readonly IPaymentGatewayFactory _gatewayFactory;
+    private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration _config;
 
-    public PaymentController(ErrorServiceDbContext db, IPaymentGatewayFactory gatewayFactory)
+    public PaymentController(ErrorServiceDbContext db, IPaymentGatewayFactory gatewayFactory, IWebHostEnvironment env, IConfiguration config)
     {
         _db = db;
         _gatewayFactory = gatewayFactory;
+        _env = env;
+        _config = config;
     }
 
     [AllowAnonymous]
@@ -119,10 +124,17 @@ public sealed class PaymentController : ControllerBase
         return NoContent();
     }
 
+    // درگاه شبیه‌سازی‌شده فقط برای محیط توسعه (یا با فعال‌سازی صریح در پیکربندی).
+    // بدون این گارد، هر بازدیدکننده‌ای می‌توانست با این URL هر سفارشی را «پرداخت‌شده» کند.
     [AllowAnonymous]
     [HttpGet("simulate/{orderId:int}")]
+    [EnableRateLimiting("commerce")]
     public IActionResult Simulate(int orderId, [FromQuery] string? authority, [FromQuery] decimal? amount)
     {
+        var allowInProd = _config.GetValue("Payment:AllowSimulate", false);
+        if (!_env.IsDevelopment() && !allowInProd)
+            return NotFound();
+
         var a = string.IsNullOrWhiteSpace(authority) ? Guid.NewGuid().ToString("N") : authority;
         var amt = amount ?? 0;
         return Redirect($"/api/orders/{orderId}/payment/callback?Status=OK&Authority={Uri.EscapeDataString(a)}&Amount={amt.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}");

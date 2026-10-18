@@ -236,3 +236,35 @@ public sealed class ChatSettingsDto
     public string? AiModel { get; set; }
     public string? AiSystemPrompt { get; set; }
 }
+
+// ===== زنجیره چندسرویس‌دهنده‌ای هوش مصنوعی =====
+
+public sealed class ChatAiProviderPayload
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string BaseUrl { get; set; } = string.Empty;
+    public string Kind { get; set; } = "custom";
+    public bool Enabled { get; set; } = true;
+    public int Priority { get; set; }
+    public List<ChatAiKeyPayload>? Keys { get; set; }
+    public List<ChatAiModelPayload>? Models { get; set; }
+}
+
+public sealed class ChatAiKeyPayload
+{
+    public int Id { get; set; }
+    public string KeyValue { get; set; } = string.Empty;
+    public string? Label { get; set; }
+    public bool Enabled { get; set; } = true;
+    public int Priority { get; set; }
+}
+
+public sealed class ChatAiModelPayload
+{
+    public int Id { get; set; }
+    public string ModelId { get; set; } = string.Empty;
+    public string? Label { get; set; }
+    public bool Enabled { get; set; } = true;
+    public int Priority { get; set; }
+}

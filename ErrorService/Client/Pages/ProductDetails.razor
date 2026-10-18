@@ -137,6 +137,28 @@
                     <span class="pd-category">@product.CategoryName</span>
                     <h1 class="pd-title">@product.Name</h1>
 
+                    @if (Flag("badges"))
+                    {
+                        <div class="pd-badges">
+                            @if ((DateTimeOffset.Now - product.CreatedAt).TotalDays <= 14)
+                            {
+                                <span class="pd-badge pd-badge--new">جدید</span>
+                            }
+                            @if (IsDiscountActive(product))
+                            {
+                                <span class="pd-badge pd-badge--sale">تخفیف‌دار</span>
+                            }
+                            @if (product.StockQuantity > 0 && product.StockQuantity <= 5 && product.IsAvailable)
+                            {
+                                <span class="pd-badge pd-badge--low">کم‌موجود</span>
+                            }
+                            @if (product.IsFeatured)
+                            {
+                                <span class="pd-badge pd-badge--hot">پرفروش</span>
+                            }
+                        </div>
+                    }
+
                     <div class="pd-extra">
                         <span class="pd-extra-item pd-code-copy" @onclick="CopyProductCode" title="کلیک برای کپی">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
@@ -206,11 +228,116 @@
                         }
                     </div>
 
-                    <div class="pd-highlights">
-                        <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>ضمانت اصالت</span></div>
-                        <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>ارسال سریع</span></div>
-                        <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>پشتیبانی</span></div>
-                    </div>
+                    @if (Flag("chart"))
+                    {
+                        @if (_pricePoints.Count > 1)
+                        {
+                            <div class="pd-chart">
+                                <div class="pd-chart__head">
+                                    <b>تاریخچه کامل قیمت</b>
+                                    <span>@_pricePoints.Count ثبت</span>
+                                </div>
+                                <div class="pd-chart__body">
+                                    @{
+                                        var n = _pricePoints.Count;
+                                        var minP = _pricePoints.Min(p => p.DiscountPrice ?? p.Price);
+                                        var maxP = _pricePoints.Max(p => p.DiscountPrice ?? p.Price);
+                                        var range = maxP > minP ? maxP - minP : 1m;
+                                        var inv = System.Globalization.CultureInfo.InvariantCulture;
+                                        var lineSb = new System.Text.StringBuilder();
+                                        var areaSb = new System.Text.StringBuilder();
+                                        for (var i = 0; i < n; i++)
+                                        {
+                                            var v = _pricePoints[i].DiscountPrice ?? _pricePoints[i].Price;
+                                            var x = n == 1 ? 50m : 100m * i / (n - 1);
+                                            var y = 92m - 84m * (v - minP) / range;
+                                            var xs = x.ToString("0.####", inv);
+                                            var ys = y.ToString("0.####", inv);
+                                            if (i > 0)
+                                            {
+                                                lineSb.Append(' ');
+                                                areaSb.Append(" L");
+                                            }
+                                            else
+                                            {
+                                                areaSb.Append('M');
+                                            }
+                                            lineSb.Append(xs).Append(',').Append(ys);
+                                            areaSb.Append(xs).Append(',').Append(ys);
+                                        }
+                                        areaSb.Append(" L100,100 L0,100 Z");
+                                        var lineS = lineSb.ToString();
+                                        var areaS = areaSb.ToString();
+                                    }
+                                    <svg class="pd-chart__svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                                        <defs>
+                                            <linearGradient id="pdPriceGrad" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stop-color="#2563eb" stop-opacity="0.30" />
+                                                <stop offset="100%" stop-color="#2563eb" stop-opacity="0.02" />
+                                            </linearGradient>
+                                        </defs>
+                                        <path d="@areaS" fill="url(#pdPriceGrad)" />
+                                        <polyline points="@lineS" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+                                    </svg>
+                                    <div class="pd-chart__cols">
+                                        @for (var i = 0; i < n; i++)
+                                        {
+                                            var pt = _pricePoints[i];
+                                            var v = pt.DiscountPrice ?? pt.Price;
+                                            var yVal = 92m - 84m * (v - minP) / range;
+                                            var yPct = yVal.ToString("0.##", inv);
+                                            var tipB = Math.Clamp(106m - yVal, 0m, 60m).ToString("0.##", inv);
+                                            <div class="pd-chart__col">
+                                                <span class="pd-chart__xline"></span>
+                                                <span class="pd-chart__dot" style="top:@(yPct)%"></span>
+                                                <span class="pd-chart__tip" style="bottom:@(tipB)%">
+                                                    <b>@v.ToString("N0") تومان</b>
+                                                    <i>@pt.DateFa</i>
+                                                </span>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="pd-chart__foot">
+                                    <span>@_pricePoints.First().DateFa</span>
+                                    <span>@_pricePoints.Last().DateFa</span>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="pd-chart pd-chart--empty">
+                                <div class="pd-chart__head">
+                                    <b>تاریخچه قیمت</b>
+                                    <span>@_pricePoints.Count ثبت</span>
+                                </div>
+                                <div class="pd-chart__empty">
+                                    <span class="oi oi-graph"></span>
+                                    <b>هنوز تغییر قیمتی ثبت نشده است</b>
+                                </div>
+                            </div>
+                        }
+                    }
+
+                    @if (Flag("trust"))
+                    {
+                        <div class="pd-highlights">
+                            <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>ضمانت اصالت</span></div>
+                            <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>ارسال سریع</span></div>
+                            <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>پشتیبانی</span></div>
+                        </div>
+                    }
+
+                    @if (Flag("eta"))
+                    {
+                        <div class="pd-eta">
+                            <span class="oi oi-truck"></span>
+                            <div>
+                                <b>زمان تقریبی تحویل</b>
+                                <span>@(string.IsNullOrWhiteSpace(product.EstimatedDeliveryText) ? StoreDefaults.DeliveryEta : product.EstimatedDeliveryText)@(IsProductOutOfStock ? " — پس از موجود شدن" : "")</span>
+                            </div>
+                        </div>
+                    }
 
                     <div class="pd-actions">
                         <div class="pd-qty">
@@ -220,7 +347,7 @@
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
                                 </button>
                                 <span class="pd-qty-val">@_quantity</span>
-                                <button class="pd-qty-btn" @onclick="IncrementQty" disabled="@(_quantity >= 99)" aria-label="افزایش">
+                                <button class="pd-qty-btn" @onclick="IncrementQty" disabled="@(_quantity >= QtyMax)" aria-label="افزایش">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                                 </button>
                             </div>
@@ -230,13 +357,37 @@
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                                 <span>اشتراک</span>
                             </button>
-                            <button class="pd-share @(isInWishlist ? "pd-wishlist-active" : "")" @onclick="ToggleWishlist" title="علاقمندی">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="@(isInWishlist ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                                <span>علاقمندی</span>
-                            </button>
+                            @if (Flag("wishlist"))
+                            {
+                                <button class="pd-share @(isInWishlist ? "pd-wishlist-active" : "")" @onclick="ToggleWishlist" title="علاقمندی">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="@(isInWishlist ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                    <span>علاقمندی</span>
+                                </button>
+                            }
                         </div>
                     </div>
 
+                    @if (Flag("stockalert") && IsProductOutOfStock)
+                    {
+                        <button class="pd-notify-btn @(_stockAlertSubscribed ? "pd-notify-subscribed" : "")"
+                                @onclick="HandleStockAlertClick" disabled="@_stockAlertBusy">
+                            @if (_stockAlertBusy)
+                            {
+                                <span class="pd-cart-spinner"></span>
+                            }
+                            else if (_stockAlertSubscribed)
+                            {
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                            }
+                            else
+                            {
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                            }
+                            <span>@(_stockAlertSubscribed ? "یادآوری ثبت شد — برای لغو بزنید" : "خبرم کن وقتی موجود شد")</span>
+                        </button>
+                    }
+                    else
+                    {
                     <button class="pd-add-cart @_cartBtnClass" @onclick="AddToCart" disabled="@(!product.IsAvailable || product.StockQuantity <= 0 || _isAddingToCart)">
                         @if (_cartBtnState == CartBtnState.Spinner)
                         {
@@ -252,8 +403,41 @@
                         }
                         <span>@_cartBtnText</span>
                     </button>
+                    }
                 </div>
             </div>
+
+            @if (IsProductOutOfStock && substitutes != null && substitutes.Any())
+            {
+                <div class="pd-subs">
+                    <div class="pd-subs__head">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                        <b>جایگزین‌های موجود از همین دسته</b>
+                    </div>
+                    <div class="pd-subs__list">
+                        @foreach (var s in substitutes)
+                        {
+                            <a href="@SeoUrl.Product(s.Id, s.Slug)" class="pd-subs__item" @key="s.Id">
+                                <div class="pd-subs__img">
+                                    @if (!string.IsNullOrEmpty(s.MainImageUrl))
+                                    {
+                                        <img src="@s.MainImageUrl" alt="@s.Name" loading="lazy" />
+                                    }
+                                </div>
+                                <span class="pd-subs__name">@s.Name</span>
+                                <div class="pd-subs__price">
+                                    @if (IsDiscountActive(s))
+                                    {
+                                        <span class="pd-subs__old">@s.Price.ToString("N0")</span>
+                                    }
+                                    <b>@DiscountHelper.GetEffectivePrice(s).ToString("N0")</b>
+                                    <span>تومان</span>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
 
             <div class="pd-tabs-wrap">
                 <div class="pd-tabs-header">
@@ -265,6 +449,13 @@
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                         مشخصات فنی
                     </button>
+                    @if (Flag("qna"))
+                    {
+                        <button class="pd-tab-btn @(_activeTab == 2 ? "pd-tab-active" : "")" @onclick="() => SwitchTab(2)">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            پرسش و پاسخ (@_questions.Count)
+                        </button>
+                    }
                 </div>
 
                 <div class="pd-tab-content @(_activeTab == 0 ? "pd-tab-fade-in" : "pd-tab-fade-out")">
@@ -281,13 +472,42 @@
                             <div class="pd-tab-empty">هنوز توضیحاتی برای این محصول ثبت نشده است.</div>
                         }
                     }
-                    else
+                    else if (_activeTab == 1)
                     {
-                        <div class="pd-specs">
-                            <div class="pd-spec"><span class="pd-spec-key">دسته‌بندی</span><span class="pd-spec-val">@product.CategoryName</span></div>
-                            <div class="pd-spec"><span class="pd-spec-key">شناسه کالا</span><span class="pd-spec-val">#@product.Id.ToString("D10")</span></div>
-                            <div class="pd-spec"><span class="pd-spec-key">قیمت</span><span class="pd-spec-val">@product.Price.ToString("N0") تومان</span></div>
-                            <div class="pd-spec"><span class="pd-spec-key">وضعیت موجودی</span><span class="pd-spec-val @((product.IsAvailable && product.StockQuantity > 0) ? "pd-green" : "pd-red")">@((product.IsAvailable && product.StockQuantity > 0) ? "موجود" : "ناموجود")</span></div>
+                        <div class="pd-specs pd-specs--sheet">
+                            @{
+                                var orderedSpecs = _serverSpecs.OrderBy(s => s.SortOrder).ThenBy(s => s.Id).ToList();
+                                var specColorIdx = 0;
+                            }
+                            @if (Flag("specs") && orderedSpecs.Count > 0)
+                            {
+                                @foreach (var sp in orderedSpecs)
+                                {
+                                    var chipClass = $"pd-spec-chip pd-spec-chip--{(specColorIdx++ % 4)}";
+                                    <div class="pd-spec">
+                                        <span class="@chipClass">@sp.SpecKey</span>
+                                        <span class="pd-spec-val">@sp.SpecValue</span>
+                                    </div>
+                                }
+                            }
+                            <div class="pd-spec">
+                                <span class="pd-spec-chip pd-spec-chip--0">دسته‌بندی</span>
+                                <span class="pd-spec-val">@product.CategoryName</span>
+                            </div>
+                            <div class="pd-spec">
+                                <span class="pd-spec-chip pd-spec-chip--1">شناسه کالا</span>
+                                <span class="pd-spec-val pd-spec-val--mono">#@product.Id.ToString("D10")</span>
+                            </div>
+                            <div class="pd-spec">
+                                <span class="pd-spec-chip pd-spec-chip--2">قیمت</span>
+                                <span class="pd-spec-val pd-spec-val--price">@product.Price.ToString("N0") تومان</span>
+                            </div>
+                            <div class="pd-spec">
+                                <span class="pd-spec-chip pd-spec-chip--3">وضعیت موجودی</span>
+                                <span class="pd-spec-status @((product.IsAvailable && product.StockQuantity > 0) ? "is-ok" : "is-no")">
+                                    <i></i>@((product.IsAvailable && product.StockQuantity > 0) ? "موجود" : "ناموجود")
+                                </span>
+                            </div>
                             @if (!string.IsNullOrEmpty(product.CompatibilityInfo))
                             {
                                 <div class="pd-tech-card">
@@ -321,10 +541,146 @@
                             }
                         </div>
                     }
+                    else
+                    {
+                        <div class="pd-qna">
+                            <div class="pd-qna-topbar">
+                                <div class="pd-qna-stats">
+                                    <span class="pd-qna-stat pd-qna-stat--q">@_questions.Count پرسش ثبت‌شده</span>
+                                    <span class="pd-qna-stat pd-qna-stat--a">@_questions.Count(x => x.IsAnswered) پاسخ‌دار</span>
+                                    <span class="pd-qna-stat pd-qna-stat--w">@_questions.Count(x => !x.IsAnswered) بدون پاسخ</span>
+                                </div>
+                                <div class="pd-qna-filters">
+                                    <button class="pd-qna-chip @(_qnaFilter == "all" ? "pd-qna-chip--on" : "")" @onclick='() => _qnaFilter = "all"'>همه</button>
+                                    <button class="pd-qna-chip @(_qnaFilter == "answered" ? "pd-qna-chip--on" : "")" @onclick='() => _qnaFilter = "answered"'>با پاسخ</button>
+                                    <button class="pd-qna-chip @(_qnaFilter == "pending" ? "pd-qna-chip--on" : "")" @onclick='() => _qnaFilter = "pending"'>بدون پاسخ</button>
+                                    <input class="pd-qna-search" placeholder="جستجو در پرسش‌ها..." @bind="_qnaSearch" @bind:event="oninput" />
+                                </div>
+                            </div>
+
+                            <div class="pd-qna-form">
+                                <div class="pd-qna-form-head">
+                                    <b>پرسش خود را ثبت کنید</b>
+                                    <span>پرسش شما پس از بررسی و تأیید نمایش داده می‌شود و کارشناسان فروشگاه یا خریداران دیگر می‌توانند پاسخ دهند.</span>
+                                </div>
+                                <div class="pd-qna-fields">
+                                    <input class="pd-qna-input" placeholder="نام شما" maxlength="200" @bind="_qnaName" />
+                                    <textarea class="pd-qna-input pd-qna-textarea" placeholder="متن پرسش (حداقل ۵ کاراکتر)" maxlength="1000" @bind="_qnaText"></textarea>
+                                    <button class="pd-qna-submit" @onclick="SubmitQuestion" disabled="@(_qnaSending || _qnaName.Trim().Length == 0)">
+                                        @if (_qnaSending) { <span class="pd-cart-spinner"></span> }
+                                        ثبت پرسش
+                                    </button>
+                                </div>
+                            </div>
+
+                            @if (_qnaLoading)
+                            {
+                                <div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></div>
+                            }
+                            else if (!FilteredQuestions.Any())
+                            {
+                                <div class="pd-qna-empty">
+                                    <span class="oi oi-question-mark"></span>
+                                    <b>@(string.IsNullOrWhiteSpace(_qnaSearch) && _qnaFilter == "all" ? "هنوز پرسشی ثبت نشده است — اولین نفر باشید!" : "پرسشی با این فیلتر پیدا نشد.")</b>
+                                    <span>@(string.IsNullOrWhiteSpace(_qnaSearch) ? "می‌توانید پرسش خود را از فرم بالا بپرسید." : "عبارت دیگری را جستجو کنید.")</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="pd-qna-list">
+                                    @foreach (var q in FilteredQuestions)
+                                    {
+                                        <div class="pd-qna-item @(q.IsAnswered ? "pd-qna-item--answered" : "")">
+                                            <div class="pd-qna-avatar" aria-hidden="true">؟</div>
+                                            <div class="pd-qna-item-main">
+                                                <div class="pd-qna-item-head">
+                                                    <b>@q.FullName</b>
+                                                    <span class="pd-qna-date">@q.CreatedAtFa</span>
+                                                    @if (q.IsAnswered)
+                                                    {
+                                                        <span class="pd-qna-tag pd-qna-tag--ok">پاسخ رسمی</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="pd-qna-tag pd-qna-tag--wait">در انتظار پاسخ</span>
+                                                    }
+                                                </div>
+                                                <p class="pd-qna-q">@q.Question</p>
+
+                                                @if (q.IsAnswered && !string.IsNullOrEmpty(q.Answer))
+                                                {
+                                                    <div class="pd-qna-answer">
+                                                        <div class="pd-qna-answer-head">
+                                                            <span class="pd-qna-answer-label"><span class="oi oi-check"></span> پاسخ رسمی فروشگاه</span>
+                                                            @if (!string.IsNullOrEmpty(q.AnsweredAtFa))
+                                                            {
+                                                                <span class="pd-qna-date">@q.AnsweredAtFa</span>
+                                                            }
+                                                        </div>
+                                                        <p>@q.Answer</p>
+                                                    </div>
+                                                }
+
+                                                @if (q.Replies != null && q.Replies.Any())
+                                                {
+                                                    <div class="pd-qna-replies">
+                                                        @foreach (var r in q.Replies)
+                                                        {
+                                                            <div class="pd-qna-reply @(r.IsAdmin ? "pd-qna-reply--admin" : "")">
+                                                                <div class="pd-qna-reply-avatar">@(string.IsNullOrEmpty(r.FullName) ? "؟" : r.FullName.Substring(0, 1))</div>
+                                                                <div class="pd-qna-reply-body">
+                                                                    <div class="pd-qna-reply-head">
+                                                                        <b>@r.FullName</b>
+                                                                        @if (r.IsAdmin)
+                                                                        {
+                                                                            <span class="pd-qna-badge-admin">کارشناس فروشگاه</span>
+                                                                        }
+                                                                        <span class="pd-qna-date">@r.CreatedAtFa</span>
+                                                                    </div>
+                                                                    <p>@r.Body</p>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                }
+
+                                                @if (_isAuthenticated)
+                                                {
+                                                    @if (_replyFor == q.Id)
+                                                    {
+                                                        <div class="pd-qna-reply-form">
+                                                            <textarea class="pd-qna-input pd-qna-textarea" placeholder="پاسخ خود را بنویسید (حداقل ۳ کاراکتر)..." maxlength="1000" @bind="_replyText"></textarea>
+                                                            <div class="pd-qna-reply-actions">
+                                                                <button class="pd-qna-submit pd-qna-submit--sm" disabled="@(_replySending || _replyText.Trim().Length < 3)" @onclick="() => SubmitReply(q.Id)">
+                                                                    @if (_replySending) { <span class="pd-cart-spinner"></span> }
+                                                                    ثبت پاسخ
+                                                                </button>
+                                                                <button type="button" class="pd-qna-link" @onclick="CancelReply">انصراف</button>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button type="button" class="pd-qna-reply-btn" @onclick="() => StartReply(q.Id)">
+                                                            <span class="oi oi-bubble me-1"></span> پاسخ دهید
+                                                        </button>
+                                                    }
+                                                }
+                                            </div>
+                                            <button class="pd-qna-vote @(q.HasVoted ? "pd-qna-vote--on" : "")" @onclick="() => VoteQuestion(q.Id)" title="مفید بود">
+                                                <span class="oi oi-thumb-up"></span>
+                                                <span>@q.UpVotes</span>
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
 
-            @if (relatedProducts != null && relatedProducts.Any())
+            @if (Flag("related") && relatedProducts != null && relatedProducts.Any())
             {
                 <div class="pd-related">
                     <h2 class="pd-related-title">محصولات مرتبط</h2>
@@ -365,7 +721,7 @@
                 </div>
             }
 
-            @if (_recentItems.Any())
+            @if (Flag("recent") && _recentItems.Any())
             {
                 <div class="pd-recently">
                     <h2 class="pd-related-title">بازدیدهای اخیر شما</h2>
@@ -406,27 +762,31 @@
                 </div>
             }
 
-            <div class="pd-reviews mt-5">
-                <h3 class="fw-bold mb-4">نظرات کاربران</h3>
+            @if (Flag("reviews"))
+            {
+                <div class="pd-reviews mt-5">
+                    <h3 class="fw-bold mb-4">نظرات کاربران</h3>
 
-                @if (reviewSummary == null)
-                {
-                    <div class="text-center py-4">
-                        <div class="spinner-border text-primary" role="status"></div>
-                    </div>
-                }
-                else
-                {
-                    <CommentSection ShowStarSummary="false"
-                                    ShowRating="true"
-                                    RequireEmail="true"
-                                    SubmitEndpoint="@($"api/products/{(product?.Id ?? 0)}/reviews")"
-                                    AverageRating="@reviewSummary.AverageRating"
-                                    TotalCount="@reviewSummary.TotalCount"
-                                    Comments="@_productCommentDtos"
-                                    SubmitComment="@HandleProductReviewSubmit" />
-                }
-            </div>
+                    @if (reviewSummary == null)
+                    {
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status"></div>
+                        </div>
+                    }
+                    else
+                    {
+                        <CommentSection ShowStarSummary="false"
+                                        ShowRating="true"
+                                        RequireEmail="true"
+                                        AllowMedia="@Flag("media")"
+                                        SubmitEndpoint="@($"api/products/{(product?.Id ?? 0)}/reviews")"
+                                        AverageRating="@reviewSummary.AverageRating"
+                                        TotalCount="@reviewSummary.TotalCount"
+                                        Comments="@_productCommentDtos"
+                                        SubmitComment="@HandleProductReviewSubmit" />
+                    }
+                </div>
+            }
         }
     </div>
 </div>
@@ -466,6 +826,59 @@
     GetShareText="@(() => GetShareText())"
     GetShareTelegramText="@(() => GetShareTextForTelegram())" />
 
+@if (_showConnectModal)
+{
+    <div class="pd-connect-overlay" @onclick="CloseConnectModal">
+        <div class="pd-connect-modal" role="dialog" aria-modal="true" @onclick:stopPropagation="true">
+            <button class="pd-connect-close" @onclick="CloseConnectModal" aria-label="بستن">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+
+            <div class="pd-connect-head">
+                <div class="pd-connect-icon">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                </div>
+                <h3>یادآوری شما ثبت شد!</h3>
+                <p>برای دریافت پیام «موجود شدن کالا»، پیام‌رسان زیر را به حساب خود وصل کنید:</p>
+            </div>
+
+            @if (_connectChannelsLoading)
+            {
+                <div class="pd-connect-loading"><span class="pd-cart-spinner"></span></div>
+            }
+            else
+            {
+                <div class="pd-connect-list">
+                    @foreach (var ch in _connectChannels)
+                    {
+                        <div class="pd-connect-item">
+                            <div class="pd-connect-item-info">
+                                <b>@ch.Title</b>
+                                <p>@ch.Instruction</p>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(ch.BotUrl))
+                            {
+                                <a class="pd-connect-item-btn" href="@ch.BotUrl" target="_blank" rel="noopener">
+                                    <span class="oi oi-external-link"></span>
+                                    اتصال به @ch.Title
+                                </a>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="pd-connect-footer">
+                <a class="pd-connect-guide" href="/profile?tab=bale">
+                    <span class="oi oi-info"></span>
+                    راهنمای کامل اتصال در پروفایل
+                </a>
+                <button class="pd-connect-done" @onclick="CloseConnectModal">متوجه شدم</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (product != null)
 {
     <div class="pd-sticky-bar">
@@ -484,10 +897,12 @@
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
                     <span class="pd-sticky-qty-val">@_quantity</span>
-                    <button class="pd-sticky-qty-btn" @onclick="IncrementQty" disabled="@(_quantity >= 99)" aria-label="افزایش">
+                    <button class="pd-sticky-qty-btn" @onclick="IncrementQty" disabled="@(_quantity >= QtyMax)" aria-label="افزایش">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
                 </div>
+                @if (!IsProductOutOfStock)
+                {
                 <button class="pd-sticky-cart @_cartBtnClass" @onclick="AddToCart" disabled="@(!product.IsAvailable || product.StockQuantity <= 0 || _isAddingToCart)">
                     @if (_cartBtnState == CartBtnState.Spinner)
                     {
@@ -503,8 +918,28 @@
                     }
                     <span>@_cartBtnText</span>
                 </button>
+                }
             </div>
         </div>
+        @if (IsProductOutOfStock)
+        {
+            <button class="pd-sticky-notify @(_stockAlertSubscribed ? "pd-notify-subscribed" : "")"
+                    @onclick="HandleStockAlertClick" disabled="@_stockAlertBusy">
+                @if (_stockAlertBusy)
+                {
+                    <span class="pd-cart-spinner"></span>
+                }
+                else if (_stockAlertSubscribed)
+                {
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                }
+                else
+                {
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                }
+                <span>@(_stockAlertSubscribed ? "یادآوری ثبت شد ✓" : "خبرم کن وقتی موجود شد")</span>
+            </button>
+        }
     </div>
 }
 
@@ -712,6 +1147,48 @@
     @@keyframes pd-cart-spin { to { transform:rotate(360deg); } }
     .pd-cart-spinner { display:inline-block;width:18px;height:18px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:pd-cart-spin .6s linear infinite; }
 
+    /* ===== Back-in-stock notify button ===== */
+    .pd-notify-btn { display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.85rem 1.5rem;border:2px dashed #fd7e14;border-radius:.85rem;background:#fff7e6;color:#d9480f;font-size:1rem;font-weight:700;cursor:pointer;transition:all .2s;min-height:48px;white-space:nowrap; }
+    .pd-notify-btn svg { flex-shrink:0; }
+    .pd-notify-btn:hover:not(:disabled) { background:#fd7e14;border-style:solid;border-color:#fd7e14;color:#fff;box-shadow:0 4px 14px rgba(253,126,20,.3); }
+    .pd-notify-btn:disabled { opacity:.6;cursor:not-allowed; }
+    .pd-notify-btn.pd-notify-subscribed { border-style:solid;border-color:#198754;background:#e8f5ee;color:#146c43; }
+    .pd-notify-btn.pd-notify-subscribed:hover:not(:disabled) { background:#198754;border-color:#198754;color:#fff;box-shadow:0 4px 14px rgba(25,135,84,.3); }
+    .pd-sticky-notify { display:flex;align-items:center;justify-content:center;gap:.4rem;flex:1;padding:.7rem 1rem;border:2px dashed #fd7e14;border-radius:.75rem;background:#fff7e6;color:#d9480f;font-size:.9rem;font-weight:700;cursor:pointer;transition:all .2s;min-height:44px;white-space:nowrap; }
+    .pd-sticky-notify svg { flex-shrink:0; }
+    .pd-sticky-notify:hover:not(:disabled) { background:#fd7e14;border-style:solid;border-color:#fd7e14;color:#fff; }
+    .pd-sticky-notify:disabled { opacity:.6;cursor:not-allowed; }
+    .pd-sticky-notify.pd-notify-subscribed { border-style:solid;border-color:#198754;background:#e8f5ee;color:#146c43; }
+    .pd-sticky-notify.pd-notify-subscribed:hover:not(:disabled) { background:#198754;border-color:#198754;color:#fff; }
+/* Out-of-stock: notify gets its own full-width row at the bottom of the bar */
+.pd-sticky-bar > .pd-sticky-notify { margin:.55rem auto 0;max-width:1200px;width:100%; }
+
+    /* ===== Messenger connect modal ===== */
+    .pd-connect-overlay { position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:1rem;z-index:1080;animation:pd-fade-in .2s ease; }
+    @@keyframes pd-fade-in { from { opacity:0; } to { opacity:1; } }
+    .pd-connect-modal { position:relative;background:#fff;border-radius:1rem;padding:1.75rem 1.5rem 1.25rem;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:pd-modal-up .25s ease; }
+    @@keyframes pd-modal-up { from { opacity:0; transform:translateY(24px) scale(.97); } to { opacity:1; transform:translateY(0) scale(1); } }
+    .pd-connect-close { position:absolute;top:.75rem;left:.75rem;width:34px;height:34px;border:none;border-radius:50%;background:#f1f3f5;color:#6c757d;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s; }
+    .pd-connect-close:hover { background:#e9ecef;color:#212529; }
+    .pd-connect-head { text-align:center;margin-bottom:1.1rem; }
+    .pd-connect-icon { width:56px;height:56px;margin:0 auto .6rem;border-radius:50%;background:#fff7e6;color:#fd7e14;display:flex;align-items:center;justify-content:center; }
+    .pd-connect-head h3 { margin:0 0 .35rem;font-size:1.1rem;font-weight:800;color:#212529; }
+    .pd-connect-head p { margin:0;font-size:.85rem;color:#6c757d;line-height:1.7; }
+    .pd-connect-loading { display:flex;justify-content:center;padding:1.25rem; }
+    .pd-connect-loading .pd-cart-spinner { border-color:rgba(13,110,253,.2);border-top-color:#0d6efd; }
+    .pd-connect-list { display:flex;flex-direction:column;gap:.65rem;margin-bottom:1.1rem; }
+    .pd-connect-item { display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.8rem .9rem;border:1px solid #e9ecef;border-radius:.75rem;background:#fafbfc;flex-wrap:wrap; }
+    .pd-connect-item-info { flex:1;min-width:180px; }
+    .pd-connect-item-info b { display:block;font-size:.92rem;color:#212529;margin-bottom:.2rem; }
+    .pd-connect-item-info p { margin:0;font-size:.78rem;color:#6c757d;line-height:1.7; }
+    .pd-connect-item-btn { display:inline-flex;align-items:center;gap:.35rem;padding:.5rem .9rem;border-radius:.6rem;background:#0d6efd;color:#fff;font-size:.82rem;font-weight:700;text-decoration:none;white-space:nowrap;transition:background .15s; }
+    .pd-connect-item-btn:hover { background:#0b5ed7;color:#fff; }
+    .pd-connect-footer { display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;border-top:1px solid #f1f3f5;padding-top:.9rem; }
+    .pd-connect-guide { display:inline-flex;align-items:center;gap:.35rem;font-size:.8rem;color:#0d6efd;text-decoration:none; }
+    .pd-connect-guide:hover { text-decoration:underline; }
+    .pd-connect-done { padding:.55rem 1.4rem;border:none;border-radius:.6rem;background:#212529;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s; }
+    .pd-connect-done:hover { background:#000; }
+
     /* ===== Tab transitions ===== */
     @@keyframes pd-tab-fade-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
     .pd-tabs-wrap { margin-top:2.5rem;background:#fff;border:1px solid #e9ecef;border-radius:1rem;overflow:hidden; }
@@ -728,11 +1205,48 @@
     .pd-tab-empty { text-align:center;padding:2rem;color:#adb5bd;font-size:.9rem; }
 
     .pd-specs { display:flex;flex-direction:column; }
-    .pd-spec { display:flex;justify-content:space-between;padding:.65rem 0;border-bottom:1px solid #f1f3f5;transition:background .15s; }
-    .pd-spec:hover { background:#fafbfc; }
-    .pd-spec:last-child { border-bottom:none; }
-    .pd-spec-key { color:#6c757d;font-weight:500;font-size:.88rem;flex-shrink:0;margin-left:1rem; }
-    .pd-spec-val { color:#212529;font-weight:600;font-size:.88rem;text-align:left; }
+    .pd-specs--sheet {
+        background:#fff;
+        border:1.5px dashed #cbd5e1;
+        border-radius:16px;
+        padding:.4rem 1rem;
+        display:flex;flex-direction:column;
+        box-shadow:0 1px 4px rgba(15,23,42,.04);
+    }
+    .pd-specs--sheet .pd-spec {
+        display:flex;justify-content:space-between;align-items:center;gap:1rem;
+        padding:.62rem .35rem;
+        border-bottom:1px dashed #e2e8f0;
+        transition:background .15s;
+    }
+    .pd-specs--sheet .pd-spec:nth-child(even) { background:rgba(148,163,184,.045); }
+    .pd-specs--sheet .pd-spec:hover { background:rgba(37,99,235,.055); }
+    .pd-specs--sheet .pd-spec:last-child { border-bottom:none; }
+    .pd-spec-chip {
+        flex-shrink:0;
+        display:inline-flex;align-items:center;
+        border:1.5px dashed;
+        border-radius:999px;
+        padding:.28rem .85rem;
+        font-size:.78rem;font-weight:800;
+        letter-spacing:.2px;
+        white-space:nowrap;
+    }
+    .pd-spec-chip--0 { color:#1d4ed8;border-color:rgba(37,99,235,.45);background:rgba(37,99,235,.07); }
+    .pd-spec-chip--1 { color:#0f766e;border-color:rgba(13,148,136,.45);background:rgba(13,148,136,.07); }
+    .pd-spec-chip--2 { color:#b45309;border-color:rgba(217,119,6,.45);background:rgba(217,119,6,.08); }
+    .pd-spec-chip--3 { color:#6d28d9;border-color:rgba(124,58,237,.45);background:rgba(124,58,237,.07); }
+    .pd-spec-val { color:#0f172a;font-weight:700;font-size:.88rem;text-align:left;min-width:0;overflow-wrap:anywhere; }
+    .pd-spec-val--mono { direction:ltr;unicode-bidi:isolate;font-family:'Courier New',monospace;font-weight:800;letter-spacing:.5px;color:#334155; }
+    .pd-spec-val--price { color:#1d4ed8;font-weight:900;font-size:.95rem; }
+    .pd-spec-status {
+        display:inline-flex;align-items:center;gap:.4rem;
+        border-radius:999px;padding:.28rem .9rem;
+        font-size:.78rem;font-weight:900;white-space:nowrap;
+    }
+    .pd-spec-status i { width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px rgba(0,0,0,.06); }
+    .pd-spec-status.is-ok { background:rgba(16,185,129,.12);color:#047857;border:1.5px dashed rgba(5,150,105,.45); }
+    .pd-spec-status.is-no { background:rgba(244,63,94,.1);color:#be123c;border:1.5px dashed rgba(225,29,72,.4); }
     .pd-green { color:#198754 !important; }
     .pd-red { color:#dc3545 !important; }
 
@@ -862,9 +1376,14 @@
         .pd-qty-box { flex:1;max-width:160px; }
         .pd-share { justify-content:center; }
         .pd-add-cart { min-height:48px;font-size:.92rem;padding:.75rem 1rem; }
+        .pd-notify-btn { min-height:48px;font-size:.92rem;padding:.75rem 1rem; }
         .pd-tab-btn { font-size:.82rem;padding:.65rem .85rem; }
         .pd-tab-content { padding:1rem; }
-        .pd-spec-key,.pd-spec-val { font-size:.82rem; }
+        .pd-specs--sheet { padding:.35rem .7rem;border-radius:14px; }
+        .pd-specs--sheet .pd-spec { padding:.55rem .2rem;gap:.6rem; }
+        .pd-spec-chip { font-size:.68rem;padding:.24rem .65rem; }
+        .pd-spec-val { font-size:.8rem; }
+        .pd-spec-status { font-size:.68rem;padding:.24rem .7rem; }
         .pd-desc { font-size:.85rem;line-height:1.8; }
         .pd-related-card { flex:0 0 150px; }
         .pd-related-img { height:110px; }
@@ -883,15 +1402,18 @@
         .pd-related-card { flex:0 0 130px; }
         .pd-related-img { height:90px; }
         .pd-add-cart { font-size:.85rem;padding:.7rem .75rem;gap:.35rem; }
+        .pd-notify-btn { font-size:.85rem;padding:.7rem .75rem;gap:.35rem; }
         .pd-sticky-price { display:none; }
         .pd-sticky-inner { gap:.5rem; }
         .pd-sticky-qty-btn { min-width:38px;min-height:38px;width:34px;height:34px; }
         .pd-sticky-qty-val { min-width:30px;font-size:.85rem; }
         .pd-sticky-cart { font-size:.82rem;padding:.6rem .75rem;gap:.3rem;min-height:40px; }
+        .pd-sticky-notify { font-size:.78rem;padding:.6rem .6rem;gap:.3rem;min-height:40px; }
     }
 
     @@media (max-width:360px) {
         .pd-sticky-cart { font-size:.75rem;padding:.5rem .6rem;gap:.25rem;min-height:38px; }
+        .pd-sticky-notify { font-size:.72rem;padding:.5rem .5rem;gap:.25rem;min-height:38px; }
         .pd-sticky-qty-btn { min-width:34px;min-height:34px;width:30px;height:30px; }
         .pd-sticky-qty-val { min-width:26px;font-size:.8rem; }
         .pd-sticky-inner { gap:.35rem; }
@@ -936,10 +1458,19 @@
         .pd-tab-btn:hover { color: #60a5fa; background: #1e293b; }
         .pd-tab-active { color: #60a5fa !important; background: #1e293b !important; border-bottom-color: #3b82f6 !important; }
         .pd-desc { color: #cbd5e1; }
-        .pd-spec { border-bottom-color: #334155; }
-        .pd-spec:hover { background: #0f172a; }
-        .pd-spec-key { color: #94a3b8; }
-        .pd-spec-val { color: #f1f5f9; }
+        .pd-specs--sheet { background:#1e293b;border-color:#475569;box-shadow:none; }
+        .pd-specs--sheet .pd-spec { border-bottom-color:#334155; }
+        .pd-specs--sheet .pd-spec:nth-child(even) { background:rgba(148,163,184,.05); }
+        .pd-specs--sheet .pd-spec:hover { background:rgba(59,130,246,.1); }
+        .pd-spec-chip--0 { color:#93c5fd;border-color:rgba(96,165,250,.45);background:rgba(59,130,246,.12); }
+        .pd-spec-chip--1 { color:#5eead4;border-color:rgba(45,212,191,.45);background:rgba(20,184,166,.12); }
+        .pd-spec-chip--2 { color:#fcd34d;border-color:rgba(252,211,77,.45);background:rgba(245,158,11,.12); }
+        .pd-spec-chip--3 { color:#d8b4fe;border-color:rgba(216,180,254,.45);background:rgba(168,85,247,.12); }
+        .pd-spec-val { color:#f1f5f9; }
+        .pd-spec-val--mono { color:#cbd5e1; }
+        .pd-spec-val--price { color:#60a5fa; }
+        .pd-spec-status.is-ok { background:rgba(16,185,129,.15);color:#34d399;border-color:rgba(52,211,153,.4); }
+        .pd-spec-status.is-no { background:rgba(244,63,94,.15);color:#fb7185;border-color:rgba(251,113,133,.4); }
         .pd-tech-card { background: #0f172a; border-color: #334155; }
         .pd-tech-card:hover { background: #1e293b; border-color: #3b82f6; }
         .pd-tech-label { color: #94a3b8; }
@@ -973,6 +1504,345 @@
     }
 </style>
 
+<style>
+    .pd-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: .5rem 0 0; }
+    .pd-badge {
+        font-size: .7rem;
+        font-weight: 800;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+    }
+    .pd-badge--new { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+    .pd-badge--sale { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+    .pd-badge--low { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+    .pd-badge--hot { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+
+    .pd-chart {
+        margin-top: .9rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        padding: .9rem 1rem;
+    }
+    .pd-chart__head { display: flex; align-items: center; justify-content: space-between; font-size: .82rem; }
+    .pd-chart__head span { color: #64748b; font-size: .72rem; }
+    .pd-chart__body {
+        position: relative;
+        height: 130px;
+        margin-top: .75rem;
+        direction: ltr;
+    }
+    .pd-chart__svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        overflow: visible;
+    }
+    .pd-chart__cols {
+        position: absolute;
+        inset: 0;
+        display: flex;
+    }
+    .pd-chart__col {
+        position: relative;
+        flex: 1 1 0;
+        min-width: 0;
+        cursor: crosshair;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .pd-chart__col > span { pointer-events: none; }
+    .pd-chart__xline {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        border-left: 1px dashed #2563eb;
+        opacity: 0;
+        transition: opacity .15s;
+    }
+    .pd-chart__dot {
+        position: absolute;
+        left: 50%;
+        width: 10px;
+        height: 10px;
+        margin: -5px 0 0 -5px;
+        border-radius: 50%;
+        background: #fff;
+        border: 2.5px solid #2563eb;
+        box-shadow: 0 2px 8px rgba(37,99,235,.4);
+        opacity: 0;
+        transform: scale(.4);
+        transition: opacity .15s, transform .15s;
+    }
+    .pd-chart__tip {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
+        background: #0f172a;
+        color: #fff;
+        padding: .38rem .55rem;
+        border-radius: .5rem;
+        font-size: .68rem;
+        line-height: 1.6;
+        white-space: nowrap;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity .15s;
+        box-shadow: 0 8px 20px rgba(15,23,42,.3);
+        z-index: 6;
+    }
+    .pd-chart__tip::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -5px;
+        border: 5px solid transparent;
+        border-top-color: #0f172a;
+    }
+    .pd-chart__tip b { font-weight: 800; color: #86efac; }
+    .pd-chart__tip i { font-style: normal; color: #cbd5e1; font-size: .64rem; direction: ltr; }
+    .pd-chart__col:hover .pd-chart__xline { opacity: 1; }
+    .pd-chart__col:hover .pd-chart__dot { opacity: 1; transform: scale(1); }
+    .pd-chart__col:hover .pd-chart__tip { opacity: 1; visibility: visible; }
+    .pd-chart__col:nth-child(1):hover .pd-chart__tip,
+    .pd-chart__col:nth-child(2):hover .pd-chart__tip { left: 0; transform: none; }
+    .pd-chart__col:nth-child(1):hover .pd-chart__tip::after,
+    .pd-chart__col:nth-child(2):hover .pd-chart__tip::after { left: 16px; margin-left: 0; }
+    .pd-chart__col:nth-last-child(1):hover .pd-chart__tip,
+    .pd-chart__col:nth-last-child(2):hover .pd-chart__tip { left: auto; right: 0; transform: none; }
+    .pd-chart__col:nth-last-child(1):hover .pd-chart__tip::after,
+    .pd-chart__col:nth-last-child(2):hover .pd-chart__tip::after { left: auto; right: 16px; margin-left: 0; }
+    .pd-chart__foot {
+        display: flex;
+        justify-content: space-between;
+        font-size: .68rem;
+        color: #94a3b8;
+        margin-top: 6px;
+        direction: ltr;
+    }
+
+    .pd-chart--empty { background: #f8fafc; border-style: dashed; border-color: #cbd5e1; }
+    .pd-chart__empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        text-align: center;
+        padding: 1.4rem 1rem .6rem;
+    }
+    .pd-chart__empty .oi { font-size: 1.7rem; color: #94a3b8; }
+    .pd-chart__empty b { font-size: .82rem; color: #475569; }
+    .pd-chart__empty span:last-child { font-size: .72rem; color: #94a3b8; line-height: 1.9; max-width: 340px; }
+
+    .pd-eta {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        margin-top: .9rem;
+        padding: .8rem 1rem;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 1rem;
+        color: #166534;
+    }
+    .pd-eta .oi { font-size: 1.3rem; color: #16a34a; }
+    .pd-eta b { display: block; font-size: .82rem; }
+    .pd-eta span { font-size: .74rem; color: #4b5563; }
+
+    .pd-subs {
+        margin-top: 1rem;
+        padding: .9rem 1rem;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 1rem;
+    }
+    .pd-subs__head { display: flex; align-items: center; gap: .5rem; color: #1d4ed8; font-size: .85rem; font-weight: 800; margin-bottom: .7rem; }
+    .pd-subs__list { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; }
+    .pd-subs__item { display: flex; flex-direction: column; gap: .4rem; padding: .6rem; background: #fff; border: 1px solid #e2e8f0; border-radius: .8rem; text-decoration: none; color: inherit; transition: box-shadow .15s, transform .15s; }
+    .pd-subs__item:hover { box-shadow: 0 6px 16px rgba(29,78,216,.12); transform: translateY(-2px); }
+    .pd-subs__img { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: .6rem; background: #f8fafc; }
+    .pd-subs__img img { width: 100%; height: 100%; object-fit: contain; }
+    .pd-subs__name { font-size: .74rem; font-weight: 700; line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.4em; }
+    .pd-subs__price { display: flex; align-items: baseline; gap: .3rem; font-size: .78rem; color: #16a34a; }
+    .pd-subs__price b { font-weight: 800; }
+    .pd-subs__price span { font-size: .68rem; color: #6b7280; }
+    .pd-subs__old { font-size: .68rem; color: #9ca3af; text-decoration: line-through; }
+    @@media (max-width: 576px) { .pd-subs__list { grid-template-columns: repeat(2, 1fr); } }
+
+    .pd-qna { padding-top: .25rem; }
+    .pd-qna-form {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        padding: 1rem;
+        margin-bottom: 1.25rem;
+    }
+    .pd-qna-form-head b { display: block; font-size: .95rem; }
+    .pd-qna-form-head span { font-size: .75rem; color: #64748b; }
+    .pd-qna-fields { display: grid; gap: .6rem; margin-top: .8rem; }
+    .pd-qna-input {
+        width: 100%;
+        border: 1px solid #e2e8f0;
+        border-radius: .75rem;
+        padding: .65rem .8rem;
+        font-size: .85rem;
+        background: #fff;
+    }
+    .pd-qna-input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+    .pd-qna-textarea { min-height: 90px; resize: vertical; }
+    .pd-qna-submit {
+        justify-self: start;
+        border: 0;
+        background: #4f46e5;
+        color: #fff;
+        font-weight: 800;
+        font-size: .85rem;
+        padding: .6rem 1.4rem;
+        border-radius: .75rem;
+        cursor: pointer;
+    }
+    .pd-qna-submit:disabled { opacity: .6; cursor: not-allowed; }
+    .pd-qna-list { display: flex; flex-direction: column; gap: .9rem; }
+    .pd-qna-item {
+        display: flex;
+        align-items: flex-start;
+        gap: .9rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        padding: .9rem 1rem;
+        background: #fff;
+    }
+    .pd-qna-item-main { flex: 1; min-width: 0; }
+    .pd-qna-item-head { display: flex; align-items: center; gap: .6rem; font-size: .82rem; }
+    .pd-qna-date { color: #94a3b8; font-size: .7rem; }
+    .pd-qna-q { margin: .4rem 0 0; font-size: .9rem; color: #0f172a; }
+    .pd-qna-answer {
+        margin-top: .7rem;
+        background: #f0f9ff;
+        border: 1px solid #e0f2fe;
+        border-radius: .75rem;
+        padding: .6rem .8rem;
+    }
+    .pd-qna-answer-label { font-size: .7rem; font-weight: 900; color: #0369a1; }
+    .pd-qna-answer p { margin: .3rem 0 0; font-size: .85rem; color: #0c4a6e; }
+    .pd-qna-vote {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        border-radius: .75rem;
+        padding: .45rem .6rem;
+        font-size: .75rem;
+        color: #64748b;
+        cursor: pointer;
+        transition: all .15s;
+    }
+    .pd-qna-vote:hover { border-color: #6366f1; color: #4f46e5; }
+    .pd-qna-vote--on { background: #eef2ff; border-color: #6366f1; color: #4f46e5; }
+
+    .pd-qna-topbar {
+        display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; justify-content: space-between;
+        background: #fff; border: 1px solid #e8edf3; border-radius: 1rem; padding: .7rem .85rem; margin-bottom: 1rem;
+        box-shadow: 0 1px 2px rgba(15,23,42,.04);
+    }
+    .pd-qna-stats { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .pd-qna-stat { font-size: .72rem; font-weight: 900; padding: .3rem .6rem; border-radius: 999px; }
+    .pd-qna-stat--q { background: #eef2ff; color: #4338ca; }
+    .pd-qna-stat--a { background: #ecfdf5; color: #047857; }
+    .pd-qna-stat--w { background: #fffbeb; color: #b45309; }
+    .pd-qna-filters { display: flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
+    .pd-qna-chip {
+        border: 1px solid #e2e8f0; background: #fff; color: #475569;
+        font-size: .74rem; font-weight: 800; padding: .32rem .7rem; border-radius: 999px;
+        cursor: pointer; transition: all .15s;
+    }
+    .pd-qna-chip:hover { border-color: #c7d2fe; color: #4338ca; }
+    .pd-qna-chip--on { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+    .pd-qna-search {
+        border: 1px solid #e2e8f0; border-radius: 999px; padding: .34rem .85rem;
+        font-size: .78rem; font-weight: 700; min-width: 175px; outline: none; transition: all .15s;
+    }
+    .pd-qna-search:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.14); }
+
+    .pd-qna-empty {
+        display: flex; flex-direction: column; align-items: center; gap: .3rem; text-align: center;
+        padding: 2.2rem 1rem; color: #64748b; background: #f8fafc; border: 1px dashed #e2e8f0; border-radius: 1rem;
+    }
+    .pd-qna-empty .oi { font-size: 1.9rem; color: #c7d2fe; }
+    .pd-qna-empty b { color: #334155; font-size: .9rem; }
+    .pd-qna-empty span:last-child { font-size: .78rem; }
+
+    .pd-qna-item {
+        display: flex; gap: .7rem; align-items: flex-start;
+        background: #fff; border: 1px solid #e8edf3; border-right: 4px solid #e2e8f0;
+        border-radius: .9rem; padding: .85rem .9rem;
+        transition: box-shadow .15s, border-color .15s;
+    }
+    .pd-qna-item:hover { box-shadow: 0 6px 18px rgba(15,23,42,.07); }
+    .pd-qna-item--answered { border-right-color: #10b981; background: linear-gradient(180deg,#ffffff 0%,#f7fffd 100%); }
+    .pd-qna-avatar {
+        width: 34px; height: 34px; flex: 0 0 34px; border-radius: 50%;
+        background: #eef2ff; color: #4f46e5; border: 1px solid #e0e7ff;
+        font-weight: 900; font-size: 1rem; display: flex; align-items: center; justify-content: center;
+    }
+    .pd-qna-item--answered .pd-qna-avatar { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
+    .pd-qna-item-head b { font-size: .85rem; color: #0f172a; }
+    .pd-qna-tag { font-size: .65rem; font-weight: 900; padding: .14rem .5rem; border-radius: 999px; }
+    .pd-qna-tag--ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .pd-qna-tag--wait { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+
+    .pd-qna-answer {
+        margin-top: .55rem; background: #f0fdfa; border: 1px solid #99f6e4;
+        border-right: 3px solid #14b8a6; border-radius: .7rem; padding: .6rem .75rem;
+    }
+    .pd-qna-answer-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+    .pd-qna-answer-label { font-size: .7rem; font-weight: 900; color: #0f766e; display: inline-flex; align-items: center; gap: .25rem; }
+    .pd-qna-answer p { margin: .35rem 0 0; font-size: .85rem; color: #134e4a; line-height: 1.9; white-space: pre-wrap; }
+
+    .pd-qna-replies { margin-top: .6rem; border-top: 1px dashed #e2e8f0; padding-top: .55rem; display: flex; flex-direction: column; gap: .5rem; }
+    .pd-qna-reply { display: flex; gap: .5rem; align-items: flex-start; background: #f8fafc; border: 1px solid #eef2f7; border-radius: .65rem; padding: .5rem .6rem; }
+    .pd-qna-reply--admin { background: #eef2ff; border-color: #e0e7ff; }
+    .pd-qna-reply-avatar {
+        width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%;
+        background: #fff; border: 1px solid #e2e8f0; color: #475569;
+        font-size: .8rem; font-weight: 900; display: flex; align-items: center; justify-content: center;
+    }
+    .pd-qna-reply--admin .pd-qna-reply-avatar { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+    .pd-qna-reply-head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-size: .76rem; }
+    .pd-qna-reply-head b { color: #0f172a; font-size: .78rem; }
+    .pd-qna-reply-body p { margin: .2rem 0 0; font-size: .82rem; color: #334155; line-height: 1.85; white-space: pre-wrap; }
+    .pd-qna-badge-admin { background: #4f46e5; color: #fff; font-size: .62rem; font-weight: 900; padding: .1rem .45rem; border-radius: 999px; }
+
+    .pd-qna-reply-btn {
+        margin-top: .55rem; background: transparent; border: 1px dashed #c7d2fe; color: #4f46e5;
+        font-size: .75rem; font-weight: 800; padding: .3rem .7rem; border-radius: 999px;
+        cursor: pointer; transition: all .15s;
+    }
+    .pd-qna-reply-btn:hover { background: #eef2ff; border-style: solid; }
+    .pd-qna-reply-form { margin-top: .55rem; display: flex; flex-direction: column; gap: .45rem; }
+    .pd-qna-reply-actions { display: flex; gap: .5rem; align-items: center; }
+    .pd-qna-link { background: none; border: 0; color: #64748b; font-size: .76rem; font-weight: 800; cursor: pointer; }
+    .pd-qna-link:hover { color: #0f172a; }
+    .pd-qna-submit--sm { padding: .45rem .95rem; font-size: .78rem; }
+
+    @@media (max-width: 575.98px) {
+        .pd-qna-topbar { flex-direction: column; align-items: stretch; }
+        .pd-qna-search { min-width: 0; width: 100%; }
+        .pd-qna-item { flex-wrap: wrap; }
+    }
+</style>
+
 @code {
     [Parameter] public int? Id { get; set; }
     [Parameter] public string? Slug { get; set; }
@@ -983,9 +1853,11 @@
     [Inject] private ErrorService.Client.Services.ToastService ToastService { get; set; } = default!;
     [Inject] private ErrorService.Client.Services.WishlistService Ws { get; set; } = default!;
     [Inject] private ErrorService.Client.Services.RecentlyViewedService RecentSvc { get; set; } = default!;
+    [Inject] private Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthState { get; set; } = default!;
 
     private ProductDto? product;
     private List<ProductDto>? relatedProducts;
+    private List<ProductDto>? substitutes;
     private List<RecentlyViewedItem> _recentItems = new();
     private bool isLoading = true;
     private int currentImageIndex = 0;
@@ -1011,6 +1883,48 @@
 
     private bool isInWishlist;
 
+    private bool _stockAlertBusy;
+    private bool _stockAlertSubscribed;
+    private bool _showConnectModal;
+    private bool _connectChannelsLoading;
+    private List<MessengerConnectChannelDto> _connectChannels = new();
+    private bool _isAuthenticated;
+
+    private SiteSettingsDto? _shop;
+    private List<ProductSpecDto> _serverSpecs = new();
+    private List<ProductPricePointDto> _pricePoints = new();
+    private List<ProductQuestionDto> _questions = new();
+    private bool _qnaLoading;
+    private bool _qnaSending;
+    private string _qnaName = "";
+    private string _qnaText = "";
+    private string _qnaFilter = "all";
+    private string _qnaSearch = "";
+    private int? _replyFor;
+    private string _replyText = "";
+    private bool _replySending;
+
+    private bool Flag(string name)
+    {
+        if (_shop == null) return true;
+        return name switch
+        {
+            "reviews" => _shop.EnableProductReviews,
+            "media" => _shop.EnableReviewMedia,
+            "qna" => _shop.EnableProductQna,
+            "specs" => _shop.EnableSpecsTable,
+            "chart" => _shop.EnablePriceHistoryChart,
+            "badges" => _shop.EnableProductBadges,
+            "trust" => _shop.EnableTrustBar,
+            "eta" => _shop.EnableDeliveryEta,
+            "wishlist" => _shop.EnableWishlist,
+            "stockalert" => _shop.EnableStockAlert,
+            "related" => _shop.EnableRelatedProducts,
+            "recent" => _shop.EnableRecentlyViewed,
+            _ => true
+        };
+    }
+
     private static bool IsDiscountActive(IDiscountInfo p)
         => DiscountHelper.IsActive(p);
 
@@ -1032,6 +1946,139 @@
     {
         if (product == null) return;
         isInWishlist = (await Ws.GetItemsAsync()).Any(x => x.ProductId == product.Id);
+        await LoadStockAlertStateAsync();
+    }
+
+    private bool IsProductOutOfStock => product != null && (!product.IsAvailable || product.StockQuantity <= 0);
+
+    private async Task LoadStockAlertStateAsync()
+    {
+        _stockAlertSubscribed = false;
+        _isAuthenticated = false;
+        if (product == null || !IsProductOutOfStock)
+            return;
+
+        try
+        {
+            var state = await AuthState.GetAuthenticationStateAsync();
+            _isAuthenticated = state.User.Identity?.IsAuthenticated == true;
+            if (!_isAuthenticated)
+                return;
+
+            var mine = await HttpApi.GetFromJsonAsync<StockAlertMineDto>("api/stock-alerts/mine");
+            _stockAlertSubscribed = mine?.ActiveProductIds?.Contains(product.Id) == true;
+        }
+        catch
+        {
+            // Not logged in or call failed — treat as not subscribed.
+        }
+    }
+
+    private async Task HandleStockAlertClick()
+    {
+        if (product == null || _stockAlertBusy)
+            return;
+
+        if (!_isAuthenticated)
+        {
+            Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString(Nav.Uri)}");
+            return;
+        }
+
+        _stockAlertBusy = true;
+        StateHasChanged();
+        try
+        {
+            if (_stockAlertSubscribed)
+            {
+                var resp = await HttpApi.DeleteAsync($"api/stock-alerts/{product.Id}");
+                if (resp.IsSuccessStatusCode)
+                {
+                    _stockAlertSubscribed = false;
+                    ToastService.ShowInfo("یادآوری موجود شدن لغو شد.");
+                }
+                else
+                {
+                    ToastService.ShowError("لغو یادآوری انجام نشد؛ دوباره تلاش کنید.");
+                }
+            }
+            else
+            {
+                var resp = await HttpApi.PostAsJsonAsync($"api/stock-alerts/{product.Id}", new { });
+                if (resp.IsSuccessStatusCode)
+                {
+                    _stockAlertSubscribed = true;
+                    ToastService.ShowSuccess("ثبت شد؛ هنگام موجود شدن کالا به شما اطلاع می‌دهیم.");
+                    await OpenConnectModalIfNeededAsync();
+                }
+                else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    _isAuthenticated = false;
+                    Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString(Nav.Uri)}");
+                }
+                else
+                {
+                    var msg = await SafeReadErrorAsync(resp, "خطا در ثبت یادآوری؛ دوباره تلاش کنید.");
+                    ToastService.ShowError(msg);
+                }
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در ثبت یادآوری؛ اتصال اینترنت خود را بررسی کنید.");
+        }
+        finally
+        {
+            _stockAlertBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenConnectModalIfNeededAsync()
+    {
+        try
+        {
+            _connectChannelsLoading = true;
+            var channels = await HttpApi.GetFromJsonAsync<List<MessengerConnectChannelDto>>("api/stock-alerts/connect-status");
+            if (channels != null && channels.Count > 0)
+            {
+                _connectChannels = channels;
+                _showConnectModal = true;
+            }
+        }
+        catch
+        {
+            // Modal is a nice-to-have — never fail the subscribe flow because of it.
+        }
+        finally
+        {
+            _connectChannelsLoading = false;
+        }
+    }
+
+    private void CloseConnectModal()
+    {
+        _showConnectModal = false;
+    }
+
+    private static async Task<string> SafeReadErrorAsync(HttpResponseMessage resp, string fallback)
+    {
+        try
+        {
+            var text = await resp.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(text))
+                return fallback;
+            using var doc = JsonDocument.Parse(text);
+            if (doc.RootElement.TryGetProperty("title", out var title))
+                return title.GetString() ?? fallback;
+            if (doc.RootElement.ValueKind == JsonValueKind.String)
+                return doc.RootElement.GetString() ?? fallback;
+        }
+        catch
+        {
+            // fall through
+        }
+        return fallback;
     }
 
     private ProductReviewSummaryDto? reviewSummary;
@@ -1058,6 +2105,7 @@
             Email = !string.IsNullOrWhiteSpace(req.Email) ? req.Email : "guest@errorservice.ir",
             Rating = req.Rating ?? 5,
             Content = req.Content,
+            MediaUrl = req.MediaUrl,
             ParentId = req.ParentId
         };
         var response = await HttpApi.PostAsJsonAsync($"api/products/{(product?.Id ?? 0)}/reviews", prReq);
@@ -1081,6 +2129,7 @@
             Content = r.Content,
             Rating = r.Rating,
             CreatedAtFa = r.CreatedAtFa,
+            MediaUrl = r.MediaUrl,
             Replies = r.Replies != null ? ConvertProductReviews(r.Replies) : new()
         }).ToList();
     }
@@ -1117,8 +2166,11 @@
 
     private void HandleThumbError(int index) { }
 
-    private void IncrementQty() { if (_quantity < 99) _quantity++; }
+    private void IncrementQty() { if (_quantity < QtyMax) _quantity++; }
     private void DecrementQty() { if (_quantity > 1) _quantity--; }
+
+    // سقف انتخاب تعداد = موجودی انبار (در صورت نبود اطلاعات، سقف عمومی ۹۹)
+    private int QtyMax => (product != null && product.StockQuantity > 0) ? product.StockQuantity : 99;
 
     private void OpenLightbox(int index)
     {
@@ -1237,6 +2289,158 @@
         _cachedImages = null;
         await InitActionStates();
         await LoadReviews();
+        await LoadShopExtras();
+    }
+
+    private async Task LoadShopExtras()
+    {
+        if (_shop == null)
+        {
+            try { _shop = await HttpApi.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings"); } catch { _shop = new SiteSettingsDto(); }
+        }
+        if (product == null) return;
+
+        if (Flag("specs"))
+        {
+            try { _serverSpecs = await HttpApi.GetFromJsonAsync<List<ProductSpecDto>>($"api/products/{product.Id}/specs") ?? new(); }
+            catch { _serverSpecs = new(); }
+        }
+
+        if (Flag("chart"))
+        {
+            try { _pricePoints = await HttpApi.GetFromJsonAsync<List<ProductPricePointDto>>($"api/products/{product.Id}/price-history") ?? new(); }
+            catch { _pricePoints = new(); }
+        }
+
+        if (Flag("qna"))
+        {
+            await LoadQuestions();
+        }
+    }
+
+    private async Task LoadQuestions()
+    {
+        if (product == null) return;
+        _qnaLoading = true;
+        try
+        {
+            _questions = await HttpApi.GetFromJsonAsync<List<ProductQuestionDto>>($"api/products/{product.Id}/questions") ?? new();
+        }
+        catch { _questions = new(); }
+        finally { _qnaLoading = false; }
+    }
+
+    private async Task SubmitQuestion()
+    {
+        if (product == null) return;
+        var text = _qnaText.Trim();
+        if (text.Length < 5)
+        {
+            ToastService.ShowError("متن پرسش باید حداقل ۵ کاراکتر باشد");
+            return;
+        }
+        _qnaSending = true;
+        try
+        {
+            var resp = await HttpApi.PostAsJsonAsync($"api/products/{product.Id}/questions",
+                new ProductQuestionRequest { FullName = _qnaName.Trim(), Question = text });
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("پرسش شما ثبت شد و پس از تأیید نمایش داده می‌شود");
+                _qnaText = "";
+                await LoadQuestions();
+            }
+            else
+            {
+                ToastService.ShowError("خطا در ثبت پرسش");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError($"خطای سیستمی: {ex.Message}"); }
+        finally { _qnaSending = false; }
+    }
+
+    private async Task VoteQuestion(int questionId)
+    {
+        if (product == null) return;
+        try
+        {
+            var resp = await HttpApi.PostAsync($"api/products/{product.Id}/questions/{questionId}/vote", null);
+            if (resp.IsSuccessStatusCode) await LoadQuestions();
+        }
+        catch { }
+    }
+
+    private IEnumerable<ProductQuestionDto> FilteredQuestions
+    {
+        get
+        {
+            IEnumerable<ProductQuestionDto> list = _questions;
+            if (_qnaFilter == "answered") list = list.Where(x => x.IsAnswered);
+            else if (_qnaFilter == "pending") list = list.Where(x => !x.IsAnswered);
+
+            if (!string.IsNullOrWhiteSpace(_qnaSearch))
+            {
+                var s = _qnaSearch.Trim();
+                list = list.Where(x =>
+                    (x.Question?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (x.FullName?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (x.Answer?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            return list.ToList();
+        }
+    }
+
+    private void StartReply(int questionId)
+    {
+        _replyFor = questionId;
+        _replyText = "";
+    }
+
+    private void CancelReply()
+    {
+        _replyFor = null;
+        _replyText = "";
+    }
+
+    private async Task SubmitReply(int questionId)
+    {
+        if (product == null || _replySending) return;
+        var text = _replyText.Trim();
+        if (text.Length < 3) return;
+
+        if (!_isAuthenticated)
+        {
+            Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString(Nav.Uri)}");
+            return;
+        }
+
+        _replySending = true;
+        try
+        {
+            var resp = await HttpApi.PostAsJsonAsync($"api/products/{product.Id}/questions/{questionId}/reply",
+                new ProductQuestionReplyRequest { Body = text });
+            if (resp.IsSuccessStatusCode)
+            {
+                string message = "پاسخ شما ثبت شد";
+                try
+                {
+                    var payload = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                    if (payload.TryGetProperty("message", out var m) && m.ValueKind == System.Text.Json.JsonValueKind.String)
+                        message = m.GetString() ?? message;
+                }
+                catch { }
+
+                ToastService.ShowSuccess(message);
+                CancelReply();
+                await LoadQuestions();
+            }
+            else
+            {
+                ToastService.ShowError("خطا در ثبت پاسخ");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError($"خطای سیستمی: {ex.Message}"); }
+        finally { _replySending = false; }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1275,6 +2479,7 @@
                 productJsonLd = BuildProductJsonLd(product);
                 StartCountdown();
                 _ = LoadRelatedProducts(product);
+                _ = LoadSubstitutes(product);
                 _ = TrackRecentlyViewed(product);
             }
         }
@@ -1359,6 +2564,29 @@
             relatedProducts = results;
         }
         catch { }
+    }
+
+    private async Task LoadSubstitutes(ProductDto current)
+    {
+        try
+        {
+            if (current.IsAvailable && current.StockQuantity > 0)
+            {
+                return;
+            }
+
+            var list = await HttpApi.GetFromJsonAsync<List<ProductDto>>(
+                $"api/products?categoryId={current.CategoryId}&onlyAvailable=true&take=8");
+
+            var subs = (list ?? new List<ProductDto>())
+                .Where(p => p.Id != current.Id && p.IsAvailable && p.StockQuantity > 0)
+                .Take(4)
+                .ToList();
+
+            substitutes = subs.Count > 0 ? subs : null;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch { substitutes = null; }
     }
 
     private string BuildProductJsonLd(ProductDto product)

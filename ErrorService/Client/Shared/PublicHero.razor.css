@@ -133,6 +133,9 @@
     display: inline-block;
     overflow: hidden;
     max-width: 100%;
+    /* Text is pre-rendered to reserve final height (CLS); JS reveals it
+       right before typing starts. */
+    visibility: hidden;
 }
 
 .hero__typedTitle {

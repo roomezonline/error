@@ -53,6 +53,34 @@ public class CategoryDto
     public string Name { get; set; } = string.Empty;
     public string? Icon { get; set; }
     public int SortOrder { get; set; }
+    public int ProductCount { get; set; }
+    public string? Slug { get; set; }
+    public int? ParentId { get; set; }
+    public string? SeoTitle { get; set; }
+    public string? SeoDescription { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public class ProductFacetsDto
+{
+    public List<CategoryFacetDto> Categories { get; set; } = new();
+    public int Total { get; set; }
+    public int AvailableCount { get; set; }
+    public int DiscountedCount { get; set; }
+}
+
+public class CategoryFacetDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Slug { get; set; }
+    public int Count { get; set; }
+}
+
+public static class StoreDefaults
+{
+    /// <summary>متن پیش‌فرض زمان تقریبی ارسال؛ زمانی که برای محصول مقداری ثبت نشده باشد.</summary>
+    public const string DeliveryEta = "ارسال طی ۳ تا ۵ روز کاری — تهران و شهرستان";
 }
 
 public class ProductDto : IDiscountInfo
@@ -73,8 +101,10 @@ public class ProductDto : IDiscountInfo
     public int CategoryId { get; set; }
     public string? CategoryName { get; set; }
     public bool IsAvailable { get; set; } = true;
+    public bool IsDraft { get; set; }
     public int StockQuantity { get; set; } = 0;
     public bool IsFeatured { get; set; }
+    public int SortOrder { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
     // Technical details
@@ -82,6 +112,9 @@ public class ProductDto : IDiscountInfo
     public string? DatasheetUrl { get; set; }
     public string? FailureSymptoms { get; set; }
     public string? RelatedProductIds { get; set; }
+
+    /// <summary>زمان تقریبی ارسال که در صفحهٔ محصول نمایش داده می‌شود.</summary>
+    public string? EstimatedDeliveryText { get; set; }
     public int ViewCount { get; set; }
 }
 
@@ -89,6 +122,145 @@ public class ProductAvailabilityCheckItem
 {
     public int ProductId { get; set; }
     public int Quantity { get; set; } = 1;
+}
+
+public sealed class ProductAdminSummaryDto
+{
+    public int Total { get; set; }
+    public int Available { get; set; }
+    public int Unavailable { get; set; }
+    public int OutOfStock { get; set; }
+    public int LowStock { get; set; }
+    public int Discounted { get; set; }
+    public int TotalStock { get; set; }
+    public int LowStockThreshold { get; set; }
+    public decimal InventoryValue { get; set; }
+    public int CategoryCount { get; set; }
+    public int EmptyCategoryCount { get; set; }
+    public int QnaCount { get; set; }
+    public int PendingQnaCount { get; set; }
+    public int ReviewCount { get; set; }
+    public int PendingReviewCount { get; set; }
+}
+
+public sealed class ProductPricePointDto
+{
+    public int Id { get; set; }
+    public decimal Price { get; set; }
+    public decimal? DiscountPrice { get; set; }
+    public string DateFa { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAt { get; set; }
+}
+
+public sealed class ProductPricePointRequest
+{
+    public decimal? Price { get; set; }
+    public decimal? DiscountPrice { get; set; }
+    public DateTimeOffset? RecordedAt { get; set; }
+}
+
+public sealed class ProductSpecDto
+{
+    public int Id { get; set; }
+    public int ProductId { get; set; }
+    public string SpecKey { get; set; } = string.Empty;
+    public string SpecValue { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+}
+
+public sealed class ProductSpecsUpsertRequest
+{
+    public List<ProductSpecDto> Specs { get; set; } = new();
+}
+
+public sealed class ProductQuestionDto
+{
+    public int Id { get; set; }
+    public int ProductId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Question { get; set; } = string.Empty;
+    public string? Answer { get; set; }
+    public bool IsAnswered { get; set; }
+    public int UpVotes { get; set; }
+    public bool HasVoted { get; set; }
+    public string CreatedAtFa { get; set; } = string.Empty;
+    public string? AnsweredAtFa { get; set; }
+    public List<ProductQuestionReplyDto> Replies { get; set; } = new();
+}
+
+public sealed class ProductQuestionAdminDto
+{
+    public int Id { get; set; }
+    public int ProductId { get; set; }
+    public string ProductTitle { get; set; } = string.Empty;
+    public string? ProductImageUrl { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Question { get; set; } = string.Empty;
+    public string? Answer { get; set; }
+    public bool IsApproved { get; set; }
+    public bool IsAnswered { get; set; }
+    public bool IsAdminRead { get; set; }
+    public int UpVotes { get; set; }
+    public string CreatedAtFa { get; set; } = string.Empty;
+    public List<ProductQuestionReplyDto> Replies { get; set; } = new();
+}
+
+public sealed class ProductQuestionProductSummaryDto
+{
+    public int ProductId { get; set; }
+    public string ProductTitle { get; set; } = string.Empty;
+    public string? ProductImageUrl { get; set; }
+    public string? ProductSlug { get; set; }
+    public int TotalCount { get; set; }
+    public int UnansweredCount { get; set; }
+    public int PendingCount { get; set; }
+    public int UnreadCount { get; set; }
+    public string LastCreatedAtFa { get; set; } = string.Empty;
+}
+
+public sealed class ProductQuestionReplyDto
+{
+    public int Id { get; set; }
+    public int QuestionId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public bool IsAdmin { get; set; }
+    public bool IsMine { get; set; }
+    public bool IsApproved { get; set; }
+    public string CreatedAtFa { get; set; } = string.Empty;
+}
+
+public sealed class ProductQuestionReplyRequest
+{
+    [Required(ErrorMessage = "متن پاسخ الزامی است")]
+    [MinLength(3)]
+    public string Body { get; set; } = string.Empty;
+}
+
+public sealed class ProductQuestionRequest
+{
+    [Required(ErrorMessage = "متن پرسش الزامی است")]
+    [MinLength(5)]
+    public string Question { get; set; } = string.Empty;
+
+    [MaxLength(200)]
+    public string? FullName { get; set; }
+}
+
+public sealed class ProductQuestionAnswerRequest
+{
+    [MaxLength(1000)]
+    public string? Answer { get; set; }
+
+    public bool? IsApproved { get; set; }
+}
+
+public sealed class ProductBadgeDto
+{
+    public bool IsNew { get; set; }
+    public bool IsBestSeller { get; set; }
+    public bool OnSale { get; set; }
+    public bool IsRestocked { get; set; }
 }
 
 public class ProductAvailabilityDto
@@ -125,9 +297,14 @@ public class ProductUpsertRequest
     
     public bool IsAvailable { get; set; } = true;
 
+    /// <summary>وقتی روشن باشد، محصول پیش‌نویس می‌شود و در فروشگاه نمایش داده نمی‌شود.</summary>
+    public bool IsDraft { get; set; }
+
     public int StockQuantity { get; set; } = 0;
 
     public bool IsFeatured { get; set; }
+
+    public int SortOrder { get; set; }
 
     public DateTimeOffset? CreatedAt { get; set; }
 
@@ -136,6 +313,10 @@ public class ProductUpsertRequest
     public string? DatasheetUrl { get; set; }
     public string? FailureSymptoms { get; set; }
     public string? RelatedProductIds { get; set; }
+
+    /// <summary>زمان تقریبی ارسال اختصاصی این محصول؛ مثال: «ارسال طی ۱ تا ۳ روز کاری — تهران و شهرستان».</summary>
+    [System.ComponentModel.DataAnnotations.StringLength(300)]
+    public string? EstimatedDeliveryText { get; set; }
 }
 
 public class NewsDto
@@ -176,4 +357,24 @@ public class NewsUpsertRequest
     public bool IsPublished { get; set; } = true;
 
     public DateTimeOffset? CreatedAt { get; set; }
+}
+
+public class StockAlertMineDto
+{
+    public List<int> ActiveProductIds { get; set; } = new();
+}
+
+public class StockAlertConnectRequest
+{
+    [Range(1, int.MaxValue, ErrorMessage = "شناسه محصول نامعتبر است")]
+    public int ProductId { get; set; }
+}
+
+public class MessengerConnectChannelDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string? BotUrl { get; set; }
+    public bool SelfService { get; set; }
+    public string Instruction { get; set; } = string.Empty;
 }

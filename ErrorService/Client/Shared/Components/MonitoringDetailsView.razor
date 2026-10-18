@@ -1350,7 +1350,16 @@
                 </svg>
                 <span>یخچال</span>
             </div>
-            <div class="md-temp-val @GetFridgeClass(tertiaryTemp)"><span dir="ltr" class="md-temp-num">@tertiaryTemp.ToString("F1")<span class="md-temp-unit">C</span></span></div>
+            <div class="md-temp-val @GetFridgeClass(tertiaryTemp)">
+                @if (tertiaryTemp > 100)
+                {
+                    <span class="md-temp-num md-temp-num--over">بیش از +100</span>
+                }
+                else
+                {
+                    <span dir="ltr" class="md-temp-num">@tertiaryTemp.ToString("F1")<span class="md-temp-unit">C</span></span>
+                }
+            </div>
             <div class="md-temp-bar"><div class="md-temp-fill @GetFridgeClass(tertiaryTemp)" style="@FridgeBarWidth"></div></div>
         </div>
         <div class="md-card md-card--sm @(_graphSource == "ambient" ? "selected" : "")" @onclick="SelectAmbient">
@@ -1373,7 +1382,16 @@
                 </svg>
                 <span>فریزر</span>
             </div>
-            <div class="md-temp-val @GetFreezerClass(ambientTemp)"><span dir="ltr" class="md-temp-num">@ambientTemp.ToString("F1")<span class="md-temp-unit">C</span></span></div>
+            <div class="md-temp-val @GetFreezerClass(ambientTemp)">
+                @if (ambientTemp > 100)
+                {
+                    <span class="md-temp-num md-temp-num--over">بیش از +100</span>
+                }
+                else
+                {
+                    <span dir="ltr" class="md-temp-num">@ambientTemp.ToString("F1")<span class="md-temp-unit">C</span></span>
+                }
+            </div>
             <div class="md-temp-bar"><div class="md-temp-fill @GetFreezerClass(ambientTemp)" style="@FreezerBarWidth"></div></div>
         </div>
     </div>
@@ -2061,6 +2079,13 @@
         align-items: baseline;
         direction: ltr;
         gap:2px;
+    }
+
+    .md-temp-num--over {
+        direction: rtl;
+        font-size: 0.95rem;
+        font-weight: 800;
+        letter-spacing: 0;
     }
 
     .md-temp-unit {
@@ -4808,12 +4833,12 @@
     private double GraphMax => _graphSource switch
     {
         "current" => 7, "power" => 3000, "voltage" => 300,
-        "freezer" => 100, "fridge" => 50, "ambient" => 100,
+        "freezer" => 100, "fridge" => 100, "ambient" => 100,
         "motor" => 1, "h1" => 1, "h2" => 1, _ => 10
     };
     private double GraphMin => _graphSource switch
     {
-        "freezer" => -50, "ambient" => -100, _ => 0
+        "freezer" => -50, "fridge" => -50, "ambient" => -100, _ => 0
     };
     private double GraphValue => _graphSource switch
     {
@@ -5314,6 +5339,11 @@
         if (range < 0.5) range = 0.5;
         _graphFlowMax = dataMax + range * 0.3;
         _graphFlowMin = _graphSource is "freezer" or "ambient" ? dataMin - range * 0.2 : 0;
+        if (_graphSource is "fridge" or "freezer")
+        {
+            _graphFlowMax = Math.Min(_graphFlowMax, 100);
+            _graphFlowMin = -50;
+        }
     }
 
     private void UpdateFlowPath()
@@ -5572,7 +5602,7 @@
 
     private string FreezerBarWidth => $"width:{Clamp((ambientTemp + 50) / 150 * 100, 0, 100):F1}%";
     private string AmbientBarWidth => $"width:{Clamp((secondaryTemp + 100) / 200 * 100, 0, 100):F1}%";
-    private string FridgeBarWidth => $"width:{Clamp(tertiaryTemp / 50 * 100, 0, 100):F1}%";
+    private string FridgeBarWidth => $"width:{Clamp((tertiaryTemp + 50) / 150 * 100, 0, 100):F1}%";
 
     private async Task LoadShareStatusAsync()
     {

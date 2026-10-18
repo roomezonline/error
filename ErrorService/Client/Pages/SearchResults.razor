@@ -47,7 +47,7 @@
             {
                 @foreach (var item in results.Products)
                 {
-                    <div class="col-md-6 col-lg-4">
+                    <div class="col-md-6 col-lg-4" @key="item">
                         <a href="@item.Url" class="search-result-card p-3 rounded-4 shadow-sm border bg-white d-flex align-items-center gap-3 text-decoration-none text-dark">
                             @if (!string.IsNullOrEmpty(item.ImageUrl))
                             {
@@ -71,7 +71,7 @@
             {
                 @foreach (var item in results.ErrorCodes)
                 {
-                    <div class="col-md-6 col-lg-4">
+                    <div class="col-md-6 col-lg-4" @key="item">
                         <a href="@item.Url" class="search-result-card p-3 rounded-4 shadow-sm border bg-white d-flex align-items-center gap-3 text-decoration-none text-dark">
                             @if (!string.IsNullOrEmpty(item.ImageUrl))
                             {
@@ -95,7 +95,7 @@
             {
                 @foreach (var item in results.Courses)
                 {
-                    <div class="col-md-6 col-lg-4">
+                    <div class="col-md-6 col-lg-4" @key="item">
                         <a href="@item.Url" class="search-result-card p-3 rounded-4 shadow-sm border bg-white d-flex align-items-center gap-3 text-decoration-none text-dark">
                             @if (!string.IsNullOrEmpty(item.ImageUrl))
                             {
@@ -119,7 +119,7 @@
             {
                 @foreach (var item in results.News)
                 {
-                    <div class="col-md-6 col-lg-4">
+                    <div class="col-md-6 col-lg-4" @key="item">
                         <a href="@item.Url" class="search-result-card p-3 rounded-4 shadow-sm border bg-white d-flex align-items-center gap-3 text-decoration-none text-dark">
                             @if (!string.IsNullOrEmpty(item.ImageUrl))
                             {
@@ -139,6 +139,15 @@
                 }
             }
         </div>
+
+        @if (_hasMore)
+        {
+            <div class="text-center mt-4">
+                <button type="button" class="btn btn-outline-primary rounded-pill px-5" disabled="@_loadingMore" @onclick="LoadMore">
+                    @(_loadingMore ? "در حال بارگذاری..." : "مشاهده نتایج بیشتر")
+                </button>
+            </div>
+        }
     }
 </div>
 
@@ -158,10 +167,17 @@
 
 @code {
     [Parameter] [SupplyParameterFromQuery(Name = "q")] public string Query { get; set; } = "";
-    
+
+    private const int PageSize = 20;
+
     private SearchResponseDto? results;
     private bool isLoading = true;
     private string activeTab = "all";
+
+    private int _skip;
+    private string _lastQuery = "";
+    private bool _hasMore;
+    private bool _loadingMore;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -169,16 +185,73 @@
         {
             results = new();
             isLoading = false;
+            _hasMore = false;
             return;
+        }
+
+        if (!string.Equals(Query, _lastQuery, StringComparison.Ordinal))
+        {
+            _lastQuery = Query;
+            _skip = 0;
+            results = null;
+            activeTab = "all";
         }
 
         isLoading = true;
         try
         {
-            results = await Http.GetFromJsonAsync<SearchResponseDto>($"api/search?q={Uri.EscapeDataString(Query)}&take=15");
+            results = await FetchPageAsync(append: false);
         }
-        catch { results = new(); }
+        catch
+        {
+            results = new();
+            _hasMore = false;
+        }
         isLoading = false;
+    }
+
+    private static int PageCount(SearchResponseDto page)
+        => page.Products.Count + page.News.Count + page.ErrorCodes.Count + page.Courses.Count;
+
+    private async Task<SearchResponseDto> FetchPageAsync(bool append)
+    {
+        var page = await Http.GetFromJsonAsync<SearchResponseDto>(
+            $"api/search?q={Uri.EscapeDataString(Query)}&take={PageSize}&skip={_skip}")
+            ?? new SearchResponseDto();
+
+        if (!append || results == null)
+        {
+            _hasMore = PageCount(page) > 0;
+            return page;
+        }
+
+        results.Products.AddRange(page.Products);
+        results.News.AddRange(page.News);
+        results.ErrorCodes.AddRange(page.ErrorCodes);
+        results.Courses.AddRange(page.Courses);
+
+        _hasMore = PageCount(page) > 0;
+        return results;
+    }
+
+    private async Task LoadMore()
+    {
+        if (_loadingMore || !_hasMore) return;
+
+        _loadingMore = true;
+        try
+        {
+            _skip += PageSize;
+            await FetchPageAsync(append: true);
+        }
+        catch
+        {
+            _skip = Math.Max(0, _skip - PageSize);
+        }
+        finally
+        {
+            _loadingMore = false;
+        }
     }
 
     private int TotalCount => (results?.Products.Count ?? 0) + (results?.ErrorCodes.Count ?? 0) + (results?.Courses.Count ?? 0) + (results?.News.Count ?? 0);

@@ -63,7 +63,7 @@
                                         {
                                             <span class="badge bg-secondary position-absolute top-0 end-0 m-2 rounded-pill">ناموجود</span>
                                         }
-                                        <img src="@(string.IsNullOrEmpty(prod.MainImageUrl) ? "/images/placeholder-product.svg" : prod.MainImageUrl)" loading="lazy" class="product-card__img" alt="@prod.Name" />
+                                        <img src="@(string.IsNullOrEmpty(prod.MainImageUrl) ? "/images/placeholder-product.svg" : prod.MainImageUrl)" loading="lazy" class="product-card__img" alt="@(string.IsNullOrWhiteSpace(prod.Name) ? "Product image" : prod.Name)" />
                                         <div class="product-card__actions">
                                             <QuantityControl Quantity="@CartService.GetQuantity(prod.Id)"
                                                              Disabled="@(!prod.IsAvailable)"

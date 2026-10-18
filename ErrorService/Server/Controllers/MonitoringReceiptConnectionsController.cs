@@ -38,7 +38,7 @@ public sealed class MonitoringReceiptConnectionsController : ControllerBase
 
     private string? GetUserDisplayName()
     {
-        return User.FindFirst(ClaimTypes.Name)?.Value;
+        return User.FindFirst("workshop_name")?.Value ?? User.FindFirst(ClaimTypes.Name)?.Value;
     }
 
     [Authorize(Policy = "perm:admin.monitoring.view")]
@@ -506,7 +506,7 @@ public sealed class MonitoringReceiptConnectionsController : ControllerBase
     public async Task<ActionResult<object>> GetWorkshopCapacity([FromQuery] int workshopId)
     {
         var workshop = await _db.Workshops.FindAsync(workshopId);
-        if (workshop == null) return NotFound("کارگاه یافت نشد");
+        if (workshop == null || workshop.IsDeleted) return NotFound("کارگاه یافت نشد");
 
         var activeCount = await _db.MonitoringReceiptConnections
             .CountAsync(x => x.WorkshopId == workshopId && x.EndedAt == null);

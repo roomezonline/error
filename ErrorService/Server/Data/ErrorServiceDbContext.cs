@@ -6,6 +6,14 @@ namespace ErrorService.Server.Data;
 
 public sealed class ErrorServiceDbContext : DbContext
 {
+    // مقادیر seed ثابت ShippingMethods — باید عیناً با snapshot قبلی یکی باشد
+    // تا EF هیچ UpdateData ای روی این ردیف‌ها تولید نکند.
+    internal static readonly DateTimeOffset ShippingSeed1CreatedAt = new(new DateTime(2026, 10, 4, 21, 45, 41, 570, DateTimeKind.Unspecified).AddTicks(5358), TimeSpan.Zero);
+    internal static readonly DateTimeOffset ShippingSeed2CreatedAt = new(new DateTime(2026, 10, 4, 21, 45, 41, 570, DateTimeKind.Unspecified).AddTicks(5421), TimeSpan.Zero);
+    internal static readonly DateTimeOffset ShippingSeed3CreatedAt = new(new DateTime(2026, 10, 4, 21, 45, 41, 570, DateTimeKind.Unspecified).AddTicks(5422), TimeSpan.Zero);
+    internal static readonly DateTimeOffset ShippingSeed4CreatedAt = new(new DateTime(2026, 10, 4, 21, 45, 41, 570, DateTimeKind.Unspecified).AddTicks(5424), TimeSpan.Zero);
+    internal static readonly DateTimeOffset ShippingSeed5CreatedAt = new(new DateTime(2026, 10, 4, 21, 45, 41, 570, DateTimeKind.Unspecified).AddTicks(5425), TimeSpan.Zero);
+
     public ErrorServiceDbContext(DbContextOptions<ErrorServiceDbContext> options) : base(options)
     {
     }
@@ -96,8 +104,15 @@ public sealed class ErrorServiceDbContext : DbContext
 
     public DbSet<NewsletterSubscription> NewsletterSubscriptions { get; set; }
     public DbSet<ProductReview> ProductReviews { get; set; }
+    public DbSet<ProductSpec> ProductSpecs { get; set; }
+    public DbSet<ProductQuestion> ProductQuestions { get; set; }
+    public DbSet<ProductQuestionReply> ProductQuestionReplies { get; set; }
+    public DbSet<ProductPriceHistory> ProductPriceHistories { get; set; }
     public DbSet<ChatSession> ChatSessions { get; set; }
     public DbSet<ChatMessage> ChatMessages { get; set; }
+    public DbSet<ChatAiProvider> ChatAiProviders { get; set; }
+    public DbSet<ChatAiApiKey> ChatAiApiKeys { get; set; }
+    public DbSet<ChatAiModel> ChatAiModels { get; set; }
     public DbSet<BannedVisitor> BannedVisitors { get; set; }
     public DbSet<CannedResponse> CannedResponses { get; set; }
     public DbSet<ChatFaqEntry> ChatFaqEntries { get; set; }
@@ -131,6 +146,7 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<NotificationDelivery> NotificationDeliveries { get; set; }
     public DbSet<NotificationRule> NotificationRules { get; set; }
     public DbSet<MessengerEndpoint> MessengerEndpoints { get; set; }
+    public DbSet<StockAlert> StockAlerts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -193,6 +209,21 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.ExternalUserName).HasMaxLength(120);
             entity.HasIndex(x => new { x.Channel, x.AppUserId }).IsUnique();
             entity.HasIndex(x => new { x.Channel, x.ExternalId }).IsUnique();
+        });
+
+        modelBuilder.Entity<StockAlert>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.AppUserId, x.ProductId }).IsUnique();
+            entity.HasIndex(x => new { x.ProductId, x.Status });
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.AppUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Product)
+                .WithMany()
+                .HasForeignKey(x => x.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<MonitoringDevice>(entity =>
@@ -466,6 +497,10 @@ public sealed class ErrorServiceDbContext : DbContext
                   .WithOne(p => p.Category)
                   .HasForeignKey(p => p.CategoryId)
                   .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(c => c.Slug).IsUnique().HasFilter("[Slug] IS NOT NULL");
+            entity.HasIndex(c => c.ParentId);
+            entity.HasIndex(c => c.IsActive);
+            entity.Property(c => c.IsActive).HasDefaultValue(true);
         });
 
         modelBuilder.Entity<DeviceType>(entity =>
@@ -513,6 +548,7 @@ public sealed class ErrorServiceDbContext : DbContext
 
             entity.HasIndex(x => x.MobileNumber);
             entity.HasIndex(x => x.IsActive);
+            entity.HasIndex(x => x.IsDeleted);
         });
 
         modelBuilder.Entity<OnlineAdmissionRequest>(entity =>
@@ -751,6 +787,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.PasswordHash).IsRequired().HasMaxLength(500);
             entity.HasIndex(x => new { x.WorkshopId, x.PhoneNumber }).IsUnique();
             entity.HasIndex(x => new { x.WorkshopId, x.IsActive });
+            entity.HasIndex(x => x.IsDeleted);
 
             entity.HasOne(x => x.Workshop)
                 .WithMany()
@@ -778,6 +815,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.FullName).IsRequired().HasMaxLength(200);
             entity.Property(x => x.Email).IsRequired().HasMaxLength(200);
             entity.Property(x => x.Content).IsRequired();
+            entity.Property(x => x.MediaUrl).HasMaxLength(500);
             entity.HasIndex(x => new { x.ProductId, x.IsApproved });
             entity.HasOne(x => x.Parent)
                 .WithMany(x => x.Replies)
@@ -785,11 +823,72 @@ public sealed class ErrorServiceDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<ProductSpec>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.SpecKey).IsRequired().HasMaxLength(120);
+            entity.Property(x => x.SpecValue).IsRequired().HasMaxLength(500);
+            entity.HasIndex(x => new { x.ProductId, x.SortOrder });
+            entity.HasOne(x => x.Product)
+                .WithMany()
+                .HasForeignKey(x => x.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProductQuestion>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.FullName).IsRequired().HasMaxLength(200);
+            entity.Property(x => x.Question).IsRequired().HasMaxLength(1000);
+            entity.Property(x => x.Answer).HasMaxLength(1000);
+            entity.Property(x => x.VotedUserIds).HasMaxLength(4000);
+            entity.HasIndex(x => new { x.ProductId, x.IsApproved, x.CreatedAt });
+            entity.HasOne(x => x.Product)
+                .WithMany()
+                .HasForeignKey(x => x.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProductQuestionReply>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.FullName).IsRequired().HasMaxLength(200);
+            entity.Property(x => x.Body).IsRequired().HasMaxLength(1000);
+            entity.HasIndex(x => new { x.QuestionId, x.IsApproved, x.CreatedAt });
+            entity.HasOne(x => x.Question)
+                .WithMany()
+                .HasForeignKey(x => x.QuestionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProductPriceHistory>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.ProductId, x.RecordedAt });
+            entity.HasOne(x => x.Product)
+                .WithMany()
+                .HasForeignKey(x => x.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<Product>(entity =>
         {
             entity.HasIndex(p => p.IsAvailable);
+            entity.HasIndex(p => p.IsDraft);
             entity.HasIndex(p => p.CreatedAt);
             entity.HasIndex(p => p.Slug).IsUnique().HasFilter("[Slug] IS NOT NULL");
+            // فهرست‌های جدید برای مرتب‌سازی/فیلتر لیست محصولات (قیمت، تخفیف، ویترین، موجودی)
+            // و فیلتر ترکیبی دسته + موجودی. همگی غیریکتا تا در دیتابیس‌های موجود
+            // بدون بررسی تکراری بدون خطا اعمال شوند.
+            // HasIndex(CategoryId) صریحاً نگه داشته می‌شود تا EF آن را با ایندکس ترکیبی
+            // جایگزین نکند و migration کاملاً additive (فقط CreateIndex) باشد.
+            entity.HasIndex(p => p.CategoryId);
+            entity.HasIndex(p => p.Price);
+            entity.HasIndex(p => p.DiscountPrice);
+            entity.HasIndex(p => p.IsFeatured);
+            entity.HasIndex(p => p.StockQuantity);
+            entity.HasIndex(p => p.Sku);
+            entity.HasIndex(p => new { p.CategoryId, p.IsAvailable });
         });
 
         modelBuilder.Entity<News>(entity =>
@@ -936,6 +1035,18 @@ public sealed class ErrorServiceDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        // کوپن: ایندکس روی کد برای جستجوی سریع هنگام اعمال تخفیف.
+        // غیریکتا گذاشته شده چون ممکن است کدهای تکراری در دیتابیس فعلی وجود داشته باشد؛
+        // یکتایی کد باید در لایه برنامه (endpoint ایجاد/ویرایش کوپن) بررسی شود.
+        modelBuilder.Entity<Coupon>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).IsRequired().HasMaxLength(50);
+            entity.HasIndex(x => x.Code);
+            entity.HasIndex(x => x.IsActive);
+            entity.HasIndex(x => x.ExpiryDate);
+        });
+
         modelBuilder.Entity<PaymentGateway>(entity =>
         {
             entity.HasKey(x => x.Id);
@@ -957,6 +1068,12 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasIndex(x => x.Status);
             entity.HasIndex(x => x.Stage);
             entity.HasIndex(x => x.CreatedAt);
+            // جستجوی سفارش با شماره موبایل مشتری + پیگیری مرسوله + نمودار فروش (تاریخ/وضعیت)
+            entity.HasIndex(x => x.PhoneNumber);
+            entity.HasIndex(x => x.TrackingNumber);
+            entity.HasIndex(x => new { x.Status, x.CreatedAt });
+            // جلوگیری از ثبت سفارش تکراری در اثر کلیک دوباره (فقط ردیف‌های دارای کلید)
+            entity.HasIndex(x => x.IdempotencyKey).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
 
             entity.HasOne(x => x.User)
                 .WithMany()
@@ -982,6 +1099,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.PasswordHash).IsRequired().HasMaxLength(500);
             entity.Property(x => x.PasswordPlain).HasMaxLength(100);
             entity.HasIndex(x => x.PhoneNumber).IsUnique();
+            entity.HasIndex(x => x.IsDeleted);
         });
 
         modelBuilder.Entity<ErrorCode>(entity =>
@@ -1153,6 +1271,46 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasIndex(x => x.IsEnabled);
         });
 
+        modelBuilder.Entity<ChatAiProvider>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).IsRequired().HasMaxLength(100);
+            entity.Property(x => x.BaseUrl).IsRequired().HasMaxLength(500);
+            entity.Property(x => x.Kind).IsRequired().HasMaxLength(30);
+            entity.HasIndex(x => x.Priority);
+
+            entity.HasMany(x => x.ApiKeys)
+                .WithOne(x => x.Provider)
+                .HasForeignKey(x => x.ProviderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(x => x.Models)
+                .WithOne(x => x.Provider)
+                .HasForeignKey(x => x.ProviderId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ChatAiApiKey>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.KeyValue).IsRequired().HasMaxLength(500);
+            entity.Property(x => x.Label).HasMaxLength(100);
+            entity.Property(x => x.LastError).HasMaxLength(500);
+            entity.HasIndex(x => x.ProviderId);
+            entity.HasIndex(x => new { x.ProviderId, x.Priority });
+        });
+
+        modelBuilder.Entity<ChatAiModel>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ModelId).IsRequired().HasMaxLength(300);
+            entity.Property(x => x.Label).HasMaxLength(200);
+            entity.Property(x => x.LastError).HasMaxLength(500);
+            entity.HasIndex(x => x.ProviderId);
+            entity.HasIndex(x => new { x.ProviderId, x.Priority });
+            entity.HasIndex(x => new { x.ProviderId, x.ModelId }).IsUnique();
+        });
+
         modelBuilder.Entity<SmsSettings>(entity =>
         {
             entity.HasKey(x => x.Id);
@@ -1318,12 +1476,15 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasIndex(x => new { x.IsActive, x.SortOrder });
         });
 
+        // توجه: CreatedAt این ۵ ردیف seed باید دقیقاً با مقدار snapshot قبلی یکی باشد؛
+        // اگر DateTimeOffset.UtcNow بگذاریم هر migration یک UpdateData روی دیتابیس
+        // تولید می‌کند (تغییر بی‌دلیل داده). با مقدار ثابت، از این پس صفر diff تولید می‌شود.
         modelBuilder.Entity<ShippingMethod>().HasData(
-            new ShippingMethod { Id = 1, Name = "پست پیشتاز", Description = "ارسال از طریق پست جمهوری اسلامی - سرویس پیشتاز", Price = 35000, EstimatedDays = "۲ تا ۳ روز کاری", IsActive = true, SortOrder = 1, CreatedAt = DateTimeOffset.UtcNow },
-            new ShippingMethod { Id = 2, Name = "پست سفارشی", Description = "ارسال از طریق پست جمهوری اسلامی - سرویس سفارشی", Price = 20000, EstimatedDays = "۴ تا ۷ روز کاری", IsActive = true, SortOrder = 2, CreatedAt = DateTimeOffset.UtcNow },
-            new ShippingMethod { Id = 3, Name = "تیپاکس", Description = "ارسال سریع از طریق تیپاکس", Price = 45000, EstimatedDays = "۱ تا ۲ روز کاری", IsActive = true, SortOrder = 3, CreatedAt = DateTimeOffset.UtcNow },
-            new ShippingMethod { Id = 4, Name = "اسنپ‌باکس", Description = "ارسال فوری با اسنپ‌باکس (فقط تهران)", Price = 25000, EstimatedDays = "همان روز", IsActive = true, SortOrder = 4, CreatedAt = DateTimeOffset.UtcNow },
-            new ShippingMethod { Id = 5, Name = "ارسال رایگان", Description = "ارسال رایگان برای سفارش‌های بالای ۵۰۰ هزار تومان", Price = 0, EstimatedDays = "۳ تا ۵ روز کاری", IsActive = true, SortOrder = 5, CreatedAt = DateTimeOffset.UtcNow }
+            new ShippingMethod { Id = 1, Name = "پست پیشتاز", Description = "ارسال از طریق پست جمهوری اسلامی - سرویس پیشتاز", Price = 35000, EstimatedDays = "۲ تا ۳ روز کاری", IsActive = true, SortOrder = 1, CreatedAt = ShippingSeed1CreatedAt },
+            new ShippingMethod { Id = 2, Name = "پست سفارشی", Description = "ارسال از طریق پست جمهوری اسلامی - سرویس سفارشی", Price = 20000, EstimatedDays = "۴ تا ۷ روز کاری", IsActive = true, SortOrder = 2, CreatedAt = ShippingSeed2CreatedAt },
+            new ShippingMethod { Id = 3, Name = "تیپاکس", Description = "ارسال سریع از طریق تیپاکس", Price = 45000, EstimatedDays = "۱ تا ۲ روز کاری", IsActive = true, SortOrder = 3, CreatedAt = ShippingSeed3CreatedAt },
+            new ShippingMethod { Id = 4, Name = "اسنپ‌باکس", Description = "ارسال فوری با اسنپ‌باکس (فقط تهران)", Price = 25000, EstimatedDays = "همان روز", IsActive = true, SortOrder = 4, CreatedAt = ShippingSeed4CreatedAt },
+            new ShippingMethod { Id = 5, Name = "ارسال رایگان", Description = "ارسال رایگان برای سفارش‌های بالای ۵۰۰ هزار تومان", Price = 0, EstimatedDays = "۳ تا ۵ روز کاری", IsActive = true, SortOrder = 5, CreatedAt = ShippingSeed5CreatedAt }
         );
 
         modelBuilder.Entity<OrderReturn>(entity =>

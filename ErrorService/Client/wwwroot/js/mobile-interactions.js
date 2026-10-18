@@ -48,6 +48,9 @@ window.formatPriceInputs = () => {
 
 window.getPriceRawValue = (id) => {
     const el = document.getElementById(id);
-    if (!el) return '0';
-    return el.value.replace(/,/g, '');
+    if (!el) return null;
+    return (el.value || '')
+        .replace(/[\u06F0-\u06F9]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x06F0 + 0x30))
+        .replace(/[\u0660-\u0669]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x0660 + 0x30))
+        .replace(/[,،\u066C\s]/g, '');
 };

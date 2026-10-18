@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ErrorService.Server.Data;
 
@@ -18,6 +19,7 @@ public class PageViewsController : ControllerBase
     }
 
     [HttpPost("track")]
+    [EnableRateLimiting("tracking")]
     public async Task<IActionResult> Track([FromBody] PageViewRequest request)
     {
         _logger.LogInformation("PageView Track called: EntityType={EntityType}, EntityId={EntityId}", request?.EntityType, request?.EntityId);

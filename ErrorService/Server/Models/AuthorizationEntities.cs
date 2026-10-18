@@ -84,6 +84,10 @@ public sealed class WorkshopUser
     public bool IsActive { get; set; } = true;
     public bool IsTechnician { get; set; } = false;
 
+    /// <summary>حذف نرم: پرسنل حذف‌شده از لیست‌ها و ورود کنار گذاشته می‌شود اما رکورد و سابقه‌اش حفظ می‌گردد.</summary>
+    public bool IsDeleted { get; set; } = false;
+    public DateTimeOffset? DeletedAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

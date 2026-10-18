@@ -23,6 +23,10 @@ public class AppUser
 
     public bool IsActive { get; set; } = true;
 
+    /// <summary>حذف نرم: کاربر از همه لیست‌ها، ورود و ثبت‌نام کنار گذاشته می‌شود اما رکورد و سابقه‌اش حفظ می‌گردد.</summary>
+    public bool IsDeleted { get; set; } = false;
+    public DateTimeOffset? DeletedAt { get; set; }
+
     [MaxLength(1000)]
     public string? Address { get; set; }
 
@@ -34,4 +38,7 @@ public class AppUser
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public bool ChatAiDisabled { get; set; }
+    public int? ChatAiDailyLimitOverride { get; set; }
 }

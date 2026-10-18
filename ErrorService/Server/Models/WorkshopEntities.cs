@@ -53,6 +53,11 @@ public sealed class Workshop
     public bool ShowInCustomersRow { get; set; } = false;
 
     public bool IsActive { get; set; } = true;
+
+    /// <summary>حذف نرم: کارگاه حذف‌شده از همه لیست‌ها/ورود/انتخابگرها کنار گذاشته می‌شود اما دیتای آن حفظ می‌گردد.</summary>
+    public bool IsDeleted { get; set; } = false;
+    public DateTimeOffset? DeletedAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 
     [Range(1, 100)]

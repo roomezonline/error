@@ -217,6 +217,7 @@ public class ChartLegacyController : ControllerBase
     [HttpGet("{monitorId}/latest-data")]
     public async Task GetLatestData(int monitorId, [FromQuery] int take = 1000)
     {
+        take = Math.Clamp(take, 1, 5000);
         var chartData = new LegacyChartData();
         try
         {

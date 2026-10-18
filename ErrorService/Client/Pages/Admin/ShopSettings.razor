@@ -1,0 +1,376 @@
+@page "/admin/shop-settings"
+
+@layout AdminLayout
+
+@using Microsoft.AspNetCore.Authorization
+@using ErrorService.Shared
+@using System.Net.Http.Json
+
+@attribute [Authorize(Policy = "perm:admin.settings.manage")]
+
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService ToastService
+
+<PageTitle>تنظیمات فروشگاه | ارورسرویس</PageTitle>
+
+<div class="admin-container" dir="rtl">
+
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h3 class="admin-page-title m-0">تنظیمات فروشگاه</h3>
+            <p class="text-muted small mb-0 mt-1">هر قابلیت را جداگانه روشن یا خاموش کنید؛ امکانات خاموش به‌طور کامل در سایت نمایش داده نمی‌شوند.</p>
+        </div>
+        <button class="btn btn-primary shadow-sm rounded-3 px-4" @onclick="SaveSettings" disabled="@isSaving">
+            @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+            ذخیره تغییرات
+        </button>
+    </div>
+
+    @if (settings == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary"></div>
+            <p class="text-muted mt-2">در حال بارگذاری تنظیمات فروشگاه...</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h5 class="fw-bold mb-1 border-bottom pb-3">دیدگاه و پرسش‌وپاسخ</h5>
+                    <p class="small text-muted mb-4">کنترل بخش نظرات و پرسش‌های زیر صفحه محصول.</p>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">نمایش دیدگاه‌ها</h6>
+                            <p class="small text-muted mb-0">در صورت غیرفعال بودن، فرم و فهرست دیدگاه‌ها در صفحه محصول نمایش داده نمی‌شود.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableProductReviews">
+                        </div>
+                    </div>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">دیدگاه با عکس و ویدیو</h6>
+                            <p class="small text-muted mb-0">افزودن پیوست تصویر یا ویدیو به دیدگاه (حداکثر ۲۵ مگابایت).</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableReviewMedia">
+                        </div>
+                    </div>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">پرسش و پاسخ محصول</h6>
+                            <p class="small text-muted mb-0">مشتریان می‌پرسند و پشتیبانی پاسخ می‌دهد؛ با رأی «مفید بودن» مرتب می‌شود.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableProductQna">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h5 class="fw-bold mb-1 border-bottom pb-3">اطلاعات صفحه محصول</h5>
+                    <p class="small text-muted mb-4">اجزای اطلاعاتی که در صفحهٔ تک‌محصول دیده می‌شوند.</p>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">جدول مشخصات فنی</h6>
+                            <p class="small text-muted mb-0">جدول کلید/مقدار که در تب «فنی» ادیتور محصول وارد می‌شود.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableSpecsTable">
+                        </div>
+                    </div>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">نمودار قیمت ۳۰ روز اخیر</h6>
+                            <p class="small text-muted mb-0">تاریخچهٔ قیمت و تخفیف محصول به‌صورت نمودار زیر اطلاعات محصول.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnablePriceHistoryChart">
+                        </div>
+                    </div>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">برچسب‌های محصول</h6>
+                            <p class="small text-muted mb-0">نشان‌های «جدید»، «پرفروش»، «فروش ویژه» و «ناموجود» روی کارت‌ها.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableProductBadges">
+                        </div>
+                    </div>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">نوار اعتماد</h6>
+                            <p class="small text-muted mb-0">ارسال سریع، تضمین اصالت و بسته‌بندی ایمن زیر دکمهٔ خرید.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableTrustBar">
+                        </div>
+                    </div>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">بازهٔ تحویل در صفحه محصول</h6>
+                            <p class="small text-muted mb-0">بر اساس «مدت تحویل» تعریف‌شده در روش‌های ارسال.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableDeliveryEta">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h5 class="fw-bold mb-1 border-bottom pb-3">تعامل کاربر در فروشگاه</h5>
+                    <p class="small text-muted mb-4">قابلیت‌هایی که کاربر می‌تواند روی محصول انجام دهد.</p>
+
+                    @foreach (var item in InteractionToggles)
+                    {
+                        <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                            <div>
+                                <h6 class="fw-bold mb-1">@item.Title</h6>
+                                <p class="small text-muted mb-0">@item.Description</p>
+                            </div>
+                            <div class="form-check form-switch fs-4 m-0">
+                                <input class="form-check-input" type="checkbox" @bind="item.Getter">
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h5 class="fw-bold mb-1 border-bottom pb-3">ارسال، مرجوعی و خرید مجدد</h5>
+                    <p class="small text-muted mb-4">سیاست‌های حمل‌ونقل و پس از فروش.</p>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">ارسال رایگان با آستانهٔ مبلغ</h6>
+                            <p class="small text-muted mb-0">اگر مجموع کالاهای سبد از مبلغ تعیین‌شده بیشتر باشد، هزینهٔ ارسال صفر می‌شود.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableFreeShipping">
+                        </div>
+                    </div>
+
+                    @if (settings.EnableFreeShipping)
+                    {
+                        <div class="mb-3 p-3 bg-light rounded-3">
+                            <label class="form-label fw-bold small mb-1">آستانهٔ ارسال رایگان (تومان)</label>
+                            <div class="input-group">
+                                <input type="text" inputmode="numeric" class="form-control" value="@_thresholdText"
+                                       @onchange="OnThresholdChange" placeholder="مثلاً ۲٬۰۰۰٬۰۰۰" />
+                                <span class="input-group-text">تومان</span>
+                            </div>
+                            <div class="form-text">مقدار خالی یا صفر یعنی ارسال رایگان اعمال نمی‌شود.</div>
+                        </div>
+                    }
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">درخواست مرجوعی توسط مشتری</h6>
+                            <p class="small text-muted mb-0">دکمهٔ «درخواست مرجوعی» در جزئیات سفارش فعال می‌شود و درخواست‌ها در پنل ادمین می‌آید.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableReturnRequests">
+                        </div>
+                    </div>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">خرید مجدد سفارش قبلی</h6>
+                            <p class="small text-muted mb-0">دکمهٔ «خرید مجدد» کالاهای سفارش را یک‌جا به سبد خرید اضافه می‌کند.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableReorder">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="card border-0 shadow-sm rounded-4 p-4">
+                    <h5 class="fw-bold mb-1 border-bottom pb-3">بخش‌های فروشگاهی صفحه اصلی</h5>
+                    <p class="small text-muted mb-4">این دو بخش از همین‌جا روشن/خاموش می‌شوند؛ ترتیب و نمایش سایر بخش‌های صفحه اصلی از «تنظیمات سایت → نمایش ماژول‌های صفحه اصلی» انجام می‌شود.</p>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-light rounded-3 h-100">
+                                <div>
+                                    <h6 class="fw-bold mb-1">بخش «پرفروش‌ترین‌ها»</h6>
+                                    <p class="small text-muted mb-0">بر اساس تعداد فروش واقعی از سفارش‌ها محاسبه می‌شود.</p>
+                                </div>
+                                <div class="form-check form-switch fs-4 m-0">
+                                    <input class="form-check-input" type="checkbox" @bind="settings.EnableHomeBestSellers">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-light rounded-3 h-100">
+                                <div>
+                                    <h6 class="fw-bold mb-1">بخش «تجدید موجودی»</h6>
+                                    <p class="small text-muted mb-0">محصولاتی که به‌تازگی موجودی‌شان دوباره پر شده است.</p>
+                                </div>
+                                <div class="form-check form-switch fs-4 m-0">
+                                    <input class="form-check-input" type="checkbox" @bind="settings.EnableHomeRestocked">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="d-flex justify-content-end mt-4">
+            <button class="btn btn-primary shadow-sm rounded-3 px-4" @onclick="SaveSettings" disabled="@isSaving">
+                @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                ذخیره تغییرات
+            </button>
+        </div>
+
+        <div class="alert alert-info small mt-4 mb-0 rounded-3">
+            <span class="oi oi-info me-1"></span>
+            به دلیل کش سمت سرور و مرورگر، اعمال شدن تغییرات در سایت ممکن است تا حدود ۹۰ ثانیه طول بکشد.
+        </div>
+    }
+</div>
+
+<style>
+    .setting-item h6 { font-size: .95rem; }
+    .setting-item .form-check-input { cursor: pointer; }
+    .setting-item .form-check-input:checked { background-color: #0d6efd; border-color: #0d6efd; }
+    .setting-item { transition: background-color .15s ease; }
+    .setting-item:hover { background-color: #eef4ff !important; }
+</style>
+
+@code {
+    private SiteSettingsDto? settings;
+    private bool isSaving;
+    private string _thresholdText = string.Empty;
+
+    private List<ToggleBinding> InteractionToggles = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+        }
+        catch
+        {
+            settings = null;
+        }
+
+        if (settings == null)
+        {
+            settings = new SiteSettingsDto();
+        }
+
+        _thresholdText = settings.FreeShippingThreshold.HasValue
+            ? settings.FreeShippingThreshold.Value.ToString("N0")
+            : string.Empty;
+
+        BuildBindings();
+    }
+
+    private void BuildBindings()
+    {
+        if (settings == null) return;
+        var s = settings;
+
+        InteractionToggles = new List<ToggleBinding>
+        {
+            new("علاقه‌مندی‌ها", "دکمهٔ افزودن به علاقه‌مندی و صفحهٔ /wishlist.", () => s.EnableWishlist, v => s.EnableWishlist = v),
+            new("اعلام موجودی", "مشتری وقتی کالا ناموجود است می‌تواند اطلاع‌رسانی بخواهد.", () => s.EnableStockAlert, v => s.EnableStockAlert = v),
+            new("محصولات مرتبط", "کاروسل «محصولات مرتبط» زیر توضیحات محصول.", () => s.EnableRelatedProducts, v => s.EnableRelatedProducts = v),
+            new("بازدید اخیر", "کاروسل «آخرین محصولاتی که دیده‌اید».", () => s.EnableRecentlyViewed, v => s.EnableRecentlyViewed = v),
+        };
+    }
+
+    private void OnThresholdChange(ChangeEventArgs e)
+    {
+        if (settings == null) return;
+        var raw = (e.Value?.ToString() ?? string.Empty).Replace(",", "").Replace("٬", "").Replace("،", "").Trim();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            settings.FreeShippingThreshold = null;
+            _thresholdText = string.Empty;
+            return;
+        }
+        if (decimal.TryParse(raw, out var value) && value >= 0)
+        {
+            settings.FreeShippingThreshold = value;
+            _thresholdText = value.ToString("N0");
+        }
+        else
+        {
+            ToastService.ShowError("مقدار آستانهٔ ارسال رایگان باید عدد باشد.");
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        if (settings == null || isSaving) return;
+        isSaving = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync("api/sitesettings", settings);
+            if (response.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("تنظیمات فروشگاه با موفقیت ذخیره شد.");
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "ذخیرهٔ تنظیمات ناموفق بود." : body);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در ذخیرهٔ تنظیمات: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private sealed class ToggleBinding
+    {
+        public ToggleBinding(string title, string description, Func<bool> getter, Action<bool> setter)
+        {
+            Title = title;
+            Description = description;
+            _getter = getter;
+            _setter = setter;
+        }
+
+        public string Title { get; }
+        public string Description { get; }
+
+        private readonly Func<bool> _getter;
+        private readonly Action<bool> _setter;
+
+        public bool Getter
+        {
+            get => _getter();
+            set => _setter(value);
+        }
+
+        public Action<bool> Setter => _setter;
+    }
+}

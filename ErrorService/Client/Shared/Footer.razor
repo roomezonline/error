@@ -1,4 +1,5 @@
 @using ErrorService.Shared.Models
+@using ErrorService.Shared
 @using System.Net.Http.Json
 @using Microsoft.JSInterop
 @inject HttpClient Http
@@ -196,24 +197,40 @@
             </div>
         }
 
-        @if (HasAnyBadge)
+        @if (ShowTrustStrip)
         {
             <div class="footer-trust">
                 <div class="container-fluid px-3 px-md-4">
                     <div class="trust-badges">
-                        @if (!string.IsNullOrEmpty(footer.EnamadCode))
+                        <div class="trust-badge trust-badge--brand">
+                            @if (!string.IsNullOrEmpty(brandLogoUrl))
+                            {
+                                <img src="@brandLogoUrl" alt="@footer.CompanyName" class="trust-brand-logo" loading="lazy" />
+                            }
+                            else
+                            {
+                                <img src="images/branding/logo.svg" alt="@footer.CompanyName" class="trust-brand-logo" loading="lazy" />
+                            }
+                            <span class="trust-brand-text">
+                                <b>@footer.CompanyName</b>
+                                <small>@brandTagline</small>
+                            </span>
+                        </div>
+
+                        @if (showEnamad)
                         {
-                            <div class="trust-badge">
-                                <img src="https://trustseal.enamad.ir/logo.aspx?id=@footer.EnamadCode&Code=@footer.EnamadCode"
-                                     alt="نماد اعتماد الکترونیک" loading="lazy" />
-                            </div>
+                            <a class="trust-badge trust-badge--seal" referrerpolicy="origin" target="_blank" rel="noopener"
+                               href="@enamadDetailUrl" title="نماد اعتماد الکترونیک (اینماد)">
+                                <img referrerpolicy="origin" src="@enamadLogoUrl" alt="نماد اعتماد الکترونیک" loading="lazy" />
+                            </a>
                         }
+
                         @if (!string.IsNullOrEmpty(footer.SamandehiCode))
                         {
-                            <div class="trust-badge">
+                            <a class="trust-badge trust-badge--seal" href="https://logo.samandehi.ir/logo.aspx?id=@footer.SamandehiCode&Code=@footer.SamandehiCode" target="_blank" rel="noopener" title="ساماندهی">
                                 <img src="https://logo.samandehi.ir/logo.aspx?id=@footer.SamandehiCode&Code=@footer.SamandehiCode"
                                      alt="ساماندهی" loading="lazy" />
-                            </div>
+                            </a>
                         }
                         @if (!string.IsNullOrEmpty(footer.EtaCode))
                         {
@@ -662,28 +679,74 @@
         display: flex;
         gap: 16px;
         justify-content: center;
+        align-items: stretch;
         flex-wrap: wrap;
     }
 
     .trust-badge {
-        height: 76px;
-        padding: 6px 18px;
+        min-height: 78px;
+        padding: 8px 20px;
         background: #f8fafc;
+        border: 1px solid #e2e8f0;
         border-radius: 16px;
         display: flex;
         align-items: center;
         justify-content: center;
+        gap: 12px;
         box-shadow: 0 8px 22px rgba(0,0,0,0.25);
-        transition: transform .2s ease;
+        transition: transform .2s ease, box-shadow .2s ease;
     }
 
     .trust-badge:hover {
         transform: translateY(-3px);
+        box-shadow: 0 14px 30px rgba(0,0,0,0.32);
     }
 
     .trust-badge img {
         height: 54px;
         width: auto;
+    }
+
+    .trust-badge--brand {
+        padding: 10px 22px;
+    }
+
+    .trust-badge--brand .trust-brand-logo {
+        height: 46px;
+        width: 46px;
+        object-fit: contain;
+        flex-shrink: 0;
+    }
+
+    .trust-brand-text {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        line-height: 1.35;
+        text-align: right;
+    }
+
+    .trust-brand-text b {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #0f172a;
+    }
+
+    .trust-brand-text small {
+        font-size: 0.72rem;
+        color: #64748b;
+    }
+
+    .trust-badge--seal {
+        text-decoration: none;
+        background: #ffffff;
+        padding: 8px 24px;
+    }
+
+    .trust-badge--seal img {
+        height: 62px;
+        width: auto;
+        display: block;
     }
 
     .eta-badge {
@@ -782,6 +845,20 @@
 
     [data-theme="dark"] .trust-badge {
         background: rgba(255,255,255,0.08);
+        border-color: rgba(255,255,255,0.12);
+    }
+
+    [data-theme="dark"] .trust-badge--seal {
+        background: #f8fafc;
+        border-color: rgba(255,255,255,0.16);
+    }
+
+    [data-theme="dark"] .trust-brand-text b {
+        color: #f1f5f9;
+    }
+
+    [data-theme="dark"] .trust-brand-text small {
+        color: #94a3b8;
     }
 
     /* Responsive */
@@ -909,13 +986,34 @@
         }
 
         /* Trust */
+        .footer-trust {
+            padding: 24px 0;
+        }
+
         .trust-badges {
             gap: 12px;
         }
 
         .trust-badge {
-            flex: 1 1 40%;
-            max-width: 180px;
+            flex: 1 1 100%;
+            max-width: 100%;
+        }
+
+        .trust-badge--brand {
+            padding: 12px 18px;
+        }
+
+        .trust-badge--brand .trust-brand-logo {
+            height: 44px;
+            width: 44px;
+        }
+
+        .trust-badge--seal {
+            padding: 10px 18px;
+        }
+
+        .trust-badge--seal img {
+            height: 66px;
         }
 
         /* Bottom */
@@ -945,9 +1043,29 @@
                            !string.IsNullOrEmpty(footer.WhatsAppNumber));
 
     private bool HasAnyBadge =>
-        footer != null && (!string.IsNullOrEmpty(footer.EnamadCode) ||
-                           !string.IsNullOrEmpty(footer.SamandehiCode) ||
+        footer != null && (!string.IsNullOrEmpty(footer.SamandehiCode) ||
                            !string.IsNullOrEmpty(footer.EtaCode));
+
+    private SiteSettingsDto? siteSettings;
+    private bool showEnamad = true;
+
+    private const string EnamadId = "8084161";
+    private const string DefaultEnamadCode = "f3lUpOfTJDQVLLHofdKS40byo1qGttg1";
+
+    private string EnamadCodeValue =>
+        string.IsNullOrWhiteSpace(footer?.EnamadCode) ? DefaultEnamadCode : footer!.EnamadCode!.Trim();
+
+    private string enamadLogoUrl => $"https://trustseal.enamad.ir/logo.aspx?id={EnamadId}&Code={EnamadCodeValue}";
+
+    private string enamadDetailUrl => $"https://trustseal.enamad.ir/?id={EnamadId}&Code={EnamadCodeValue}";
+
+    private string? brandLogoUrl =>
+        string.IsNullOrWhiteSpace(footer?.LogoUrl) ? null : footer!.LogoUrl;
+
+    private string brandTagline =>
+        showEnamad ? "دارای نماد اعتماد الکترونیک" : "فروشگاه اینترنتی";
+
+    private bool ShowTrustStrip => footer != null && (showEnamad || HasAnyBadge);
 
     private bool HasContact =>
         footer != null && (!string.IsNullOrEmpty(footer.PhoneNumber1) ||
@@ -973,6 +1091,16 @@
         catch
         {
             footer = GetDefaultFooter();
+        }
+
+        try
+        {
+            siteSettings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+            showEnamad = siteSettings?.ShowEnamadSeal ?? true;
+        }
+        catch
+        {
+            showEnamad = true;
         }
     }
 

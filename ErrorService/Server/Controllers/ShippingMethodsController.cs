@@ -32,6 +32,7 @@ public class ShippingMethodsController : ControllerBase
                 Price = s.Price,
                 EstimatedDays = s.EstimatedDays,
                 IsActive = s.IsActive,
+                IsFree = s.IsFree,
                 SortOrder = s.SortOrder
             })
             .ToListAsync();
@@ -51,6 +52,7 @@ public class ShippingMethodsController : ControllerBase
                 Price = s.Price,
                 EstimatedDays = s.EstimatedDays,
                 IsActive = s.IsActive,
+                IsFree = s.IsFree,
                 SortOrder = s.SortOrder
             })
             .ToListAsync();
@@ -67,6 +69,7 @@ public class ShippingMethodsController : ControllerBase
             Price = request.Price,
             EstimatedDays = request.EstimatedDays,
             IsActive = request.IsActive,
+            IsFree = request.IsFree,
             SortOrder = request.SortOrder
         };
 
@@ -81,6 +84,7 @@ public class ShippingMethodsController : ControllerBase
             Price = method.Price,
             EstimatedDays = method.EstimatedDays,
             IsActive = method.IsActive,
+            IsFree = method.IsFree,
             SortOrder = method.SortOrder
         });
     }
@@ -98,6 +102,7 @@ public class ShippingMethodsController : ControllerBase
         method.Price = request.Price;
         method.EstimatedDays = request.EstimatedDays;
         method.IsActive = request.IsActive;
+        method.IsFree = request.IsFree;
         method.SortOrder = request.SortOrder;
 
         await _db.SaveChangesAsync();
@@ -110,6 +115,7 @@ public class ShippingMethodsController : ControllerBase
             Price = method.Price,
             EstimatedDays = method.EstimatedDays,
             IsActive = method.IsActive,
+            IsFree = method.IsFree,
             SortOrder = method.SortOrder
         });
     }

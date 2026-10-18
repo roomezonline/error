@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ErrorService.Server.Models;
 
@@ -46,14 +47,49 @@ public sealed class SiteSettings
     public bool ChatEnableAutoMessage { get; set; }
     public int ChatAutoMessageSeconds { get; set; } = 60;
     public bool ChatPhoneRequired { get; set; }
+    public string? ChatOperatorImageUrl { get; set; }
+    public bool ChatGreetingEnabled { get; set; } = true;
+    public string? ChatGreetingText { get; set; }
+    public string? ChatSuggestedTopics { get; set; }
     public bool ChatEnableAiAssistant { get; set; }
     public string? ChatAiProvider { get; set; }
     public string? ChatAiApiUrl { get; set; }
     public string? ChatAiModel { get; set; }
     public string? ChatAiApiKey { get; set; }
     public string? ChatAiSystemPrompt { get; set; }
+    public bool ChatAiGuestEnabled { get; set; }
+    public int ChatAiDailyLimit { get; set; } = 3;
+
+    // ===== ابزارهای کنترلی دستیار (محدودسازی سوال/جواب) =====
+    public int ChatAiMaxQuestionChars { get; set; } = 300;
+    public int ChatAiMaxTokens { get; set; } = 450;
+    public double ChatAiTemperature { get; set; } = 0.6;
+    public int ChatAiSessionLimit { get; set; } = 12;
+    public string? ChatAiBlockKeywords { get; set; }
 
     public bool RequireReviewApproval { get; set; } = true;
+
+    // ===== تنظیمات فروشگاه (کلیدهای فعال/غیرفعال سازی امکانات) =====
+    public bool EnableProductReviews { get; set; } = true;
+    public bool EnableReviewMedia { get; set; }
+    public bool EnableProductQna { get; set; }
+    public bool EnableSpecsTable { get; set; } = true;
+    public bool EnablePriceHistoryChart { get; set; }
+    public bool EnableProductBadges { get; set; } = true;
+    public bool EnableTrustBar { get; set; } = true;
+    public bool EnableDeliveryEta { get; set; } = true;
+    public bool EnableWishlist { get; set; } = true;
+    public bool EnableStockAlert { get; set; } = true;
+    public bool EnableRelatedProducts { get; set; } = true;
+    public bool EnableRecentlyViewed { get; set; } = true;
+    public bool EnableFreeShipping { get; set; }
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal? FreeShippingThreshold { get; set; }
+    public bool EnableReturnRequests { get; set; }
+    public bool EnableReorder { get; set; }
+    public bool EnableHomeBestSellers { get; set; } = true;
+    public bool EnableHomeRestocked { get; set; } = true;
+    public bool ShowEnamadSeal { get; set; } = true;
 
     public List<SiteHomeModuleSetting> HomeModules { get; set; } = new();
 }

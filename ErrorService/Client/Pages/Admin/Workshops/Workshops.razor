@@ -188,11 +188,11 @@
                                             <span class="oi oi-pencil"></span>
                                             <InputFile OnChange="HandleLogoFile" accept="image/*,.svg" class="d-none" />
                                         </label>
-                                        <button type="button" class="ws-logo-action ws-logo-action--danger" @onclick="RemoveLogo" title="حذف">
-                                            <span class="oi oi-trash"></span>
-                                        </button>
-                                    </div>
-                                </div>
+                                        <button type="button" class="ws-logo-action ws-logo-action--danger" @onclick="RemoveLogo" title="حذف">
+                                            <span class="oi oi-trash"></span>
+                                        </button>
+                                    </div>
+                                </div>
                             }
                             else
                             {
@@ -274,6 +274,10 @@
                     <h5 class="m-0 fw-bold text-muted">@(isSuperAdmin ? "لیست کارگاه‌ها" : "کارگاه من")</h5>
                     @if (isSuperAdmin)
                     {
+                        <button type="button" class="btn btn-outline-secondary rounded-pill px-4 me-2" @onclick="ToggleShowDeleted">
+                            <span class="oi oi-trash me-1"></span>
+                            @(showDeleted ? "بازگشت به فهرست" : "نمایش حذف‌شده‌ها")
+                        </button>
                         <button type="button" class="btn btn-primary rounded-pill px-4" @onclick="StartNewWorkshop">
                             <span class="oi oi-plus me-1"></span>
                             ثبت کارگاه جدید
@@ -301,7 +305,16 @@
                                     <div class="d-flex align-items-center justify-content-between gap-3">
                                         <div class="text-end overflow-hidden">
                                             <div class="fw-black text-dark text-truncate">@it.WorkshopName</div>
-                                            <div class="small text-muted text-truncate">@it.ProvinceName / @it.CityName</div>
+                                            <div class="small text-muted text-truncate">@it.ProvinceName / @it.CityName</div>
+                                            @if (it.Devices != null && it.Devices.Any())
+                                            {
+                                                <div class="ws-devices mt-1">
+                                                    @foreach (var d in it.Devices)
+                                                    {
+                                                        <span class="ws-device-chip ws-device-chip--sm"><span class="oi oi-chip"></span>@d.Title</span>
+                                                    }
+                                                </div>
+                                            }
                                         </div>
                                         <div class="d-flex align-items-center gap-2 flex-shrink-0">
                                             <span class="badge @(it.IsActive ? "bg-success-subtle text-success" : "bg-danger-subtle text-danger") rounded-pill px-3">
@@ -326,6 +339,18 @@
                                             </div>
                                         </div>
 
+                                        @if (it.Devices != null && it.Devices.Any())
+                                        {
+                                            <div class="ws-device-box">
+                                                <div class="ws-device-box__title"><span class="oi oi-chip"></span> دستگاه مانیتورینگ</div>
+                                                <div class="ws-devices">
+                                                    @foreach (var d in it.Devices)
+                                                    {
+                                                        <span class="ws-device-chip"><span class="oi oi-chip"></span>@d.Title</span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
                                         <div class="d-flex flex-wrap justify-content-end gap-2 mt-3">
                                             <button class="btn btn-sm btn-outline-success" title="افزودن پرسنل" @onclick="() => OpenAddUserModal(it)" @onclick:stopPropagation>
                                                 <span class="oi oi-plus"></span>
@@ -344,10 +369,19 @@
                                             }
                                             @if (isSuperAdmin)
                                             {
+                                                @if (it.IsDeleted)
+                                                {
+                                                    <button class="btn btn-sm btn-outline-success" title="بازگردانی کارگاه" @onclick="() => RestoreWorkshop(it)" @onclick:stopPropagation>
+                                                        <span class="oi oi-action-undo"></span>
+                                                    </button>
+                                                }
+                                                else
+                                                {
                                                 <button class="btn btn-sm btn-outline-danger" title="حذف" @onclick="() => AskDelete(it)" @onclick:stopPropagation>
-                                                    <span class="oi oi-trash"></span>
-                                                </button>
-                                            }
+                                                    <span class="oi oi-trash"></span>
+                                                </button>
+                                                }
+                                            }
                                         </div>
 
                                         <div class="mt-3 pt-3 border-top">
@@ -407,6 +441,16 @@
                                                                     }
                                                                 </div>
                                                             </div>
+                                                        @if (user.IsDeleted)
+                                                        {
+                                                            <div class="ws-staff-item__actions">
+                                                                <button type="button" class="ws-staff-action ws-staff-action--ok" title="بازگردانی پرسنل" @onclick="() => RestoreUser(user, it)" @onclick:stopPropagation>
+                                                                    <span class="oi oi-action-undo"></span>
+                                                                </button>
+                                                            </div>
+                                                        }
+                                                        else
+                                                        {
                                                             <div class="ws-staff-item__actions">
                                                                 <button type="button" class="ws-staff-action ws-staff-action--edit" title="ویرایش" @onclick="() => EditUser(user, it)" @onclick:stopPropagation>
                                                                     <span class="oi oi-pencil"></span>
@@ -414,11 +458,12 @@
                                                                 <button type="button" class="ws-staff-action @(user.IsActive ? "ws-staff-action--warn" : "ws-staff-action--ok")" title="@(user.IsActive ? "غیرفعال کردن" : "فعال کردن")" @onclick="() => ToggleUserStatusInList(user, it)" @onclick:stopPropagation>
                                                                     <span class="oi @(user.IsActive ? "oi-power-standby" : "oi-check")"></span>
                                                                 </button>
-                                                                <button type="button" class="ws-staff-action ws-staff-action--danger" title="حذف" @onclick="() => AskDeleteUser(user, it)" @onclick:stopPropagation>
-                                                                    <span class="oi oi-trash"></span>
-                                                                </button>
-                                                            </div>
-                                                        </div>
+                                                                <button type="button" class="ws-staff-action ws-staff-action--danger" title="حذف" @onclick="() => AskDeleteUser(user, it)" @onclick:stopPropagation>
+                                                                    <span class="oi oi-trash"></span>
+                                                                </button>
+                                                            </div>
+                                                        }
+                                                        </div>
                                                     }
                                                 </div>
                                             }
@@ -614,6 +659,62 @@
         color: #0f172a;
         font-weight: 800;
         word-break: break-word;
+    }
+
+    .ws-devices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .ws-device-box {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border: 1.5px dashed #bfdbfe;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
+    }
+
+    .ws-device-box__title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: #1e3a8a;
+        margin-bottom: 8px;
+    }
+
+    .ws-device-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        border-radius: 999px;
+        border: 1.5px dashed #93c5fd;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 0.74rem;
+        font-weight: 800;
+        line-height: 1.7;
+        white-space: nowrap;
+        transition: background 0.15s, border-color 0.15s;
+    }
+
+    .ws-device-chip:hover {
+        background: #dbeafe;
+        border-color: #60a5fa;
+    }
+
+    .ws-device-chip .oi {
+        font-size: 0.85rem;
+        opacity: 0.9;
+    }
+
+    .ws-device-chip--sm {
+        padding: 2px 10px;
+        font-size: 0.68rem;
     }
     
     .details-content {
@@ -1846,7 +1947,49 @@
         cities = await Http.GetFromJsonAsync<List<CityDto>>($"api/locations/cities/{provinceId}");
     }
 
-    private async Task Load() => items = await Http.GetFromJsonAsync<List<WorkshopDto>>("api/workshops");
+    private bool showDeleted;
+
+    private async Task Load()
+    {
+        var url = isSuperAdmin && showDeleted ? "api/workshops?includeDeleted=true" : "api/workshops";
+        items = await Http.GetFromJsonAsync<List<WorkshopDto>>(url);
+    }
+
+    private async Task ToggleShowDeleted()
+    {
+        showDeleted = !showDeleted;
+        await Load();
+    }
+
+    private async Task RestoreWorkshop(WorkshopDto dto)
+    {
+        var resp = await Http.PostAsync($"api/workshops/{dto.Id}/restore", content: null);
+        if (resp.IsSuccessStatusCode)
+        {
+            ToastService.ShowSuccess("کارگاه بازگردانی شد");
+            await Load();
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا در بازگردانی" : body.Trim('"'));
+        }
+    }
+
+    private async Task RestoreUser(WorkshopUserDto user, WorkshopDto ws)
+    {
+        var resp = await Http.PostAsync($"api/workshop-auth/users/{user.Id}/restore", content: null);
+        if (resp.IsSuccessStatusCode)
+        {
+            ToastService.ShowSuccess("پرسنل بازگردانی شد");
+            await LoadWorkshopUsers(ws.Id);
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "خطا در بازگردانی" : body.Trim('"'));
+        }
+    }
 
     private async Task OnProvinceChanged(int provinceId)
     {
@@ -2048,19 +2191,7 @@
         userConfirmMessage = $"آیا از حذف پرسنل \"{user.FullName}\" اطمینان دارید؟";
         userHasTransactionalRefs = false;
 
-        try
-        {
-            var check = await Http.GetFromJsonAsync<DeleteCheckResponse>($"api/workshop-auth/users/{user.Id}/delete-check");
-            if (check != null && check.HasTransactionalRefs)
-            {
-                userHasTransactionalRefs = true;
-                userConfirmMessage = $"آیا از حذف پرسنل \"{user.FullName}\" اطمینان دارید؟";
-            }
-        }
-        catch
-        {
-            // If delete-check fails, assume no refs
-        }
+
 
         showUserConfirm = true;
     }
@@ -2070,10 +2201,7 @@
         showUserConfirm = false;
         if (!ok || userToDelete == null) return;
 
-        var url = userHasTransactionalRefs
-            ? $"api/workshop-auth/users/{userToDelete.Id}?force=true"
-            : $"api/workshop-auth/users/{userToDelete.Id}";
-        var resp = await Http.DeleteAsync(url);
+        var resp = await Http.DeleteAsync($"api/workshop-auth/users/{userToDelete.Id}");
 
         if (resp.IsSuccessStatusCode)
         {
@@ -2144,7 +2272,10 @@
     {
         try
         {
-            var users = await Http.GetFromJsonAsync<List<WorkshopUserDto>>($"api/workshop-auth/users?workshopId={workshopId}");
+            var usersUrl = isSuperAdmin && showDeleted
+                ? $"api/workshop-auth/users?workshopId={workshopId}&includeDeleted=true"
+                : $"api/workshop-auth/users?workshopId={workshopId}";
+            var users = await Http.GetFromJsonAsync<List<WorkshopUserDto>>(usersUrl);
             if (users != null)
             {
                 workshopUsersMap[workshopId] = users;

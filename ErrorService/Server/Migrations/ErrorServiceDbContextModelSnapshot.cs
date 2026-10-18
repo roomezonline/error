@@ -56,7 +56,16 @@ namespace ErrorService.Server.Data.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<int?>("ChatAiDailyLimitOverride")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ChatAiDisabled")
+                        .HasColumnType("bit");
+
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Email")
@@ -69,6 +78,9 @@ namespace ErrorService.Server.Data.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<string>("PasswordHash")
@@ -93,6 +105,8 @@ namespace ErrorService.Server.Data.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
 
                     b.HasIndex("PhoneNumber")
                         .IsUnique();
@@ -434,17 +448,192 @@ namespace ErrorService.Server.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("ParentId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SeoDescription")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("SeoTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Slug")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("ParentId");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasFilter("[Slug] IS NOT NULL");
+
                     b.ToTable("Categories");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ChatAiApiKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CooldownUntil")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<long>("FailureCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("KeyValue")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProviderId")
+                        .HasColumnType("int");
+
+                    b.Property<long>("SuccessCount")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProviderId");
+
+                    b.HasIndex("ProviderId", "Priority");
+
+                    b.ToTable("ChatAiApiKeys");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ChatAiModel", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CooldownUntil")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<long>("FailureCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModelId")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProviderId")
+                        .HasColumnType("int");
+
+                    b.Property<long>("SuccessCount")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProviderId");
+
+                    b.HasIndex("ProviderId", "ModelId")
+                        .IsUnique();
+
+                    b.HasIndex("ProviderId", "Priority");
+
+                    b.ToTable("ChatAiModels");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ChatAiProvider", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BaseUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Priority");
+
+                    b.ToTable("ChatAiProviders");
                 });
 
             modelBuilder.Entity("ErrorService.Server.Models.ChatFaqEntry", b =>
@@ -583,6 +772,9 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<string>("UserEmail")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
 
                     b.Property<string>("UserName")
                         .HasMaxLength(200)
@@ -725,6 +917,12 @@ namespace ErrorService.Server.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssignedToUserId");
+
+                    b.HasIndex("Code");
+
+                    b.HasIndex("ExpiryDate");
+
+                    b.HasIndex("IsActive");
 
                     b.ToTable("Coupons");
                 });
@@ -2146,6 +2344,10 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("CustomerNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<decimal?>("DiscountAmount")
                         .HasColumnType("decimal(18,2)");
 
@@ -2157,6 +2359,10 @@ namespace ErrorService.Server.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("OrderNumber")
                         .IsRequired()
@@ -2200,6 +2406,9 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<decimal>("ShippingCost")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<bool>("ShippingIsFree")
+                        .HasColumnType("bit");
+
                     b.Property<int?>("ShippingMethodId")
                         .HasColumnType("int");
 
@@ -2234,14 +2443,24 @@ namespace ErrorService.Server.Data.Migrations
 
                     b.HasIndex("CreatedAt");
 
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
+
                     b.HasIndex("OrderNumber")
                         .IsUnique();
+
+                    b.HasIndex("PhoneNumber");
 
                     b.HasIndex("Stage");
 
                     b.HasIndex("Status");
 
+                    b.HasIndex("TrackingNumber");
+
                     b.HasIndex("UserId");
+
+                    b.HasIndex("Status", "CreatedAt");
 
                     b.ToTable("Orders");
                 });
@@ -2678,6 +2897,10 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<DateTimeOffset?>("DiscountStartDate")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("EstimatedDeliveryText")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("FailureSymptoms")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
@@ -2695,6 +2918,9 @@ namespace ErrorService.Server.Data.Migrations
                         .HasColumnType("nvarchar(500)");
 
                     b.Property<bool>("IsAvailable")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDraft")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsFeatured")
@@ -2724,6 +2950,9 @@ namespace ErrorService.Server.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
                     b.Property<int>("StockQuantity")
                         .HasColumnType("int");
 
@@ -2739,13 +2968,150 @@ namespace ErrorService.Server.Data.Migrations
 
                     b.HasIndex("CreatedAt");
 
+                    b.HasIndex("DiscountPrice");
+
                     b.HasIndex("IsAvailable");
+
+                    b.HasIndex("IsDraft");
+
+                    b.HasIndex("IsFeatured");
+
+                    b.HasIndex("Price");
+
+                    b.HasIndex("Sku");
 
                     b.HasIndex("Slug")
                         .IsUnique()
                         .HasFilter("[Slug] IS NOT NULL");
 
+                    b.HasIndex("StockQuantity");
+
+                    b.HasIndex("CategoryId", "IsAvailable");
+
                     b.ToTable("Products");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ProductPriceHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("DiscountPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId", "RecordedAt");
+
+                    b.ToTable("ProductPriceHistories");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ProductQuestion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Answer")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset?>("AnsweredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("AppUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsAdminRead")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsAnswered")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsApproved")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Question")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("UpVotes")
+                        .HasColumnType("int");
+
+                    b.Property<string>("VotedUserIds")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppUserId");
+
+                    b.HasIndex("ProductId", "IsApproved", "CreatedAt");
+
+                    b.ToTable("ProductQuestions");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ProductQuestionReply", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("AppUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsApproved")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("QuestionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestionId", "IsApproved", "CreatedAt");
+
+                    b.ToTable("ProductQuestionReplies");
                 });
 
             modelBuilder.Entity("ErrorService.Server.Models.ProductReview", b =>
@@ -2779,6 +3145,10 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<bool>("IsApproved")
                         .HasColumnType("bit");
 
+                    b.Property<string>("MediaUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<int?>("ParentId")
                         .HasColumnType("int");
 
@@ -2795,6 +3165,40 @@ namespace ErrorService.Server.Data.Migrations
                     b.HasIndex("ProductId", "IsApproved");
 
                     b.ToTable("ProductReviews");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ProductSpec", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SpecKey")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("SpecValue")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId", "SortOrder");
+
+                    b.ToTable("ProductSpecs");
                 });
 
             modelBuilder.Entity("ErrorService.Server.Models.Project", b =>
@@ -3236,7 +3640,13 @@ namespace ErrorService.Server.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<decimal?>("FreeShippingThreshold")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsFree")
                         .HasColumnType("bit");
 
                     b.Property<string>("Name")
@@ -3260,10 +3670,11 @@ namespace ErrorService.Server.Data.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 3, 10, 12, 50, 744, DateTimeKind.Unspecified).AddTicks(4049), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 4, 21, 45, 41, 570, DateTimeKind.Unspecified).AddTicks(5358), new TimeSpan(0, 0, 0, 0, 0)),
                             Description = "ارسال از طریق پست جمهوری اسلامی - سرویس پیشتاز",
                             EstimatedDays = "۲ تا ۳ روز کاری",
                             IsActive = true,
+                            IsFree = false,
                             Name = "پست پیشتاز",
                             Price = 35000m,
                             SortOrder = 1
@@ -3271,10 +3682,11 @@ namespace ErrorService.Server.Data.Migrations
                         new
                         {
                             Id = 2,
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 3, 10, 12, 50, 744, DateTimeKind.Unspecified).AddTicks(4113), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 4, 21, 45, 41, 570, DateTimeKind.Unspecified).AddTicks(5421), new TimeSpan(0, 0, 0, 0, 0)),
                             Description = "ارسال از طریق پست جمهوری اسلامی - سرویس سفارشی",
                             EstimatedDays = "۴ تا ۷ روز کاری",
                             IsActive = true,
+                            IsFree = false,
                             Name = "پست سفارشی",
                             Price = 20000m,
                             SortOrder = 2
@@ -3282,10 +3694,11 @@ namespace ErrorService.Server.Data.Migrations
                         new
                         {
                             Id = 3,
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 3, 10, 12, 50, 744, DateTimeKind.Unspecified).AddTicks(4115), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 4, 21, 45, 41, 570, DateTimeKind.Unspecified).AddTicks(5422), new TimeSpan(0, 0, 0, 0, 0)),
                             Description = "ارسال سریع از طریق تیپاکس",
                             EstimatedDays = "۱ تا ۲ روز کاری",
                             IsActive = true,
+                            IsFree = false,
                             Name = "تیپاکس",
                             Price = 45000m,
                             SortOrder = 3
@@ -3293,10 +3706,11 @@ namespace ErrorService.Server.Data.Migrations
                         new
                         {
                             Id = 4,
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 3, 10, 12, 50, 744, DateTimeKind.Unspecified).AddTicks(4117), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 4, 21, 45, 41, 570, DateTimeKind.Unspecified).AddTicks(5424), new TimeSpan(0, 0, 0, 0, 0)),
                             Description = "ارسال فوری با اسنپ‌باکس (فقط تهران)",
                             EstimatedDays = "همان روز",
                             IsActive = true,
+                            IsFree = false,
                             Name = "اسنپ‌باکس",
                             Price = 25000m,
                             SortOrder = 4
@@ -3304,10 +3718,11 @@ namespace ErrorService.Server.Data.Migrations
                         new
                         {
                             Id = 5,
-                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 3, 10, 12, 50, 744, DateTimeKind.Unspecified).AddTicks(4119), new TimeSpan(0, 0, 0, 0, 0)),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 4, 21, 45, 41, 570, DateTimeKind.Unspecified).AddTicks(5425), new TimeSpan(0, 0, 0, 0, 0)),
                             Description = "ارسال رایگان برای سفارش‌های بالای ۵۰۰ هزار تومان",
                             EstimatedDays = "۳ تا ۵ روز کاری",
                             IsActive = true,
+                            IsFree = false,
                             Name = "ارسال رایگان",
                             Price = 0m,
                             SortOrder = 5
@@ -3376,14 +3791,35 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<string>("ChatAiApiUrl")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("ChatAiBlockKeywords")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ChatAiDailyLimit")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ChatAiGuestEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ChatAiMaxQuestionChars")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ChatAiMaxTokens")
+                        .HasColumnType("int");
+
                     b.Property<string>("ChatAiModel")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ChatAiProvider")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("ChatAiSessionLimit")
+                        .HasColumnType("int");
+
                     b.Property<string>("ChatAiSystemPrompt")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<double>("ChatAiTemperature")
+                        .HasColumnType("float");
 
                     b.Property<int>("ChatAutoMessageSeconds")
                         .HasColumnType("int");
@@ -3394,8 +3830,20 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<bool>("ChatEnableAutoMessage")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("ChatGreetingEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ChatGreetingText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ChatOperatorImageUrl")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("ChatPhoneRequired")
                         .HasColumnType("bit");
+
+                    b.Property<string>("ChatSuggestedTopics")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ChatWelcomeMessage")
                         .HasColumnType("nvarchar(max)");
@@ -3415,16 +3863,61 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<bool>("EnableBaleNotifications")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("EnableDeliveryEta")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("EnableEitaaChat")
                         .HasColumnType("bit");
 
                     b.Property<bool>("EnableEitaaNotifications")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("EnableFreeShipping")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableHomeBestSellers")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableHomeRestocked")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("EnableOnlineChat")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("EnablePriceHistoryChart")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableProductBadges")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableProductQna")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableProductReviews")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableRecentlyViewed")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableRelatedProducts")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableReorder")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableReturnRequests")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableReviewMedia")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableSpecsTable")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("EnableSsl")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableStockAlert")
                         .HasColumnType("bit");
 
                     b.Property<bool>("EnableTelegramChat")
@@ -3432,6 +3925,15 @@ namespace ErrorService.Server.Data.Migrations
 
                     b.Property<bool>("EnableTelegramNotifications")
                         .HasColumnType("bit");
+
+                    b.Property<bool>("EnableTrustBar")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableWishlist")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("FreeShippingThreshold")
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("GoogleAnalyticsTag")
                         .HasColumnType("nvarchar(max)");
@@ -3456,6 +3958,9 @@ namespace ErrorService.Server.Data.Migrations
 
                     b.Property<string>("SeoTitle")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("ShowEnamadSeal")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("ShowFeatureCards")
                         .HasColumnType("bit");
@@ -3699,6 +4204,39 @@ namespace ErrorService.Server.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("SmsSettings");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.StockAlert", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AppUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("NotifiedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppUserId", "ProductId")
+                        .IsUnique();
+
+                    b.HasIndex("ProductId", "Status");
+
+                    b.ToTable("StockAlerts");
                 });
 
             modelBuilder.Entity("ErrorService.Server.Models.Story", b =>
@@ -4491,11 +5029,17 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("ImageUrl")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<int>("MaxMonitoringConnections")
@@ -4530,6 +5074,8 @@ namespace ErrorService.Server.Data.Migrations
                     b.HasIndex("CityId");
 
                     b.HasIndex("IsActive");
+
+                    b.HasIndex("IsDeleted");
 
                     b.HasIndex("MobileNumber");
 
@@ -4716,12 +5262,18 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsTechnician")
@@ -4744,6 +5296,8 @@ namespace ErrorService.Server.Data.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("IsDeleted");
 
                     b.HasIndex("WorkshopId", "IsActive");
 
@@ -5169,6 +5723,28 @@ namespace ErrorService.Server.Data.Migrations
                     b.Navigation("Product");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ChatAiApiKey", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.ChatAiProvider", "Provider")
+                        .WithMany("ApiKeys")
+                        .HasForeignKey("ProviderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Provider");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ChatAiModel", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.ChatAiProvider", "Provider")
+                        .WithMany("Models")
+                        .HasForeignKey("ProviderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Provider");
                 });
 
             modelBuilder.Entity("ErrorService.Server.Models.ChatMessage", b =>
@@ -5598,6 +6174,45 @@ namespace ErrorService.Server.Data.Migrations
                     b.Navigation("Category");
                 });
 
+            modelBuilder.Entity("ErrorService.Server.Models.ProductPriceHistory", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ProductQuestion", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("AppUserId");
+
+                    b.HasOne("ErrorService.Server.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ProductQuestionReply", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.ProductQuestion", "Question")
+                        .WithMany()
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Question");
+                });
+
             modelBuilder.Entity("ErrorService.Server.Models.ProductReview", b =>
                 {
                     b.HasOne("ErrorService.Server.Models.ProductReview", "Parent")
@@ -5612,6 +6227,17 @@ namespace ErrorService.Server.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Parent");
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ProductSpec", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Product");
                 });
@@ -5739,6 +6365,25 @@ namespace ErrorService.Server.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Workshop");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.StockAlert", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("AppUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ErrorService.Server.Models.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("ErrorService.Server.Models.StoryLike", b =>
@@ -5964,6 +6609,13 @@ namespace ErrorService.Server.Data.Migrations
             modelBuilder.Entity("ErrorService.Server.Models.Category", b =>
                 {
                     b.Navigation("Products");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ChatAiProvider", b =>
+                {
+                    b.Navigation("ApiKeys");
+
+                    b.Navigation("Models");
                 });
 
             modelBuilder.Entity("ErrorService.Server.Models.ChatSession", b =>

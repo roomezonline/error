@@ -52,7 +52,7 @@ else
                         <div>
                             <div class="sm-card-title" style="color:#fff;">@m.Name</div>
                             <div class="sm-card-subtitle" style="color:rgba(255,255,255,0.75);">
-                                @if (m.Price == 0)
+                                @if (m.IsFree)
                                 {
                                     <span class="badge bg-success">رایگان</span>
                                 }
@@ -138,6 +138,17 @@ else
                                 <InputCheckbox class="form-check-input" @bind-Value="editModel.IsActive" id="activeCheck" />
                                 <label class="form-check-label" for="activeCheck">فعال</label>
                             </div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" class="form-check-input" id="freeCheck"
+                                   checked="@editModel.IsFree" @onchange="OnFreeChanged" />
+                            <label class="form-check-label" for="freeCheck">ارسال رایگان</label>
+                        </div>
+                        <div class="form-text">
+                            فقط وقتی ارسال واقعاً رایگان است تیک بزنید؛ در این حالت مبلغ ارسال صفر می‌شود.
+                            پس‌کرایه رایگان نیست و نباید تیک بخورد.
                         </div>
                     </div>
                     <div class="sm-modal-footer">
@@ -382,11 +393,26 @@ else
             Price = m.Price,
             EstimatedDays = m.EstimatedDays,
             IsActive = m.IsActive,
+            IsFree = m.IsFree,
             SortOrder = m.SortOrder
         };
         showEditor = true;
         await Task.Delay(50);
         await JS.InvokeVoidAsync("window.__smSetFormattedValue", _priceRef, editModel.Price);
+    }
+
+    private async Task OnFreeChanged(ChangeEventArgs e)
+    {
+        editModel.IsFree = e.Value is bool b
+            ? b
+            : string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+
+        if (editModel.IsFree)
+        {
+            editModel.Price = 0;
+            try { await JS.InvokeVoidAsync("window.__smSetFormattedValue", _priceRef, 0); }
+            catch { }
+        }
     }
 
     private async Task OnPriceInput()

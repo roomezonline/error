@@ -9,7 +9,8 @@ window.initJalali = () => {
             hideAfterChange: false,
             showCloseBtn: true,
             showTodayBtn: true,
-            showEmptyBtn: true
+            showEmptyBtn: true,
+            zIndex: 4000
         });
     }
 };
@@ -26,7 +27,8 @@ window.initJalaliForElement = (element) => {
         persianDigits: false,
         autoHide: true,
         showCloseBtn: true,
-        showTodayBtn: true
+        showTodayBtn: true,
+        zIndex: 4000
     });
 
     // Manual show trigger

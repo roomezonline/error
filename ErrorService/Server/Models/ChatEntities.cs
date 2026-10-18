@@ -50,6 +50,8 @@ public sealed class ChatSession
     [MaxLength(30)]
     public string? UserPhone { get; set; }
 
+    public int? UserId { get; set; }
+
     public int? OperatorId { get; set; }
 
     public ChatSessionStatus Status { get; set; } = ChatSessionStatus.Waiting;
@@ -166,4 +168,98 @@ public sealed class BannedVisitor
     public DateTime BannedAt { get; set; } = DateTime.UtcNow;
 
     public int? BannedByUserId { get; set; }
+}
+
+// ===== زنجیره هوش مصنوعی چندسرویس‌دهنده‌ای =====
+
+public sealed class ChatAiProvider
+{
+    [Key]
+    public int Id { get; set; }
+
+    [MaxLength(100)]
+    public string Name { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string BaseUrl { get; set; } = string.Empty;
+
+    /// <summary>openrouter | openai | custom</summary>
+    [MaxLength(30)]
+    public string Kind { get; set; } = "custom";
+
+    public bool Enabled { get; set; } = true;
+
+    public int Priority { get; set; }
+
+    public List<ChatAiApiKey> ApiKeys { get; set; } = new();
+
+    public List<ChatAiModel> Models { get; set; } = new();
+}
+
+public sealed class ChatAiApiKey
+{
+    [Key]
+    public int Id { get; set; }
+
+    public int ProviderId { get; set; }
+
+    [MaxLength(500)]
+    public string KeyValue { get; set; } = string.Empty;
+
+    [MaxLength(100)]
+    public string? Label { get; set; }
+
+    public bool Enabled { get; set; } = true;
+
+    public int Priority { get; set; }
+
+    // وضعیت زنده (برای سویچ خودکار و نمایش در پنل ادمین)
+    public int ConsecutiveFailures { get; set; }
+
+    public DateTime? CooldownUntil { get; set; }
+
+    [MaxLength(500)]
+    public string? LastError { get; set; }
+
+    public DateTime? LastUsedAt { get; set; }
+
+    public long SuccessCount { get; set; }
+
+    public long FailureCount { get; set; }
+
+    public ChatAiProvider Provider { get; set; } = null!;
+}
+
+public sealed class ChatAiModel
+{
+    [Key]
+    public int Id { get; set; }
+
+    public int ProviderId { get; set; }
+
+    [MaxLength(300)]
+    public string ModelId { get; set; } = string.Empty;
+
+    [MaxLength(200)]
+    public string? Label { get; set; }
+
+    public bool Enabled { get; set; } = true;
+
+    public int Priority { get; set; }
+
+    // کول‌داون موقت مدل (مثلاً 404 یا سقف روزانه مدل رایگان)
+    public int ConsecutiveFailures { get; set; }
+
+    public DateTime? CooldownUntil { get; set; }
+
+    [MaxLength(500)]
+    public string? LastError { get; set; }
+
+    public DateTime? LastUsedAt { get; set; }
+
+    public long SuccessCount { get; set; }
+
+    public long FailureCount { get; set; }
+
+    public ChatAiProvider Provider { get; set; } = null!;
 }

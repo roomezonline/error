@@ -3,6 +3,7 @@ using ErrorService.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 using System.Globalization;
 
@@ -22,6 +23,7 @@ public sealed class SeoController : ControllerBase
     }
 
     [HttpGet("robots.txt")]
+    [HttpHead("robots.txt")]
     public async Task<IActionResult> GetRobotsTxt()
     {
         var baseUrl = GetBaseUrl();
@@ -45,10 +47,11 @@ public sealed class SeoController : ControllerBase
         sb.AppendLine($"Sitemap: {baseUrl}/sitemap.xml");
         sb.AppendLine($"Sitemap: {baseUrl}/image-sitemap.xml");
 
-        return Content(sb.ToString(), "text/plain", Encoding.UTF8);
+        return PlainTextResult(sb.ToString(), "text/plain; charset=utf-8");
     }
 
     [HttpGet("sitemap.xml")]
+    [HttpHead("sitemap.xml")]
     public async Task<IActionResult> GetSitemap()
     {
         var baseUrl = GetBaseUrl();
@@ -64,7 +67,7 @@ public sealed class SeoController : ControllerBase
         }
 
         // 2. Products
-        var products = await _db.Products.Where(p => p.IsAvailable).Select(p => new { p.Id, p.Slug, p.UpdatedAt }).ToListAsync();
+        var products = await _db.Products.Where(p => p.IsAvailable && !p.IsDraft).Select(p => new { p.Id, p.Slug, p.UpdatedAt }).ToListAsync();
         foreach (var p in products)
         {
             var lastMod = p.UpdatedAt.UtcDateTime;
@@ -123,10 +126,11 @@ public sealed class SeoController : ControllerBase
         }
 
         var doc = new XDocument(new XDeclaration("1.0", "utf-8", "yes"), root);
-        return Content(doc.ToString(), "application/xml", Encoding.UTF8);
+        return XmlResult(doc);
     }
 
     [HttpGet("image-sitemap.xml")]
+    [HttpHead("image-sitemap.xml")]
     public async Task<IActionResult> GetImageSitemap()
     {
         var baseUrl = GetBaseUrl();
@@ -136,36 +140,136 @@ public sealed class SeoController : ControllerBase
         var root = new XElement(ns + "urlset",
             new XAttribute(XNamespace.Xmlns + "image", imgNs));
 
-        // Product images
-        var products = await _db.Products
-            .Where(p => p.IsAvailable && !string.IsNullOrEmpty(p.MainImageUrl))
-            .Select(p => new { p.Id, p.Slug, p.MainImageUrl })
+        // فقط تصاویری وارد می‌شوند که واقعاً در صفحهٔ مقصد رندر می‌شوند؛
+        // گوگل تصویرِ خارج از صفحه را نادیده می‌گیرد و از دقت سایت‌مپ می‌کاهد.
+        void AddEntry(string loc, DateTimeOffset? lastMod, string changefreq, double priority, string pageTitle, params string?[] imageUrls)
+        {
+            var images = imageUrls
+                .Select(u => AbsoluteUrl(baseUrl, u))
+                .OfType<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (images.Count == 0) return;
+
+            var urlElem = new XElement(ns + "url", new XElement(ns + "loc", loc));
+            if (lastMod.HasValue)
+                urlElem.Add(new XElement(ns + "lastmod", lastMod.Value.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+
+            var title = Truncate(pageTitle, 150);
+            foreach (var image in images)
+            {
+                var imageElem = new XElement(imgNs + "image", new XElement(imgNs + "loc", image));
+                if (title.Length > 0) imageElem.Add(new XElement(imgNs + "title", title));
+                urlElem.Add(imageElem);
+            }
+
+            urlElem.Add(
+                new XElement(ns + "changefreq", changefreq),
+                new XElement(ns + "priority", priority.ToString("F1", CultureInfo.InvariantCulture)));
+            root.Add(urlElem);
+        }
+
+        // 1) محصولات: تصویر اصلی + گالری (هر چهارتا در گالری صفحهٔ محصول نمایش داده می‌شوند)
+        var products = await _db.Products.AsNoTracking()
+            .Where(p => p.IsAvailable && !p.IsDraft)
+            .Select(p => new { p.Id, p.Slug, p.Name, p.MainImageUrl, p.ImageUrl2, p.ImageUrl3, p.ImageUrl4, p.UpdatedAt })
             .ToListAsync();
         foreach (var p in products)
-        {
-            var urlElem = new XElement(ns + "url",
-                new XElement(ns + "loc", $"{baseUrl}/products/{EncodeSegment(p.Slug ?? p.Id.ToString())}"),
-                new XElement(imgNs + "image",
-                    new XElement(imgNs + "loc", p.MainImageUrl.StartsWith("http") ? p.MainImageUrl : $"{baseUrl}{p.MainImageUrl}")));
-            root.Add(urlElem);
-        }
+            AddEntry($"{baseUrl}/products/{EncodeSegment(p.Slug ?? p.Id.ToString())}", p.UpdatedAt, "weekly", 0.8, p.Name,
+                p.MainImageUrl, p.ImageUrl2, p.ImageUrl3, p.ImageUrl4);
 
-        // News images
-        var news = await _db.News
-            .Where(n => n.IsPublished && !string.IsNullOrEmpty(n.ImageUrl))
-            .Select(n => new { n.Id, n.Slug, n.ImageUrl })
+        // 2) اخبار
+        var news = await _db.News.AsNoTracking()
+            .Where(n => n.IsPublished)
+            .Select(n => new { n.Id, n.Slug, n.Title, n.ImageUrl, n.UpdatedAt })
             .ToListAsync();
         foreach (var n in news)
-        {
-            var urlElem = new XElement(ns + "url",
-                new XElement(ns + "loc", $"{baseUrl}/news/{EncodeSegment(n.Slug ?? n.Id.ToString())}"),
-                new XElement(imgNs + "image",
-                    new XElement(imgNs + "loc", n.ImageUrl.StartsWith("http") ? n.ImageUrl : $"{baseUrl}{n.ImageUrl}")));
-            root.Add(urlElem);
-        }
+            AddEntry($"{baseUrl}/news/{EncodeSegment(n.Slug ?? n.Id.ToString())}", n.UpdatedAt, "monthly", 0.7, n.Title, n.ImageUrl);
+
+        // 3) آکادمی — دوره‌ها (کاور در صفحهٔ دوره رندر می‌شود)
+        var courses = await _db.TrainingCourses.AsNoTracking()
+            .Where(c => c.IsPublished)
+            .Select(c => new { c.Id, c.Slug, c.Title, c.CoverImageUrl, c.UpdatedAt })
+            .ToListAsync();
+        foreach (var c in courses)
+            AddEntry($"{baseUrl}/academy/{EncodeSegment(c.Slug ?? c.Id.ToString())}", c.UpdatedAt, "weekly", 0.8, c.Title, c.CoverImageUrl);
+
+        // 4) آکادمی — مقالات
+        var articles = await _db.TrainingArticles.AsNoTracking()
+            .Where(a => a.IsPublished)
+            .Select(a => new { a.Id, a.Slug, a.Title, a.CoverImageUrl, a.UpdatedAt })
+            .ToListAsync();
+        foreach (var a in articles)
+            AddEntry($"{baseUrl}/academy/articles/{EncodeSegment(a.Slug ?? a.Id.ToString())}", a.UpdatedAt, "monthly", 0.7, a.Title, a.CoverImageUrl);
 
         var doc = new XDocument(new XDeclaration("1.0", "utf-8", "yes"), root);
-        return Content(doc.ToString(), "application/xml", Encoding.UTF8);
+        return XmlResult(doc);
+    }
+
+    /// <summary>مسیر تصویر را به URL مطلق تبدیل می‌کند (شامل حالت scheme-relative).</summary>
+    private static string? AbsoluteUrl(string baseUrl, string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        var value = url.Trim();
+        if (value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return value;
+        if (value.StartsWith("//", StringComparison.Ordinal))
+            return "https:" + value;
+        return baseUrl + (value.StartsWith('/') ? value : "/" + value);
+    }
+
+    private static string Truncate(string? value, int max)
+    {
+        var s = (value ?? string.Empty).Trim();
+        return s.Length <= max ? s : s[..max];
+    }
+
+    /// <summary>
+    /// خروجی XML با declaration و هدر کش؛ برای HEAD فقط هدرها برمی‌گردند (بدون بدنه)
+    /// تا ابزارهایی که با HEAD تست می‌کنند به‌جای ۴۰۴، ۲۰۰ با Content-Length درست ببینند.
+    /// </summary>
+    private IActionResult XmlResult(XDocument doc)
+    {
+        byte[] bytes;
+        using (var ms = new MemoryStream())
+        {
+            using (var xw = XmlWriter.Create(ms, new XmlWriterSettings
+            {
+                Indent = true,
+                Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
+            }))
+            {
+                doc.Save(xw);
+            }
+            bytes = ms.ToArray();
+        }
+
+        Response.Headers["Cache-Control"] = "public, max-age=900";
+
+        if (HttpMethods.IsHead(Request.Method))
+        {
+            Response.ContentType = "application/xml; charset=utf-8";
+            Response.ContentLength = bytes.Length;
+            return new EmptyResult();
+        }
+
+        return File(bytes, "application/xml; charset=utf-8");
+    }
+
+    private IActionResult PlainTextResult(string text, string contentType)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        Response.Headers["Cache-Control"] = "public, max-age=900";
+
+        if (HttpMethods.IsHead(Request.Method))
+        {
+            Response.ContentType = contentType;
+            Response.ContentLength = bytes.Length;
+            return new EmptyResult();
+        }
+
+        return File(bytes, contentType);
     }
 
     private XElement CreateUrlElement(XNamespace ns, string loc, DateTime? lastMod, string changefreq, double priority)

@@ -335,7 +335,7 @@ public sealed class MonitoringDevicesController : ControllerBase
         if (device == null) return BadRequest("دستگاه یافت نشد");
 
         var ws = await _db.Workshops.FirstOrDefaultAsync(x => x.Id == req.WorkshopId);
-        if (ws == null) return BadRequest("کارگاه یافت نشد");
+        if (ws == null || ws.IsDeleted) return BadRequest("کارگاه یافت نشد");
 
         var entity = new MonitoringDeviceAssignment
         {
@@ -389,12 +389,18 @@ public sealed class MonitoringDevicesController : ControllerBase
         if (device == null) return BadRequest("دستگاه یافت نشد");
 
         var ws = await _db.Workshops.FirstOrDefaultAsync(x => x.Id == req.WorkshopId);
-        if (ws == null) return BadRequest("کارگاه یافت نشد");
+        if (ws == null || ws.IsDeleted) return BadRequest("کارگاه یافت نشد");
 
+        var oldWorkshopId = entity.WorkshopId;
         entity.MonitoringDeviceId = req.MonitoringDeviceId;
         entity.WorkshopId = req.WorkshopId;
         entity.StartAt = start;
         entity.EndAt = end;
+
+        // اگر دستگاه به کارگاه دیگری منتقل شد، اتصال‌های بازِ کارگاه قبلی بسته شوند تا دستگاه در
+        // لیست «دستگاه‌های آزاد» کارگاه جدید گیر نکند (رفع اتصال یتیم).
+        if (oldWorkshopId != req.WorkshopId)
+            await CloseOrphanedConnectionsAsync(req.MonitoringDeviceId, req.WorkshopId);
 
         await _db.SaveChangesAsync();
 
@@ -420,9 +426,36 @@ public sealed class MonitoringDevicesController : ControllerBase
         var entity = await _db.MonitoringDeviceAssignments.FirstOrDefaultAsync(x => x.Id == id);
         if (entity == null) return NotFound();
 
+        var deviceId = entity.MonitoringDeviceId;
         _db.MonitoringDeviceAssignments.Remove(entity);
         await _db.SaveChangesAsync();
+
+        // با حذف تخصیص، دستگاه دیگر در هیچ کارگاهی نیست؛ اتصال‌های باز آن بسته شوند.
+        await CloseOrphanedConnectionsAsync(deviceId, null);
+
         return NoContent();
+    }
+
+    /// <summary>
+    /// اتصال‌های مانیتورینگ بازِ یک دستگاه را می‌بندد. اگر keepWorkshopId داده شود فقط اتصال‌های
+    /// خارج از آن کارگاه بسته می‌شوند؛ در غیر این صورت همه بسته می‌شوند.
+    /// </summary>
+    private async Task CloseOrphanedConnectionsAsync(int deviceId, int? keepWorkshopId)
+    {
+        var open = await _db.MonitoringReceiptConnections
+            .Where(c => c.MonitoringDeviceId == deviceId
+                        && c.EndedAt == null
+                        && (keepWorkshopId == null || c.WorkshopId != keepWorkshopId.Value))
+            .ToListAsync();
+        if (open.Count == 0) return;
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var c in open)
+        {
+            c.EndedAt = now;
+            c.EndReason = "پایان خودکار: تخصیص دستگاه تغییر کرد یا حذف شد.";
+        }
+        await _db.SaveChangesAsync();
     }
 
     [Authorize(Policy = "perm:admin.monitoring.view")]

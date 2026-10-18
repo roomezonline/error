@@ -1,0 +1,289 @@
+@page "/workshops"
+@using ErrorService.Shared
+@using ErrorService.Client.Utils
+@using System.Net.Http.Json
+@using System.Text.Json
+@inject HttpClient Http
+
+<SeoHeader
+    Title="@pageTitle"
+    Description="@pageDescription"
+    Keywords="@pageKeywords"
+    OgType="website"
+    CanonicalUrl="@canonicalUrl"
+    JsonLd="@jsonLd" />
+
+<div class="wsl" dir="rtl">
+    <nav class="wsl-bc" aria-label="مسیر صفحه">
+        <a href="/" class="wsl-bc__link">خانه</a>
+        <span class="wsl-bc__sep">/</span>
+        <span class="wsl-bc__cur">همکاران ما</span>
+    </nav>
+
+    <header class="wsl-head">
+        <div class="wsl-kicker">شبکه همکاران ارورسرویس</div>
+        <h1 class="wsl-title">همکاران ما</h1>
+        <p class="wsl-sub">
+            تعمیرکاران و مجموعه‌های همکار ارورسرویس در شهرهای مختلف کشور؛ برای مشاهده آدرس، شماره تماس و پروفایل
+            هر مجموعه، روی آن کلیک کنید.
+        </p>
+    </header>
+
+    @if (isLoading)
+    {
+        <div class="wsl-grid" aria-hidden="true">
+            @for (var i = 0; i < 4; i++)
+            {
+                <div class="wsl-skel"></div>
+            }
+        </div>
+    }
+    else if (items.Count == 0)
+    {
+        <div class="wsl-empty">
+            <span class="oi oi-warning"></span>
+            <p>فعلاً همکاری برای نمایش ثبت نشده است.</p>
+            <a href="/" class="wsl-btn">بازگشت به خانه</a>
+        </div>
+    }
+    else
+    {
+        <div class="wsl-grid">
+            @foreach (var it in items)
+            {
+                <a class="wsl-card" href="/workshops/@it.Id">
+                    <div class="wsl-card__media">
+                        @if (!string.IsNullOrWhiteSpace(it.ImageUrl))
+                        {
+                            <img class="wsl-card__img" src="@it.ImageUrl" alt="@it.WorkshopName" loading="lazy" decoding="async" />
+                        }
+                        else
+                        {
+                            <div class="wsl-card__ph">@GetInitials(it.WorkshopName)</div>
+                        }
+                    </div>
+
+                    <div class="wsl-card__body">
+                        <h2 class="wsl-card__name">@it.WorkshopName</h2>
+
+                        @if (!string.IsNullOrWhiteSpace(it.OwnerFullName))
+                        {
+                            <div class="wsl-card__i"><span class="oi oi-person"></span> @it.OwnerFullName</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(PlaceOf(it)))
+                        {
+                            <div class="wsl-card__i"><span class="oi oi-map-marker"></span> @PlaceOf(it)</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(it.MobileNumber))
+                        {
+                            <div class="wsl-card__i"><span class="oi oi-phone"></span> <span dir="ltr">@it.MobileNumber</span></div>
+                        }
+
+                        <span class="wsl-card__go"><span class="oi oi-arrow-left"></span> مشاهده پروفایل</span>
+                    </div>
+                </a>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .wsl {
+        --wsl-blue: #2563eb;
+        --wsl-blue-dk: #1d4ed8;
+        --wsl-ink: #0f172a;
+        --wsl-muted: #64748b;
+        --wsl-line: #e2e8f0;
+        max-width: 1140px;
+        margin: 0 auto;
+        padding: 1.25rem 1rem 3.5rem;
+        font-family: Vazirmatn, Tahoma, "Segoe UI", sans-serif;
+        color: var(--wsl-ink);
+    }
+
+    .wsl-bc { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .85rem; color: var(--wsl-muted); margin-bottom: 1rem; }
+    .wsl-bc__link { color: var(--wsl-muted); text-decoration: none; transition: color .15s; }
+    .wsl-bc__link:hover { color: var(--wsl-blue); }
+    .wsl-bc__cur { color: var(--wsl-ink); font-weight: 700; }
+    .wsl-bc__sep { color: #cbd5e1; }
+
+    .wsl-head {
+        background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+        border: 1px solid var(--wsl-line);
+        border-radius: 20px;
+        padding: 1.9rem 1.6rem;
+        margin-bottom: 1.5rem;
+        text-align: center;
+    }
+    .wsl-kicker {
+        display: inline-block;
+        font-size: .78rem;
+        font-weight: 800;
+        color: var(--wsl-blue);
+        background: rgba(37, 99, 235, .1);
+        padding: .3rem .75rem;
+        border-radius: 999px;
+        margin-bottom: .75rem;
+    }
+    .wsl-title { font-size: clamp(1.5rem, 4vw, 2.1rem); font-weight: 800; margin: 0 0 .7rem; }
+    .wsl-sub { max-width: 640px; margin: 0 auto; color: var(--wsl-muted); line-height: 2.05; font-size: .95rem; }
+
+    .wsl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1.1rem; }
+
+    .wsl-card {
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+        border: 1px solid var(--wsl-line);
+        border-radius: 18px;
+        overflow: hidden;
+        text-decoration: none;
+        color: inherit;
+        transition: transform .18s, box-shadow .18s, border-color .18s;
+    }
+    .wsl-card:hover { transform: translateY(-4px); border-color: #c7d2fe; box-shadow: 0 22px 40px -30px rgba(15, 23, 42, .75); color: inherit; }
+
+    .wsl-card__media { height: 165px; background: #e2e8f0; }
+    .wsl-card__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .wsl-card__ph {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2.4rem;
+        font-weight: 800;
+        color: #fff;
+        background: linear-gradient(140deg, #2563eb 0%, #7c3aed 55%, #0ea5e9 100%);
+    }
+
+    .wsl-card__body { padding: 1.05rem 1.1rem 1.2rem; display: flex; flex-direction: column; gap: .45rem; flex: 1 1 auto; }
+    .wsl-card__name { font-size: 1rem; font-weight: 800; margin: 0 0 .3rem; line-height: 1.75; word-break: break-word; }
+    .wsl-card__i { display: flex; align-items: center; gap: .45rem; font-size: .86rem; color: var(--wsl-muted); }
+    .wsl-card__i .oi { color: var(--wsl-blue); }
+    .wsl-card__go {
+        margin-top: auto;
+        padding-top: .8rem;
+        font-size: .85rem;
+        font-weight: 800;
+        color: var(--wsl-blue);
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+    }
+    .wsl-card:hover .wsl-card__go { color: var(--wsl-blue-dk); }
+
+    .wsl-empty {
+        background: #fff;
+        border: 1px dashed var(--wsl-line);
+        border-radius: 18px;
+        padding: 3rem 1.5rem;
+        text-align: center;
+        color: var(--wsl-muted);
+    }
+    .wsl-empty .oi { font-size: 2.4rem; color: #f59e0b; display: block; margin-bottom: .8rem; }
+    .wsl-btn {
+        display: inline-block;
+        margin-top: 1rem;
+        background: var(--wsl-blue);
+        color: #fff;
+        text-decoration: none;
+        padding: .7rem 1.4rem;
+        border-radius: 12px;
+        font-weight: 700;
+        font-size: .92rem;
+    }
+    .wsl-btn:hover { background: var(--wsl-blue-dk); color: #fff; }
+
+    .wsl-skel { height: 290px; border-radius: 18px; background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%); background-size: 400% 100%; animation: wslShimmer 1.4s ease infinite; }
+    @@keyframes wslShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+    @@media (max-width: 575.98px) {
+        .wsl { padding: 1rem .85rem 2.5rem; }
+        .wsl-head { padding: 1.4rem 1rem; }
+        .wsl-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .9rem; }
+    }
+</style>
+
+@code {
+    private List<WorkshopDto> items = new();
+    private bool isLoading = true;
+
+    private const string BaseUrl = "https://errorservice.ir";
+
+    private string pageTitle = "همکاران ارورسرویس | تعمیرکاران لوازم خانگی در شهرهای مختلف";
+    private string pageDescription =
+        "فهرست همکاران و تعمیرکاران همکار ارورسرویس در سراسر کشور؛ آدرس، شماره تماس و پروفایل هر مجموعه را مشاهده کنید.";
+    private string pageKeywords =
+        "همکاران ارورسرویس, تعمیرکار لوازم خانگی, تعمیرگاه لوازم خانگی, سرویس در منزل, تعمیر ماشین لباسشویی, تعمیر یخچال";
+    private string? canonicalUrl = $"{BaseUrl}/workshops";
+    private string? jsonLd;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            items = await Http.GetFromJsonAsync<List<WorkshopDto>>("api/workshops/customers-row") ?? new();
+        }
+        catch
+        {
+            items = new();
+        }
+
+        isLoading = false;
+        BuildJsonLd();
+    }
+
+    private void BuildJsonLd()
+    {
+        var list = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "CollectionPage",
+            ["name"] = pageTitle,
+            ["description"] = pageDescription,
+            ["url"] = canonicalUrl,
+            ["mainEntity"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "ItemList",
+                ["numberOfItems"] = items.Count,
+                ["itemListElement"] = items.Select((w, i) => new Dictionary<string, object?>
+                {
+                    ["@type"] = "ListItem",
+                    ["position"] = i + 1,
+                    ["name"] = w.WorkshopName,
+                    ["url"] = $"{BaseUrl}/workshops/{w.Id}"
+                }).ToArray()
+            }
+        };
+
+        var breadcrumb = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "BreadcrumbList",
+            ["itemListElement"] = new object[]
+            {
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 1, ["name"] = "خانه", ["item"] = BaseUrl },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 2, ["name"] = "همکاران ما", ["item"] = canonicalUrl }
+            }
+        };
+
+        jsonLd = $"[{JsonSerializer.Serialize(list)},{JsonSerializer.Serialize(breadcrumb)}]";
+    }
+
+    private static string PlaceOf(WorkshopDto w)
+    {
+        var parts = new[] { w.CityName, w.ProvinceName }
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s!.Trim())
+            .ToList();
+        return string.Join("، ", parts.Distinct());
+    }
+
+    private static string GetInitials(string? title)
+    {
+        var t = (title ?? "").Trim();
+        if (t.Length == 0) return "WS";
+        return t.Length <= 2 ? t : t[..2];
+    }
+}

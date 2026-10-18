@@ -1,5 +1,6 @@
 @page "/academy/{CourseId:int}/{LessonId:int}"
 @using ErrorService.Shared
+@using ErrorService.Client.Utils
 @using System.Net.Http.Json
 @using System.Text.Json
 @using Microsoft.JSInterop
@@ -225,18 +226,6 @@
 
                                             case TrainingBlockTypeDto.Embed:
                                                 <div class="media-card media-card--embed">
-                                                    <div class="media-card__header">
-                                                        <span class="media-card__badge">
-                                                            <span class="oi oi-code"></span>
-                                                            @(group.Blocks.Count > 1 ? $"کدهای جاسازی ({group.Blocks.Count})" : "کد Embed")
-                                                        </span>
-                                                        @if (!string.IsNullOrEmpty(first.Url))
-                                                        {
-                                                            <a href="@first.Url" target="_blank" class="media-card__dl" title="باز کردن لینک">
-                                                                <span class="oi oi-external-link"></span> باز کردن
-                                                            </a>
-                                                        }
-                                                    </div>
                                                     <div class="media-card__body">
                                                         <div class="media-stack">
                                                             @foreach (var block in group.Blocks)
@@ -246,7 +235,7 @@
                                                                     <div class="media-cell__title">@block.Title</div>
                                                                 }
                                                                 <div class="embed-content rounded-4 overflow-hidden shadow">
-                                                                    @((MarkupString)(block.Content ?? ""))
+                                                                    @((MarkupString)HtmlSanitizer.Sanitize(EmbedHtml.Fix(block.Content)))
                                                                 </div>
                                                             }
                                                         </div>
@@ -309,7 +298,45 @@
     .leading-loose { line-height: 2; }
     .leading-relaxed { line-height: 1.7; }
     .content-block video, .content-block iframe { max-width: 100%; aspect-ratio: 16/9; }
-    .embed-content ::deep iframe { width: 100% !important; aspect-ratio: 16/9; border-radius: 12px; }
+    .embed-content {
+        position: relative;
+        display: block;
+        width: 100%;
+        overflow: hidden;
+        background: #0f172a;
+        border-radius: 14px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+    }
+    .embed-content .h_iframe-aparat_embed_frame { position: relative; width: 100%; }
+    .embed-content .h_iframe-aparat_embed_frame span { display: block; width: 100%; }
+    .embed-content iframe {
+        display: block;
+        width: 100% !important;
+        height: auto !important;
+        aspect-ratio: 16 / 9;
+        border: 0;
+        border-radius: 14px;
+        background: #0f172a;
+    }
+    .embed-content .h_iframe-aparat_embed_frame iframe {
+        position: absolute;
+        inset: 0;
+        height: 100% !important;
+        aspect-ratio: auto;
+    }
+
+    @@media (min-width: 992px) {
+        .embed-content { max-width: 740px; margin-inline: auto; }
+    }
+
+    @@media (max-width: 575.98px) {
+        .media-card--embed { margin-inline: -0.75rem; border: 0; border-radius: 0; box-shadow: none; }
+        .media-card--embed .media-card__body { padding: 0; background: transparent; }
+        .embed-content { border-radius: 0; box-shadow: none; }
+        .embed-content .h_iframe-aparat_embed_frame > span { padding-top: 75% !important; }
+        .embed-content .h_iframe-aparat_embed_frame iframe { border-radius: 0; }
+        .embed-content iframe { aspect-ratio: 4 / 3; border-radius: 0; }
+    }
 
     .content-block__title {
         color: #1e40af;

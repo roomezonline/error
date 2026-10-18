@@ -57,7 +57,7 @@ public sealed class WorkshopsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<WorkshopDto>>> Get()
+    public async Task<ActionResult<List<WorkshopDto>>> Get([FromQuery] bool includeDeleted = false)
     {
         var isSuperAdmin = User.IsInRole("super_admin");
         int? workshopIdFilter = null;
@@ -76,10 +76,14 @@ public sealed class WorkshopsController : ControllerBase
             .Include(x => x.City)
             .AsQueryable();
 
+        // کارگاه‌های حذف‌نرم‌شده به‌صورت پیش‌فرض پنهان‌اند؛ فقط سوپرادمین با includeDeleted می‌تواند ببیند.
+        if (!(isSuperAdmin && includeDeleted))
+            query = query.Where(x => !x.IsDeleted);
+
         if (workshopIdFilter.HasValue)
             query = query.Where(x => x.Id == workshopIdFilter.Value);
 
-        return await query
+        var list = await query
             .OrderByDescending(x => x.CreatedAt)
             .Select(x => new WorkshopDto
             {
@@ -93,6 +97,8 @@ public sealed class WorkshopsController : ControllerBase
                 CityName = x.City.Name,
                 Address = x.Address,
                 IsActive = x.IsActive,
+                IsDeleted = x.IsDeleted,
+                DeletedAt = x.DeletedAt,
                 ImageUrl = x.ImageUrl,
                 ShowInCustomersRow = x.ShowInCustomersRow,
                 CreatedAt = x.CreatedAt,
@@ -100,6 +106,39 @@ public sealed class WorkshopsController : ControllerBase
                 MonitoringDurationHours = x.MonitoringDurationHours
             })
             .ToListAsync();
+
+        await AttachAssignedDevicesAsync(list);
+
+        return Ok(list);
+    }
+
+    /// <summary>دستگاه‌های مانیتورینگ فعالِ تعلق‌گرفته به هر کارگاه را به لیست اضافه می‌کند.</summary>
+    private async Task AttachAssignedDevicesAsync(List<WorkshopDto> list)
+    {
+        if (list.Count == 0) return;
+
+        var ids = list.Select(x => x.Id).ToList();
+        var now = DateTimeOffset.UtcNow;
+
+        var devices = await _db.MonitoringDeviceAssignments
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.WorkshopId) && a.StartAt <= now && (a.EndAt == null || a.EndAt > now))
+            .OrderByDescending(a => a.StartAt)
+            .Select(a => new { a.WorkshopId, a.MonitoringDeviceId, a.MonitoringDevice.DeviceNumber, a.MonitoringDevice.Title })
+            .ToListAsync();
+
+        foreach (var w in list)
+        {
+            w.Devices = devices
+                .Where(d => d.WorkshopId == w.Id)
+                .Select(d => new WorkshopDeviceInfo
+                {
+                    DeviceId = d.MonitoringDeviceId,
+                    DeviceNumber = d.DeviceNumber,
+                    Title = d.Title
+                })
+                .ToList();
+        }
     }
 
     [HttpGet("customers-row")]
@@ -107,7 +146,7 @@ public sealed class WorkshopsController : ControllerBase
     {
         return await _db.Workshops
             .AsNoTracking()
-            .Where(x => x.IsActive && x.ShowInCustomersRow)
+            .Where(x => x.IsActive && !x.IsDeleted && x.ShowInCustomersRow)
             .OrderByDescending(x => x.CreatedAt)
             .Select(x => new WorkshopDto
             {
@@ -116,9 +155,13 @@ public sealed class WorkshopsController : ControllerBase
                 OwnerFullName = x.OwnerFullName,
                 MobileNumber = x.MobileNumber,
                 ProvinceId = x.ProvinceId,
+                ProvinceName = x.Province.Name,
                 CityId = x.CityId,
+                CityName = x.City.Name,
                 Address = x.Address,
                 IsActive = x.IsActive,
+                IsDeleted = x.IsDeleted,
+                DeletedAt = x.DeletedAt,
                 ImageUrl = x.ImageUrl,
                 ShowInCustomersRow = x.ShowInCustomersRow,
                 CreatedAt = x.CreatedAt,
@@ -138,7 +181,7 @@ public sealed class WorkshopsController : ControllerBase
 
         if (x == null) return NotFound();
 
-        return new WorkshopDto
+        var dto = new WorkshopDto
         {
             Id = x.Id,
             WorkshopName = x.WorkshopName,
@@ -150,12 +193,29 @@ public sealed class WorkshopsController : ControllerBase
             CityName = x.City.Name,
             Address = x.Address,
             IsActive = x.IsActive,
+            IsDeleted = x.IsDeleted,
+            DeletedAt = x.DeletedAt,
             ImageUrl = x.ImageUrl,
             ShowInCustomersRow = x.ShowInCustomersRow,
             CreatedAt = x.CreatedAt,
             MaxMonitoringConnections = x.MaxMonitoringConnections,
             MonitoringDurationHours = x.MonitoringDurationHours
         };
+
+        var now = DateTimeOffset.UtcNow;
+        dto.Devices = await _db.MonitoringDeviceAssignments
+            .AsNoTracking()
+            .Where(a => a.WorkshopId == id && a.StartAt <= now && (a.EndAt == null || a.EndAt > now))
+            .OrderByDescending(a => a.StartAt)
+            .Select(a => new WorkshopDeviceInfo
+            {
+                DeviceId = a.MonitoringDeviceId,
+                DeviceNumber = a.MonitoringDevice.DeviceNumber,
+                Title = a.MonitoringDevice.Title
+            })
+            .ToListAsync();
+
+        return dto;
     }
 
     [Authorize(Policy = "perm:admin.workshops.manage")]
@@ -203,6 +263,7 @@ public sealed class WorkshopsController : ControllerBase
         var entity = await _db.Workshops.FindAsync(id);
         if (entity == null) return NotFound();
 
+        var wasActive = entity.IsActive;
         entity.WorkshopName = req.WorkshopName.Trim();
         entity.OwnerFullName = req.OwnerFullName.Trim();
         entity.MobileNumber = req.MobileNumber.Trim();
@@ -217,6 +278,11 @@ public sealed class WorkshopsController : ControllerBase
         entity.MonitoringDurationHours = req.MonitoringDurationHours;
 
         await _db.SaveChangesAsync();
+
+        // با غیرفعال شدن کارگاه، اتصال‌های مانیتورینگ باز آن بسته می‌شوند تا دستگاه‌ها آزاد شوند.
+        if (wasActive && !entity.IsActive)
+            await CloseWorkshopOpenConnectionsAsync(entity.Id);
+
         return NoContent();
     }
 
@@ -271,12 +337,55 @@ public sealed class WorkshopsController : ControllerBase
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var entity = await _db.Workshops.FindAsync(id);
+        var entity = await _db.Workshops.FirstOrDefaultAsync(x => x.Id == id);
+        if (entity == null) return NotFound();
+        if (entity.IsDeleted) return NoContent();
+
+        var now = DateTimeOffset.UtcNow;
+
+        // حذف نرم: کارگاه پنهان می‌شود اما رکورد و تمام متعلقاتش (رسید، مشتری، اتصال، پرسنل و…) حفظ می‌گردد
+        // تا در صورت اشتباه قابل بازگردانی باشد و ارجاع‌های دیتابیس یتیم نشوند.
+        entity.IsDeleted = true;
+        entity.DeletedAt = now;
+        entity.IsActive = false;
+
+        await _db.SaveChangesAsync();
+
+        // پرسنل این کارگاه هم پنهان می‌شوند (هم‌زمان با کارگاه قابل بازگردانی‌اند).
+        await SoftDeleteWorkshopUsersAsync(entity.Id, now);
+
+        // اتصال‌های مانیتورینگ باز بسته می‌شوند تا دستگاه‌ها آزاد شوند.
+        await CloseWorkshopOpenConnectionsAsync(entity.Id);
+
+        return NoContent();
+    }
+
+    [Authorize(Policy = "perm:admin.workshops.manage")]
+    [HttpPost("{id:int}/restore")]
+    public async Task<IActionResult> Restore(int id)
+    {
+        var entity = await _db.Workshops.FirstOrDefaultAsync(x => x.Id == id);
         if (entity == null) return NotFound();
 
-        _db.Workshops.Remove(entity);
+        entity.IsDeleted = false;
+        entity.DeletedAt = null;
+        entity.IsActive = true;
+
         await _db.SaveChangesAsync();
-        return NoContent();
+
+        // پرسنلی که همراه همین کارگاه حذف شده بود، بازگردانده می‌شود.
+        var users = await _db.WorkshopUsers
+            .Where(u => u.WorkshopId == id && u.IsDeleted)
+            .ToListAsync();
+        foreach (var u in users)
+        {
+            u.IsDeleted = false;
+            u.DeletedAt = null;
+        }
+        if (users.Count > 0)
+            await _db.SaveChangesAsync();
+
+        return Ok(new { restored = true });
     }
 
     [Authorize(Policy = "perm:admin.workshops.manage")]
@@ -288,6 +397,42 @@ public sealed class WorkshopsController : ControllerBase
 
         entity.IsActive = !entity.IsActive;
         await _db.SaveChangesAsync();
+
+        if (!entity.IsActive)
+            await CloseWorkshopOpenConnectionsAsync(entity.Id);
+
         return Ok(entity.IsActive);
+    }
+
+    private async Task SoftDeleteWorkshopUsersAsync(int workshopId, DateTimeOffset now)
+    {
+        var users = await _db.WorkshopUsers
+            .Where(u => u.WorkshopId == workshopId && !u.IsDeleted)
+            .ToListAsync();
+        foreach (var u in users)
+        {
+            u.IsDeleted = true;
+            u.DeletedAt = now;
+            u.IsActive = false;
+        }
+        if (users.Count > 0)
+            await _db.SaveChangesAsync();
+    }
+
+    /// <summary>با غیرفعال شدن کارگاه، اتصال‌های مانیتورینگ باز آن بسته می‌شوند تا دستگاه‌ها آزاد شوند.</summary>
+    private async Task CloseWorkshopOpenConnectionsAsync(int workshopId)
+    {
+        var open = await _db.MonitoringReceiptConnections
+            .Where(c => c.WorkshopId == workshopId && c.EndedAt == null)
+            .ToListAsync();
+        if (open.Count == 0) return;
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var c in open)
+        {
+            c.EndedAt = now;
+            c.EndReason = "پایان خودکار: کارگاه غیرفعال/حذف شد.";
+        }
+        await _db.SaveChangesAsync();
     }
 }

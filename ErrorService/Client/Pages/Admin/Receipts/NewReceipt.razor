@@ -2301,7 +2301,7 @@
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         isSuperAdmin = state.User.IsInRole("super_admin");
 
-        currentUserFullName = state.User.Identity?.Name;
+        currentUserFullName = state.User.FindFirst("workshop_name")?.Value ?? state.User.Identity?.Name;
 
         if (isSuperAdmin)
         {

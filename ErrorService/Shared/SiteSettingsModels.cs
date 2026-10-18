@@ -16,7 +16,9 @@ public enum SiteHomeModuleKey
     LatestArticles = 10,
     PopularBrands = 11,
     SomeCustomers = 12,
-    TechnicalGuide = 13
+    TechnicalGuide = 13,
+    BestSellers = 14,
+    Restocked = 15
 }
 
 public sealed class SiteHomeModuleDto
@@ -64,13 +66,40 @@ public sealed class SiteSettingsDto
     public bool ChatEnableAutoMessage { get; set; }
     public int ChatAutoMessageSeconds { get; set; } = 60;
     public bool ChatPhoneRequired { get; set; }
+    public string? ChatOperatorImageUrl { get; set; }
+    public bool ChatGreetingEnabled { get; set; } = true;
+    public string? ChatGreetingText { get; set; }
+    public string? ChatSuggestedTopics { get; set; }
     public bool ChatEnableAiAssistant { get; set; }
     public string? ChatAiProvider { get; set; }
     public string? ChatAiApiUrl { get; set; }
     public string? ChatAiModel { get; set; }
     public string? ChatAiApiKey { get; set; }
     public string? ChatAiSystemPrompt { get; set; }
+    public bool ChatAiGuestEnabled { get; set; }
+    public int ChatAiDailyLimit { get; set; } = 3;
     public bool RequireReviewApproval { get; set; } = true;
+
+    // ===== تنظیمات فروشگاه =====
+    public bool EnableProductReviews { get; set; } = true;
+    public bool EnableReviewMedia { get; set; }
+    public bool EnableProductQna { get; set; }
+    public bool EnableSpecsTable { get; set; } = true;
+    public bool EnablePriceHistoryChart { get; set; }
+    public bool EnableProductBadges { get; set; } = true;
+    public bool EnableTrustBar { get; set; } = true;
+    public bool EnableDeliveryEta { get; set; } = true;
+    public bool EnableWishlist { get; set; } = true;
+    public bool EnableStockAlert { get; set; } = true;
+    public bool EnableRelatedProducts { get; set; } = true;
+    public bool EnableRecentlyViewed { get; set; } = true;
+    public bool EnableFreeShipping { get; set; }
+    public decimal? FreeShippingThreshold { get; set; }
+    public bool EnableReturnRequests { get; set; }
+    public bool EnableReorder { get; set; }
+    public bool EnableHomeBestSellers { get; set; } = true;
+    public bool EnableHomeRestocked { get; set; } = true;
+    public bool ShowEnamadSeal { get; set; } = true;
 
     public List<SiteHomeModuleDto> HomeModules { get; set; } = new();
 }

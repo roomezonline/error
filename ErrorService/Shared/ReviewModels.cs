@@ -20,6 +20,9 @@ public sealed class ProductReviewRequest
     [Required(ErrorMessage = "متن نظر الزامی است")]
     [MinLength(5)]
     public string Content { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string? MediaUrl { get; set; }
 }
 
 public sealed class ProductReviewDto
@@ -30,6 +33,7 @@ public sealed class ProductReviewDto
     public string FullName { get; set; } = string.Empty;
     public int Rating { get; set; }
     public string Content { get; set; } = string.Empty;
+    public string? MediaUrl { get; set; }
     public bool IsApproved { get; set; }
     public bool IsAdminRead { get; set; }
     public string CreatedAtFa { get; set; } = string.Empty;

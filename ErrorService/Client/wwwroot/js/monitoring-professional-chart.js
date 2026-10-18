@@ -1,5 +1,12 @@
 var professionalChart = null;
 
+// Temperature display bounds: line is clamped at +100, tooltip shows "بیش از +100"
+var _PRO_TEMP_MAX = 100;
+var _PRO_TEMP_MIN = -50;
+var _PRO_TEMP_OVERFLOW_TEXT = 'بیش از +100';
+var _proRawTempRef = [];
+var _proRawTempFreez = [];
+
 // ── On-chart per-cycle duration labels (data from C# Cycles dict) ──
 // Must register BEFORE crosshair so labels draw first, crosshair on top.
 Chart.plugins.register({
@@ -318,7 +325,7 @@ window.monitoringProfessionalChart = {
                     yAxes: [{
                         id: 'y-temp', position: 'left',
                         gridLines: { display: true, color: 'rgba(0,0,0,0.06)', drawBorder: true },
-                        ticks: { fontColor: '#14b8a6', fontFamily: 'Vazirmatn, sans-serif', fontSize: 12, fontStyle: 'bold', beginAtZero: false, padding: 8, callback: function (v) { return v + '°'; } },
+                        ticks: { min: _PRO_TEMP_MIN, max: _PRO_TEMP_MAX, fontColor: '#14b8a6', fontFamily: 'Vazirmatn, sans-serif', fontSize: 12, fontStyle: 'bold', beginAtZero: false, padding: 8, callback: function (v) { return v + '°'; } },
                         scaleLabel: { display: true, labelString: 'Temperature (°C)', fontColor: '#94a3b8', fontFamily: 'Vazirmatn, sans-serif', fontSize: 11 }
                     }, {
                         id: 'y-eq', position: 'right',
@@ -368,6 +375,11 @@ window.monitoringProfessionalChart = {
                             }
                             if (ds === 6) return rle + label + ': ' + (typeof v === 'number' ? v.toFixed(1) : v) + ' W' + pdf;
                             if (ds === 7) return rle + label + ': ' + (typeof v === 'number' ? v.toFixed(2) : v) + ' A' + pdf;
+                            if (ds === 0 || ds === 1) {
+                                var tempRaw = (ds === 0 ? _proRawTempRef : _proRawTempFreez)[item.index];
+                                if (typeof tempRaw === 'number' && tempRaw > _PRO_TEMP_MAX)
+                                    return rle + label + ': ' + _PRO_TEMP_OVERFLOW_TEXT + pdf;
+                            }
                             return rle + label + ': ' + (typeof v === 'number' ? v.toFixed(1) : v) + '°C' + pdf;
                         }
                     }
@@ -400,8 +412,14 @@ window.monitoringProfessionalChart = {
         this._cycles = data.cycles || null;
         var labels = data.labels || [];
         professionalChart.data.labels = labels;
-        professionalChart.data.datasets[0].data = data.temperatureRef || [];
-        professionalChart.data.datasets[1].data = data.temperatureFreez || [];
+        _proRawTempRef = data.temperatureRef || [];
+        _proRawTempFreez = data.temperatureFreez || [];
+        professionalChart.data.datasets[0].data = _proRawTempRef.map(function (v) {
+            return (typeof v === 'number' && v > _PRO_TEMP_MAX) ? _PRO_TEMP_MAX : v;
+        });
+        professionalChart.data.datasets[1].data = _proRawTempFreez.map(function (v) {
+            return (typeof v === 'number' && v > _PRO_TEMP_MAX) ? _PRO_TEMP_MAX : v;
+        });
 
         // Vertical bands: power(0-0.9), motor(2-3), heater1(4-5), heater2(6-7)
         professionalChart.data.datasets[2].data = (data.power || []).map(function(v) { return v === 1 ? 0.9 : 0; });

@@ -1,10 +1,12 @@
 namespace ErrorService.Server.Services.ChatAi;
 
+public sealed record ChatAiTurn(string Role, string Content);
+
 public interface IChatAiService
 {
     string Name { get; }
 
-    Task<string?> GetReplyAsync(string userMessage, string operatorName);
+    Task<string?> GetReplyAsync(string userMessage, string operatorName, IReadOnlyList<ChatAiTurn>? history = null);
 }
 
 public static class PersianTextMatcher
