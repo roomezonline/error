@@ -43,6 +43,10 @@
             {
                 <a class="pr-btn pr-btn--primary" href="/my-orders/@OrderId">مشاهده سفارش</a>
             }
+            @if (!string.IsNullOrWhiteSpace(TrackingUrl))
+            {
+                <a class="pr-btn pr-btn--ghost" href="@TrackingUrl">پیگیری سفارش</a>
+            }
             <a class="pr-btn pr-btn--ghost" href="/products">ادامه خرید</a>
         </div>
     </div>
@@ -114,6 +118,7 @@
     private bool isSuccess;
     private string Message = "";
     private bool isLoading = true;
+    private string? TrackingUrl;
 
     protected override async Task OnInitializedAsync()
     {
@@ -121,6 +126,11 @@
 
         if (int.TryParse(query["orderId"], out var orderId) && orderId > 0)
             OrderId = orderId;
+
+        var orderNumber = query["orderNumber"];
+        var phone = query["phone"];
+        if (!string.IsNullOrWhiteSpace(orderNumber) && !string.IsNullOrWhiteSpace(phone))
+            TrackingUrl = $"/order-tracking?orderNumber={Uri.EscapeDataString(orderNumber)}&phone={Uri.EscapeDataString(phone)}";
 
         isSuccess = string.Equals(query["status"], "success", StringComparison.OrdinalIgnoreCase);
 

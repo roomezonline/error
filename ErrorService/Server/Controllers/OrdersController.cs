@@ -2679,7 +2679,9 @@ public sealed class OrdersController : ControllerBase
         if (order != null)
         {
             var target = $"/payment/result?orderId={order.Id}&status={(success ? "success" : "failed")}"
-                         + $"&msg={Uri.EscapeDataString(message ?? "")}";
+                         + $"&msg={Uri.EscapeDataString(message ?? "")}"
+                         + $"&orderNumber={Uri.EscapeDataString(order.OrderNumber)}"
+                         + $"&phone={Uri.EscapeDataString(order.PhoneNumber)}";
             redirect = $@"<meta http-equiv=""refresh"" content=""0;url={System.Net.WebUtility.HtmlEncode(target)}"">
 <script>location.replace({System.Text.Json.JsonSerializer.Serialize(target)});</script>";
         }

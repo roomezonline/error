@@ -314,7 +314,11 @@
                                         <div class="success-icon"><span class="oi oi-circle-check"></span></div>
                                         <h3 class="success-title">پیشینه رسید کامل است</h3>
                                         <p class="success-desc">حداکثر @MaxReceiptImages تصویر رسید برای این سفارش ثبت شده است. سفارش شما در حال بررسی است.</p>
-                                        <a href="/" class="btn btn-outline-custom px-5 py-2 mt-3">بازگشت به صفحه اصلی</a>
+                                        <div class="d-flex flex-wrap justify-content-center gap-2 mt-3">
+                                            <a href="@TrackingUrl" class="btn btn-primary-custom px-4 py-2">پیگیری سفارش</a>
+                                            <a href="@InvoiceUrl" target="_blank" rel="noopener" class="btn btn-outline-custom px-4 py-2">چاپ فاکتور</a>
+                                            <a href="/" class="btn btn-outline-custom px-4 py-2">بازگشت به فروشگاه</a>
+                                        </div>
                                     </div>
                                 }
                             </div>
@@ -645,6 +649,14 @@
     private string OrderUrl() => string.IsNullOrWhiteSpace(AccessToken)
         ? $"api/orders/{OrderId}"
         : $"api/orders/{OrderId}?token={Uri.EscapeDataString(AccessToken)}";
+
+    private string TrackingUrl => order == null
+        ? "/order-tracking"
+        : $"/order-tracking?orderNumber={Uri.EscapeDataString(order.OrderNumber)}&phone={Uri.EscapeDataString(order.PhoneNumber)}";
+
+    private string InvoiceUrl => order == null
+        ? "#"
+        : $"/api/orders/{order.Id}/invoice?token={Uri.EscapeDataString(order.AccessToken ?? AccessToken ?? "")}";
 
     protected override async Task OnInitializedAsync()
     {
