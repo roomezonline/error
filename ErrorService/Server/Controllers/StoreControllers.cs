@@ -1152,7 +1152,7 @@ public class ProductsController : ControllerBase
     public async Task<ActionResult<ProductDto>> GetProductBySlug(string slug)
     {
         var product = await _context.Products
-            .Include(p => p.Category)
+            .Where(p => p.Slug == slug && !p.IsDraft)
             .Select(p => new ProductDto
             {
                 Id = p.Id,
@@ -1181,7 +1181,7 @@ public class ProductsController : ControllerBase
                 FailureSymptoms = p.FailureSymptoms,
                 RelatedProductIds = p.RelatedProductIds
             })
-            .FirstOrDefaultAsync(p => p.Slug == slug && !p.IsDraft);
+            .FirstOrDefaultAsync();
 
         if (product == null)
         {
@@ -1196,7 +1196,7 @@ public class ProductsController : ControllerBase
     public async Task<ActionResult<ProductDto>> GetProduct(int id)
     {
         var product = await _context.Products
-            .Include(p => p.Category)
+            .Where(p => p.Id == id && !p.IsDraft)
             .Select(p => new ProductDto
             {
                 Id = p.Id,
@@ -1223,7 +1223,7 @@ public class ProductsController : ControllerBase
                 FailureSymptoms = p.FailureSymptoms,
                 RelatedProductIds = p.RelatedProductIds
             })
-            .FirstOrDefaultAsync(p => p.Id == id && !p.IsDraft);
+            .FirstOrDefaultAsync();
 
         if (product == null)
         {

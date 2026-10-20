@@ -165,12 +165,61 @@ public sealed class ChatHub : Hub
             if (uidRaw != null && int.TryParse(uidRaw, out var uid)) userId = uid;
         }
 
-        var session = new ChatSession
+        var trimmedName = string.IsNullOrWhiteSpace(userName) ? null : userName.Trim();
+        var trimmedEmail = string.IsNullOrWhiteSpace(userEmail) ? null : userEmail.Trim();
+        var trimmedPhone = string.IsNullOrWhiteSpace(userPhone) ? null : userPhone.Trim();
+
+        // A user must only ever have one open conversation. Reuse the existing
+        // active session (same browser visitor or same authenticated account)
+        // instead of creating a new one and splitting the history.
+        var openSessions = await _db.ChatSessions
+            .Where(s => s.Status == ChatSessionStatus.Active
+                        && (s.VisitorId == visitorId || (userId != null && s.UserId == userId)))
+            .OrderByDescending(s => s.CreatedAt)
+            .ToListAsync();
+
+        ChatSession session;
+        if (openSessions.Count > 0)
+        {
+            session = openSessions[0];
+
+            var duplicates = openSessions.Skip(1).ToList();
+            var closedAt = DateTime.UtcNow;
+            foreach (var duplicate in duplicates)
+            {
+                duplicate.Status = ChatSessionStatus.Closed;
+                duplicate.ClosedAt = closedAt;
+            }
+
+            session.VisitorId = visitorId;
+            if (trimmedName != null) session.UserName = trimmedName;
+            if (trimmedEmail != null) session.UserEmail = trimmedEmail;
+            if (trimmedPhone != null) session.UserPhone = trimmedPhone;
+            if (userId != null) session.UserId = userId;
+
+            await _db.SaveChangesAsync();
+
+            await Groups.AddToGroupAsync(Context.ConnectionId, $"session_{session.Id}");
+            foreach (var duplicate in duplicates)
+                await Clients.GroupExcept($"session_{duplicate.Id}", new[] { Context.ConnectionId })
+                    .SendAsync("SessionClosed", duplicate.Id);
+
+            _logger.LogInformation("StartChat reused active session {SessionId} for visitor {VisitorId}", session.Id, visitorId);
+
+            return new StartChatResult
+            {
+                SessionId = session.Id,
+                Success = true,
+                Message = "مکالمه قبلی شما ادامه یافت."
+            };
+        }
+
+        session = new ChatSession
         {
             VisitorId = visitorId,
-            UserName = userName,
-            UserEmail = userEmail,
-            UserPhone = string.IsNullOrWhiteSpace(userPhone) ? null : userPhone.Trim(),
+            UserName = trimmedName,
+            UserEmail = trimmedEmail,
+            UserPhone = trimmedPhone,
             UserId = userId,
             Status = ChatSessionStatus.Active,
             CreatedAt = DateTime.UtcNow

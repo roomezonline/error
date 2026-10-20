@@ -113,8 +113,8 @@
                         <label class="form-label small fw-bold">شماره تماس @(_settings.ChatPhoneRequired ? " (الزامی)" : " (اختیاری)")</label>
                         <input type="tel" class="form-control form-control-sm rounded-pill" @bind="_userPhone" placeholder="مثال: 0912 123 4567" />
                     </div>
-                    <button class="btn btn-primary btn-sm rounded-pill py-2 fw-bold" @onclick="StartChat" disabled="@(string.IsNullOrWhiteSpace(_userName) || (_settings.ChatPhoneRequired && string.IsNullOrWhiteSpace(_userPhone)))">
-                        شروع گفتگو
+                    <button class="btn btn-primary btn-sm rounded-pill py-2 fw-bold" @onclick="StartChat" disabled="@(_isStarting || string.IsNullOrWhiteSpace(_userName) || (_settings.ChatPhoneRequired && string.IsNullOrWhiteSpace(_userPhone)))">
+                        @(_isStarting ? "در حال اتصال..." : "شروع گفتگو")
                     </button>
                 </div>
             }
@@ -678,6 +678,7 @@
     };
     private DateTime _lastTypingSent = DateTime.MinValue;
     private bool _hasConnectedOnce;
+    private bool _isStarting;
     private bool _showRating;
     private int _ratingValue;
     private string _ratingComment = "";
@@ -950,6 +951,7 @@
 
         _hub.On<int>("SessionClosed", sessionId =>
         {
+            if (_sessionId != sessionId) return;
             _status = ChatWidgetStatus.Closed;
             _statusMessage = "مکالمه توسط اپراتور پایان یافت.";
             _lastSessionId = _sessionId;
@@ -1120,17 +1122,19 @@
 
     private async Task StartChat()
     {
+        if (_isStarting) return;
         if (string.IsNullOrWhiteSpace(_userName)) return;
         if (_settings.ChatPhoneRequired && string.IsNullOrWhiteSpace(_userPhone)) return;
 
-        await JS.InvokeVoidAsync("localStorage.setItem", "chat_user_name", _userName);
-        await JS.InvokeVoidAsync("localStorage.setItem", "chat_user_phone", _userPhone);
-
+        _isStarting = true;
         _status = ChatWidgetStatus.Loading;
         StateHasChanged();
 
         try
         {
+            await JS.InvokeVoidAsync("localStorage.setItem", "chat_user_name", _userName);
+            await JS.InvokeVoidAsync("localStorage.setItem", "chat_user_phone", _userPhone);
+
             await ConnectHub();
             var result = await _hub!.InvokeAsync<StartChatResult>("StartChat", _userName, _userEmail, _userPhone);
             if (!result.Success || result.SessionId == 0)
@@ -1150,6 +1154,10 @@
         {
             _status = ChatWidgetStatus.Closed;
             _statusMessage = "خطا در برقراری ارتباط.";
+        }
+        finally
+        {
+            _isStarting = false;
         }
         StateHasChanged();
     }

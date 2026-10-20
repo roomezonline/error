@@ -4641,7 +4641,7 @@
     private Dictionary<int, List<MonitoringReceiptConnectionDto>> monitoringHistoryCache = new();
     private Dictionary<int, bool> isLoadingMonitoringCache = new();
 
-    private async Task GoToMonitoringDetails(MonitoringReceiptConnectionDto conn)
+    private string BuildMonitoringDetailsUrl(MonitoringReceiptConnectionDto conn)
     {
         var qs = $"?id={conn.Id}&customerReceiptId={conn.CustomerReceiptId}&customerName={Uri.EscapeDataString(conn.CustomerFullName)}" +
                  $"&customerMobile={Uri.EscapeDataString(conn.CustomerMobile)}&deviceTitle={Uri.EscapeDataString(conn.CustomerDeviceTitle)}" +
@@ -4649,7 +4649,12 @@
                  $"&workshopName={Uri.EscapeDataString(conn.WorkshopName)}&createdAtFa={Uri.EscapeDataString(conn.CreatedAtFa)}" +
                  $"&createdByUserName={Uri.EscapeDataString(conn.CreatedByUserName ?? "")}" +
                  $"&code={Uri.EscapeDataString(conn.MonitoringDeviceNumber)}";
-        await JS.InvokeVoidAsync("open", $"/admin/monitoring/details{qs}", "_blank");
+        return $"/admin/monitoring/details{qs}";
+    }
+
+    private async Task GoToMonitoringDetails(MonitoringReceiptConnectionDto conn)
+    {
+        await JS.InvokeVoidAsync("open", BuildMonitoringDetailsUrl(conn), "_blank");
     }
 
     private int? expandedReceiptId;
@@ -4770,6 +4775,26 @@
         if (!monitoringHistoryCache.TryGetValue(receiptId, out var history) || history == null)
             return null;
         return history.FirstOrDefault(x => x.IsActive);
+    }
+
+    private async Task OpenReceiptMonitoring(CustomerReceiptDto item)
+    {
+        await LoadMonitoringHistorySilent(item.Id);
+        var active = GetActiveMonitoring(item.Id);
+
+        if (active != null)
+        {
+            Navigation.NavigateTo(BuildMonitoringDetailsUrl(active));
+            return;
+        }
+
+        if (item.HasActiveMonitoring)
+        {
+            ToastService.ShowError("اطلاعات مانیتورینگ فعال دریافت نشد. لطفاً دوباره تلاش کنید.");
+            return;
+        }
+
+        Navigation.NavigateTo($"/admin/receipts/monitoring/{item.Id}");
     }
 
     private async Task PrefetchBillingForPaymentFilter()
@@ -5313,7 +5338,7 @@
                 await ToggleEdit();
                 break;
             case "monitoring":
-                Navigation.NavigateTo($"/admin/receipts/monitoring/{item.Id}");
+                await OpenReceiptMonitoring(item);
                 break;
             case "customer_summary":
                 await OpenCustomerSummary(item);
