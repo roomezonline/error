@@ -89,11 +89,14 @@
                 }
             </div>
 
-            @if (CanReorder || CanReturn)
+            @if (_order != null)
             {
                 <div class="mod-card mt-3">
                     <div class="mod-card-title"><span class="oi oi-wrench"></span> عملیات</div>
                     <div class="d-flex flex-wrap gap-2">
+                        <a class="btn btn-outline-secondary rounded-pill px-4" href="@InvoiceUrl" target="_blank" rel="noopener">
+                            <span class="oi oi-print me-1"></span> چاپ فاکتور
+                        </a>
                         @if (CanReorder)
                         {
                             <button class="btn btn-outline-primary rounded-pill px-4" @onclick="ReorderAsync" disabled="@_busy">
@@ -434,6 +437,8 @@
     private string _returnError = "";
 
     private bool CanReorder => _shop != null && _shop.EnableReorder && _order != null && _order.Items.Any();
+
+    private string InvoiceUrl => _order == null ? "#" : $"/api/orders/{_order.Id}/invoice?token={Uri.EscapeDataString(_order.AccessToken ?? "")}";
 
     private bool CanReturn => _shop != null && _shop.EnableReturnRequests && _order != null
         && _order.Status != OrderStatus.Cancelled

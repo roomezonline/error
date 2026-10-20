@@ -276,6 +276,9 @@ public sealed class OrdersController : ControllerBase
 
     private async Task<bool> CanAccessOrderAsync(Order order, string? token)
     {
+        // توکن دسترسی سفارش، مستقل از ورود کاربر، یک مجوز معتبر برای همان سفارش است.
+        if (HasValidOrderToken(order, token)) return true;
+
         if ((await _authorizationService.AuthorizeAsync(User, null, "perm:admin.orders.view")).Succeeded)
             return true;
         if ((await _authorizationService.AuthorizeAsync(User, null, "perm:admin.orders.manage")).Succeeded)
@@ -294,13 +297,16 @@ public sealed class OrdersController : ControllerBase
                 && string.Equals(user.PhoneNumber, order.PhoneNumber, StringComparison.Ordinal);
         }
 
-        return !string.IsNullOrEmpty(order.AccessToken)
-            && !string.IsNullOrEmpty(token)
-            && order.AccessToken.Length == token.Length
-            && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                System.Text.Encoding.UTF8.GetBytes(order.AccessToken),
-                System.Text.Encoding.UTF8.GetBytes(token));
+        return false;
     }
+
+    private static bool HasValidOrderToken(Order order, string? token)
+        => !string.IsNullOrEmpty(order.AccessToken)
+           && !string.IsNullOrEmpty(token)
+           && order.AccessToken.Length == token.Length
+           && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+               System.Text.Encoding.UTF8.GetBytes(order.AccessToken),
+               System.Text.Encoding.UTF8.GetBytes(token));
 
     private static OrderDto MapOrderToDto(Order order, List<OrderItem> items, List<OrderShipment> shipments, List<OrderEvent> events, List<OrderReturn>? returns = null)
     {
@@ -374,6 +380,7 @@ public sealed class OrdersController : ControllerBase
             PaymentDate = order.PaymentDate,
             AdminNotes = order.AdminNotes,
             CustomerNotes = order.CustomerNotes,
+            AccessToken = order.AccessToken,
             PaymentProvider = order.PaymentProvider,
             PaymentReference = order.PaymentReference,
             ShipmentCount = shipmentCount,
@@ -731,6 +738,215 @@ public sealed class OrdersController : ControllerBase
         // مقایسه بر اساس ۱۰ رقم آخر تا حالت‌های ۰۹.../۹۸... یکسان دیده شوند.
         return digits.Length > 10 ? digits.Substring(digits.Length - 10) : digits;
     }
+
+    // فاکتور قابل چاپ سفارش (HTML مستقل، مناسب چاپ یا ذخیره به‌صورت PDF).
+    // دسترسی با همان قاعدهٔ سفارش: توکن، مالکیت، یا دسترسی ادمین.
+    [AllowAnonymous]
+    [HttpGet("{id:int}/invoice")]
+    public async Task<IActionResult> GetOrderInvoice(int id, [FromQuery] string? token, CancellationToken ct)
+    {
+        var order = await _db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound();
+        if (!await CanAccessOrderAsync(order, token)) return NotFound();
+
+        var items = await _db.OrderItems.AsNoTracking()
+            .Where(i => i.OrderId == id)
+            .OrderBy(i => i.Id)
+            .ToListAsync(ct);
+
+        var latestTracking = order.TrackingNumber;
+        if (string.IsNullOrWhiteSpace(latestTracking))
+        {
+            latestTracking = await _db.OrderShipments.AsNoTracking()
+                .Where(s => s.OrderId == id && s.TrackingNumber != null && s.TrackingNumber != "")
+                .OrderByDescending(s => s.AttemptNumber)
+                .Select(s => s.TrackingNumber)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        var rows = new System.Text.StringBuilder();
+        if (items.Count == 0)
+        {
+            rows.Append("<tr><td colspan=\"5\" class=\"c muted\">—</td></tr>");
+        }
+        else
+        {
+            var index = 0;
+            foreach (var item in items)
+            {
+                index++;
+                rows.Append("<tr>")
+                    .Append("<td class=\"c\">").Append(index).Append("</td>")
+                    .Append("<td>").Append(E(item.ProductName)).Append("</td>")
+                    .Append("<td class=\"c\">").Append(item.Quantity.ToString("N0")).Append("</td>")
+                    .Append("<td>").Append(item.Price.ToString("N0")).Append("</td>")
+                    .Append("<td>").Append((item.Price * item.Quantity).ToString("N0")).Append("</td>")
+                    .Append("</tr>");
+            }
+        }
+
+        var subtotal = order.TotalAmount - order.ShippingCost;
+        var discount = order.DiscountAmount ?? 0;
+        var net = order.TotalAmount - discount;
+
+        var shippingText = order.ShippingCost > 0
+            ? $"{order.ShippingCost:N0} تومان"
+            : (order.ShippingIsFree ? "رایگان" : "—");
+
+        var discountRow = discount > 0
+            ? $"<div class=\"row discount\"><span>تخفیف{(string.IsNullOrWhiteSpace(order.CouponCode) ? "" : $" ({E(order.CouponCode)})")}</span><b>-{discount:N0} تومان</b></div>"
+            : "";
+
+        var trackingRow = string.IsNullOrWhiteSpace(latestTracking)
+            ? ""
+            : $"<div class=\"muted\">کد رهگیری: <b dir=\"ltr\">{E(latestTracking)}</b></div>";
+
+        var address = string.Join("، ", new[] { order.ProvinceName, order.CityName, order.Address }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+
+        var postal = string.IsNullOrWhiteSpace(order.PostalCode)
+            ? ""
+            : $"<div class=\"muted\">کد پستی: <b dir=\"ltr\">{E(order.PostalCode)}</b></div>";
+
+        var email = string.IsNullOrWhiteSpace(order.Email)
+            ? ""
+            : $"<div class=\"muted\" dir=\"ltr\" style=\"text-align:right\">{E(order.Email)}</div>";
+
+        var paymentInfo = order.Status switch
+        {
+            OrderStatus.Approved or OrderStatus.Completed => order.PaymentDate.HasValue
+                ? $"پرداخت‌شده — {PersianDateHelper.ToPersianDateTimeString(order.PaymentDate.Value, includeTime: true)}"
+                : "پرداخت‌شده",
+            OrderStatus.ReceiptUploaded => "در انتظار تأیید رسید پرداخت",
+            OrderStatus.PendingPayment => "در انتظار پرداخت",
+            OrderStatus.Rejected => "پرداخت رد شده",
+            OrderStatus.Cancelled => "سفارش لغو شده",
+            _ => StatusLabel(order.Status)
+        };
+
+        var html = InvoiceTemplate
+            .Replace("[[ORDER_NO]]", E(order.OrderNumber))
+            .Replace("[[DATE]]", E(PersianDateHelper.ToPersianDateTimeString(order.CreatedAt, includeTime: true)))
+            .Replace("[[STATUS]]", E(StatusLabel(order.Status)))
+            .Replace("[[FULL_NAME]]", E(order.FullName))
+            .Replace("[[PHONE]]", E(order.PhoneNumber))
+            .Replace("[[EMAIL]]", email)
+            .Replace("[[ADDRESS]]", E(string.IsNullOrWhiteSpace(address) ? "-" : address))
+            .Replace("[[POSTAL]]", postal)
+            .Replace("[[SHIPPING_METHOD]]", E(string.IsNullOrWhiteSpace(order.ShippingMethodName) ? "-" : order.ShippingMethodName))
+            .Replace("[[TRACKING_ROW]]", trackingRow)
+            .Replace("[[ROWS]]", rows.ToString())
+            .Replace("[[SUBTOTAL]]", subtotal.ToString("N0"))
+            .Replace("[[DISCOUNT_ROW]]", discountRow)
+            .Replace("[[SHIPPING_COST]]", shippingText)
+            .Replace("[[NET]]", net.ToString("N0"))
+            .Replace("[[PAYMENT_INFO]]", E(paymentInfo));
+
+        return Content(html, "text/html; charset=utf-8");
+    }
+
+    private static string E(string? value) => System.Net.WebUtility.HtmlEncode(value ?? string.Empty);
+
+    private const string InvoiceTemplate = """
+    <!DOCTYPE html>
+    <html lang="fa" dir="rtl">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>فاکتور سفارش [[ORDER_NO]]</title>
+    <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; background: #eef2f7; color: #0f172a; font-family: Vazirmatn, Tahoma, "Segoe UI", Arial, sans-serif; font-size: 13px; line-height: 1.7; }
+    .sheet { max-width: 840px; margin: 0 auto; background: #fff; border-radius: 16px; box-shadow: 0 12px 34px rgba(15, 23, 42, .1); padding: 34px 36px; }
+    .toolbar { max-width: 840px; margin: 0 auto 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .toolbar .hint { color: #64748b; font-size: 12px; }
+    .btn { border: 0; border-radius: 10px; background: #4f46e5; color: #fff; padding: 9px 20px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .btn:hover { background: #4338ca; }
+    .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding-bottom: 18px; border-bottom: 2px solid #0f172a; }
+    .brand { font-size: 22px; font-weight: 900; letter-spacing: -.5px; }
+    .brand small { display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-top: 2px; letter-spacing: 0; }
+    .meta { display: grid; gap: 6px; min-width: 210px; }
+    .meta div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 4px; }
+    .meta span { color: #64748b; }
+    .badge { display: inline-block; padding: 1px 10px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: 12px; }
+    .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+    .box { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; background: #f8fafc; }
+    .box h4 { margin: 0 0 8px; font-size: 12px; color: #4f46e5; font-weight: 800; }
+    .box .name { font-weight: 800; margin-bottom: 2px; }
+    .muted { color: #64748b; }
+    table { width: 100%; border-collapse: collapse; margin: 6px 0 18px; }
+    thead th { background: #0f172a; color: #fff; font-size: 12px; font-weight: 700; padding: 9px 10px; text-align: right; }
+    thead th:first-child { border-radius: 0 10px 0 0; }
+    thead th:last-child { border-radius: 10px 0 0 0; }
+    tbody td { padding: 9px 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+    tbody tr:nth-child(even) td { background: #f8fafc; }
+    .c { text-align: center; }
+    .totals { margin-right: auto; width: 340px; max-width: 100%; display: grid; gap: 6px; }
+    .totals .row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px dashed #e2e8f0; }
+    .totals .discount b { color: #dc2626; }
+    .totals .grand { border-bottom: 0; border-top: 2px solid #0f172a; margin-top: 4px; padding-top: 8px; font-size: 15px; font-weight: 900; }
+    .foot { margin-top: 26px; padding-top: 14px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+    .foot .pay { font-weight: 700; }
+    .small { font-size: 11px; }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .sheet { box-shadow: none; border-radius: 0; padding: 0; max-width: none; }
+      .toolbar { display: none !important; }
+      thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      tbody tr:nth-child(even) td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+    @page { size: A4; margin: 14mm; }
+    </style>
+    </head>
+    <body>
+    <div class="toolbar">
+      <span class="hint">برای ذخیره به‌صورت PDF، در پنجرهٔ چاپ «Save as PDF» را انتخاب کنید.</span>
+      <button class="btn" onclick="window.print()">چاپ فاکتور</button>
+    </div>
+    <div class="sheet">
+      <header class="head">
+        <div class="brand">ارورسرویس<small>فاکتور فروش کالا</small></div>
+        <div class="meta">
+          <div><span>شماره فاکتور</span><b dir="ltr">[[ORDER_NO]]</b></div>
+          <div><span>تاریخ صدور</span><b>[[DATE]]</b></div>
+          <div><span>وضعیت</span><b class="badge">[[STATUS]]</b></div>
+        </div>
+      </header>
+      <section class="parties">
+        <div class="box">
+          <h4>خریدار</h4>
+          <div class="name">[[FULL_NAME]]</div>
+          <div class="muted" dir="ltr" style="text-align:right">[[PHONE]]</div>
+          [[EMAIL]]
+          <div class="muted">آدرس: [[ADDRESS]]</div>
+          [[POSTAL]]
+        </div>
+        <div class="box">
+          <h4>ارسال</h4>
+          <div>روش ارسال: <b>[[SHIPPING_METHOD]]</b></div>
+          [[TRACKING_ROW]]
+        </div>
+      </section>
+      <table>
+        <thead>
+          <tr><th style="width:44px" class="c">#</th><th>شرح کالا</th><th style="width:70px" class="c">تعداد</th><th style="width:120px">قیمت واحد (تومان)</th><th style="width:130px">جمع (تومان)</th></tr>
+        </thead>
+        <tbody>[[ROWS]]</tbody>
+      </table>
+      <div class="totals">
+        <div class="row"><span>جمع کالاها</span><b>[[SUBTOTAL]] تومان</b></div>
+        [[DISCOUNT_ROW]]
+        <div class="row"><span>هزینه ارسال</span><b>[[SHIPPING_COST]]</b></div>
+        <div class="row grand"><span>مبلغ قابل پرداخت</span><b>[[NET]] تومان</b></div>
+      </div>
+      <footer class="foot">
+        <div class="pay">[[PAYMENT_INFO]]</div>
+        <div class="muted small">این فاکتور به‌صورت خودکار توسط سامانهٔ ارورسرویس صادر شده است.</div>
+      </footer>
+    </div>
+    </body>
+    </html>
+    """;
 
     [AllowAnonymous]
     [HttpGet("{id:int}")]

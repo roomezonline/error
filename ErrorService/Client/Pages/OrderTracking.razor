@@ -102,6 +102,9 @@
                     <div class="text-end">
                         <span class="text-muted small d-block">مبلغ سفارش</span>
                         <span class="fw-bold text-primary fs-4">@netTotal.ToString("N0") <small class="text-muted fs-6">تومان</small></span>
+                        <a class="btn btn-outline-secondary btn-sm rounded-pill mt-2 px-3" href="@InvoiceUrl" target="_blank" rel="noopener">
+                            <span class="oi oi-print me-1"></span> چاپ فاکتور
+                        </a>
                     </div>
                 </div>
 
@@ -144,6 +147,8 @@
     private OrderDto? _order;
     private string? _error;
     private bool _loading;
+
+    private string InvoiceUrl => _order == null ? "#" : $"/api/orders/{_order.Id}/invoice?token={Uri.EscapeDataString(_order.AccessToken ?? "")}";
 
     [SupplyParameterFromQuery(Name = "orderNumber")]
     public string? InitialOrderNumber { get; set; }

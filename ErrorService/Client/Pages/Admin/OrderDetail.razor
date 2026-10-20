@@ -41,6 +41,9 @@ else
                     <span class="od-header-date">@PersianDate.ToJalaliDateTime(order.CreatedAt)</span>
                 </div>
                 <span class="od-status-badge @GetStatusBadgeClass(order.Status)">@GetStatusLabel(order.Status)</span>
+                <a class="od-back-btn" href="@InvoiceUrl" target="_blank" rel="noopener" title="چاپ فاکتور" style="text-decoration:none">
+                    <span class="oi oi-print"></span>
+                </a>
             </div>
 
             @if (!string.IsNullOrEmpty(order.NextAction))
@@ -1506,6 +1509,7 @@ else
     [Parameter] public int Id { get; set; }
 
     private OrderDto? order;
+    private string InvoiceUrl => order == null ? "#" : $"/api/orders/{order.Id}/invoice?token={Uri.EscapeDataString(order.AccessToken ?? "")}";
     private bool isLoading = true;
     private bool isSaving = false;
     private bool isEditingInfo = false;
