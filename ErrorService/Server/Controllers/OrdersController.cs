@@ -670,6 +670,68 @@ public sealed class OrdersController : ControllerBase
         });
     }
 
+    // پیگیری عمومی سفارش با شماره سفارش + شماره موبایل (بدون نیاز به ورود).
+    // برای جلوگیری از افشای وجود سفارش، در صورت عدم تطابق، ۴۰۴ برگردانده می‌شود.
+    [AllowAnonymous]
+    [EnableRateLimiting("commerce")]
+    [HttpGet("track")]
+    public async Task<ActionResult<OrderDto>> TrackOrder([FromQuery] string? orderNumber, [FromQuery] string? phone, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(orderNumber) || string.IsNullOrWhiteSpace(phone))
+            return BadRequest("شماره سفارش و شماره موبایل الزامی است.");
+
+        var normalizedOrderNumber = orderNumber.Trim();
+        var order = await _db.Orders.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.OrderNumber == normalizedOrderNumber, ct);
+        if (order == null) return NotFound();
+
+        if (!PhoneMatches(order.PhoneNumber, phone))
+        {
+            // صاحب سفارش (کاربر وارد‌شده) بدون شماره موبایل هم دسترسی دارد.
+            var userId = await ResolveSiteUserIdAsync();
+            var ownsOrder = userId.HasValue && order.UserId.HasValue && order.UserId.Value == userId.Value;
+            if (!ownsOrder) return NotFound();
+        }
+
+        var items = await _db.OrderItems.AsNoTracking().Where(i => i.OrderId == order.Id).ToListAsync(ct);
+        var shipments = await _db.OrderShipments.AsNoTracking().Where(s => s.OrderId == order.Id).OrderBy(s => s.AttemptNumber).ToListAsync(ct);
+        var events = await _db.OrderEvents.AsNoTracking().Where(e => e.OrderId == order.Id).OrderBy(e => e.CreatedAt).ToListAsync(ct);
+        var returns = await _db.OrderReturns.AsNoTracking().Where(r => r.OrderId == order.Id).OrderBy(r => r.CreatedAt).ToListAsync(ct);
+
+        var dto = MapOrderToDto(order, items, shipments, events, returns);
+        await ApplyProductImagesAsync(new[] { dto });
+        return Ok(dto);
+    }
+
+    private static bool PhoneMatches(string? stored, string? provided)
+    {
+        var a = CanonicalPhone(stored);
+        var b = CanonicalPhone(provided);
+        return a.Length > 0 && a.Equals(b, StringComparison.Ordinal);
+    }
+
+    private static string CanonicalPhone(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+
+        var sb = new System.Text.StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (ch >= '0' && ch <= '9') sb.Append(ch);
+            else if (ch >= '\u06F0' && ch <= '\u06F9') sb.Append((char)('0' + (ch - '\u06F0')));  // ارقام فارسی
+            else if (ch >= '\u0660' && ch <= '\u0669') sb.Append((char)('0' + (ch - '\u0660')));  // ارقام عربی
+        }
+
+        var digits = sb.ToString();
+        if (digits.Length == 0) return string.Empty;
+
+        if (digits.StartsWith("0098", StringComparison.Ordinal)) digits = "0" + digits.Substring(4);
+        else if (digits.StartsWith("98", StringComparison.Ordinal) && digits.Length == 12) digits = "0" + digits.Substring(2);
+
+        // مقایسه بر اساس ۱۰ رقم آخر تا حالت‌های ۰۹.../۹۸... یکسان دیده شوند.
+        return digits.Length > 10 ? digits.Substring(digits.Length - 10) : digits;
+    }
+
     [AllowAnonymous]
     [HttpGet("{id:int}")]
     public async Task<ActionResult<OrderDto>> GetOrder(int id, [FromQuery] string? token, CancellationToken ct)
@@ -2387,7 +2449,7 @@ public sealed class OrdersController : ControllerBase
             ? $"<p class=\"meta\">شماره سفارش: <b>{System.Net.WebUtility.HtmlEncode(n)}</b></p>"
             : "";
         var track = order != null
-            ? $"<p class=\"note\"><a href=\"/order-tracking?orderNumber={Uri.EscapeDataString(order.OrderNumber)}\">پیگیری سفارش</a></p>"
+            ? $"<p class=\"note\"><a href=\"/order-tracking?orderNumber={Uri.EscapeDataString(order.OrderNumber)}&phone={Uri.EscapeDataString(order.PhoneNumber)}\">پیگیری سفارش</a></p>"
             : "";
         var iconClass = success ? "icon ok" : "icon fail";
         var icon = success ? "&#10003;" : "&#10007;";
