@@ -285,6 +285,44 @@ public sealed class SmsAdminController : ControllerBase
         return NoContent();
     }
 
+    // ─── حذف رسید پرداخت (فقط سوپر ادمین) ───
+    [Authorize]
+    [HttpDelete("charges/{id:int}/receipt")]
+    public async Task<IActionResult> DeleteReceipt(int id)
+    {
+        if (!User.IsInRole("super_admin"))
+            return Forbid();
+
+        var tx = await _db.SmsChargeTransactions.FindAsync(id);
+        if (tx == null) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(tx.ReceiptFilePath) && string.IsNullOrWhiteSpace(tx.ReceiptFileName))
+            return BadRequest("رسیدی برای این درخواست ثبت نشده است");
+
+        TryDeleteReceiptFile(tx.ReceiptFilePath);
+        tx.ReceiptFileName = null;
+        tx.ReceiptFilePath = null;
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    private static void TryDeleteReceiptFile(string? receiptPath)
+    {
+        if (string.IsNullOrWhiteSpace(receiptPath))
+            return;
+
+        var fileName = Path.GetFileName(receiptPath);
+        if (string.IsNullOrWhiteSpace(fileName))
+            return;
+
+        var fullPath = Path.Combine(
+            Directory.GetCurrentDirectory(), "wwwroot", "uploads", "sms-receipts", fileName);
+
+        if (System.IO.File.Exists(fullPath))
+            System.IO.File.Delete(fullPath);
+    }
+
     // ─── گزارشات همه کارگاه‌ها ───
     [Authorize(Policy = "perm:admin.sms.logs.view")]
     [HttpGet("logs")]

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'errorservice-cache-v1.7.0';
+const CACHE_NAME = 'errorservice-cache-v1.8.1';
 const urlsToCache = [
     './',
     './index.html',
@@ -66,7 +66,32 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // Network-first for the Blazor manifest, framework DLLs, and navigations,
+    // Fingerprinted framework files are immutable: serve them straight from
+    // cache and only hit the network on a miss. The un-fingerprinted boot
+    // manifest and blazor.webassembly.js still go network-first below.
+    const isFingerprintedFramework = url.pathname.startsWith('/_framework/')
+        && /\.[a-z0-9]{8,12}\.(wasm|js|dat|dll|pdb)$/i.test(url.pathname);
+    if (isFingerprintedFramework)
+    {
+        event.respondWith(
+            caches.match(event.request).then(cached => {
+                if (cached) return cached;
+                return fetch(event.request).then(networkResponse => {
+                    if (networkResponse && networkResponse.ok)
+                    {
+                        const responseClone = networkResponse.clone();
+                        caches.open(CACHE_NAME)
+                            .then(cache => cache.put(event.request, responseClone))
+                            .catch(() => { });
+                    }
+                    return networkResponse;
+                });
+            })
+        );
+        return;
+    }
+
+    // Network-first for the Blazor manifest, un-versioned framework scripts, and navigations,
     // so a stale service-worker cache can never serve files from an old build
     if (url.pathname.includes('blazor.boot.json') || url.pathname.includes('/_framework/') || event.request.mode === 'navigate')
     {

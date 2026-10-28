@@ -82,7 +82,7 @@
                 }
                 else
                 {
-                    <img src="@currentStory.MediaUrl" alt="Story Content" />
+                    <img src="@currentStory.MediaUrl" alt="Story Content" decoding="async" />
                 }
             </div>
 
@@ -166,16 +166,23 @@
         height: 72px;
         border-radius: 50%;
         padding: 3px;
-        background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+        background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 45%, #0ea5e9 100%);
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: transform 0.2s;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .story-circle-item:hover .story-ring {
+        box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
     }
 
     .story-ring.viewed {
         background: #e2e8f0;
+        box-shadow: none;
     }
+
+    [data-theme="dark"] .story-ring.viewed { background: #334155; }
 
     .story-circle-item:active .story-ring { transform: scale(0.92); }
 

@@ -16,7 +16,7 @@
             <div class="share-modal-preview">
                 @if (!string.IsNullOrEmpty(ImageUrl))
                 {
-                    <img src="@ImageUrl" alt="@PreviewTitle" class="share-modal-preview-img" />
+                    <img src="@ImageUrl" alt="@PreviewTitle" class="share-modal-preview-img" decoding="async" />
                 }
                 <div class="share-modal-preview-info">
                     <span class="share-modal-preview-title">@PreviewTitle</span>

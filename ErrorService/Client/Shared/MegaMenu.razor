@@ -1,0 +1,247 @@
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@inject HttpClient Http
+@inject SiteSettingsService Settings
+
+<div class="app-quick-links d-none d-lg-block">
+    <div class="container px-3">
+        <div class="quick-links-row">
+            @if (_enabled)
+            {
+                <div class="mega-item">
+                    <a class="quick-link mega-trigger" href="/products" aria-haspopup="true">
+                        <span class="oi oi-box" aria-hidden="true"></span>
+                        <span class="quick-link__text">فروشگاه</span>
+                        <span class="oi oi-chevron-down mega-caret" aria-hidden="true"></span>
+                    </a>
+                    <div class="mega-panel mega-panel--store" role="menu" aria-label="دسته‌بندی محصولات">
+                        <div class="mega-col">
+                            <div class="mega-head">دسته‌بندی‌ها</div>
+                            <div class="mega-links">
+                                @if (_categories.Count == 0)
+                                {
+                                    <a href="/products">
+                                        <span class="mega-cat__ico oi oi-box" aria-hidden="true"></span>
+                                        <span class="mega-cat__name">همه محصولات</span>
+                                    </a>
+                                }
+                                else
+                                {
+                                    @foreach (var cat in _categories)
+                                    {
+                                        <a class="mega-cat" href="/products?categoryId=@cat.Id">
+                                            @if (!string.IsNullOrEmpty(cat.Icon) && (cat.Icon.StartsWith("/") || cat.Icon.StartsWith("http")))
+                                            {
+                                                <img class="mega-cat__img" src="@cat.Icon" alt="" loading="lazy" decoding="async" />
+                                            }
+                                            else if (!string.IsNullOrEmpty(cat.Icon))
+                                            {
+                                                <span class="mega-cat__ico oi @cat.Icon" aria-hidden="true"></span>
+                                            }
+                                            else
+                                            {
+                                                <span class="mega-cat__ico oi oi-tag" aria-hidden="true"></span>
+                                            }
+                                            <span class="mega-cat__name">@cat.Name</span>
+                                            @if (cat.ProductCount > 0)
+                                            {
+                                                <span class="mega-count">@cat.ProductCount</span>
+                                            }
+                                        </a>
+                                    }
+                                }
+                                <a class="mega-all" href="/products">مشاهده همه محصولات</a>
+                            </div>
+                        </div>
+                        <div class="mega-col mega-col--narrow">
+                            <div class="mega-head">خرید سریع</div>
+                            <div class="mega-links">
+                                <a href="/products?onlyDiscounted=true">
+                                    <span class="mega-quick__ico oi oi-fire" aria-hidden="true"></span>
+                                    <span>پیشنهادهای ویژه</span>
+                                </a>
+                                <a href="/products?sort=bestselling">
+                                    <span class="mega-quick__ico oi oi-bar-chart" aria-hidden="true"></span>
+                                    <span>پرفروش‌ترین‌ها</span>
+                                </a>
+                                <a href="/products?sort=discount_desc">
+                                    <span class="mega-quick__ico oi oi-tag" aria-hidden="true"></span>
+                                    <span>بیشترین تخفیف</span>
+                                </a>
+                                <a href="/products?onlyAvailable=true">
+                                    <span class="mega-quick__ico oi oi-check" aria-hidden="true"></span>
+                                    <span>فقط کالاهای موجود</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mega-item">
+                    <a class="quick-link mega-trigger" href="/academy" aria-haspopup="true">
+                        <span class="oi oi-book" aria-hidden="true"></span>
+                        <span class="quick-link__text">آکادمی</span>
+                        <span class="oi oi-chevron-down mega-caret" aria-hidden="true"></span>
+                    </a>
+                    <div class="mega-panel mega-panel--sm" role="menu" aria-label="آموزش و خدمات">
+                        <div class="mega-col">
+                            <div class="mega-head">آموزش و تعمیرات</div>
+                            <div class="mega-links">
+                                <a href="/academy">همه دوره‌ها و مقالات</a>
+                                <a href="/admission/repair">درخواست تعمیر</a>
+                                <a href="/workshops">تعمیرکاران</a>
+                                <a href="/commitment">تعهدنامه دیجیتال</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mega-item">
+                    <a class="quick-link mega-trigger" href="/technical/error-codes" aria-haspopup="true">
+                        <span class="oi oi-magnifying-glass" aria-hidden="true"></span>
+                        <span class="quick-link__text">بانک کدهای خطا</span>
+                        <span class="oi oi-chevron-down mega-caret" aria-hidden="true"></span>
+                    </a>
+                    <div class="mega-panel mega-panel--sm mega-panel--brands" role="menu" aria-label="کدهای خطا">
+                        <div class="mega-col">
+                            <div class="mega-head">کد خطای برندها</div>
+                            <div class="mega-links">
+                                @if (_brands.Count == 0)
+                                {
+                                    <a href="/technical/error-codes">
+                                        <span class="oi oi-magnifying-glass" aria-hidden="true"></span>
+                                        <span>جستجوی کد خطا</span>
+                                    </a>
+                                }
+                                else
+                                {
+                                    @foreach (var brand in _brands)
+                                    {
+                                        var initial = string.IsNullOrWhiteSpace(brand) ? "?" : brand.Trim().Substring(0, 1);
+                                        <a class="mega-brand" href="/technical/error-codes?brand=@Uri.EscapeDataString(brand)">
+                                            <span class="mega-brand__logo" aria-hidden="true">@initial</span>
+                                            <span class="mega-brand__name">@brand</span>
+                                            <span class="oi oi-chevron-left mega-brand__arrow" aria-hidden="true"></span>
+                                        </a>
+                                    }
+                                }
+                            </div>
+                            <a class="mega-all" href="/technical/error-codes">
+                                <span>همه کدهای خطا</span>
+                                <span class="oi oi-arrow-left" aria-hidden="true"></span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <a class="quick-link" href="/technical/calculators">
+                    <span class="oi oi-calculator" aria-hidden="true"></span>
+                    <span class="quick-link__text">محاسباتی</span>
+                </a>
+                <a class="quick-link" href="/technical/sensor-finder">
+                    <span class="oi oi-rss" aria-hidden="true"></span>
+                    <span class="quick-link__text">سنسور یاب</span>
+                </a>
+                <a class="quick-link" href="/technical/consultation">
+                    <span class="oi oi-chat" aria-hidden="true"></span>
+                    <span class="quick-link__text">مشاوره فنی</span>
+                </a>
+                <a class="quick-link" href="/contact">
+                    <span class="oi oi-phone" aria-hidden="true"></span>
+                    <span class="quick-link__text">تماس</span>
+                </a>
+                <a class="quick-link" href="/about">
+                    <span class="oi oi-info" aria-hidden="true"></span>
+                    <span class="quick-link__text">درباره ما</span>
+                </a>
+                <a class="quick-link" href="/commitment">
+                    <span class="oi oi-document-text" aria-hidden="true"></span>
+                    <span class="quick-link__text">تعهدنامه</span>
+                </a>
+            }
+            else
+            {
+                <a class="quick-link" href="/products">
+                    <span class="oi oi-box" aria-hidden="true"></span>
+                    <span class="quick-link__text">فروشگاه</span>
+                </a>
+                <a class="quick-link" href="/academy">
+                    <span class="oi oi-book" aria-hidden="true"></span>
+                    <span class="quick-link__text">آکادمی</span>
+                </a>
+                <a class="quick-link" href="/technical/error-codes">
+                    <span class="oi oi-magnifying-glass" aria-hidden="true"></span>
+                    <span class="quick-link__text">بانک کدهای خطا</span>
+                </a>
+                <a class="quick-link" href="/technical/calculators">
+                    <span class="oi oi-calculator" aria-hidden="true"></span>
+                    <span class="quick-link__text">محاسباتی</span>
+                </a>
+                <a class="quick-link" href="/technical/sensor-finder">
+                    <span class="oi oi-rss" aria-hidden="true"></span>
+                    <span class="quick-link__text">سنسور یاب</span>
+                </a>
+                <a class="quick-link" href="/technical/consultation">
+                    <span class="oi oi-chat" aria-hidden="true"></span>
+                    <span class="quick-link__text">مشاوره فنی</span>
+                </a>
+                <a class="quick-link" href="/contact">
+                    <span class="oi oi-phone" aria-hidden="true"></span>
+                    <span class="quick-link__text">تماس</span>
+                </a>
+                <a class="quick-link" href="/about">
+                    <span class="oi oi-info" aria-hidden="true"></span>
+                    <span class="quick-link__text">درباره ما</span>
+                </a>
+                <a class="quick-link" href="/commitment">
+                    <span class="oi oi-document-text" aria-hidden="true"></span>
+                    <span class="quick-link__text">تعهدنامه</span>
+                </a>
+            }
+        </div>
+    </div>
+</div>
+
+
+@code {
+    private bool _enabled;
+    private List<CategoryDto> _categories = new();
+    private List<string> _brands = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var settings = await Settings.GetAsync();
+            _enabled = settings?.EnableMegaMenu ?? false;
+        }
+        catch { _enabled = false; }
+
+        if (!_enabled) return;
+
+        try
+        {
+            var categories = await Http.GetFromJsonAsync<List<CategoryDto>>("api/categories") ?? new();
+            _categories = categories
+                .Where(c => c.IsActive)
+                .OrderBy(c => c.SortOrder)
+                .ThenBy(c => c.Id)
+                .Where(c => c.ParentId == null)
+                .Take(10)
+                .ToList();
+
+            if (_categories.Count == 0)
+            {
+                _categories = categories.Where(c => c.IsActive).OrderBy(c => c.SortOrder).Take(8).ToList();
+            }
+        }
+        catch { _categories = new(); }
+
+        try
+        {
+            var brands = await Http.GetFromJsonAsync<List<string>>("api/technical/error-codes/brands") ?? new();
+            _brands = brands.Take(8).ToList();
+        }
+        catch { _brands = new(); }
+    }
+}

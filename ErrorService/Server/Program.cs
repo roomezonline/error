@@ -51,6 +51,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<SystemEventService>();
 builder.Services.AddScoped<NotificationEventService>();
 builder.Services.AddScoped<StockAlertNotifier>();
+builder.Services.AddScoped<AdminOrderService>();
 builder.Services.AddSingleton<MonitoringCacheService>();
 builder.Services.AddScoped<MonitoringAuthorizationService>();
 builder.Services.AddHttpClient();
@@ -62,6 +63,7 @@ builder.Services.AddSingleton<ErrorService.Server.Services.IEmailService, ErrorS
 builder.Services.AddHostedService<ErrorService.Server.Services.Backup.BackupBackgroundService>();
 builder.Services.AddHostedService<ErrorService.Server.Services.PendingOrderCleanupService>();
 builder.Services.AddHostedService<ErrorService.Server.Services.MonitoringExpiryNotificationService>();
+builder.Services.AddHostedService<ErrorService.Server.Services.MonitoringGraceEnforcementService>();
         builder.Services.AddHostedService<ErrorService.Server.Services.NotificationMaintenanceService>();
         builder.Services.AddHostedService<ErrorService.Server.Services.NotificationDispatcherService>();
 

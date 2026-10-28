@@ -203,7 +203,7 @@
                                                     {
                                                         <div class="image-upload-zone has-image rounded-4 border-2 border-dashed p-4 text-center bg-light">
                                                             <div class="position-relative" style="z-index: 10;">
-                                                                <img src="@request.DeviceImageUrl" class="img-fluid rounded-3 shadow-sm mb-3" style="max-height: 180px" />
+                                                                <img src="@request.DeviceImageUrl" class="img-fluid rounded-3 shadow-sm mb-3" style="max-height: 180px" loading="lazy" decoding="async" alt="تصویر دستگاه" />
                                                                 <div class="mt-2">
                                                                     <button type="button" class="btn btn-sm btn-danger rounded-pill px-3" @onclick="() => request.DeviceImageUrl = null">تغییر عکس</button>
                                                                 </div>

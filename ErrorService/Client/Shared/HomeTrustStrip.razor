@@ -1,0 +1,110 @@
+@using ErrorService.Shared
+
+@if (_brands.Count > 0 || _customers.Count > 0)
+{
+    <section class="home-trust" dir="rtl">
+        <div class="container">
+            <div class="home-trust__card">
+                <div class="home-trust__head">
+                    <h2 class="home-trust__title">برندها و همکاران ارورسرویس</h2>
+                    <div class="home-trust__meta">
+                        @if (_brands.Count > 0)
+                        {
+                            <span><b>@_brands.Count</b> برند</span>
+                        }
+                        @if (_customers.Count > 0)
+                        {
+                            <span><b>@_customers.Count</b> همکار</span>
+                        }
+                    </div>
+                </div>
+
+                @if (_brands.Count > 0)
+                {
+                    <div class="home-trust__row">
+                        <span class="home-trust__label">برندهای محبوب</span>
+                        <div class="home-trust__items">
+                            @foreach (var brand in _brands)
+                            {
+                                <a class="home-trust__brand" href="@BrandHref(brand)" target="@BrandTarget(brand)" rel="@BrandRel(brand)">
+                                    @if (!string.IsNullOrWhiteSpace(brand.ImageUrl))
+                                    {
+                                        <img src="@ImageUrlHelper.Thumb(brand.ImageUrl, 120)" alt="@brand.Title" loading="lazy" decoding="async" />
+                                    }
+                                    else
+                                    {
+                                        <span class="home-trust__fallback">@BrandFallback(brand.Title)</span>
+                                    }
+                                    <span class="home-trust__name">@brand.Title</span>
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (_customers.Count > 0)
+                {
+                    <div class="home-trust__row">
+                        <span class="home-trust__label">همکاران ما</span>
+                        <div class="home-trust__items">
+                            @foreach (var partner in _customers)
+                            {
+                                <a class="home-trust__partner" href="/workshops/@partner.Id" aria-label="@partner.WorkshopName">
+                                    <img src="@(string.IsNullOrWhiteSpace(partner.ImageUrl) ? "/images/default-workshop.jpg" : ImageUrlHelper.Thumb(partner.ImageUrl, 120))"
+                                         alt="@partner.WorkshopName" loading="lazy" decoding="async" />
+                                    <span class="home-trust__name">@partner.WorkshopName</span>
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+}
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private List<PopularBrandItemDto> _brands = new();
+    private List<WorkshopDto> _customers = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var brandsTask = FetchAsync<List<PopularBrandItemDto>>("api/popular-brands/active");
+        var customersTask = FetchAsync<List<WorkshopDto>>("api/workshops/customers-row");
+
+        await Task.WhenAll(brandsTask, customersTask);
+
+        _brands = (brandsTask.Result ?? new()).OrderBy(x => x.SortOrder).ToList();
+        _customers = customersTask.Result ?? new();
+    }
+
+    private async Task<T?> FetchAsync<T>(string url) where T : class
+    {
+        try
+        {
+            return await Http.GetFromJsonAsync<T>(url);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string BrandFallback(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "B";
+        var t = title.Trim();
+        return t.Length <= 3 ? t : t.Substring(0, 3);
+    }
+
+    private static string BrandHref(PopularBrandItemDto brand)
+        => string.IsNullOrWhiteSpace(brand.LinkUrl) ? "#" : brand.LinkUrl;
+
+    private static string BrandTarget(PopularBrandItemDto brand)
+        => !string.IsNullOrWhiteSpace(brand.LinkUrl) && Uri.TryCreate(brand.LinkUrl, UriKind.Absolute, out _) ? "_blank" : "_self";
+
+    private static string BrandRel(PopularBrandItemDto brand)
+        => !string.IsNullOrWhiteSpace(brand.LinkUrl) && Uri.TryCreate(brand.LinkUrl, UriKind.Absolute, out _) ? "noopener noreferrer" : string.Empty;
+}

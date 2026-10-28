@@ -26,9 +26,11 @@ public sealed class OrdersController : ControllerBase
     private readonly NotificationEventService _notificationEvents;
     private readonly StockAlertNotifier _stockAlerts;
     private readonly IOutputCacheStore _outputCache;
+    private readonly AdminOrderService _adminOrders;
 
     private static readonly HashSet<(OrderStatus, OrderStatus)> AllowedTransitions = new()
     {
+        (OrderStatus.Draft, OrderStatus.Cancelled),
         (OrderStatus.PendingPayment, OrderStatus.ReceiptUploaded),
         (OrderStatus.PendingPayment, OrderStatus.Approved),
         (OrderStatus.PendingPayment, OrderStatus.Rejected),
@@ -41,7 +43,7 @@ public sealed class OrdersController : ControllerBase
         (OrderStatus.Approved, OrderStatus.Cancelled),
     };
 
-    public OrdersController(ErrorServiceDbContext db, IWebHostEnvironment env, IConfiguration config, IAuthorizationService authorizationService, IPaymentGatewayFactory paymentGatewayFactory, NotificationEventService notificationEvents, StockAlertNotifier stockAlerts, IOutputCacheStore outputCache)
+    public OrdersController(ErrorServiceDbContext db, IWebHostEnvironment env, IConfiguration config, IAuthorizationService authorizationService, IPaymentGatewayFactory paymentGatewayFactory, NotificationEventService notificationEvents, StockAlertNotifier stockAlerts, IOutputCacheStore outputCache, AdminOrderService adminOrders)
     {
         _db = db;
         _env = env;
@@ -51,6 +53,7 @@ public sealed class OrdersController : ControllerBase
         _notificationEvents = notificationEvents;
         _stockAlerts = stockAlerts;
         _outputCache = outputCache;
+        _adminOrders = adminOrders;
     }
 
     private async Task<List<OrderItem>> LoadOrderItemsAsync(int orderId)
@@ -130,8 +133,15 @@ public sealed class OrdersController : ControllerBase
 
     private async Task RestoreStockForOrderAsync(Order order)
     {
-        if (!order.StockDeducted)
+        // Claim اتمیک: فقط یک فراخوان (ادمین/پاکسازی) اجازه دارد موجودی این سفارش
+        // را برگرداند؛ کلیک/درخواست همزمان دوم هیچ ردیفی را تغییر نمی‌دهد.
+        var claimed = await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE Orders SET StockDeducted = 0 WHERE Id = {order.Id} AND StockDeducted = 1");
+        if (claimed == 0)
+        {
+            order.StockDeducted = false;
             return;
+        }
 
         var items = await LoadOrderItemsAsync(order.Id);
         await RestoreStockAsync(items);
@@ -209,9 +219,10 @@ public sealed class OrdersController : ControllerBase
         return false;
     }
 
-    private Task<OrderDto?> FindOrderIdempotencyAsync(string key)
+    private Task<OrderDto?> FindOrderIdempotencyAsync(string key, int? userId)
         => _db.Orders.AsNoTracking()
-            .Where(o => o.IdempotencyKey == key)
+            .Where(o => o.IdempotencyKey == key
+                && (userId.HasValue ? o.UserId == userId.Value : o.UserId == null))
             .Select(o => new OrderDto
             {
                 Id = o.Id,
@@ -320,6 +331,7 @@ public sealed class OrdersController : ControllerBase
         var failedShipments = shipments.Count(s => s.Status == OrderShipmentStatus.Failed || s.Status == OrderShipmentStatus.Returned);
         string? nextAction = order.Status switch
         {
+            OrderStatus.Draft => "ارسال پیش‌فاکتور و دریافت پرداخت",
             OrderStatus.ReceiptUploaded => "بررسی رسید پرداخت",
             OrderStatus.Approved when failedShipments > 0 => "ارسال مجدد مورد نیاز است",
             OrderStatus.Approved when shipmentCount == 0 => "ایجاد مرسوله و ارسال",
@@ -356,6 +368,7 @@ public sealed class OrdersController : ControllerBase
         return new OrderDto
         {
             Id = order.Id,
+            UserId = order.UserId,
             OrderNumber = order.OrderNumber,
             CreatedAt = order.CreatedAt,
             UpdatedAt = order.UpdatedAt,
@@ -364,6 +377,7 @@ public sealed class OrdersController : ControllerBase
             StageDates = stageDates,
             TotalAmount = order.TotalAmount,
             DiscountAmount = order.DiscountAmount,
+            ManualDiscountAmount = order.ManualDiscountAmount,
             CouponCode = order.CouponCode,
             FullName = order.FullName,
             PhoneNumber = order.PhoneNumber,
@@ -383,6 +397,12 @@ public sealed class OrdersController : ControllerBase
             AccessToken = order.AccessToken,
             PaymentProvider = order.PaymentProvider,
             PaymentReference = order.PaymentReference,
+            PaymentMethod = order.PaymentMethod,
+            PaymentAuthority = order.PaymentAuthority,
+            PaymentInitiatedAt = order.PaymentInitiatedAt,
+            Origin = order.Origin,
+            CreatedByAdminId = order.CreatedByAdminId,
+            ExpiresAt = order.ExpiresAt,
             ShipmentCount = shipmentCount,
             LatestTrackingNumber = latestTracking,
             NextAction = nextAction,
@@ -455,17 +475,18 @@ public sealed class OrdersController : ControllerBase
             return BadRequest("سبد خرید خالی است.");
 
         // ── Idempotency: همان کلید دوباره = همان سفارش قبلی، نه سفارش جدید ──
+        // کلید فقط برای همان کاربر (یا همان مهمان) معتبر است تا لو رفتن کلید،
+        // دسترسی به سفارش کاربر دیگر را ممکن نکند.
+        int? userId = await ResolveSiteUserIdAsync();
         var idemKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
             ? null
             : request.IdempotencyKey.Trim();
         if (idemKey != null)
         {
-            var replay = await FindOrderIdempotencyAsync(idemKey);
+            var replay = await FindOrderIdempotencyAsync(idemKey, userId);
             if (replay != null)
                 return Ok(replay);
         }
-
-        int? userId = await ResolveSiteUserIdAsync();
 
         var productIds = request.Items.Select(x => x.ProductId).Distinct().ToList();
         // AsNoTracking: رزرو موجودی با SQL اتمیک انجام می‌شود و نباید نسخهٔ کش‌شدهٔ
@@ -473,15 +494,56 @@ public sealed class OrdersController : ControllerBase
         var products = await _db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
 
         var now = DateTimeOffset.UtcNow;
+        var storeSettings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
         var orderItems = new List<OrderItem>();
         var requestedQty = new Dictionary<int, int>();
         decimal totalAmount = 0;
         string? provinceName = null;
         string? cityName = null;
-        if (request.ProvinceId.HasValue)
-            provinceName = await _db.Provinces.Where(x => x.Id == request.ProvinceId.Value).Select(x => x.Name).FirstOrDefaultAsync();
-        if (request.CityId.HasValue)
-            cityName = await _db.Cities.Where(x => x.Id == request.CityId.Value).Select(x => x.Name).FirstOrDefaultAsync();
+
+        // آدرس ساختاریافته: قاعدهٔ نمایشی سمت کلاینت اینجا هم اعمال می‌شود تا
+        // سفارش بدون داده‌های الزامی از مسیر API ثبت نشود.
+        if (storeSettings?.EnableStructuredAddress == true)
+        {
+            if ((storeSettings.RequireProvinceCity || request.ProvinceId.HasValue || request.CityId.HasValue)
+                && (!request.ProvinceId.HasValue || !request.CityId.HasValue))
+                return BadRequest(storeSettings.RequireProvinceCity
+                    ? "انتخاب استان و شهر الزامی است."
+                    : "پس از انتخاب استان، شهر را هم انتخاب کنید.");
+
+            request.PostalCode = OrderAddressHelper.NormalizePostalCode(request.PostalCode);
+            if (!string.IsNullOrEmpty(request.PostalCode) && !OrderAddressHelper.IsValidPostalCode(request.PostalCode))
+                return BadRequest("کد پستی باید ۱۰ رقم باشد.");
+            if (storeSettings.RequirePostalCode && !OrderAddressHelper.IsValidPostalCode(request.PostalCode))
+                return BadRequest("کد پستی ۱۰ رقمی الزامی است.");
+
+            if (request.ProvinceId.HasValue)
+            {
+                provinceName = await _db.Provinces.Where(x => x.Id == request.ProvinceId.Value)
+                    .Select(x => x.Name).FirstOrDefaultAsync();
+                if (provinceName == null)
+                    return BadRequest("استان انتخاب‌شده معتبر نیست.");
+            }
+            if (request.CityId.HasValue)
+            {
+                var city = await _db.Cities.AsNoTracking()
+                    .Where(x => x.Id == request.CityId.Value)
+                    .Select(x => new { x.Name, x.ProvinceId })
+                    .FirstOrDefaultAsync();
+                if (city == null)
+                    return BadRequest("شهر انتخاب‌شده معتبر نیست.");
+                if (request.ProvinceId.HasValue && city.ProvinceId != request.ProvinceId.Value)
+                    return BadRequest("شهر انتخاب‌شده با استان هم‌خوانی ندارد.");
+                cityName = city.Name;
+            }
+        }
+        else
+        {
+            // اگر ادمین آدرس ساختاریافته را خاموش کرده باشد، داده‌های ارسالی نادیده گرفته می‌شوند.
+            request.ProvinceId = null;
+            request.CityId = null;
+            request.PostalCode = null;
+        }
 
         foreach (var item in request.Items)
         {
@@ -550,7 +612,6 @@ public sealed class OrdersController : ControllerBase
             order.ShippingIsFree = shippingMethod.IsFree;
 
             // ارسال رایگان: وقتی مجموع کالاها از آستانهٔ تعریف‌شده در تنظیمات فروشگاه عبور کند
-            var storeSettings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
             if (storeSettings != null
                 && storeSettings.EnableFreeShipping
                 && storeSettings.FreeShippingThreshold.HasValue
@@ -584,49 +645,50 @@ public sealed class OrdersController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(request.CouponCode))
         {
-            var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code == request.CouponCode);
-            if (coupon != null)
+            var couponCode = request.CouponCode.Trim().ToUpperInvariant();
+            var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == couponCode);
+            if (coupon == null)
+                return BadRequest("کد تخفیف معتبر نیست یا حذف شده است.");
+
+            if (!coupon.IsActive)
+                return BadRequest("کد تخفیف غیرفعال است.");
+            if (coupon.ExpiryDate.HasValue && coupon.ExpiryDate < now)
+                return BadRequest("کد تخفیف منقضی شده است.");
+            if (coupon.MaxUsageCount.HasValue && coupon.CurrentUsageCount >= coupon.MaxUsageCount.Value)
+                return BadRequest("تعداد استفاده از این کد تخفیف به پایان رسیده است.");
+            if (coupon.AssignedToUserId.HasValue)
             {
-                if (!coupon.IsActive)
-                    return BadRequest("کد تخفیف غیرفعال است.");
-                if (coupon.ExpiryDate.HasValue && coupon.ExpiryDate < now)
-                    return BadRequest("کد تخفیف منقضی شده است.");
-                if (coupon.MaxUsageCount.HasValue && coupon.CurrentUsageCount >= coupon.MaxUsageCount.Value)
-                    return BadRequest("تعداد استفاده از این کد تخفیف به پایان رسیده است.");
-                if (coupon.AssignedToUserId.HasValue)
-                {
-                    int? callerUserId = null;
-                    try { callerUserId = await ResolveSiteUserIdAsync(); } catch { }
-                    if (callerUserId == null || callerUserId.Value != coupon.AssignedToUserId.Value)
-                        return BadRequest("این کد تخفیف متعلق به شما نیست.");
-                }
-                if (coupon.MinOrderAmount.HasValue && order.TotalAmount < coupon.MinOrderAmount.Value)
-                    return BadRequest($"حداقل مبلغ سفارش برای این کد تخفیف {coupon.MinOrderAmount.Value:N0} تومان است.");
-
-                decimal discount = 0;
-                if (coupon.DiscountPercent.HasValue)
-                    discount = order.TotalAmount * coupon.DiscountPercent.Value / 100m;
-                else if (coupon.DiscountAmount.HasValue)
-                    discount = coupon.DiscountAmount.Value;
-
-                discount = Math.Min(discount, order.TotalAmount);
-                order.DiscountAmount = discount;
-                order.CouponId = coupon.Id;
-                order.CouponCode = coupon.Code;
-
-                // شمارندهٔ شرطی و اتمیک: دو سفارش همزمان نمی‌توانند از سقف مجاز
-                // عبور کنند و شمارنده گم نمی‌شود (Update(coupon) حذف شد تا
-                // مقدار کش‌شدهٔ EF روی افزایشِ اتمی سوار نشود).
-                var counted = await _db.Database.ExecuteSqlInterpolatedAsync(
-                    $@"UPDATE Coupons
-                       SET CurrentUsageCount = CurrentUsageCount + 1
-                       WHERE Id = {coupon.Id}
-                         AND IsActive = 1
-                         AND (ExpiryDate IS NULL OR ExpiryDate >= {now})
-                         AND (MaxUsageCount IS NULL OR CurrentUsageCount < MaxUsageCount)");
-                if (counted == 0)
-                    return BadRequest("تعداد استفاده از این کد تخفیف به پایان رسیده است.");
+                int? callerUserId = null;
+                try { callerUserId = await ResolveSiteUserIdAsync(); } catch { }
+                if (callerUserId == null || callerUserId.Value != coupon.AssignedToUserId.Value)
+                    return BadRequest("این کد تخفیف متعلق به شما نیست.");
             }
+            if (coupon.MinOrderAmount.HasValue && order.TotalAmount < coupon.MinOrderAmount.Value)
+                return BadRequest($"حداقل مبلغ سفارش برای این کد تخفیف {coupon.MinOrderAmount.Value:N0} تومان است.");
+
+            decimal discount = 0;
+            if (coupon.DiscountPercent.HasValue)
+                discount = order.TotalAmount * coupon.DiscountPercent.Value / 100m;
+            else if (coupon.DiscountAmount.HasValue)
+                discount = coupon.DiscountAmount.Value;
+
+            discount = Math.Max(0, Math.Min(discount, order.TotalAmount));
+            order.DiscountAmount = discount;
+            order.CouponId = coupon.Id;
+            order.CouponCode = coupon.Code;
+
+            // شمارندهٔ شرطی و اتمیک: دو سفارش همزمان نمی‌توانند از سقف مجاز
+            // عبور کنند و شمارنده گم نمی‌شود (Update(coupon) حذف شد تا
+            // مقدار کش‌شدهٔ EF روی افزایشِ اتمی سوار نشود).
+            var counted = await _db.Database.ExecuteSqlInterpolatedAsync(
+                $@"UPDATE Coupons
+                   SET CurrentUsageCount = CurrentUsageCount + 1
+                   WHERE Id = {coupon.Id}
+                     AND IsActive = 1
+                     AND (ExpiryDate IS NULL OR ExpiryDate >= {now})
+                     AND (MaxUsageCount IS NULL OR CurrentUsageCount < MaxUsageCount)");
+            if (counted == 0)
+                return BadRequest("تعداد استفاده از این کد تخفیف به پایان رسیده است.");
         }
 
         foreach (var oi in orderItems)
@@ -645,7 +707,7 @@ public sealed class OrdersController : ControllerBase
         {
             // دو درخواست موازی با یک کلید: ایندکس یکتا برنده را مشخص کرده؛
             // تراکنش برمی‌گردد (موجودی/کوپن برگردانده می‌شود) و همان سفارش برمی‌گردد.
-            var existing = await FindOrderIdempotencyAsync(idemKey);
+            var existing = await FindOrderIdempotencyAsync(idemKey, userId);
             if (existing != null)
                 return Ok(existing);
             throw;
@@ -812,8 +874,14 @@ public sealed class OrdersController : ControllerBase
             ? ""
             : $"<div class=\"muted\" dir=\"ltr\" style=\"text-align:right\">{E(order.Email)}</div>";
 
+        var isDraft = order.Status == OrderStatus.Draft;
+        var documentLabel = isDraft ? "پیش‌فاکتور" : "فاکتور فروش";
+        var documentName = isDraft ? "پیش‌فاکتور" : "فاکتور فروش کالا";
+        var watermark = isDraft ? "<div class=\"watermark\">پیش‌فاکتور</div>" : "";
+
         var paymentInfo = order.Status switch
         {
+            OrderStatus.Draft => "پیش‌فاکتور — هنوز منتشر/پرداخت نشده است",
             OrderStatus.Approved or OrderStatus.Completed => order.PaymentDate.HasValue
                 ? $"پرداخت‌شده — {PersianDateHelper.ToPersianDateTimeString(order.PaymentDate.Value, includeTime: true)}"
                 : "پرداخت‌شده",
@@ -825,6 +893,9 @@ public sealed class OrdersController : ControllerBase
         };
 
         var html = InvoiceTemplate
+            .Replace("[[DOC_TITLE]]", documentLabel)
+            .Replace("[[DOC_NAME]]", documentName)
+            .Replace("[[WATERMARK]]", watermark)
             .Replace("[[ORDER_NO]]", E(order.OrderNumber))
             .Replace("[[DATE]]", E(PersianDateHelper.ToPersianDateTimeString(order.CreatedAt, includeTime: true)))
             .Replace("[[STATUS]]", E(StatusLabel(order.Status)))
@@ -853,11 +924,13 @@ public sealed class OrdersController : ControllerBase
     <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>فاکتور سفارش [[ORDER_NO]]</title>
+    <title>[[DOC_TITLE]] سفارش [[ORDER_NO]]</title>
     <style>
     * { box-sizing: border-box; }
     body { margin: 0; padding: 24px; background: #eef2f7; color: #0f172a; font-family: Vazirmatn, Tahoma, "Segoe UI", Arial, sans-serif; font-size: 13px; line-height: 1.7; }
-    .sheet { max-width: 840px; margin: 0 auto; background: #fff; border-radius: 16px; box-shadow: 0 12px 34px rgba(15, 23, 42, .1); padding: 34px 36px; }
+    .sheet { max-width: 840px; margin: 0 auto; background: #fff; border-radius: 16px; box-shadow: 0 12px 34px rgba(15, 23, 42, .1); padding: 34px 36px; position: relative; overflow: hidden; }
+    .watermark { position: absolute; inset: 0; display: grid; place-items: center; font-size: 96px; font-weight: 900; color: rgba(15, 23, 42, .06); transform: rotate(-24deg); letter-spacing: 12px; pointer-events: none; z-index: 0; }
+    .head, .parties, table, .totals, .foot { position: relative; z-index: 1; }
     .toolbar { max-width: 840px; margin: 0 auto 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
     .toolbar .hint { color: #64748b; font-size: 12px; }
     .btn { border: 0; border-radius: 10px; background: #4f46e5; color: #fff; padding: 9px 20px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
@@ -901,11 +974,12 @@ public sealed class OrdersController : ControllerBase
     <body>
     <div class="toolbar">
       <span class="hint">برای ذخیره به‌صورت PDF، در پنجرهٔ چاپ «Save as PDF» را انتخاب کنید.</span>
-      <button class="btn" onclick="window.print()">چاپ فاکتور</button>
+      <button class="btn" onclick="window.print()">چاپ [[DOC_TITLE]]</button>
     </div>
     <div class="sheet">
+      [[WATERMARK]]
       <header class="head">
-        <div class="brand">ارورسرویس<small>فاکتور فروش کالا</small></div>
+        <div class="brand">ارورسرویس<small>[[DOC_NAME]]</small></div>
         <div class="meta">
           <div><span>شماره فاکتور</span><b dir="ltr">[[ORDER_NO]]</b></div>
           <div><span>تاریخ صدور</span><b>[[DATE]]</b></div>
@@ -1009,6 +1083,7 @@ public sealed class OrdersController : ControllerBase
             .Select(order => new OrderDto
             {
                 Id = order.Id,
+                UserId = order.UserId,
                 OrderNumber = order.OrderNumber,
                 CreatedAt = order.CreatedAt,
                 UpdatedAt = order.UpdatedAt,
@@ -1032,11 +1107,18 @@ public sealed class OrdersController : ControllerBase
                     CustomerNotes = order.CustomerNotes,
                     PaymentProvider = order.PaymentProvider,
                 PaymentReference = order.PaymentReference,
+                PaymentMethod = order.PaymentMethod,
+                PaymentAuthority = order.PaymentAuthority,
+                PaymentInitiatedAt = order.PaymentInitiatedAt,
+                Origin = order.Origin,
+                CreatedByAdminId = order.CreatedByAdminId,
+                ExpiresAt = order.ExpiresAt,
                 ShippingMethodId = order.ShippingMethodId,
                 ShippingMethodName = order.ShippingMethodName,
                 ShippingCost = order.ShippingCost,                
                 ShippingIsFree = order.ShippingIsFree,
                 DiscountAmount = order.DiscountAmount,
+                ManualDiscountAmount = order.ManualDiscountAmount,
                 CouponCode = order.CouponCode,
                 Shipments = order.Shipments.OrderBy(s => s.AttemptNumber).Select(s => new OrderShipmentDto
                 {
@@ -1112,6 +1194,7 @@ public sealed class OrdersController : ControllerBase
                 o.Status,
                 o.CreatedAt,
                 o.TotalAmount,
+                o.ExpiresAt,
                 ItemsCount = o.Items.Count
             })
             .ToListAsync();
@@ -1129,7 +1212,9 @@ public sealed class OrdersController : ControllerBase
             ResumeUrl = $"/payment/offline/{o.Id}",
             NeedsPayment = o.Status == OrderStatus.PendingPayment,
             MinutesToAutoCancel = o.Status == OrderStatus.PendingPayment
-                ? Math.Max(0, timeoutMinutes - (int)Math.Floor((now - o.CreatedAt).TotalMinutes))
+                ? (o.ExpiresAt.HasValue
+                    ? Math.Max(0, (int)Math.Ceiling((o.ExpiresAt.Value - now).TotalMinutes))
+                    : Math.Max(0, timeoutMinutes - (int)Math.Floor((now - o.CreatedAt).TotalMinutes)))
                 : 0
         }).ToList();
 
@@ -1184,6 +1269,9 @@ public sealed class OrdersController : ControllerBase
 
         if (!await CanAccessOrderAsync(order, accessToken))
             return NotFound();
+
+        if (order.Status is OrderStatus.Draft)
+            return BadRequest("این سفارش پیش‌فاکتور است و هنوز برای پرداخت منتشر نشده است.");
 
         if (order.Status is OrderStatus.Approved or OrderStatus.Completed or OrderStatus.Rejected or OrderStatus.Cancelled)
             return BadRequest("در وضعیت فعلی سفارش امکان آپلود مجدد رسید وجود ندارد.");
@@ -1255,7 +1343,8 @@ public sealed class OrdersController : ControllerBase
         var tehranNow = now.ToOffset(tehranOffset);
         var todayStart = new DateTimeOffset(tehranNow.Year, tehranNow.Month, tehranNow.Day, 0, 0, 0, tehranOffset);
 
-        var totalCount = await _db.Orders.CountAsync();
+        var totalCount = await _db.Orders.CountAsync(o => o.Status != OrderStatus.Draft);
+        var draftCount = await _db.Orders.CountAsync(o => o.Status == OrderStatus.Draft);
         var pendingReceiptCount = await _db.Orders.CountAsync(o => o.Status == OrderStatus.ReceiptUploaded);
         var readyToShipCount = await _db.Orders.CountAsync(o => o.Status == OrderStatus.Approved && !o.Shipments.Any());
         var failedShipmentCount = await _db.Orders.CountAsync(o => o.Status == OrderStatus.Approved && o.Shipments.Any(s => s.Status == OrderShipmentStatus.Failed || s.Status == OrderShipmentStatus.Returned));
@@ -1263,6 +1352,7 @@ public sealed class OrdersController : ControllerBase
         // درآمد = مبلغ واقعاً قابل پرداخت (بدون تخفیف)؛ سفارش لغو/رد شده درآمد نیست.
         var todayAmount = await _db.Orders
             .Where(o => o.CreatedAt >= todayStart
+                        && o.Status != OrderStatus.Draft
                         && o.Status != OrderStatus.Cancelled
                         && o.Status != OrderStatus.Rejected)
             .SumAsync(o => o.TotalAmount - (o.DiscountAmount ?? 0));
@@ -1280,6 +1370,7 @@ public sealed class OrdersController : ControllerBase
         return Ok(new OrderAdminSummaryDto
         {
             TotalCount = totalCount,
+            DraftCount = draftCount,
             PendingActionCount = pendingActionCount,
             PendingReceiptCount = pendingReceiptCount,
             ReadyToShipCount = readyToShipCount,
@@ -1297,6 +1388,7 @@ public sealed class OrdersController : ControllerBase
 
     private static readonly Dictionary<OrderStatus, string> StatusLabels = new()
     {
+        { OrderStatus.Draft, "پیش‌فاکتور" },
         { OrderStatus.PendingPayment, "در انتظار پرداخت" },
         { OrderStatus.ReceiptUploaded, "رسید آپلود شده" },
         { OrderStatus.Approved, "تایید شده" },
@@ -1394,7 +1486,7 @@ public sealed class OrdersController : ControllerBase
         var includeDaily = rangeDays <= 10000;
 
         var orderRows = await _db.Orders.AsNoTracking()
-            .Where(o => o.CreatedAt >= from && o.CreatedAt < toExclusive)
+            .Where(o => o.CreatedAt >= from && o.CreatedAt < toExclusive && o.Status != OrderStatus.Draft)
             .Select(o => new
             {
                 o.Status,
@@ -1579,7 +1671,7 @@ public sealed class OrdersController : ControllerBase
         var toExclusive = TehranDayStart(day.AddDays(1));
 
         var orders = await _db.Orders.AsNoTracking()
-            .Where(o => o.CreatedAt >= from && o.CreatedAt < toExclusive)
+            .Where(o => o.CreatedAt >= from && o.CreatedAt < toExclusive && o.Status != OrderStatus.Draft)
             .Include(o => o.Items)
             .OrderByDescending(o => o.CreatedAt)
             .ToListAsync();
@@ -1741,13 +1833,18 @@ public sealed class OrdersController : ControllerBase
             .Select(order => new OrderDto
             {
                 Id = order.Id,
+                UserId = order.UserId,
                 OrderNumber = order.OrderNumber,
                 CreatedAt = order.CreatedAt,
                 UpdatedAt = order.UpdatedAt,
                 Status = order.Status,
                 TotalAmount = order.TotalAmount,
                 DiscountAmount = order.DiscountAmount,
+                ManualDiscountAmount = order.ManualDiscountAmount,
                 CouponCode = order.CouponCode,
+                Origin = order.Origin,
+                ExpiresAt = order.ExpiresAt,
+                PaymentMethod = order.PaymentMethod,
                 FullName = order.FullName,
                 PhoneNumber = order.PhoneNumber,
                 ProvinceId = order.ProvinceId,
@@ -1817,6 +1914,335 @@ public sealed class OrdersController : ControllerBase
         return Ok(dto);
     }
 
+    // ──────────── ADMIN: CUSTOMER LOOKUP & ORDER CREATION ────────────
+
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpGet("admin/customers")]
+    public async Task<ActionResult<List<AdminCustomerLookupDto>>> SearchCustomers(
+        [FromQuery] string? search = null,
+        [FromQuery] int take = 20,
+        CancellationToken ct = default)
+    {
+        take = Math.Clamp(take, 1, 50);
+
+        var query = _db.Users.AsNoTracking().Where(u => !u.IsDeleted);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(u =>
+                u.FullName.ToLower().Contains(s) ||
+                u.PhoneNumber.Contains(s) ||
+                (u.Email != null && u.Email.ToLower().Contains(s)));
+        }
+
+        return Ok(await query
+            .OrderByDescending(u => u.UpdatedAt)
+            .Take(take)
+            .Select(u => new AdminCustomerLookupDto
+            {
+                Id = u.Id,
+                FullName = u.FullName,
+                PhoneNumber = u.PhoneNumber,
+                Email = u.Email,
+                Address = u.Address,
+                PostalCode = u.PostalCode,
+                IsActive = u.IsActive,
+                IsDeleted = u.IsDeleted,
+                CartItemCount = _db.CartItems.Count(c => c.UserId == u.Id),
+                LastOrderAt = _db.Orders
+                    .Where(o => o.UserId == u.Id)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .Select(o => (DateTimeOffset?)o.CreatedAt)
+                    .FirstOrDefault()
+            })
+            .ToListAsync(ct));
+    }
+
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpGet("admin/products")]
+    public async Task<ActionResult<List<ProductDto>>> SearchOrderProducts(
+        [FromQuery] string? search = null,
+        [FromQuery] int take = 20,
+        CancellationToken ct = default)
+    {
+        take = Math.Clamp(take, 1, 50);
+
+        var query = _db.Products.AsNoTracking().Where(p => !p.IsDraft);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(p =>
+                p.Name.ToLower().Contains(s) ||
+                (p.Sku != null && p.Sku.ToLower().Contains(s)) ||
+                (p.Slug != null && p.Slug.ToLower().Contains(s)));
+        }
+
+        return Ok(await query
+            .OrderByDescending(p => p.IsAvailable)
+            .ThenBy(p => p.Name)
+            .Take(take)
+            .Select(p => new ProductDto
+            {
+                Id = p.Id,
+                Name = p.Name,
+                Slug = p.Slug,
+                Sku = p.Sku,
+                Price = p.Price,
+                DiscountPrice = p.DiscountPrice,
+                DiscountStartDate = p.DiscountStartDate,
+                DiscountExpiryDate = p.DiscountExpiryDate,
+                MainImageUrl = p.MainImageUrl,
+                IsAvailable = p.IsAvailable,
+                IsDraft = p.IsDraft,
+                StockQuantity = p.StockQuantity,
+                CategoryName = p.Category.Name
+            })
+            .ToListAsync(ct));
+    }
+
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpPost("admin/create")]
+    public async Task<ActionResult<OrderDto>> CreateAdminOrder([FromBody] AdminOrderSaveRequest request, CancellationToken ct)
+    {
+        var input = ToAdminOrderInput(request, await ResolveSiteUserIdAsync());
+        var origin = request.Publish ? OrderOrigin.AdminCart : OrderOrigin.AdminProforma;
+
+        var (order, error) = await _adminOrders.CreateAsync(
+            input, request.Publish, request.ExpiresInHours, GetAdminDisplayName(), origin, ct);
+
+        if (order == null)
+            return BadRequest(error ?? "ایجاد سفارش ناموفق بود.");
+
+        var dto = await BuildAdminOrderDtoAsync(order.Id);
+        return CreatedAtAction(nameof(GetAdminOrderDetail), new { id = order.Id }, dto);
+    }
+
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpPut("admin/{id:int}/draft")]
+    public async Task<ActionResult<OrderDto>> UpdateAdminDraft(int id, [FromBody] AdminOrderSaveRequest request, CancellationToken ct)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound();
+
+        var (ok, error) = await _adminOrders.UpdateDraftAsync(
+            order, ToAdminOrderInput(request, order.UserId), request.ExpiresInHours, GetAdminDisplayName(), ct);
+        if (!ok) return BadRequest(error ?? "ویرایش پیش‌فاکتور ناموفق بود.");
+
+        return Ok(await BuildAdminOrderDtoAsync(id));
+    }
+
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpPost("admin/{id:int}/publish")]
+    public async Task<ActionResult<OrderDto>> PublishAdminDraft(int id, CancellationToken ct)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound();
+
+        var (ok, error) = await _adminOrders.PublishAsync(order, GetAdminDisplayName(), ct);
+        if (!ok) return BadRequest(error ?? "انتشار پیش‌فاکتور ناموفق بود.");
+
+        return Ok(await BuildAdminOrderDtoAsync(id));
+    }
+
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpPost("admin/{id:int}/extend")]
+    public async Task<ActionResult<OrderDto>> ExtendAdminOrder(int id, [FromBody] AdminOrderExtendRequest request, CancellationToken ct)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound();
+
+        if (order.Status is not (OrderStatus.PendingPayment or OrderStatus.ReceiptUploaded))
+            return BadRequest("تمدید مهلت فقط برای سفارش در انتظار پرداخت یا دارای رسید ممکن است.");
+
+        var now = DateTimeOffset.UtcNow;
+        var hours = Math.Clamp(request.Hours, 1, AdminOrderService.MaxExpiryHours);
+        order.ExpiresAt = now.AddHours(hours);
+        order.UpdatedAt = now;
+
+        _db.OrderEvents.Add(new OrderEvent
+        {
+            OrderId = order.Id,
+            EventType = "expiry_extended",
+            FromStatus = order.Status,
+            ToStatus = order.Status,
+            Message = $"مهلت پرداخت {hours} ساعت تمدید شد",
+            CreatedBy = GetAdminDisplayName(),
+            CreatedAt = now
+        });
+
+        await _db.SaveChangesAsync(ct);
+        return Ok(await BuildAdminOrderDtoAsync(id));
+    }
+
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpGet("admin/{id:int}/payment-link")]
+    public async Task<ActionResult<AdminPaymentLinkDto>> GetAdminPaymentLink(int id, CancellationToken ct)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound();
+
+        if (order.Status == OrderStatus.Draft)
+            return BadRequest("این سفارش پیش‌فاکتور است؛ ابتدا آن را منتشر کنید.");
+        if (order.Status is not (OrderStatus.PendingPayment or OrderStatus.ReceiptUploaded))
+            return BadRequest("برای این سفارش لینک پرداخت فعالی وجود ندارد.");
+
+        if (string.IsNullOrWhiteSpace(order.AccessToken))
+        {
+            order.AccessToken = Guid.NewGuid().ToString("N");
+            order.UpdatedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(ct);
+        }
+
+        return Ok(new AdminPaymentLinkDto
+        {
+            OrderId = order.Id,
+            Token = order.AccessToken!,
+            Url = $"/payment/offline/{order.Id}?token={Uri.EscapeDataString(order.AccessToken!)}",
+            ExpiresAt = order.ExpiresAt
+        });
+    }
+
+    [Authorize(Policy = "perm:admin.orders.payment.manage")]
+    [HttpPost("admin/{id:int}/mark-paid")]
+    public async Task<ActionResult<OrderDto>> MarkAdminOrderPaid(int id, [FromBody] AdminOrderMarkPaidRequest request, CancellationToken ct)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound();
+
+        order.Origin = OrderOrigin.AdminPayment;
+        var (ok, error) = await _adminOrders.MarkPaidAsync(order, request, GetAdminDisplayName(), ct);
+        if (!ok) return BadRequest(error ?? "ثبت پرداخت ناموفق بود.");
+
+        return Ok(await BuildAdminOrderDtoAsync(id));
+    }
+
+    /// <summary>تأیید دستی پرداخت آنلاین با همان Authority ثبت‌شده (برای callbackهای گم‌شده).</summary>
+    [Authorize(Policy = "perm:admin.orders.payment.manage")]
+    [HttpPost("admin/{id:int}/payment/verify")]
+    public async Task<IActionResult> VerifyAdminOrderPayment(int id, CancellationToken ct)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound();
+
+        if (order.Status is OrderStatus.Approved or OrderStatus.Completed)
+            return Ok(new { success = true, alreadyApproved = true, message = "این سفارش قبلاً پرداخت‌شده است." });
+        if (order.Status is not (OrderStatus.PendingPayment or OrderStatus.ReceiptUploaded))
+            return BadRequest(new { success = false, message = "برای سفارش در وضعیت فعلی امکان تأیید پرداخت وجود ندارد." });
+        if (!order.PaymentProvider.HasValue)
+            return BadRequest(new { success = false, message = "درگاه پرداخت این سفارش ثبت نشده است؛ از «ثبت پرداخت دستی» استفاده کنید." });
+        if (string.IsNullOrWhiteSpace(order.PaymentAuthority))
+            return BadRequest(new { success = false, message = "تراکنش آنلاین ثبت‌شده‌ای برای این سفارش وجود ندارد؛ از «ثبت پرداخت دستی» استفاده کنید." });
+
+        var providerKey = PaymentProviderCatalog.ToProviderKey(order.PaymentProvider.Value);
+        if (string.IsNullOrEmpty(providerKey) || string.Equals(providerKey, "manual", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { success = false, message = "درگاه آنلاین این سفارش قابل استعلام نیست." });
+
+        var gateway = await _paymentGatewayFactory.GetGatewayByProviderAsync(providerKey, ct);
+        if (gateway == null)
+            return BadRequest(new { success = false, message = "درگاه پرداخت این سفارش فعال نیست." });
+
+        var result = await gateway.VerifyCallbackAsync(new PaymentCallbackPayload
+        {
+            OrderId = order.Id,
+            Status = "OK",
+            Authority = order.PaymentAuthority,
+            Amount = order.TotalAmount - (order.DiscountAmount ?? 0)
+        }, ct);
+
+        if (!result.Success)
+            return BadRequest(new { success = false, message = result.Message ?? "تأیید پرداخت ناموفق بود." });
+
+        var now = DateTimeOffset.UtcNow;
+        var previousStatus = order.Status;
+
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+        var approvedNow = await _db.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE Orders
+SET Status = {(int)OrderStatus.Approved},
+    Stage = CASE WHEN Stage IS NULL THEN {(int)OrderStage.PaymentConfirmed} ELSE Stage END,
+    PaymentDate = {now},
+    PaymentProvider = {(int)gateway.Provider},
+    PaymentReference = {result.GatewayUrl},
+    UpdatedAt = {now}
+WHERE Id = {order.Id}
+  AND Status IN ({(int)OrderStatus.PendingPayment}, {(int)OrderStatus.ReceiptUploaded})", ct);
+
+        if (approvedNow == 0)
+        {
+            await tx.RollbackAsync(ct);
+            await _db.Entry(order).ReloadAsync(ct);
+            if (order.Status is OrderStatus.Approved or OrderStatus.Completed)
+                return Ok(new { success = true, alreadyApproved = true, message = "این سفارش قبلاً پرداخت‌شده است." });
+
+            return BadRequest(new { success = false, message = "وضعیت سفارش هم‌زمان تغییر کرده است؛ صفحه را تازه کنید." });
+        }
+
+        await _db.Entry(order).ReloadAsync(ct);
+        await FinalizeOrderAsync(order);
+        await AddOrderEventAsync(order.Id, "payment.verified_by_admin",
+            previousStatus, OrderStatus.Approved,
+            "پرداخت آنلاین توسط مدیر استعلام و تأیید شد");
+        await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        await _db.Entry(order).ReloadAsync(ct);
+
+        await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousStatus);
+        await _notificationEvents.NotifyAsync(
+            eventType: "payment.succeeded",
+            values: new Dictionary<string, string?>
+            {
+                ["OrderNumber"] = order.OrderNumber,
+                ["Amount"] = (order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0"),
+                ["OrderId"] = order.Id.ToString()
+            },
+            idempotencyKey: $"payment.succeeded:{order.Id}",
+            fallbackSeverity: NotificationSeverity.Success,
+            fallbackTitle: "پرداخت شما با موفقیت انجام شد",
+            fallbackBody: $"مبلغ {order.TotalAmount - (order.DiscountAmount ?? 0):N0} تومان برای سفارش {order.OrderNumber} پرداخت و تأیید شد.",
+            fallbackUrl: $"/my-orders/{order.Id}",
+            appUserId: order.UserId,
+            phone: order.PhoneNumber);
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { success = true, alreadyApproved = false, message = result.Message ?? "پرداخت با موفقیت تأیید شد." });
+    }
+
+    private static AdminOrderInput ToAdminOrderInput(AdminOrderSaveRequest request, int? createdByAdminId) => new(
+        request.UserId,
+        request.FullName,
+        request.PhoneNumber,
+        request.Email,
+        request.Address,
+        request.ProvinceId,
+        request.CityId,
+        request.ProvinceName,
+        request.CityName,
+        request.PostalCode,
+        (request.Items ?? new List<OrderItemDto>())
+            .Select(i => new AdminOrderLine(i.ProductId, i.Quantity))
+            .ToList(),
+        request.CouponCode,
+        request.ManualDiscountAmount,
+        request.ShippingMethodId,
+        request.CustomerNotes,
+        request.AdminNotes,
+        createdByAdminId);
+
+    private async Task<OrderDto?> BuildAdminOrderDtoAsync(int id)
+    {
+        var order = await _db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == id);
+        if (order == null) return null;
+
+        var items = await _db.OrderItems.AsNoTracking().Where(i => i.OrderId == id).ToListAsync();
+        var shipments = await _db.OrderShipments.AsNoTracking().Where(s => s.OrderId == id).OrderBy(s => s.AttemptNumber).ToListAsync();
+        var events = await _db.OrderEvents.AsNoTracking().Where(e => e.OrderId == id).OrderBy(e => e.CreatedAt).ToListAsync();
+        var returns = await _db.OrderReturns.AsNoTracking().Where(r => r.OrderId == id).ToListAsync();
+
+        var dto = MapOrderToDto(order, items, shipments, events, returns);
+        await ApplyProductImagesAsync(new[] { dto });
+        return dto;
+    }
+
     // ──────────── ADMIN: DELETE (SAFE) ────────────
 
     [Authorize(Policy = "perm:admin.orders.manage")]
@@ -1825,6 +2251,14 @@ public sealed class OrdersController : ControllerBase
     {
         var order = await _db.Orders.FindAsync(id);
         if (order == null) return NotFound();
+
+        // سفارش دارای سابقه پرداخت/تأیید، بخشی از سابقه مالی است و نباید فیزیکی
+        // حذف شود؛ برای بستن پرونده از «لغو» استفاده شود.
+        if (order.PaymentDate.HasValue
+            || !string.IsNullOrWhiteSpace(order.PaymentReference)
+            || order.PaymentProvider.HasValue
+            || order.Status is OrderStatus.Approved or OrderStatus.Completed)
+            return BadRequest("این سفارش سابقه پرداخت/تأیید دارد و برای حفظ سابقه مالی قابل حذف نیست؛ آن را لغو کنید.");
 
         var previousStatus = order.Status;
 
@@ -1933,6 +2367,16 @@ public sealed class OrdersController : ControllerBase
 
         await using var tx = await _db.Database.BeginTransactionAsync();
 
+        // گذار وضعیت را اتمیک claim می‌کنیم؛ اگر همان لحظه پرداخت/پاکسازی
+        // وضعیت را عوض کرده باشد، تغییر ادمین آن را بازنویسی نمی‌کند.
+        var statusClaimed = await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE Orders SET Status = {(int)request.Status} WHERE Id = {order.Id} AND Status = {(int)previousStatus}");
+        if (statusClaimed == 0)
+        {
+            await tx.RollbackAsync();
+            return Conflict("وضعیت سفارش هم‌زمان توسط کاربر یا سیستم دیگری تغییر کرده است؛ صفحه را تازه کنید.");
+        }
+
         if (request.Status is OrderStatus.Rejected or OrderStatus.Cancelled)
         {
             await RestoreStockForOrderAsync(order);
@@ -1972,6 +2416,7 @@ public sealed class OrdersController : ControllerBase
 
         var statusLabels = new Dictionary<OrderStatus, string>
         {
+            { OrderStatus.Draft, "پیش‌فاکتور" },
             { OrderStatus.PendingPayment, "در انتظار پرداخت" },
             { OrderStatus.ReceiptUploaded, "رسید آپلود شد" },
             { OrderStatus.Approved, "تایید شده" },
@@ -2017,7 +2462,7 @@ public sealed class OrdersController : ControllerBase
         var order = await _db.Orders.FindAsync(id);
         if (order == null) return NotFound("سفارش یافت نشد");
 
-        if (order.Status is OrderStatus.Rejected or OrderStatus.Cancelled or OrderStatus.PendingPayment)
+        if (order.Status is OrderStatus.Rejected or OrderStatus.Cancelled or OrderStatus.PendingPayment or OrderStatus.Draft)
             return BadRequest("برای سفارش در وضعیت فعلی امکان تغییر مرحله وجود ندارد.");
 
         if (order.Stage == request.Stage)
@@ -2473,6 +2918,100 @@ public sealed class OrdersController : ControllerBase
         });
     }
 
+    // ──────────── CANCEL ORDER BY CUSTOMER ────────────
+
+    [Authorize]
+    [HttpPost("{orderId:int}/cancel")]
+    [EnableRateLimiting("commerce")]
+    public async Task<IActionResult> CancelOrderByCustomer(int orderId, [FromBody] OrderCancelRequestDto? dto)
+    {
+        var settings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
+        if (settings == null || !settings.EnableCustomerOrderCancel)
+            return BadRequest("لغو سفارش توسط مشتری در حال حاضر غیرفعال است.");
+
+        var userId = await ResolveSiteUserIdAsync();
+        if (userId == null) return Unauthorized();
+
+        var order = await _db.Orders.FindAsync(orderId);
+        if (order == null) return NotFound();
+
+        // مالکیت: یا سفارش به همین حساب تعلق دارد یا شمارهٔ ثبت‌شده با حساب یکسان است.
+        var isOwner = order.UserId.HasValue
+            ? order.UserId.Value == userId.Value
+            : await _db.Users.AnyAsync(u => u.Id == userId.Value && u.PhoneNumber == order.PhoneNumber);
+        if (!isOwner) return NotFound();
+
+        if (order.Status != OrderStatus.PendingPayment)
+            return BadRequest("فقط سفارش در انتظار پرداخت قابل لغو است.");
+
+        if (order.PaymentDate.HasValue
+            || !string.IsNullOrWhiteSpace(order.PaymentReference)
+            || !string.IsNullOrWhiteSpace(order.PaymentAuthority)
+            || order.PaymentInitiatedAt.HasValue)
+            return BadRequest("پرداخت این سفارش آغاز شده است و لغو خودکار آن ممکن نیست؛ لطفاً با پشتیبانی تماس بگیرید.");
+
+        if (await _db.OrderShipments.AnyAsync(s => s.OrderId == orderId))
+            return BadRequest("برای این سفارش مرسوله ثبت شده و امکان لغو وجود ندارد.");
+
+        var now = DateTimeOffset.UtcNow;
+        if (settings.CustomerCancelWindowHours > 0
+            && order.CreatedAt.AddHours(settings.CustomerCancelWindowHours) < now)
+            return BadRequest($"مهلت لغو این سفارش ({settings.CustomerCancelWindowHours} ساعت) به پایان رسیده است.");
+
+        var reason = (dto?.Reason ?? string.Empty).Trim();
+        if (settings.CustomerCancelRequireReason && reason.Length < 3)
+            return BadRequest("برای لغو سفارش، دلیل را وارد کنید.");
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+
+        // Claim اتمیک: اگر در همین لحظه پرداخت آغاز/تأیید شده باشد، لغو انجام نمی‌شود.
+        var claimed = await _db.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE Orders
+SET Status = {(int)OrderStatus.Cancelled}, UpdatedAt = {now}
+WHERE Id = {order.Id}
+  AND Status = {(int)OrderStatus.PendingPayment}
+  AND PaymentDate IS NULL
+  AND (PaymentReference IS NULL OR PaymentReference = '')
+  AND (PaymentAuthority IS NULL OR PaymentAuthority = '')
+  AND PaymentInitiatedAt IS NULL");
+        if (claimed == 0)
+        {
+            await tx.RollbackAsync();
+            return Conflict("وضعیت سفارش هم‌زمان تغییر کرده است؛ صفحه را تازه کنید.");
+        }
+
+        var orderItems = await LoadOrderItemsAsync(order.Id);
+        var restockCandidates = await GetOutOfStockProductIdsAsync(orderItems);
+        await RestoreStockForOrderAsync(order);
+        await ReleaseCouponUsageAsync(order.CouponId);
+
+        order.Status = OrderStatus.Cancelled;
+        order.UpdatedAt = now;
+
+        _db.OrderEvents.Add(new OrderEvent
+        {
+            OrderId = order.Id,
+            EventType = "customer_cancelled",
+            FromStatus = OrderStatus.PendingPayment,
+            ToStatus = OrderStatus.Cancelled,
+            Message = string.IsNullOrWhiteSpace(reason)
+                ? "لغو سفارش توسط مشتری پیش از پرداخت"
+                : $"لغو سفارش توسط مشتری: {reason}",
+            CreatedBy = $"customer:{userId.Value}",
+            CreatedAt = now
+        });
+
+        await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        await _stockAlerts.NotifyRestockedAsync(restockCandidates);
+
+        await _notificationEvents.NotifyOrderCustomerCancelledAsync(order, reason);
+        await _db.SaveChangesAsync();
+
+        return Ok(new { message = "سفارش لغو شد و موجودی کالاها آزاد شد." });
+    }
+
     // ──────────── PAYMENT ENDPOINTS (UNCHANGED) ────────────
 
     [AllowAnonymous]
@@ -2487,6 +3026,8 @@ public sealed class OrdersController : ControllerBase
 
         if (order.Status is OrderStatus.Approved or OrderStatus.Completed)
             return Ok(new PaymentIntentResult { Success = false, Message = "این سفارش قبلاً پرداخت شده است." });
+        if (order.Status is OrderStatus.Draft)
+            return Ok(new PaymentIntentResult { Success = false, Message = "این سفارش پیش‌فاکتور است و هنوز برای پرداخت منتشر نشده است." });
         if (order.Status is OrderStatus.Rejected or OrderStatus.Cancelled)
             return Ok(new PaymentIntentResult { Success = false, Message = "این سفارش قابل پرداخت نیست." });
         if (order.TotalAmount <= 0)
@@ -2532,6 +3073,23 @@ public sealed class OrdersController : ControllerBase
         };
 
         var result = await gateway.CreateIntentAsync(intentRequest, ct);
+
+        if (result.Success && !string.IsNullOrWhiteSpace(result.Authority))
+        {
+            // Authority را نگه می‌داریم تا تایید دستی/تشخیص پرداخت تکراری با همان تراکنش ممکن باشد.
+            order.PaymentAuthority = result.Authority.Trim();
+            order.PaymentInitiatedAt = DateTimeOffset.UtcNow;
+
+            // اگر تا پایان مهلت، پرداخت در درگاه آغاز شده باشد نباید وسط تراکنش لغو شود.
+            var timeoutMinutes = PendingOrderTimeout.GetMinutes(_config);
+            var minimumDeadline = DateTimeOffset.UtcNow.AddMinutes(Math.Max(5, timeoutMinutes));
+            if (!order.ExpiresAt.HasValue || order.ExpiresAt.Value < minimumDeadline)
+                order.ExpiresAt = minimumDeadline;
+
+            order.UpdatedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(ct);
+        }
+
         return Ok(result);
     }
 
@@ -2546,11 +3104,48 @@ public sealed class OrdersController : ControllerBase
         // وضعیت سفارش ملاک است، نه وجود PaymentReference: سفارشی که ادمین
         // تایید کرده دیگر نباید از مسیر callback دوباره «پرداخت» شود.
         if (order.Status is OrderStatus.Approved or OrderStatus.Completed)
-            return Content(PaymentResultHtml(true, "این پرداخت قبلاً تایید شده است.", order), "text/html; charset=utf-8");
+        {
+            var repeatAuthority = Request.Query["Authority"].FirstOrDefault()
+                ?? Request.Query["trackId"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(repeatAuthority)
+                && !string.IsNullOrWhiteSpace(order.PaymentAuthority)
+                && string.Equals(repeatAuthority, order.PaymentAuthority, StringComparison.Ordinal))
+            {
+                var duplicateKey = $"payment.duplicate_succeeded:{order.Id}:{repeatAuthority}";
+                var alreadyRecorded = await _db.OrderEvents.AsNoTracking()
+                    .AnyAsync(e => e.OrderId == order.Id
+                        && e.EventType == "payment.duplicate_succeeded"
+                        && e.Message != null
+                        && e.Message.Contains(repeatAuthority));
+                if (!alreadyRecorded)
+                {
+                    await AddOrderEventAsync(order.Id, "payment.duplicate_succeeded",
+                        order.Status, order.Status,
+                        $"پرداخت تکراری با همان Authority ({repeatAuthority}) دریافت شد؛ نیاز به بررسی/بازپرداخت");
+                    await _notificationEvents.NotifyAsync(
+                        eventType: "payment.duplicate_succeeded",
+                        values: new Dictionary<string, string?>
+                        {
+                            ["OrderNumber"] = order.OrderNumber,
+                            ["Amount"] = (order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0"),
+                            ["OrderId"] = order.Id.ToString()
+                        },
+                        idempotencyKey: duplicateKey,
+                        fallbackSeverity: NotificationSeverity.Warning,
+                        fallbackTitle: "پرداخت تکراری سفارش",
+                        fallbackBody: $"برای سفارش {order.OrderNumber} پرداخت تکراری با همان شناسه تراکنش دریافت شد؛ مبلغ اضافی باید بررسی/بازپرداخت شود.",
+                        fallbackUrl: $"/admin/orders/{order.Id}",
+                        appUserId: order.UserId,
+                        phone: order.PhoneNumber);
+                    await _db.SaveChangesAsync(ct);
+                }
+            }
 
-        // سفارش لغو/رد شده نباید هرگز با یک callback قابل بازگشت به «تایید شده» باشد.
-        if (order.Status is OrderStatus.Cancelled or OrderStatus.Rejected)
-            return Content(PaymentResultHtml(false, "این سفارش لغو شده است و قابل پرداخت نیست.", order), "text/html; charset=utf-8");
+            return Content(PaymentResultHtml(true, "این پرداخت قبلاً تایید شده است.", order), "text/html; charset=utf-8");
+        }
+
+        // سفارش لغو/رد شده را همان‌جا رد نمی‌کنیم: اگر کاربر پیش از لغو در درگاه
+        // پرداخت کرده باشد، باید تأیید تراکنش را ببینیم و برای بازپرداخت ثبت کنیم.
 
         var providerKey = order.PaymentProvider.HasValue
             ? PaymentProviderCatalog.ToProviderKey(order.PaymentProvider.Value)
@@ -2616,37 +3211,98 @@ public sealed class OrdersController : ControllerBase
             return Content(PaymentResultHtml(false, result.Message ?? "پرداخت ناموفق بود.", order), "text/html; charset=utf-8");
         }
 
-        if (order.Status is not (OrderStatus.Approved or OrderStatus.Completed))
+        var now = DateTimeOffset.UtcNow;
+        var previousPaymentStatus = order.Status;
+        var previousStage = order.Stage;
+
+        // ثبت پرداخت با UPDATE شرطی داخل تراکنش انجام می‌شود تا اگر همان لحظه
+        // سرویس لغو خودکار یا ادمین وضعیت را عوض کرده باشد، «تأیید پرداخت»
+        // روی سفارش لغو‌شده نوشته نشود.
+        await using var paymentTx = await _db.Database.BeginTransactionAsync(ct);
+
+        var approvedNow = await _db.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE Orders
+SET Status = {(int)OrderStatus.Approved},
+    Stage = CASE WHEN Stage IS NULL THEN {(int)OrderStage.PaymentConfirmed} ELSE Stage END,
+    PaymentDate = {now},
+    PaymentProvider = {(int)gateway.Provider},
+    PaymentReference = {result.GatewayUrl},
+    UpdatedAt = {now}
+WHERE Id = {order.Id}
+  AND Status IN ({(int)OrderStatus.PendingPayment}, {(int)OrderStatus.ReceiptUploaded})", ct);
+
+        if (approvedNow == 0)
         {
-            var previousPaymentStatus = order.Status;
-            await FinalizeOrderAsync(order);
-            order.Status = OrderStatus.Approved;
-            var stageAssignedByPayment = order.Stage == null;
-            order.Stage ??= OrderStage.PaymentConfirmed;
-            order.PaymentDate = DateTimeOffset.UtcNow;
-            order.PaymentProvider = gateway.Provider;
-            order.PaymentReference = result.GatewayUrl;
-            order.UpdatedAt = DateTimeOffset.UtcNow;
-            await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousPaymentStatus);
-            if (stageAssignedByPayment)
-                await _notificationEvents.NotifyOrderStageChangedAsync(order, null);
-            await _notificationEvents.NotifyAsync(
-                eventType: "payment.succeeded",
-                values: new Dictionary<string, string?>
-                {
-                    ["OrderNumber"] = order.OrderNumber,
-                    ["Amount"] = (order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0"),
-                    ["OrderId"] = order.Id.ToString()
-                },
-                idempotencyKey: $"payment.succeeded:{order.Id}",
-                fallbackSeverity: NotificationSeverity.Success,
-                fallbackTitle: "پرداخت شما با موفقیت انجام شد",
-                fallbackBody: $"مبلغ {order.TotalAmount - (order.DiscountAmount ?? 0):N0} تومان برای سفارش {order.OrderNumber} پرداخت و تأیید شد.",
-                fallbackUrl: $"/my-orders/{order.Id}",
-                appUserId: order.UserId,
-                phone: order.PhoneNumber);
-            await _db.SaveChangesAsync(ct);
+            await paymentTx.RollbackAsync(ct);
+            await _db.Entry(order).ReloadAsync(ct);
+
+            if (order.Status is OrderStatus.Cancelled or OrderStatus.Rejected)
+            {
+                // پول از درگاه گرفته شده ولی سفارش قبلاً لغو شده است. وضعیت را
+                // برنمی‌گردانیم (موجودی آزاد شده)، اما پرداخت را برای پیگیری
+                // مالی و بازپرداخت ثبت و به ادمین اطلاع می‌دهیم.
+                order.PaymentDate ??= now;
+                order.PaymentProvider = gateway.Provider;
+                order.PaymentReference = result.GatewayUrl;
+                order.UpdatedAt = now;
+                await AddOrderEventAsync(order.Id, "payment.succeeded_after_cancel",
+                    order.Status, order.Status,
+                    "پرداخت پس از لغو سفارش تأیید شد؛ نیاز به بازپرداخت دستی");
+                await _notificationEvents.NotifyAsync(
+                    eventType: "payment.succeeded_after_cancel",
+                    values: new Dictionary<string, string?>
+                    {
+                        ["OrderNumber"] = order.OrderNumber,
+                        ["Amount"] = (order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0"),
+                        ["OrderId"] = order.Id.ToString()
+                    },
+                    idempotencyKey: $"payment.after_cancel:{order.Id}",
+                    fallbackSeverity: NotificationSeverity.Warning,
+                    fallbackTitle: "پرداخت پس از لغو سفارش",
+                    fallbackBody: $"مبلغ {order.TotalAmount - (order.DiscountAmount ?? 0):N0} تومان برای سفارش {order.OrderNumber} پس از لغو پرداخت شد؛ نیاز به بازپرداخت دارد.",
+                    fallbackUrl: $"/admin/orders/{order.Id}",
+                    appUserId: order.UserId,
+                    phone: order.PhoneNumber);
+                await _db.SaveChangesAsync(ct);
+
+                return Content(PaymentResultHtml(false,
+                    "پرداخت شما انجام شد اما سفارش قبلاً لغو شده بود. مبلغ طی فرآیند بازپرداخت به شما بازگردانده می‌شود؛ لطفاً با پشتیبانی تماس بگیرید.",
+                    order), "text/html; charset=utf-8");
+            }
+
+            return Content(PaymentResultHtml(true, "این پرداخت قبلاً تایید شده است.", order), "text/html; charset=utf-8");
         }
+
+        // اکنون وضعیت قطعی شده است؛ کارهای نهایی (کسر موجودی سفارش‌های قدیمی و
+        // پاک‌سازی سبد) را در همان تراکنش انجام می‌دهیم.
+        await _db.Entry(order).ReloadAsync(ct);
+        if (string.IsNullOrWhiteSpace(order.PaymentAuthority) && !string.IsNullOrWhiteSpace(payload.Authority))
+            order.PaymentAuthority = payload.Authority.Trim();
+        await FinalizeOrderAsync(order);
+        await _db.SaveChangesAsync(ct);
+        await paymentTx.CommitAsync(ct);
+        await _db.Entry(order).ReloadAsync(ct);
+
+        var stageAssignedByPayment = previousStage == null && order.Stage == OrderStage.PaymentConfirmed;
+        await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousPaymentStatus);
+        if (stageAssignedByPayment)
+            await _notificationEvents.NotifyOrderStageChangedAsync(order, null);
+        await _notificationEvents.NotifyAsync(
+            eventType: "payment.succeeded",
+            values: new Dictionary<string, string?>
+            {
+                ["OrderNumber"] = order.OrderNumber,
+                ["Amount"] = (order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0"),
+                ["OrderId"] = order.Id.ToString()
+            },
+            idempotencyKey: $"payment.succeeded:{order.Id}",
+            fallbackSeverity: NotificationSeverity.Success,
+            fallbackTitle: "پرداخت شما با موفقیت انجام شد",
+            fallbackBody: $"مبلغ {order.TotalAmount - (order.DiscountAmount ?? 0):N0} تومان برای سفارش {order.OrderNumber} پرداخت و تأیید شد.",
+            fallbackUrl: $"/my-orders/{order.Id}",
+            appUserId: order.UserId,
+            phone: order.PhoneNumber);
+        await _db.SaveChangesAsync(ct);
 
         return Content(PaymentResultHtml(true, result.Message ?? "پرداخت با موفقیت انجام شد.", order), "text/html; charset=utf-8");
     }

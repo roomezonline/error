@@ -304,30 +304,66 @@ public sealed class WorkshopSmsController : ControllerBase
         });
     }
 
-    // ─── ثبت درخواست شارژ توسط کارگاه ───
+    // ─── ثبت درخواست شارژ توسط کارگاه (رسید پرداخت الزامی است) ───
     [Authorize(Policy = "perm:workshop.sms.charge.request")]
     [HttpPost("charges")]
-    public async Task<IActionResult> RequestCharge(SmsChargeSubmitRequest request)
+    [RequestSizeLimit(3 * 1024 * 1024)]
+    public async Task<IActionResult> RequestCharge(
+        [FromForm] decimal amount,
+        [FromForm] string? description,
+        IFormFile? receipt)
     {
         int wsId;
         try { wsId = ClaimsHelper.GetWorkshopId(User); }
         catch { return Forbid(); }
 
+        if (amount < 1000 || amount > 100_000_000)
+            return BadRequest("مبلغ درخواستی معتبر نیست");
+
+        if (receipt == null || receipt.Length == 0)
+            return BadRequest("بارگذاری رسید پرداخت الزامی است");
+
+        var receiptError = ValidateReceipt(receipt);
+        if (receiptError != null)
+            return BadRequest(receiptError);
+
         var tariff = (await _db.SmsSettings.FirstOrDefaultAsync())?.TariffPerSms ?? 1;
         if (tariff <= 0) return BadRequest("تعرفه پیامک تنظیم نشده است");
+
+        var uploadsDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "sms-receipts");
+        Directory.CreateDirectory(uploadsDir);
+
+        var ext = Path.GetExtension(receipt.FileName).ToLowerInvariant();
+        var fileName = $"receipt_{wsId}_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}{ext}";
+        var filePath = Path.Combine(uploadsDir, fileName);
+
+        await using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await receipt.CopyToAsync(stream);
+        }
 
         var tx = new SmsChargeTransaction
         {
             WorkshopId = wsId,
-            Amount = request.Amount,
-            SmsCount = (int)(request.Amount / tariff),
-            Description = request.Description,
+            Amount = amount,
+            SmsCount = (int)(amount / tariff),
+            Description = description,
+            ReceiptFileName = receipt.FileName,
+            ReceiptFilePath = $"/uploads/sms-receipts/{fileName}",
             Status = SmsChargeStatus.Pending,
             CreatedAt = DateTime.UtcNow
         };
 
-        _db.SmsChargeTransactions.Add(tx);
-        await _db.SaveChangesAsync();
+        try
+        {
+            _db.SmsChargeTransactions.Add(tx);
+            await _db.SaveChangesAsync();
+        }
+        catch
+        {
+            TryDeleteReceiptFile(tx.ReceiptFilePath);
+            throw;
+        }
 
         var amountText = tx.Amount.ToString("N0");
         await _notificationEvents.NotifyAsync(
@@ -348,9 +384,10 @@ public sealed class WorkshopSmsController : ControllerBase
         return Ok(new { id = tx.Id });
     }
 
-    // ─── آپلود رسید پرداخت ───
+    // ─── آپلود/جایگزینی رسید پرداخت ───
     [Authorize(Policy = "perm:workshop.sms.charge.request")]
     [HttpPost("charges/{id:int}/receipt")]
+    [RequestSizeLimit(3 * 1024 * 1024)]
     public async Task<IActionResult> UploadReceipt(int id, IFormFile file)
     {
         int wsId;
@@ -366,23 +403,57 @@ public sealed class WorkshopSmsController : ControllerBase
         if (file == null || file.Length == 0)
             return BadRequest("فایل ارسال نشده است");
 
+        var receiptError = ValidateReceipt(file);
+        if (receiptError != null)
+            return BadRequest(receiptError);
+
         var uploadsDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "sms-receipts");
         Directory.CreateDirectory(uploadsDir);
 
-        var ext = Path.GetExtension(file.FileName);
-        var fileName = $"receipt_{tx.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}{ext}";
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var fileName = $"receipt_{tx.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}{ext}";
         var filePath = Path.Combine(uploadsDir, fileName);
 
-        using (var stream = new FileStream(filePath, FileMode.Create))
+        await using (var stream = new FileStream(filePath, FileMode.Create))
         {
             await file.CopyToAsync(stream);
         }
 
+        var previousPath = tx.ReceiptFilePath;
         tx.ReceiptFileName = file.FileName;
         tx.ReceiptFilePath = $"/uploads/sms-receipts/{fileName}";
         await _db.SaveChangesAsync();
 
+        TryDeleteReceiptFile(previousPath);
+
         return Ok(new { receiptPath = tx.ReceiptFilePath });
+    }
+
+    private static string? ValidateReceipt(IFormFile file)
+    {
+        if (file.Length > 2 * 1024 * 1024)
+            return "حجم رسید باید کمتر از ۲ مگابایت باشد";
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        return ext is ".jpg" or ".jpeg" or ".png" or ".webp" or ".pdf"
+            ? null
+            : "فرمت رسید باید تصویر (JPG/PNG/WebP) یا PDF باشد";
+    }
+
+    private static void TryDeleteReceiptFile(string? receiptPath)
+    {
+        if (string.IsNullOrWhiteSpace(receiptPath))
+            return;
+
+        var fileName = Path.GetFileName(receiptPath);
+        if (string.IsNullOrWhiteSpace(fileName))
+            return;
+
+        var fullPath = Path.Combine(
+            Directory.GetCurrentDirectory(), "wwwroot", "uploads", "sms-receipts", fileName);
+
+        if (System.IO.File.Exists(fullPath))
+            System.IO.File.Delete(fullPath);
     }
 
     // ─── گزارش ارسال کارگاه ───

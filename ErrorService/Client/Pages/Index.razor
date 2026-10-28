@@ -3,6 +3,7 @@
 @using System.Net.Http.Json
 @using System.Text.Json
 @inject NavigationManager NavigationManager
+@inject ErrorService.Client.Services.SiteSettingsService SettingsService
 
 <SeoHeader 
     Title="@(settings?.SeoTitle ?? "ارورسرویس | فروشگاه لوازم الکترونیک، ابزار دقیق و تعمیر تخصصی لوازم خانگی و بردها")" 
@@ -13,45 +14,46 @@
 
 <PublicHero />
 
-<section class="container home-seo-intro" aria-labelledby="home-intro-title">
-    <div class="home-seo-intro__card">
-        <div class="home-seo-intro__icon" aria-hidden="true">
-            <span class="oi oi-wrench"></span>
-        </div>
-        <div class="home-seo-intro__body">
-            <span class="home-seo-intro__eyebrow">آشنایی با ارورسرویس</span>
-            <h2 id="home-intro-title">مرجع تخصصی تعمیرات و قطعات لوازم خانگی</h2>
-            <div class="home-seo-intro__text">
-                <p>ارورسرویس برای عیب‌یابی و تعمیر لوازم خانگی طراحی شده است. در این سایت می‌توانید کدهای خطای یخچال، ماشین لباسشویی، ظرفشویی و دیگر دستگاه‌ها را پیدا کنید. توضیحات هر کد با زبان ساده ارائه می‌شود. راهنمای بررسی اولیه نیز به شما کمک می‌کند مشکل دستگاه را بهتر بشناسید.</p>
-                <p>اگر به تعمیرکار نیاز دارید، درخواست تعمیر خود را آنلاین ثبت کنید. اطلاعات درخواست برای بررسی کارشناس ارسال می‌شود. روند پیگیری برای شما شفاف است. هدف ما کاهش زمان عیب‌یابی و ارائه خدمات مطمئن در محل است.</p>
-                <p class="home-seo-intro__last">در فروشگاه ارورسرویس، قطعات یدکی و تجهیزات فنی با توضیحات کاربردی عرضه می‌شوند. بخش آکادمی نیز آموزش‌های تعمیرات و نکات فنی را ارائه می‌کند. برای شروع می‌توانید از <a class="home-seo-intro__chip" href="/technical/error-codes">بانک کدهای خطا</a>، <a class="home-seo-intro__chip" href="/products">فروشگاه</a> یا <a class="home-seo-intro__chip" href="/admission/repair">ثبت درخواست تعمیر</a> استفاده کنید.</p>
-            </div>
-        </div>
+<section class="container home-entries" dir="rtl" aria-label="دسترسی سریع به بخش‌های اصلی">
+    <div class="home-entries__grid">
+        <a class="home-entry home-entry--shop" href="/products">
+            <span class="home-entry__icon"><span class="oi oi-box" aria-hidden="true"></span></span>
+            <span class="home-entry__body">
+                <span class="home-entry__title">فروشگاه قطعات</span>
+                <span class="home-entry__desc">قطعات یدکی و تجهیزات</span>
+            </span>
+            <span class="oi oi-arrow-left home-entry__arrow" aria-hidden="true"></span>
+        </a>
+        <a class="home-entry home-entry--error" href="/technical/error-codes">
+            <span class="home-entry__icon"><span class="oi oi-magnifying-glass" aria-hidden="true"></span></span>
+            <span class="home-entry__body">
+                <span class="home-entry__title">بانک کد خطا</span>
+                <span class="home-entry__desc">علت خطا را سریع پیدا کن</span>
+            </span>
+            <span class="oi oi-arrow-left home-entry__arrow" aria-hidden="true"></span>
+        </a>
+        <a class="home-entry home-entry--repair" href="/admission/repair">
+            <span class="home-entry__icon"><span class="oi oi-wrench" aria-hidden="true"></span></span>
+            <span class="home-entry__body">
+                <span class="home-entry__title">درخواست تعمیر</span>
+                <span class="home-entry__desc">ثبت آنلاین و پیگیری شفاف</span>
+            </span>
+            <span class="oi oi-arrow-left home-entry__arrow" aria-hidden="true"></span>
+        </a>
+        <a class="home-entry home-entry--consult" href="/technical/consultation">
+            <span class="home-entry__icon"><span class="oi oi-chat" aria-hidden="true"></span></span>
+            <span class="home-entry__body">
+                <span class="home-entry__title">مشاوره فنی</span>
+                <span class="home-entry__desc">کمک کارشناس در انتخاب</span>
+            </span>
+            <span class="oi oi-arrow-left home-entry__arrow" aria-hidden="true"></span>
+        </a>
     </div>
 </section>
 
-<nav class="container py-3" dir="rtl" aria-label="بخش‌های اصلی ارورسرویس">
-    <div class="row g-2 justify-content-center">
-        <div class="col-6 col-md-4 col-lg-2">
-            <a href="/products" class="btn btn-outline-primary w-100 rounded-pill">فروشگاه</a>
-        </div>
-        <div class="col-6 col-md-4 col-lg-2">
-            <a href="/academy" class="btn btn-outline-primary w-100 rounded-pill">آکادمی</a>
-        </div>
-        <div class="col-6 col-md-4 col-lg-2">
-            <a href="/technical/error-codes" class="btn btn-outline-primary w-100 rounded-pill">کدهای خطا</a>
-        </div>
-        <div class="col-6 col-md-4 col-lg-2">
-            <a href="/admission/repair" class="btn btn-outline-primary w-100 rounded-pill">درخواست تعمیر</a>
-        </div>
-        <div class="col-6 col-md-4 col-lg-2">
-            <a href="/technical/consultation" class="btn btn-outline-primary w-100 rounded-pill">مشاوره فنی</a>
-        </div>
-        <div class="col-6 col-md-4 col-lg-2">
-            <a href="/contact" class="btn btn-outline-primary w-100 rounded-pill">تماس با ما</a>
-        </div>
-    </div>
-</nav>
+<HomeStats />
+
+<HomeErrorCodeSearch />
 
 @if (isInitialLoading)
 {
@@ -85,10 +87,8 @@ else
         @switch (module.Key)
         {
             case SiteHomeModuleKey.Stories:
-                <div class="container" dir="rtl">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h2 class="fw-bold h5 m-0">استوریهای روز مره ارور سرویس</h2>
-                    </div>
+                <div class="container home-head-wrap" dir="rtl">
+                    <h2 class="home-head__title">استوری‌های امروز</h2>
                 </div>
                 <ErrorService.Client.Shared.Components.StoriesBar />
                 break;
@@ -101,18 +101,20 @@ else
             case SiteHomeModuleKey.LatestNews:
                 if (hasPublishedNews)
                 {
-    <div class="container my-4" dir="rtl">
+    <div class="container home-news-block" dir="rtl">
         <div class="row g-4">
             <div class="col-lg-8">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2 class="fw-bold h4 m-0">آخرین اخبار</h2>
-                    <a href="/news" class="btn btn-link text-decoration-none p-0">مشاهده همه <span class="oi oi-arrow-right small"></span></a>
+                <div class="home-head">
+                    <h2 class="home-head__title">آخرین اخبار</h2>
+                    <div class="home-head__actions">
+                        <a href="/news" class="home-more">مشاهده همه <span class="oi oi-arrow-left" aria-hidden="true"></span></a>
+                    </div>
                 </div>
                 <NewsCardView Count="3" />
             </div>
             <div class="col-lg-4">
                 <div class="h-100">
-                    <h2 class="fw-bold h5 mb-3 border-bottom pb-2">عناوین خبرها</h2>
+                    <h2 class="home-head__title mb-3">عناوین خبرها</h2>
                     <NewsListView Count="4" />
                 </div>
             </div>
@@ -120,33 +122,85 @@ else
     </div>
                 }
                 break;
+            case SiteHomeModuleKey.AcademyHub:
+                <HomeAcademyHub />
+                break;
+            case SiteHomeModuleKey.TrustStrip:
+                <HomeTrustStrip />
+                break;
             case SiteHomeModuleKey.LatestProducts:
-                <LatestProducts />
+                if (showcaseEnabled)
+                {
+                    if (firstProductModuleKey == SiteHomeModuleKey.LatestProducts)
+                    {
+                        <HomeProductShowcase ShowLatest="showLatestProductsTab"
+                                             ShowBest="showBestSellersTab"
+                                             ShowRestocked="showRestockedTab" />
+                    }
+                }
+                else
+                {
+                    <LatestProducts />
+                }
                 break;
             case SiteHomeModuleKey.BestSellers:
-                <ProductRow Title="پرفروش‌ترین محصولات"
-                            Subtitle="محصولاتی که بیشترین فروش را داشته‌اند"
-                            Endpoint="api/products/bestsellers" />
+                if (showcaseEnabled)
+                {
+                    if (firstProductModuleKey == SiteHomeModuleKey.BestSellers)
+                    {
+                        <HomeProductShowcase ShowLatest="showLatestProductsTab"
+                                             ShowBest="showBestSellersTab"
+                                             ShowRestocked="showRestockedTab" />
+                    }
+                }
+                else
+                {
+                    <ProductRow Title="پرفروش‌ترین محصولات"
+                                Endpoint="api/products/bestsellers" />
+                }
                 break;
             case SiteHomeModuleKey.Restocked:
-                <ProductRow Title="محصولات تازه و موجود"
-                            Subtitle="تازه‌ترین محصولاتی که هم‌اکنون در انبار موجود هستند"
-                            Endpoint="api/products/restocked" />
+                if (showcaseEnabled)
+                {
+                    if (firstProductModuleKey == SiteHomeModuleKey.Restocked)
+                    {
+                        <HomeProductShowcase ShowLatest="showLatestProductsTab"
+                                             ShowBest="showBestSellersTab"
+                                             ShowRestocked="showRestockedTab" />
+                    }
+                }
+                else
+                {
+                    <ProductRow Title="محصولات تازه و موجود"
+                                Endpoint="api/products/restocked" />
+                }
                 break;
             case SiteHomeModuleKey.HomeCategories:
                 <HomeCategories Categories="categories" />
                 break;
             case SiteHomeModuleKey.PopularBrands:
-                <ErrorService.Client.Shared.Components.PopularBrandsRow />
+                if (!trustStripEnabled)
+                {
+                    <ErrorService.Client.Shared.Components.PopularBrandsRow />
+                }
                 break;
             case SiteHomeModuleKey.SomeCustomers:
-                <ErrorService.Client.Shared.Components.SomeCustomersRow />
+                if (!trustStripEnabled)
+                {
+                    <ErrorService.Client.Shared.Components.SomeCustomersRow />
+                }
                 break;
             case SiteHomeModuleKey.LatestCourses:
-                <LatestCourses />
+                if (!academyHubEnabled)
+                {
+                    <LatestCourses />
+                }
                 break;
             case SiteHomeModuleKey.LatestArticles:
-                <LatestArticles />
+                if (!academyHubEnabled)
+                {
+                    <LatestArticles />
+                }
                 break;
             case SiteHomeModuleKey.TeamMembers:
                 <TeamMembers />
@@ -160,178 +214,41 @@ else
 
 }
 
-<style>
-    /* ── Home SEO intro (under hero) ── */
-    .home-seo-intro {
-        margin-top: 10px;
-        margin-bottom: 6px;
-    }
+<section class="container home-seo-intro" aria-labelledby="home-intro-title">
+    <div class="home-seo-intro__card">
+        <details class="home-seo-intro__details">
+            <summary class="home-seo-intro__summary">
+                <span class="home-seo-intro__icon" aria-hidden="true">
+                    <span class="oi oi-wrench"></span>
+                </span>
+                <span class="home-seo-intro__summary-text">
+                    <span class="home-seo-intro__eyebrow">آشنایی با ارورسرویس</span>
+                    <h2 id="home-intro-title">مرجع تخصصی تعمیرات و قطعات لوازم خانگی</h2>
+                </span>
+                <span class="oi oi-chevron-down home-seo-intro__toggle" aria-hidden="true"></span>
+            </summary>
+            <div class="home-seo-intro__body">
+                <div class="home-seo-intro__text">
+                    <p>ارورسرویس برای عیب‌یابی و تعمیر لوازم خانگی طراحی شده است. در این سایت می‌توانید کدهای خطای یخچال، ماشین لباسشویی، ظرفشویی و دیگر دستگاه‌ها را پیدا کنید. توضیحات هر کد با زبان ساده ارائه می‌شود. راهنمای بررسی اولیه نیز به شما کمک می‌کند مشکل دستگاه را بهتر بشناسید.</p>
+                    <p>اگر به تعمیرکار نیاز دارید، درخواست تعمیر خود را آنلاین ثبت کنید. اطلاعات درخواست برای بررسی کارشناس ارسال می‌شود. روند پیگیری برای شما شفاف است. هدف ما کاهش زمان عیب‌یابی و ارائه خدمات مطمئن در محل است.</p>
+                    <p class="home-seo-intro__last">در فروشگاه ارورسرویس، قطعات یدکی و تجهیزات فنی با توضیحات کاربردی عرضه می‌شوند. بخش آکادمی نیز آموزش‌های تعمیرات و نکات فنی را ارائه می‌کند. برای شروع می‌توانید از <a class="home-seo-intro__chip" href="/technical/error-codes">بانک کدهای خطا</a>، <a class="home-seo-intro__chip" href="/products">فروشگاه</a> یا <a class="home-seo-intro__chip" href="/admission/repair">ثبت درخواست تعمیر</a> استفاده کنید.</p>
+                </div>
+            </div>
+        </details>
+    </div>
+</section>
 
-    .home-seo-intro__card {
-        position: relative;
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-        border: 1px solid rgba(37, 99, 235, 0.10);
-        border-radius: 20px;
-        padding: 22px 22px 20px;
-        box-shadow: 0 8px 26px rgba(15, 23, 42, 0.06);
-        overflow: hidden;
-    }
-
-    .home-seo-intro__card::before {
-        content: "";
-        position: absolute;
-        inset-inline-start: 0;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-        background: linear-gradient(180deg, #2563eb, #38bdf8);
-    }
-
-    .home-seo-intro__card::after {
-        content: "";
-        position: absolute;
-        inset-inline-end: -70px;
-        top: -70px;
-        width: 180px;
-        height: 180px;
-        border-radius: 50%;
-        background: radial-gradient(circle, rgba(37, 99, 235, 0.10), rgba(37, 99, 235, 0) 70%);
-        pointer-events: none;
-    }
-
-    .home-seo-intro__icon {
-        flex: 0 0 auto;
-        width: 46px;
-        height: 46px;
-        border-radius: 14px;
-        display: grid;
-        place-items: center;
-        background: rgba(37, 99, 235, 0.10);
-        color: #2563eb;
-        font-size: 1.35rem;
-        margin-top: 2px;
-        z-index: 1;
-    }
-
-    .home-seo-intro__body {
-        flex: 1 1 auto;
-        min-width: 0;
-        z-index: 1;
-    }
-
-    .home-seo-intro__eyebrow {
-        display: inline-block;
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: #2563eb;
-        background: rgba(37, 99, 235, 0.08);
-        border: 1px dashed rgba(37, 99, 235, 0.40);
-        border-radius: 999px;
-        padding: 3px 12px;
-        margin-bottom: 9px;
-    }
-
-    .home-seo-intro__body h2 {
-        font-size: 1.15rem;
-        font-weight: 800;
-        color: #0f172a;
-        line-height: 1.9;
-        margin: 0 0 12px;
-        padding-bottom: 11px;
-        border-bottom: 1px dashed rgba(15, 23, 42, 0.16);
-    }
-
-    .home-seo-intro__text p {
-        font-size: 0.93rem;
-        line-height: 2.15;
-        color: #475569;
-        text-align: justify;
-        margin: 0 0 11px;
-    }
-
-    .home-seo-intro__text p:last-child {
-        margin-bottom: 0;
-    }
-
-    .home-seo-intro__text a.home-seo-intro__chip {
-        display: inline-block;
-        padding: 1px 12px;
-        margin: 2px 2px;
-        border: 1px dashed #93c5fd;
-        background: #eff6ff;
-        color: #1d4ed8;
-        border-radius: 999px;
-        font-size: 0.85rem;
-        font-weight: 700;
-        line-height: 1.9;
-        text-decoration: none;
-        white-space: nowrap;
-        transition: all 0.18s ease;
-    }
-
-    .home-seo-intro__text a.home-seo-intro__chip:hover,
-    .home-seo-intro__text a.home-seo-intro__chip:focus {
-        background: #2563eb;
-        border-color: #2563eb;
-        border-style: solid;
-        color: #ffffff;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
-    }
-
-    @@media (max-width: 575.98px) {
-        .home-seo-intro {
-            margin-top: 6px;
-        }
-
-        .home-seo-intro__card {
-            flex-direction: column;
-            gap: 12px;
-            padding: 16px 16px 15px;
-            border-radius: 16px;
-        }
-
-        .home-seo-intro__icon {
-            width: 40px;
-            height: 40px;
-            font-size: 1.15rem;
-            border-radius: 12px;
-            margin-top: 0;
-        }
-
-        .home-seo-intro__eyebrow {
-            font-size: 0.7rem;
-            padding: 2px 10px;
-            margin-bottom: 7px;
-        }
-
-        .home-seo-intro__body h2 {
-            font-size: 1rem;
-            line-height: 1.8;
-            margin-bottom: 10px;
-            padding-bottom: 9px;
-        }
-
-        .home-seo-intro__text p {
-            font-size: 0.88rem;
-            line-height: 2.05;
-            text-align: start;
-            margin-bottom: 9px;
-        }
-
-        .home-seo-intro__text a.home-seo-intro__chip {
-            font-size: 0.8rem;
-            padding: 1px 10px;
-        }
-    }
-</style>
 
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
     private bool hasPublishedNews;
+    private bool showcaseEnabled;
+    private bool academyHubEnabled;
+    private bool trustStripEnabled;
+    private bool showLatestProductsTab;
+    private bool showBestSellersTab;
+    private bool showRestockedTab;
+    private SiteHomeModuleKey? firstProductModuleKey;
     private List<CategoryDto>? categories;
     private SiteSettingsDto? settings;
     private List<SiteHomeModuleDto> orderedModules = new();
@@ -343,7 +260,7 @@ else
         try
         {
             isInitialLoading = true;
-            settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+            settings = await SettingsService.GetAsync();
 
             orgJsonLd = $"[{BuildOrgJsonLd(settings)},{BuildWebSiteJsonLd()},{BuildSiteNavigationJsonLd()}]";
 
@@ -363,8 +280,10 @@ else
                     new() { Key = SiteHomeModuleKey.SomeCustomers, IsEnabled = true, SortOrder = 21 },
                     new() { Key = SiteHomeModuleKey.LatestNews, IsEnabled = settings?.ShowLatestNews ?? true, SortOrder = 20 },
                     new() { Key = SiteHomeModuleKey.LatestProducts, IsEnabled = settings?.ShowLatestProducts ?? true, SortOrder = 30 },
-                    new() { Key = SiteHomeModuleKey.LatestCourses, IsEnabled = settings?.ShowLatestCourses ?? true, SortOrder = 40 },
-                    new() { Key = SiteHomeModuleKey.LatestArticles, IsEnabled = settings?.ShowLatestArticles ?? true, SortOrder = 45 },
+                    new() { Key = SiteHomeModuleKey.AcademyHub, IsEnabled = true, SortOrder = 40 },
+                    new() { Key = SiteHomeModuleKey.LatestCourses, IsEnabled = settings?.ShowLatestCourses ?? true, SortOrder = 41 },
+                    new() { Key = SiteHomeModuleKey.LatestArticles, IsEnabled = settings?.ShowLatestArticles ?? true, SortOrder = 42 },
+                    new() { Key = SiteHomeModuleKey.TrustStrip, IsEnabled = true, SortOrder = 47 },
                     new() { Key = SiteHomeModuleKey.TeamMembers, IsEnabled = settings?.ShowTeamMembers ?? true, SortOrder = 50 },
                     new() { Key = SiteHomeModuleKey.TechnicalGuide, IsEnabled = true, SortOrder = 22 }
                 };
@@ -384,7 +303,24 @@ else
                 foreach (var m in orderedModules.Where(m => m.Key == SiteHomeModuleKey.Restocked))
                     m.IsEnabled = settings?.EnableHomeRestocked ?? true;
 
+            // The merged sections are new; add them client-side as well so a
+            // previously persisted module list keeps working after this upgrade.
+            if (orderedModules.All(m => m.Key != SiteHomeModuleKey.AcademyHub))
+                orderedModules.Add(new() { Key = SiteHomeModuleKey.AcademyHub, IsEnabled = true, SortOrder = 40 });
+            if (orderedModules.All(m => m.Key != SiteHomeModuleKey.TrustStrip))
+                orderedModules.Add(new() { Key = SiteHomeModuleKey.TrustStrip, IsEnabled = true, SortOrder = 47 });
+
             orderedModules = orderedModules.OrderBy(x => x.SortOrder).ToList();
+            showLatestProductsTab = orderedModules.Any(m => m.Key == SiteHomeModuleKey.LatestProducts && m.IsEnabled);
+            showBestSellersTab = orderedModules.Any(m => m.Key == SiteHomeModuleKey.BestSellers && m.IsEnabled);
+            showRestockedTab = orderedModules.Any(m => m.Key == SiteHomeModuleKey.Restocked && m.IsEnabled);
+            showcaseEnabled = showLatestProductsTab || showBestSellersTab || showRestockedTab;
+            firstProductModuleKey = orderedModules
+                .Where(m => m.IsEnabled && m.Key is SiteHomeModuleKey.LatestProducts or SiteHomeModuleKey.BestSellers or SiteHomeModuleKey.Restocked)
+                .Select(m => (SiteHomeModuleKey?)m.Key)
+                .FirstOrDefault();
+            academyHubEnabled = orderedModules.Any(m => m.Key == SiteHomeModuleKey.AcademyHub && m.IsEnabled);
+            trustStripEnabled = orderedModules.Any(m => m.Key == SiteHomeModuleKey.TrustStrip && m.IsEnabled);
 
             // Render the hero and the configured shell as soon as settings are
             // available. Categories/news are below-the-fold and must not delay

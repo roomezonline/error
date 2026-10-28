@@ -385,7 +385,7 @@ public sealed class NotificationsController : ControllerBase
                     BodyTemplate = def.Body,
                     ActionUrlTemplate = def.ActionUrl,
                     BroadcastToAdmins = def.BroadcastToAdmins,
-                    Channels = NotificationChannelFlags.Internal
+                    Channels = def.Channels
                 });
             }
         }

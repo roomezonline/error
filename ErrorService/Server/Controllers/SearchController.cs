@@ -114,12 +114,35 @@ public class SearchController : ControllerBase
             })
             .ToListAsync(ct);
 
+        var articles = await _context.TrainingArticles
+            .AsNoTracking()
+            .Where(a =>
+                a.IsPublished &&
+                (a.Title.Contains(q) ||
+                 (a.Summary != null && a.Summary.Contains(q))))
+            .OrderByDescending(a => a.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .Select(a => new { a.Id, a.Title, a.Summary, a.Slug, a.CoverImageUrl })
+            .ToListAsync(ct);
+
+        var articleItems = articles.Select(a => new SearchResultItemDto
+        {
+            Type = "article",
+            Id = a.Id,
+            Title = a.Title,
+            Subtitle = a.Summary,
+            Url = "/academy/articles/" + (!string.IsNullOrWhiteSpace(a.Slug) ? a.Slug : a.Id.ToString()),
+            ImageUrl = a.CoverImageUrl
+        }).ToList();
+
         return Ok(new SearchResponseDto
         {
             Products = products,
             News = news,
             ErrorCodes = errorCodes,
-            Courses = courses
+            Courses = courses,
+            Articles = articleItems
         });
     }
 

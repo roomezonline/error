@@ -267,75 +267,372 @@ window.initReceiptPhotoZoom = (wrapId, imgId) => {
     }, true);
 })();
 
-// ==== drag-scroll.js ====
-window.initDragScroll = (element) => {
-    if (!element || element.dataset.dragScrollInit === '1') return;
-    element.dataset.dragScrollInit = '1';
+// ==== carousel.js ====
+// Digikala-style carousels: arrow navigation + mouse/pen drag-to-scroll.
+// Touch keeps native scrolling. Any element with overflow-x auto/scroll gets drag support;
+// opt out with data-no-drag-scroll. window.initDragScroll is kept for backwards compatibility.
+(function () {
+    if (window.__carouselInstalled) return;
+    window.__carouselInstalled = true;
 
-    const isRtl = getComputedStyle(element).direction === 'rtl';
+    let rtlMode = null;
+    function getRtlMode() {
+        if (rtlMode !== null) return rtlMode;
+        try {
+            const probe = document.createElement('div');
+            probe.dir = 'rtl';
+            probe.style.cssText = 'width:4px;height:1px;overflow:scroll;position:absolute;top:-9999px;left:-9999px;visibility:hidden';
+            const inner = document.createElement('div');
+            inner.style.cssText = 'width:10px;height:1px';
+            probe.appendChild(inner);
+            document.body.appendChild(probe);
+            probe.scrollLeft = 1;
+            rtlMode = probe.scrollLeft === 0 ? 1 : 2;
+            probe.remove();
+        } catch (e) {
+            rtlMode = 1;
+        }
+        return rtlMode;
+    }
 
-    let rtlNeg = null;
-    const detectRtlNeg = () => {
-        if (rtlNeg !== null) return rtlNeg;
-        const div = document.createElement('div');
-        div.dir = 'rtl';
-        div.style.cssText = 'width:4px;height:1px;overflow:scroll;position:absolute;top:-9999px';
-        const inner = document.createElement('div');
-        inner.style.cssText = 'width:10px;height:1px';
-        div.appendChild(inner);
-        document.body.appendChild(div);
-        div.scrollLeft = 1;
-        rtlNeg = div.scrollLeft === 0;
-        document.body.removeChild(div);
-        return rtlNeg;
+    function maxScroll(el) {
+        return Math.max(0, el.scrollWidth - el.clientWidth);
+    }
+
+    function scrollInfo(el) {
+        const rtl = getComputedStyle(el).direction === 'rtl';
+        return { rtl: rtl, mode: rtl ? getRtlMode() : 0 };
+    }
+
+    // Normalized position: 0 = start (right edge in RTL), max = end.
+    function readPos(el) {
+        const info = scrollInfo(el);
+        if (!info.rtl) return el.scrollLeft;
+        return info.mode === 2 ? maxScroll(el) - el.scrollLeft : -el.scrollLeft;
+    }
+
+    function rawLeft(el, pos, info) {
+        const max = maxScroll(el);
+        const clamped = Math.max(0, Math.min(max, pos));
+        if (!info.rtl) return clamped;
+        return info.mode === 2 ? max - clamped : -clamped;
+    }
+
+    function writePos(el, pos) {
+        el.scrollLeft = rawLeft(el, pos, scrollInfo(el));
+    }
+
+    function scrollSmooth(el, pos) {
+        const left = rawLeft(el, pos, scrollInfo(el));
+        try { el.scrollTo({ left: left, behavior: 'smooth' }); }
+        catch (e) { el.scrollLeft = left; }
+    }
+
+    function isHorizScrollable(el) {
+        const ox = getComputedStyle(el).overflowX;
+        return (ox === 'auto' || ox === 'scroll' || ox === 'overlay') && maxScroll(el) > 2;
+    }
+
+    function scrollerOf(target) {
+        let el = target instanceof Element ? target : null;
+        while (el && el !== document.body && el !== document.documentElement) {
+            if (el.hasAttribute('data-no-drag-scroll')) return null;
+            if (isHorizScrollable(el)) return el;
+            el = el.parentElement;
+        }
+        return null;
+    }
+
+    // ---- arrows ----
+    function stepSize(track) {
+        const first = track.firstElementChild;
+        if (first) {
+            const style = getComputedStyle(track);
+            const gap = parseFloat(style.columnGap || style.gap || '0') || 0;
+            const item = first.getBoundingClientRect().width + gap;
+            if (item > 0) {
+                const perPage = Math.max(1, Math.floor((track.clientWidth + gap) / item));
+                return Math.max(item, perPage * item - gap);
+            }
+        }
+        return Math.max(240, Math.round(track.clientWidth * 0.9));
+    }
+
+    window.initCarousel = function (trackId, prevEl, nextEl) {
+        const track = document.getElementById(trackId);
+        if (!track || !prevEl || !nextEl) return;
+        if (track.dataset.carouselInit === '1') return;
+        track.dataset.carouselInit = '1';
+
+        const arrows = prevEl.closest('.cc-arrows') || prevEl.parentElement;
+        if (arrows) arrows.classList.remove('is-hidden');
+        if (arrows) arrows.removeAttribute('data-empty');
+
+        const update = function () {
+            const max = maxScroll(track);
+            const pos = readPos(track);
+            if (arrows) {
+                if (max <= 2) arrows.classList.add('is-hidden');
+                else arrows.classList.remove('is-hidden');
+            }
+            prevEl.disabled = pos <= 2;
+            nextEl.disabled = pos >= max - 2;
+        };
+
+        prevEl.addEventListener('click', function () { stopAutoScroll(track); scrollSmooth(track, readPos(track) - stepSize(track)); });
+        nextEl.addEventListener('click', function () { stopAutoScroll(track); scrollSmooth(track, readPos(track) + stepSize(track)); });
+
+        let raf = 0;
+        const schedule = function () {
+            // Keep arrow state in sync even when animation frames are throttled
+            // (hidden/background tabs, low-power mode).
+            update();
+            if (raf) return;
+            raf = requestAnimationFrame(function () { raf = 0; update(); });
+        };
+        track.addEventListener('scroll', schedule, { passive: true });
+        track.addEventListener('load', schedule, true);
+        if (window.ResizeObserver) {
+            const ro = new ResizeObserver(schedule);
+            ro.observe(track);
+            const first = track.firstElementChild;
+            if (first) ro.observe(first);
+        }
+        window.addEventListener('resize', schedule, { passive: true });
+        update();
+        setTimeout(schedule, 350);
     };
 
-    const getMax = () => Math.max(0, element.scrollWidth - element.clientWidth);
-
-    const getNorm = () => {
-        if (!isRtl) return element.scrollLeft;
-        return detectRtlNeg() ? -element.scrollLeft : element.scrollLeft;
+    window.initDragScroll = function (element) {
+        if (element && element.classList) element.classList.add('is-drag-scroll');
     };
 
-    const setNorm = (val) => {
-        const clamped = Math.max(0, Math.min(getMax(), val));
-        if (!isRtl) { element.scrollLeft = clamped; return; }
-        element.scrollLeft = detectRtlNeg() ? -clamped : clamped;
-    };
+    // ---- drag ----
+    let drag = null;
+    let blockClick = false;
+    let clickTimer = 0;
 
-    let isDown = false;
-    let startX = 0;
-    let scrollStart = 0;
-
-    element.addEventListener('mousedown', (e) => {
+    document.addEventListener('pointerdown', function (e) {
+        if (e.pointerType === 'touch') {
+            const tel = autoTrackOf(e.target);
+            if (tel) stopAutoScroll(tel);
+            return;
+        }
         if (e.button !== 0) return;
+        const t = e.target;
+        if (t instanceof Element && t.closest("input, textarea, select, canvas, [contenteditable='true'], [data-no-drag-scroll]")) return;
+        const el = scrollerOf(t);
+        if (!el) return;
+        drag = {
+            el: el,
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            start: readPos(el),
+            rtl: getComputedStyle(el).direction === 'rtl',
+            axis: 0,
+            prevBehavior: el.style.scrollBehavior,
+            prevUserSelect: el.style.userSelect,
+            prevSnap: el.style.scrollSnapType
+        };
+        stopAutoScroll(el);
+    });
+
+    // Cancelling mousedown stops native text selection / image & link dragging
+    // while still letting the click event reach links and buttons.
+    document.addEventListener('mousedown', function (e) {
+        if (drag && e.button === 0) e.preventDefault();
+    }, true);
+
+    document.addEventListener('dragstart', function (e) {
+        if (drag) e.preventDefault();
+    }, true);
+
+    document.addEventListener('selectstart', function (e) {
+        if (drag && drag.axis === 'x') e.preventDefault();
+    }, true);
+
+    document.addEventListener('pointermove', function (e) {
+        if (!drag || e.pointerId !== drag.id) return;
+        const dx = e.clientX - drag.x;
+        const dy = e.clientY - drag.y;
+
+        if (!drag.axis) {
+            if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+            if (Math.abs(dx) <= Math.abs(dy)) { drag = null; return; }
+            drag.axis = 'x';
+            drag.el.classList.add('is-dragging');
+            drag.el.style.scrollBehavior = 'auto';
+            drag.el.style.scrollSnapType = 'none';
+            drag.el.style.userSelect = 'none';
+            try { drag.el.setPointerCapture(e.pointerId); } catch (err) { }
+            const sel = window.getSelection && window.getSelection();
+            if (sel && sel.removeAllRanges) sel.removeAllRanges();
+        }
+
+        // Content must follow the pointer. In RTL the scroll origin is the right
+        // edge, so moving forward means increasing the normalized position while
+        // the strip itself moves rightwards.
         e.preventDefault();
-        isDown = true;
-        startX = e.clientX;
-        scrollStart = getNorm();
-        element.style.cursor = 'grabbing';
-        element.style.userSelect = 'none';
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isDown) return;
-        const dx = e.clientX - startX;
-        setNorm(scrollStart + (isRtl ? dx : -dx));
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (!isDown) return;
-        isDown = false;
-        element.style.cursor = '';
-        element.style.userSelect = '';
-    });
-
-    element.addEventListener('wheel', (e) => {
-        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-        e.preventDefault();
-        setNorm(getNorm() + (isRtl ? e.deltaY : -e.deltaY) * 0.5);
+        writePos(drag.el, drag.start + (drag.rtl ? dx : -dx));
     }, { passive: false });
-};
+
+    function endDrag(e) {
+        if (!drag || (e && e.pointerId !== drag.id)) return;
+        const el = drag.el;
+        const moved = drag.axis === 'x';
+        el.classList.remove('is-dragging');
+        el.style.scrollBehavior = drag.prevBehavior;
+        el.style.scrollSnapType = drag.prevSnap;
+        el.style.userSelect = drag.prevUserSelect;
+        try { el.releasePointerCapture(drag.id); } catch (err) { }
+        drag = null;
+        if (!el.matches(':hover') && isAutoVisible(el)) startAutoScroll(el);
+        if (moved) {
+            blockClick = true;
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(function () { blockClick = false; }, 100);
+        }
+    }
+    document.addEventListener('pointerup', endDrag);
+    document.addEventListener('pointercancel', endDrag);
+    window.addEventListener('blur', function () { endDrag(); });
+
+    document.addEventListener('click', function (e) {
+        if (!blockClick) return;
+        blockClick = false;
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+    }, true);
+
+    document.addEventListener('pointerover', function (e) {
+        if (e.pointerType === 'touch') return;
+        const t = e.target;
+        if (t instanceof Element && t.closest('[data-no-drag-scroll]')) return;
+        const el = scrollerOf(t);
+        if (el && el.dataset.dragCursor !== '1') {
+            el.dataset.dragCursor = '1';
+            el.classList.add('is-drag-scroll');
+        }
+    }, { passive: true });
+
+    // ---- auto-scroll ----
+    // Opt in with data-auto-scroll="<px per second>". Runs while the row is in
+    // view and the pointer is elsewhere; hovering pauses it so only manual
+    // drag/scroll acts on the track. Desktop pointers only.
+    const autoScrolls = new WeakMap();
+    const autoVisible = new WeakSet();
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const canAutoScroll = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+    const autoObserver = canAutoScroll && 'IntersectionObserver' in window
+        ? new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                const el = entry.target;
+                if (entry.isIntersecting) {
+                    autoVisible.add(el);
+                    if (!el.matches(':hover')) startAutoScroll(el);
+                } else {
+                    autoVisible.delete(el);
+                    stopAutoScroll(el);
+                }
+            });
+        }, { threshold: 0.25 })
+        : null;
+
+    function isAutoVisible(el) {
+        return autoObserver ? autoVisible.has(el) : true;
+    }
+
+    function registerAutoScroll(el) {
+        if (!autoObserver || !el || el.dataset.autoRegistered === '1') return;
+        el.dataset.autoRegistered = '1';
+        autoObserver.observe(el);
+    }
+
+    function scanAutoScroll(root) {
+        if (!(root instanceof Element)) return;
+        if (root.matches('[data-auto-scroll]')) registerAutoScroll(root);
+        root.querySelectorAll('[data-auto-scroll]').forEach(registerAutoScroll);
+    }
+
+    function autoTrackOf(target) {
+        return target instanceof Element ? target.closest('[data-auto-scroll]') : null;
+    }
+
+    function stopAutoScroll(el) {
+        const st = autoScrolls.get(el);
+        if (!st) return;
+        cancelAnimationFrame(st.raf);
+        autoScrolls.delete(el);
+        el.classList.remove('is-auto-scrolling');
+    }
+
+    function startAutoScroll(el) {
+        if (!canAutoScroll || reduceMotion || autoScrolls.has(el) || drag) return;
+        if (!isAutoVisible(el) || !isHorizScrollable(el)) return;
+
+        const st = {
+            speed: parseFloat(el.getAttribute('data-auto-scroll')) || 24,
+            dir: 1,
+            last: performance.now(),
+            // scrollLeft rounds to whole pixels, so accumulate the fractional
+            // position here; otherwise sub-pixel steps never move the track.
+            pos: readPos(el),
+            raf: 0
+        };
+        autoScrolls.set(el, st);
+        el.classList.add('is-auto-scrolling');
+
+        const step = function (now) {
+            if (autoScrolls.get(el) !== st) return;
+            if (!el.isConnected) { stopAutoScroll(el); return; }
+            const dt = Math.min(64, Math.max(0, now - st.last)) / 1000;
+            st.last = now;
+
+            if (!(drag && drag.el === el)) {
+                const max = maxScroll(el);
+                if (max > 2) {
+                    st.pos += st.dir * st.speed * dt;
+                    if (st.pos >= max) { st.pos = max; st.dir = -1; }
+                    else if (st.pos <= 0) { st.pos = 0; st.dir = 1; }
+                    writePos(el, st.pos);
+                }
+            } else {
+                st.pos = readPos(el);
+            }
+
+            st.raf = requestAnimationFrame(step);
+        };
+        st.raf = requestAnimationFrame(step);
+    }
+
+    document.addEventListener('pointerover', function (e) {
+        if (e.pointerType === 'touch') return;
+        const el = autoTrackOf(e.target);
+        if (!el) return;
+        if (e.relatedTarget instanceof Node && el.contains(e.relatedTarget)) return;
+        stopAutoScroll(el);
+    }, { passive: true });
+
+    document.addEventListener('pointerout', function (e) {
+        const el = autoTrackOf(e.target);
+        if (!el) return;
+        if (e.relatedTarget instanceof Node && el.contains(e.relatedTarget)) return;
+        if (drag && drag.el === el) return;
+        startAutoScroll(el);
+    }, { passive: true });
+
+    scanAutoScroll(document.documentElement);
+    if (window.MutationObserver) {
+        new MutationObserver(function (mutations) {
+            mutations.forEach(function (m) {
+                m.addedNodes.forEach(scanAutoScroll);
+            });
+        }).observe(document.documentElement, { childList: true, subtree: true });
+    }
+})();
 
 // ==== lazy-video.js ====
 window.lazyVideoLoader = {
@@ -364,81 +661,69 @@ window.lazyVideoLoader = {
     }
 };
 
-// ==== hero-typewriter.js ====
-(function () {
-    const RTL_REGEX = /[\u0591-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]/;
+// ==== public-hero.js ====
+window.publicHero = {
+    init: function (element, dotnetRef) {
+        if (!element) return null;
 
-    function isRtl(text) {
-        return RTL_REGEX.test(text || "");
-    }
+        var startX = 0;
+        var startY = 0;
+        var isSwiping = false;
 
-    function sleep(ms) {
-        return new Promise((r) => setTimeout(r, ms));
-    }
-
-    async function typeInto(el, text, options) {
-        if (!el) return;
-
-        const token = (Date.now() + Math.random()).toString(16);
-        el.__typewriterToken = token;
-
-        const rtl = isRtl(text);
-        el.dir = rtl ? "rtl" : "ltr";
-
-        el.classList.add("is-typing");
-
-        // Reserve the final height before animating so typing never pushes
-        // elements below the hero and causes layout shifts (CLS).
-        el.style.minHeight = "";
-        el.textContent = text;
-        if (el.offsetHeight > 0) {
-            el.style.minHeight = el.offsetHeight + "px";
-        }
-        el.textContent = "";
-        el.style.visibility = "visible";
-
-        const speed = options?.speedMs ?? 28;
-        const startDelay = options?.startDelayMs ?? 0;
-        const pauseAtEnd = options?.pauseAtEndMs ?? 250;
-
-        if (startDelay > 0) {
-            await sleep(startDelay);
+        function onTouchStart(e) {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            isSwiping = false;
         }
 
-        for (let i = 0; i < text.length; i++) {
-            if (el.__typewriterToken !== token) return;
-            el.textContent += text[i];
-            await sleep(speed);
+        function onTouchMove(e) {
+            if (!startX) return;
+            var diffX = e.touches[0].clientX - startX;
+            var diffY = e.touches[0].clientY - startY;
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 30) {
+                isSwiping = true;
+            }
         }
 
-        if (pauseAtEnd > 0) {
-            await sleep(pauseAtEnd);
+        function onTouchEnd(e) {
+            if (!isSwiping) {
+                startX = 0;
+                return;
+            }
+            var diffX = e.changedTouches[0].clientX - startX;
+            if (Math.abs(diffX) > 50) {
+                dotnetRef.invokeMethodAsync(diffX > 0 ? 'Prev' : 'Next');
+            }
+            startX = 0;
+            isSwiping = false;
         }
 
-        if (el.__typewriterToken === token) {
-            el.classList.remove("is-typing");
-        }
-    }
+        element.addEventListener('touchstart', onTouchStart, { passive: true });
+        element.addEventListener('touchmove', onTouchMove, { passive: true });
+        element.addEventListener('touchend', onTouchEnd, { passive: true });
 
-    window.heroTypewriter = {
-        run: async function (rootSelector) {
-            const root = document.querySelector(rootSelector || ".hero__slider");
-            if (!root) return;
+        return {
+            dispose: function () {
+                element.removeEventListener('touchstart', onTouchStart);
+                element.removeEventListener('touchmove', onTouchMove);
+                element.removeEventListener('touchend', onTouchEnd);
+            }
+        };
+    },
 
-            const activeSlide = root.querySelector(".hero__slide.is-active");
-            if (!activeSlide) return;
-
-            const titleEl = activeSlide.querySelector(".hero__typedTitle");
-            const subEl = activeSlide.querySelector(".hero__typedSubtitle");
-
-            const title = (titleEl?.getAttribute("data-text") || "").trim();
-            const subtitle = (subEl?.getAttribute("data-text") || "").trim();
-
-            await typeInto(titleEl, title, { speedMs: 26, startDelayMs: 60, pauseAtEndMs: 220 });
-            await typeInto(subEl, subtitle, { speedMs: 18, startDelayMs: 80, pauseAtEndMs: 0 });
-        }
-    };
-})();
+    initVisibility: function (dotnetRef) {
+        var handler = function () {
+            dotnetRef.invokeMethodAsync('OnVisibilityChanged', !document.hidden);
+        };
+        document.addEventListener('visibilitychange', handler);
+        handler();
+        return {
+            dispose: function () {
+                document.removeEventListener('visibilitychange', handler);
+            }
+        };
+    },
+};
 
 // ==== mobile-interactions.js ====
 window.mobileInteractions = {

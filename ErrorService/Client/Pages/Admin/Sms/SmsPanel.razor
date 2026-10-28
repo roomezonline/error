@@ -421,6 +421,14 @@
                                         <a href="@ch.ReceiptFilePath" target="_blank" class="btn btn-sm btn-outline-info">
                                             <span class="oi oi-eye"></span> مشاهده رسید
                                         </a>
+                                        @if (_isSuperAdmin)
+                                        {
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    @onclick="() => DeleteReceipt(ch)"
+                                                    disabled="@(_deletingReceiptId == ch.Id)">
+                                                <span class="oi oi-trash"></span> حذف رسید
+                                            </button>
+                                        }
                                     </div>
                                 }
                                 <div class="sms-charge-card__row sms-charge-card__meta">
@@ -487,7 +495,7 @@
                                        placeholder="مثلاً ۵۰۰,۰۰۰" />
                             </div>
                             <div class="sms-form__group">
-                                <label class="sms-form__label">رسید پرداخت (اختیاری)</label>
+                                <label class="sms-form__label">رسید پرداخت <span class="text-danger">*</span></label>
                                 <div class="sms-receipt-upload">
                                     <InputFile accept="image/*,.pdf" OnChange="@OnReceiptFileSelected" />
                                     <div class="sms-receipt-upload__zone">
@@ -512,13 +520,13 @@
                                         }
                                     </div>
                                 </div>
-                                <small class="sms-form__hint">تصویر رسید واریزی یا فایل PDF (حداکثر ۲ مگابایت)</small>
+                                <small class="sms-form__hint">بارگذاری تصویر رسید واریزی یا PDF الزامی است (حداکثر ۲ مگابایت)</small>
                             </div>
                             <div class="sms-form__group">
                                 <label class="sms-form__label">توضیحات</label>
                                 <textarea class="sms-input sms-input--textarea" rows="2" bind="@_chargeRequestDesc" placeholder="توضیحات (اختیاری)"></textarea>
                             </div>
-                            <button class="btn btn-primary w-100 py-2" @onclick="SubmitChargeRequest" disabled="@(_chargeRequestValue < 1000 || _submittingCharge)">
+                            <button class="btn btn-primary w-100 py-2" @onclick="SubmitChargeRequest" disabled="@(_chargeRequestValue < 1000 || _receiptFile == null || _submittingCharge)">
                                 @(_submittingCharge ? "در حال ثبت..." : "ثبت درخواست شارژ")
                             </button>
                         </div>
@@ -831,6 +839,7 @@
     private bool _canRequestCharge;
     private bool _canViewOwnCharges;
     private bool _canViewOwnLogs;
+    private bool _isSuperAdmin;
 
     private bool _isAdminCredits => _canViewAllCredits || _canManageCredits;
     private bool _isAdminCharges => _canViewAllCharges || _canApproveCharges;
@@ -864,6 +873,7 @@
     // ─── Charges (Admin) ───
     private List<SmsChargeTransactionDto> _charges = new();
     private bool _loadingCharges;
+    private int? _deletingReceiptId;
     private int _chargeStatusFilter = -1;
     private int _chargePage = 1;
     private int _totalCharges;
@@ -925,9 +935,9 @@
     {
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = state.User;
-        var isSuperAdmin = user.HasClaim(ClaimTypes.Role, "super_admin");
+        _isSuperAdmin = user.HasClaim(ClaimTypes.Role, "super_admin");
 
-        bool HasPerm(string perm) => isSuperAdmin || user.HasClaim("perm", perm);
+        bool HasPerm(string perm) => _isSuperAdmin || user.HasClaim("perm", perm);
 
         _canManageGlobal = HasPerm("admin.sms.manage");
         _canViewAllCredits = HasPerm("admin.sms.credits.view");
@@ -1401,6 +1411,39 @@
         }
     }
 
+    private async Task DeleteReceipt(SmsChargeTransactionDto charge)
+    {
+        if (!_isSuperAdmin) return;
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            "رسید این درخواست حذف شود؟ فقط فایل رسید حذف می‌شود و وضعیت تراکنش تغییر نمی‌کند.");
+        if (!confirmed) return;
+
+        _deletingReceiptId = charge.Id;
+        try
+        {
+            var response = await Http.DeleteAsync($"api/sms-admin/charges/{charge.Id}/receipt");
+            if (response.IsSuccessStatusCode)
+            {
+                charge.ReceiptFileName = null;
+                charge.ReceiptFilePath = null;
+                ToastService.ShowSuccess("رسید پرداخت حذف شد");
+            }
+            else
+            {
+                ToastService.ShowError(await ReadApiMessageAsync(response, "حذف رسید انجام نشد"));
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا: {ex.Message}");
+        }
+        finally
+        {
+            _deletingReceiptId = null;
+        }
+    }
+
     // ─── Charge Request (Workshop submit) ───
     private void OnChargeAmountInput(ChangeEventArgs e)
     {
@@ -1452,50 +1495,56 @@
 
     private async Task SubmitChargeRequest()
     {
-        if (_chargeRequestValue < 1000) return;
+        if (_chargeRequestValue < 1000)
+        {
+            ToastService.ShowWarning("مبلغ درخواستی باید حداقل ۱,۰۰۰ تومان باشد");
+            return;
+        }
+
+        if (_receiptFile == null)
+        {
+            ToastService.ShowWarning("بارگذاری رسید پرداخت الزامی است");
+            return;
+        }
+
         _submittingCharge = true;
         try
         {
-            var response = await Http.PostAsJsonAsync("api/workshop-sms/charges",
-                new SmsChargeSubmitRequest { Amount = _chargeRequestValue, Description = _chargeRequestDesc });
+            byte[] fileBytes;
+            try
+            {
+                fileBytes = await ImageCompressionHelper.CompressIfNeededAsync(_receiptFile, JS);
+            }
+            catch
+            {
+                ToastService.ShowError("خواندن فایل رسید ممکن نشد");
+                return;
+            }
+
+            using var content = new MultipartFormDataContent();
+            content.Add(new StringContent(_chargeRequestValue.ToString(System.Globalization.CultureInfo.InvariantCulture)), "amount");
+            content.Add(new StringContent(_chargeRequestDesc ?? string.Empty), "description");
+
+            var fileContent = new ByteArrayContent(fileBytes);
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(_receiptFile.ContentType);
+            content.Add(fileContent, "receipt", _receiptFile.Name);
+
+            var response = await Http.PostAsync("api/workshop-sms/charges", content);
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<Dictionary<string, int>>();
-                var chargeId = result?["id"] ?? 0;
-
-                // Upload receipt if selected
-                if (_receiptFile != null && chargeId > 0)
-                {
-                    try
-                    {
-                        var compressed = await ImageCompressionHelper.CompressIfNeededAsync(_receiptFile, JS);
-                        using var content = new MultipartFormDataContent();
-                        content.Add(new ByteArrayContent(compressed), "file", _receiptFile.Name);
-                        var receiptResponse = await Http.PostAsync($"api/workshop-sms/charges/{chargeId}/receipt", content);
-                        if (!receiptResponse.IsSuccessStatusCode)
-                        {
-                            ToastService.ShowWarning("درخواست شارژ ثبت شد اما آپلود رسید با خطا مواجه شد");
-                        }
-                    }
-                    catch (Exception)
-                    {
-                        ToastService.ShowWarning("درخواست شارژ ثبت شد اما آپلود رسید با خطا مواجه شد");
-                    }
-                }
-
                 ToastService.ShowSuccess("درخواست شارژ با موفقیت ثبت شد");
                 _chargeRequestValue = 0;
                 _chargeRequestDisplay = "";
                 _chargeRequestDesc = "";
                 _receiptFile = null;
                 _receiptFileName = null;
+                _receiptPreviewUrl = null;
                 await LoadMyCharges();
                 await LoadDashboard();
             }
             else
             {
-                var err = await response.Content.ReadAsStringAsync();
-                ToastService.ShowError($"خطا: {err}");
+                ToastService.ShowError(await ReadApiMessageAsync(response, "ثبت درخواست شارژ انجام نشد"));
             }
         }
         catch (Exception ex)
@@ -1503,6 +1552,32 @@
             ToastService.ShowError($"خطا: {ex.Message}");
         }
         finally { _submittingCharge = false; }
+    }
+
+    private static async Task<string> ReadApiMessageAsync(HttpResponseMessage response, string fallback)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(body))
+                return fallback;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.String)
+                return doc.RootElement.GetString() ?? fallback;
+
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("message", out var message) &&
+                message.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                return message.GetString() ?? fallback;
+            }
+        }
+        catch
+        {
+        }
+
+        return fallback;
     }
 
     // ─── My Charges (Workshop history) ───

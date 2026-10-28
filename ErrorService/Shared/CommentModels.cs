@@ -35,6 +35,7 @@ public sealed class CommentDto
     public int? Rating { get; set; }
     public string CreatedAtFa { get; set; } = string.Empty;
     public string? MediaUrl { get; set; }
+    public bool IsVerifiedBuyer { get; set; }
     public List<CommentDto> Replies { get; set; } = new();
 }
 

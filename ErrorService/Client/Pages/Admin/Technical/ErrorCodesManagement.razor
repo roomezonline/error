@@ -369,6 +369,53 @@
                         <label class="ec-field__label">نکات فنی</label>
                         <InputTextArea class="ec-field__textarea" @bind-Value="editingItem.TechnicalNotes" rows="2" />
                     </div>
+
+                    <div class="ec-field">
+                        <label class="ec-field__label">ویدیوی آموزشی (اختیاری)</label>
+                        <InputText class="ec-field__input" @bind-Value="editingItem.VideoUrl"
+                                   placeholder="https://www.youtube.com/watch?v=... یا https://www.aparat.com/v/..." />
+                        <div class="ec-field__hint">لینک یوتیوب، آپارات یا ویمیو؛ در صفحه کد خطا به‌صورت ویدیو نمایش داده می‌شود.</div>
+                    </div>
+
+                    <div class="ec-field">
+                        <div class="ec-faq-head">
+                            <label class="ec-field__label">پرسش‌های متداول</label>
+                            <button type="button" class="ec-faq-add" @onclick="AddFaq">
+                                <span class="oi oi-plus"></span> افزودن پرسش
+                            </button>
+                        </div>
+                        <div class="ec-field__hint">این پرسش‌ها در صفحه عمومی نمایش داده و برای گوگل به‌صورت FAQPage ثبت می‌شوند.</div>
+
+                        @if (editingItem.Faqs.Count == 0)
+                        {
+                            <div class="ec-faq-empty">هنوز پرسشی اضافه نشده است.</div>
+                        }
+                        else
+                        {
+                            @foreach (var faq in editingItem.Faqs)
+                            {
+                                <div class="ec-faq-item">
+                                    <div class="ec-faq-item__row">
+                                        <InputText class="ec-field__input" @bind-Value="faq.Question"
+                                                   maxlength="300" placeholder="متن پرسش" />
+                                        <button type="button" class="ec-faq-remove" title="حذف پرسش"
+                                                @onclick="() => RemoveFaq(faq)">
+                                            <span class="oi oi-trash"></span>
+                                        </button>
+                                    </div>
+                                    <InputTextArea class="ec-field__textarea" @bind-Value="faq.Answer"
+                                                   rows="2" maxlength="2000" placeholder="پاسخ" />
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    <div class="ec-field">
+                        <label class="ec-field__label">قطعات مرتبط (شناسه محصول)</label>
+                        <InputText class="ec-field__input" @bind-Value="editingItem.RelatedProductIds"
+                                   placeholder="مثلاً: 12,45,88" />
+                        <div class="ec-field__hint">این قطعات در صفحه کد خطا با قیمت و لینک نمایش داده می‌شوند.</div>
+                    </div>
                 </div>
 
                 <div class="ec-modal__footer">
@@ -1159,6 +1206,73 @@
         font-weight: 600;
     }
 
+    .ec-field__hint {
+        font-size: 0.68rem;
+        color: #94a3b8;
+        margin-top: 5px;
+        line-height: 1.6;
+    }
+
+    .ec-faq-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 2px;
+    }
+    .ec-faq-head .ec-field__label { margin-bottom: 0; }
+    .ec-faq-add {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px solid #c7d2fe;
+        background: #eef2ff;
+        color: #4338ca;
+        font-size: 0.7rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .ec-faq-add:hover { background: #e0e7ff; }
+
+    .ec-faq-item {
+        margin-top: 8px;
+        padding: 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #f8fafc;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .ec-faq-item__row { display: flex; gap: 6px; align-items: center; }
+    .ec-faq-item__row .ec-field__input { padding: 9px 12px; }
+    .ec-faq-remove {
+        flex: 0 0 auto;
+        width: 34px;
+        height: 34px;
+        border-radius: 9px;
+        border: 1px solid #fecaca;
+        background: #fef2f2;
+        color: #dc2626;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .ec-faq-remove:hover { background: #fee2e2; }
+    .ec-faq-empty {
+        margin-top: 8px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #f8fafc;
+        border: 1px dashed #cbd5e1;
+        color: #94a3b8;
+        font-size: 0.72rem;
+        text-align: center;
+    }
+
     .ec-modal__footer {
         display: flex;
         gap: 8px;
@@ -1297,7 +1411,7 @@
     private async Task LoadRelatedIntoModal(ErrorCode item)
     {
         if (item.Id == editingItem.Id) return;
-        OpenModal(item);
+        await OpenModal(item);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -1639,24 +1753,38 @@
         }
     }
 
-    private void OpenModal(ErrorCode? item = null)
+    private async Task OpenModal(ErrorCode? item = null)
     {
-        editingItem = item != null
+        var source = item;
+        if (item != null && item.Id > 0)
+        {
+            try
+            {
+                source = await Http.GetFromJsonAsync<ErrorCode>($"api/technical/error-codes/{item.Id}") ?? item;
+            }
+            catch
+            {
+                source = item;
+            }
+        }
+
+        editingItem = source != null
             ? new ErrorCode
             {
-                Id = item.Id,
-                Brand = item.Brand,
-                DeviceType = item.DeviceType,
-                Code = item.Code,
-                Description = item.Description,
-                Solution = item.Solution,
-                TechnicalNotes = item.TechnicalNotes,
-                ImageUrl = item.ImageUrl,
-                Category = item.Category,
-                ModelNames = item.ModelNames,
-                RelatedProductIds = item.RelatedProductIds,
-                Documents = item.Documents != null
-                    ? item.Documents.Select(d => new ErrorCodeDocument
+                Id = source.Id,
+                Brand = source.Brand,
+                DeviceType = source.DeviceType,
+                Code = source.Code,
+                Description = source.Description,
+                Solution = source.Solution,
+                TechnicalNotes = source.TechnicalNotes,
+                ImageUrl = source.ImageUrl,
+                Category = source.Category,
+                ModelNames = source.ModelNames,
+                RelatedProductIds = source.RelatedProductIds,
+                VideoUrl = source.VideoUrl,
+                Documents = source.Documents != null
+                    ? source.Documents.Select(d => new ErrorCodeDocument
                     {
                         Id = d.Id,
                         ErrorCodeId = d.ErrorCodeId,
@@ -1665,15 +1793,37 @@
                         DocType = d.DocType,
                         SortOrder = d.SortOrder
                     }).ToList()
-                    : new List<ErrorCodeDocument>()
+                    : new List<ErrorCodeDocument>(),
+                Faqs = source.Faqs != null
+                    ? source.Faqs.OrderBy(f => f.SortOrder).Select(f => new ErrorCodeFaq
+                    {
+                        Id = f.Id,
+                        ErrorCodeId = f.ErrorCodeId,
+                        Question = f.Question,
+                        Answer = f.Answer,
+                        SortOrder = f.SortOrder
+                    }).ToList()
+                    : new List<ErrorCodeFaq>()
             }
             : new ErrorCode();
         showModal = true;
     }
 
-    private void EditDuplicate(ErrorCode item)
+    private void AddFaq()
     {
-        OpenModal(item);
+        editingItem.Faqs.Add(new ErrorCodeFaq
+        {
+            Question = string.Empty,
+            Answer = string.Empty,
+            SortOrder = editingItem.Faqs.Count
+        });
+    }
+
+    private void RemoveFaq(ErrorCodeFaq faq) => editingItem.Faqs.Remove(faq);
+
+    private async Task EditDuplicate(ErrorCode item)
+    {
+        await OpenModal(item);
     }
 
     private void CloseModal() => showModal = false;

@@ -7,6 +7,13 @@
             <div class="cs-comment__meta">
                 <div class="cs-comment__name">
                     @Comment.FullName
+                    @if (ShowVerifiedBadge && Comment.IsVerifiedBuyer)
+                    {
+                        <span class="cs-verified" title="خریدار تأییدشدهٔ این محصول">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                            خریدار تأییدشده
+                        </span>
+                    }
                     @if (IsReply)
                     {
                         <span class="cs-reply-badge">پاسخ</span>
@@ -108,7 +115,8 @@
                              OnReply="OnReply"
                              OnSubmitReply="OnSubmitReply"
                              IsAuthenticated="IsAuthenticated"
-                             AuthUserName="AuthUserName" />
+                             AuthUserName="AuthUserName"
+                             ShowVerifiedBadge="ShowVerifiedBadge" />
             }
         </div>
     }
@@ -122,6 +130,7 @@
     [Parameter] public EventCallback<CommentRequest> OnSubmitReply { get; set; }
     [Parameter] public bool IsAuthenticated { get; set; }
     [Parameter] public string? AuthUserName { get; set; }
+    [Parameter] public bool ShowVerifiedBadge { get; set; }
 
     private CommentRequest _replyForm = new();
     private bool _replyNameError, _replyContentError;

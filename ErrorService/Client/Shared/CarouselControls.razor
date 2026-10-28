@@ -1,0 +1,25 @@
+@inject IJSRuntime JS
+
+<div class="cc-arrows @(OnDark ? "cc-arrows--on-dark" : "")" role="group" aria-label="پیمایش">
+    <button type="button" class="cc-arrows__btn" data-carousel-prev @ref="prevBtn" aria-label="قبلی" title="قبلی" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
+    <button type="button" class="cc-arrows__btn" data-carousel-next @ref="nextBtn" aria-label="بعدی" title="بعدی" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+</div>
+
+@code {
+    [Parameter] public string TrackId { get; set; } = "";
+    [Parameter] public bool OnDark { get; set; }
+
+    private ElementReference prevBtn;
+    private ElementReference nextBtn;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || string.IsNullOrWhiteSpace(TrackId)) return;
+        try { await JS.InvokeVoidAsync("initCarousel", TrackId, prevBtn, nextBtn); }
+        catch { }
+    }
+}

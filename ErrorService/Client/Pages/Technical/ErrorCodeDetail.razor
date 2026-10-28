@@ -1,6 +1,8 @@
 @page "/technical/error-codes/{Brand}/{DeviceType}/{Code}"
+@using ErrorService.Shared
 @using ErrorService.Shared.Models
 @using System.Text.Json
+@using System.Text.RegularExpressions
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
@@ -63,6 +65,35 @@
             </div>
         }
 
+        <!-- Video -->
+        @if (!string.IsNullOrEmpty(videoEmbedUrl) || !string.IsNullOrEmpty(videoExternalUrl))
+        {
+            <div class="ecd-section ecd-section--video">
+                <div class="ecd-section__header">
+                    <span class="oi oi-video ecd-section__icon"></span>
+                    <h2 class="ecd-section__title">ویدیوی آموزشی</h2>
+                </div>
+                @if (!string.IsNullOrEmpty(videoEmbedUrl))
+                {
+                    <div class="ecd-video-frame">
+                        <iframe src="@videoEmbedUrl"
+                                title="ویدیوی آموزشی کد خطای @errorCode.Code"
+                                loading="lazy"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                referrerpolicy="strict-origin-when-cross-origin"
+                                allowfullscreen></iframe>
+                    </div>
+                }
+                else
+                {
+                    <a href="@videoExternalUrl" target="_blank" rel="noopener noreferrer" class="ecd-btn ecd-btn--secondary">
+                        <span class="oi oi-external-link"></span>
+                        مشاهده ویدیو
+                    </a>
+                }
+            </div>
+        }
+
         <!-- Solution -->
         <div class="ecd-section ecd-section--solution">
             <div class="ecd-section__header">
@@ -83,7 +114,63 @@
                     <h2 class="ecd-section__title">نکات فنی</h2>
                 </div>
                 <div class="ecd-section__content">
-                    @errorCode.TechnicalNotes
+                    @StripUrls(errorCode.TechnicalNotes)
+                </div>
+                @if (ExtractUrls(errorCode.TechnicalNotes).Any())
+                {
+                    <div class="ecd-notes-source">
+                        @foreach (var url in ExtractUrls(errorCode.TechnicalNotes))
+                        {
+                            <a href="@url" target="_blank" rel="noopener noreferrer" class="ecd-source-link">
+                                <span class="oi oi-external-link"></span>
+                                مشاهده منبع مرجع
+                            </a>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- FAQ -->
+        @if (publishedFaqs.Any())
+        {
+            <div class="ecd-section ecd-section--faq">
+                <div class="ecd-section__header">
+                    <span class="oi oi-question-mark ecd-section__icon"></span>
+                    <h2 class="ecd-section__title">پرسش‌های متداول</h2>
+                </div>
+                <div class="ecd-faq-list">
+                    @foreach (var faq in publishedFaqs)
+                    {
+                        <details class="ecd-faq">
+                            <summary class="ecd-faq__question">
+                                <span>@faq.Question</span>
+                                <span class="oi oi-chevron-bottom ecd-faq__chevron"></span>
+                            </summary>
+                            <div class="ecd-faq__answer">@faq.Answer</div>
+                        </details>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Documents -->
+        @if (errorCode.Documents != null && errorCode.Documents.Any())
+        {
+            <div class="ecd-section ecd-section--docs">
+                <div class="ecd-section__header">
+                    <span class="oi oi-document ecd-section__icon"></span>
+                    <h2 class="ecd-section__title">منابع و مستندات</h2>
+                </div>
+                <div class="ecd-docs-list">
+                    @foreach (var doc in errorCode.Documents.OrderBy(d => d.DocType == ErrorCodeDocumentType.Source ? 0 : 1).ThenBy(d => d.SortOrder))
+                    {
+                        <a href="@doc.Url" target="_blank" rel="noopener noreferrer" class="ecd-doc-item">
+                            <span class="oi oi-document"></span>
+                            <span>@doc.Title</span>
+                            <span class="oi oi-external-link ecd-doc-arrow"></span>
+                        </a>
+                    }
                 </div>
             </div>
         }
@@ -100,27 +187,6 @@
                     @foreach (var model in errorCode.ModelNames.Split(',', StringSplitOptions.RemoveEmptyEntries))
                     {
                         <span class="ecd-model-tag">@model.Trim()</span>
-                    }
-                </div>
-            </div>
-        }
-
-        <!-- Documents -->
-        @if (errorCode.Documents != null && errorCode.Documents.Any())
-        {
-            <div class="ecd-section ecd-section--docs">
-                <div class="ecd-section__header">
-                    <span class="oi oi-document ecd-section__icon"></span>
-                    <h2 class="ecd-section__title">مستندات مرتبط</h2>
-                </div>
-                <div class="ecd-docs-list">
-                    @foreach (var doc in errorCode.Documents.OrderBy(d => d.SortOrder))
-                    {
-                        <a href="@doc.Url" target="_blank" rel="noopener noreferrer" class="ecd-doc-item">
-                            <span class="oi oi-document"></span>
-                            <span>@doc.Title</span>
-                            <span class="oi oi-external-link ecd-doc-arrow"></span>
-                        </a>
                     }
                 </div>
             </div>
@@ -146,6 +212,55 @@
             </div>
         }
 
+        <!-- Related Products -->
+        @if (relatedProducts.Any())
+        {
+            <div class="ecd-section ecd-section--products">
+                <div class="ecd-section__header">
+                    <span class="oi oi-cart ecd-section__icon"></span>
+                    <h2 class="ecd-section__title">قطعات مرتبط</h2>
+                </div>
+                <div class="ecd-products">
+                    @foreach (var product in relatedProducts)
+                    {
+                        var price = DiscountHelper.GetEffectivePrice(product);
+                        var hasDiscount = DiscountHelper.IsActive(product);
+                        <a class="ecd-product" href="/products/@(string.IsNullOrWhiteSpace(product.Slug) ? product.Id.ToString() : product.Slug)">
+                            <div class="ecd-product__image">
+                                @if (!string.IsNullOrWhiteSpace(product.MainImageUrl))
+                                {
+                                    <img src="@product.MainImageUrl" alt="@product.Name" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <span class="oi oi-image"></span>
+                                }
+                            </div>
+                            <div class="ecd-product__body">
+                                <div class="ecd-product__name">@product.Name</div>
+                                <div class="ecd-product__price">
+                                    @if (hasDiscount)
+                                    {
+                                        <span class="ecd-product__price-current">@price.ToString("N0") تومان</span>
+                                        <del class="ecd-product__price-old">@product.Price.ToString("N0")</del>
+                                    }
+                                    else
+                                    {
+                                        <span class="ecd-product__price-current">@price.ToString("N0") تومان</span>
+                                    }
+                                </div>
+                                @if (!product.IsAvailable || product.StockQuantity <= 0)
+                                {
+                                    <div class="ecd-product__stock">ناموجود</div>
+                                }
+                            </div>
+                        </a>
+                    }
+                </div>
+                <a class="ecd-products__all" href="/products">مشاهده همه قطعات</a>
+            </div>
+        }
+
         <!-- CTA -->
         <div class="ecd-cta">
             <a href="/technical/error-codes" class="ecd-btn ecd-btn--primary">
@@ -155,6 +270,10 @@
             <a href="/admission/repair" class="ecd-btn ecd-btn--secondary">
                 <span class="oi oi-wrench"></span>
                 درخواست تعمیر
+            </a>
+            <a href="/workshops" class="ecd-btn ecd-btn--secondary">
+                <span class="oi oi-map-marker"></span>
+                کارگاه‌های نزدیک
             </a>
         </div>
     }
@@ -218,6 +337,16 @@
         border-right: 4px solid #eab308;
     }
 
+    .ecd-notes-source { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .ecd-source-link {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 12px; border-radius: 10px; background: #fff;
+        border: 1px solid #fde68a; color: #92400e;
+        font-size: 0.8rem; font-weight: 700; text-decoration: none;
+        transition: all 0.2s;
+    }
+    .ecd-source-link:hover { background: #fffbeb; border-color: #f59e0b; color: #78350f; }
+
     .ecd-model-tags { display: flex; flex-wrap: wrap; gap: 8px; }
     .ecd-model-tag {
         padding: 6px 14px; border-radius: 10px; font-size: 0.8rem;
@@ -247,7 +376,8 @@
     }
     .ecd-related-desc { font-size: 0.75rem; color: #64748b; line-height: 1.4; }
 
-    .ecd-cta { display: flex; gap: 10px; margin-top: 24px; }
+    .ecd-cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    .ecd-cta .ecd-btn { min-width: 150px; }
     .ecd-btn {
         flex: 1; display: flex; align-items: center; justify-content: center;
         gap: 8px; padding: 14px; border-radius: 14px; font-size: 0.9rem;
@@ -275,6 +405,60 @@
     .ecd-skeleton-wrap { padding: 20px; }
     @@keyframes ecd-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 
+    .ecd-video-frame {
+        position: relative; width: 100%; aspect-ratio: 16 / 9;
+        border-radius: 12px; overflow: hidden; background: #000;
+    }
+    .ecd-video-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+    .ecd-faq-list { display: flex; flex-direction: column; gap: 8px; }
+    .ecd-faq {
+        border: 1px solid #e2e8f0; border-radius: 12px;
+        background: #f8fafc; overflow: hidden;
+    }
+    .ecd-faq[open] { background: #fff; border-color: #c7d2fe; }
+    .ecd-faq__question {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 13px 16px; cursor: pointer; list-style: none;
+        font-size: 0.88rem; font-weight: 700; color: #1e293b;
+    }
+    .ecd-faq__question::-webkit-details-marker { display: none; }
+    .ecd-faq__chevron { color: #94a3b8; font-size: 0.7rem; transition: transform 0.2s; }
+    .ecd-faq[open] .ecd-faq__chevron { transform: rotate(180deg); color: #6366f1; }
+    .ecd-faq__answer {
+        padding: 0 16px 14px; color: #475569; font-size: 0.85rem;
+        line-height: 1.9; white-space: pre-line;
+    }
+
+    .ecd-products {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;
+    }
+    .ecd-product {
+        display: flex; flex-direction: column; overflow: hidden;
+        border: 1px solid #e2e8f0; border-radius: 12px; background: #fff;
+        text-decoration: none; color: inherit; transition: all 0.2s;
+    }
+    .ecd-product:hover { border-color: #6366f1; box-shadow: 0 4px 12px rgba(99,102,241,0.12); }
+    .ecd-product__image {
+        height: 110px; background: #f8fafc; color: #cbd5e1;
+        display: flex; align-items: center; justify-content: center; font-size: 1.5rem;
+    }
+    .ecd-product__image img { width: 100%; height: 100%; object-fit: contain; }
+    .ecd-product__body { display: flex; flex-direction: column; gap: 4px; padding: 10px; }
+    .ecd-product__name {
+        font-size: 0.78rem; font-weight: 700; color: #1e293b; line-height: 1.5;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .ecd-product__price { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+    .ecd-product__price-current { font-size: 0.8rem; font-weight: 800; color: #0f766e; }
+    .ecd-product__price-old { font-size: 0.7rem; color: #94a3b8; }
+    .ecd-product__stock { font-size: 0.68rem; font-weight: 700; color: #dc2626; }
+    .ecd-products__all {
+        display: block; margin-top: 12px; text-align: center;
+        font-size: 0.8rem; font-weight: 700; color: #6366f1; text-decoration: none;
+    }
+    .ecd-products__all:hover { text-decoration: underline; }
+
     @@media (min-width: 768px) {
         .ecd-page { padding: 32px 24px 60px; }
         .ecd-hero { padding: 36px 32px; }
@@ -283,13 +467,23 @@
 </style>
 
 @code {
+    private static readonly Regex NoteUrlRegex = new(@"https?://[^\s<>""']+", RegexOptions.IgnoreCase);
+
     [Parameter] public string Brand { get; set; } = "";
     [Parameter] public string DeviceType { get; set; } = "";
     [Parameter] public string Code { get; set; } = "";
 
     private ErrorCode? errorCode;
     private List<ErrorCode> relatedCodes = new();
+    private List<ProductDto> relatedProducts = new();
     private bool isLoading = true;
+    private string? videoEmbedUrl;
+    private string? videoExternalUrl;
+
+    private List<ErrorCodeFaq> publishedFaqs => errorCode?.Faqs?
+        .Where(f => !string.IsNullOrWhiteSpace(f.Question) && !string.IsNullOrWhiteSpace(f.Answer))
+        .OrderBy(f => f.SortOrder)
+        .ToList() ?? new();
 
     private string pageTitle = "کد خطا | ارورسرویس";
     private string pageDescription = "";
@@ -325,6 +519,7 @@
             pageDescription = $"کد خطای {errorCode.Code} مربوط به {errorCode.DeviceType} برند {errorCode.Brand}: {errorCode.Description}. راه حل: {Truncate(errorCode.Solution, 150)}";
             pageKeywords = $"کد خطا {errorCode.Code}, ارور {errorCode.Brand}, {errorCode.DeviceType}, {errorCode.Description}, تعمیرات {errorCode.Brand}";
 
+            ParseVideo(errorCode.VideoUrl);
             BuildJsonLd();
             var b = errorCode.Brand.Trim().ToLowerInvariant();
             var d = errorCode.DeviceType.Trim().ToLowerInvariant();
@@ -338,6 +533,8 @@
                 ) ?? new();
             }
             catch { relatedCodes = new(); }
+
+            await LoadRelatedProductsAsync(errorCode.RelatedProductIds);
         }
         catch
         {
@@ -387,7 +584,163 @@
             }
         };
 
-        jsonLd = $"[{JsonSerializer.Serialize(techArticle)},{JsonSerializer.Serialize(breadcrumbList)}]";
+        var jsonParts = new List<string>
+        {
+            JsonSerializer.Serialize(techArticle),
+            JsonSerializer.Serialize(breadcrumbList)
+        };
+
+        if (publishedFaqs.Any())
+        {
+            var faqPage = new Dictionary<string, object?>
+            {
+                ["@context"] = "https://schema.org",
+                ["@type"] = "FAQPage",
+                ["mainEntity"] = publishedFaqs.Select(f => new Dictionary<string, object?>
+                {
+                    ["@type"] = "Question",
+                    ["name"] = f.Question,
+                    ["acceptedAnswer"] = new Dictionary<string, object?>
+                    {
+                        ["@type"] = "Answer",
+                        ["text"] = f.Answer
+                    }
+                }).ToArray()
+            };
+            jsonParts.Add(JsonSerializer.Serialize(faqPage));
+        }
+
+        jsonLd = $"[{string.Join(",", jsonParts)}]";
+    }
+
+    private async Task LoadRelatedProductsAsync(string? relatedProductIds)
+    {
+        var ids = ParseProductIds(relatedProductIds);
+        if (ids.Count == 0) return;
+
+        try
+        {
+            relatedProducts = await Http.GetFromJsonAsync<List<ProductDto>>(
+                $"api/products/by-ids?ids={string.Join(",", ids)}") ?? new();
+        }
+        catch
+        {
+            relatedProducts = new();
+        }
+    }
+
+    private static List<int> ParseProductIds(string? value) =>
+        (value ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => int.TryParse(x.Trim(), out var id) ? id : 0)
+            .Where(id => id > 0)
+            .Distinct()
+            .Take(6)
+            .ToList();
+
+    private void ParseVideo(string? url)
+    {
+        videoEmbedUrl = null;
+        videoExternalUrl = null;
+
+        if (string.IsNullOrWhiteSpace(url)) return;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return;
+
+        var host = uri.Host.ToLowerInvariant();
+        var path = uri.AbsolutePath.Trim('/');
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        if (host == "youtu.be")
+        {
+            var id = segments.FirstOrDefault() ?? string.Empty;
+            if (IsYouTubeId(id))
+            {
+                videoEmbedUrl = $"https://www.youtube-nocookie.com/embed/{id}";
+                return;
+            }
+        }
+
+        if (host.EndsWith("youtube.com") || host.EndsWith("youtube-nocookie.com"))
+        {
+            var id = path.StartsWith("watch")
+                ? GetQueryValue(uri, "v")
+                : segments.Length > 1 && (segments[0] is "shorts" or "embed" or "live")
+                    ? segments[1]
+                    : string.Empty;
+
+            if (IsYouTubeId(id))
+            {
+                videoEmbedUrl = $"https://www.youtube-nocookie.com/embed/{id}";
+                return;
+            }
+        }
+
+        if (host.EndsWith("aparat.com"))
+        {
+            var index = Array.IndexOf(segments, "v");
+            if (index < 0) index = Array.IndexOf(segments, "videohash");
+            var hash = index >= 0 && index + 1 < segments.Length ? segments[index + 1] : string.Empty;
+
+            if (IsSimpleVideoId(hash))
+            {
+                videoEmbedUrl = $"https://www.aparat.com/video/video/embed/videohash/{hash}/vt/frame";
+                return;
+            }
+        }
+
+        if (host.EndsWith("vimeo.com"))
+        {
+            var id = segments.LastOrDefault() ?? string.Empty;
+            if (id.Length >= 5 && id.All(char.IsDigit))
+            {
+                videoEmbedUrl = $"https://player.vimeo.com/video/{id}";
+                return;
+            }
+        }
+
+        videoExternalUrl = uri.ToString();
+    }
+
+    private static bool IsYouTubeId(string value) =>
+        value.Length is >= 6 and <= 20 && value.All(c => char.IsLetterOrDigit(c) || c is '-' or '_');
+
+    private static bool IsSimpleVideoId(string value) =>
+        value.Length is >= 5 and <= 30 && value.All(char.IsLetterOrDigit);
+
+    private static string GetQueryValue(Uri uri, string key)
+    {
+        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (parts.Length == 2 && parts[0].Equals(key, StringComparison.OrdinalIgnoreCase))
+                return Uri.UnescapeDataString(parts[1]);
+        }
+        return string.Empty;
+    }
+
+    private static string StripUrls(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "";
+
+        var cleaned = NoteUrlRegex.Replace(text, " ");
+        cleaned = Regex.Replace(cleaned, @"[\r\n]+", " ");
+        cleaned = Regex.Replace(cleaned, @"[ \t]{2,}", " ");
+        return cleaned.Trim();
+    }
+
+    private static List<string> ExtractUrls(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return new();
+
+        var urls = new List<string>();
+        foreach (Match match in NoteUrlRegex.Matches(text))
+        {
+            var url = match.Value.TrimEnd('.', ',', ';', '،', '؛', ')', ']', '}', '>', '»');
+            if (url.Length > 0 && !urls.Any(u => string.Equals(u, url, StringComparison.OrdinalIgnoreCase)))
+                urls.Add(url);
+        }
+        return urls;
     }
 
     private string Truncate(string? text, int max)

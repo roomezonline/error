@@ -56,6 +56,11 @@ namespace ErrorService.Server.Data.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<long>("CartRevision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
                     b.Property<int?>("ChatAiDailyLimitOverride")
                         .HasColumnType("int");
 
@@ -1283,6 +1288,25 @@ namespace ErrorService.Server.Data.Migrations
                     b.ToTable("DigitalCommitments");
                 });
 
+            modelBuilder.Entity("ErrorService.Server.Models.HostInfoSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<double>("QuotaGb")
+                        .HasColumnType("float");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("HostInfoSettings");
+                });
+
             modelBuilder.Entity("ErrorService.Server.Models.MessengerEndpoint", b =>
                 {
                     b.Property<int>("Id")
@@ -2344,6 +2368,9 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<int?>("CreatedByAdminId")
+                        .HasColumnType("int");
+
                     b.Property<string>("CustomerNotes")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
@@ -2355,6 +2382,9 @@ namespace ErrorService.Server.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2364,13 +2394,32 @@ namespace ErrorService.Server.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<decimal?>("ManualDiscountAmount")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<string>("OrderNumber")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<int>("Origin")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<string>("PaymentAuthority")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<DateTimeOffset?>("PaymentDate")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("PaymentInitiatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<int?>("PaymentProvider")
                         .HasColumnType("int");
@@ -2461,6 +2510,8 @@ namespace ErrorService.Server.Data.Migrations
                     b.HasIndex("UserId");
 
                     b.HasIndex("Status", "CreatedAt");
+
+                    b.HasIndex("Status", "ExpiresAt");
 
                     b.ToTable("Orders");
                 });
@@ -3158,6 +3209,9 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<int>("Rating")
                         .HasColumnType("int");
 
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ParentId");
@@ -3848,6 +3902,15 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<string>("ChatWelcomeMessage")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("CompareMaxItems")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("CustomerCancelRequireReason")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("CustomerCancelWindowHours")
+                        .HasColumnType("int");
+
                     b.Property<string>("DefaultOgImage")
                         .HasColumnType("nvarchar(max)");
 
@@ -3861,6 +3924,15 @@ namespace ErrorService.Server.Data.Migrations
                         .HasColumnType("bit");
 
                     b.Property<bool>("EnableBaleNotifications")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableBreadcrumb")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableCompare")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableCustomerOrderCancel")
                         .HasColumnType("bit");
 
                     b.Property<bool>("EnableDeliveryEta")
@@ -3878,7 +3950,16 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<bool>("EnableHomeBestSellers")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("EnableHomeErrorSearch")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("EnableHomeRestocked")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableHomeStats")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableMegaMenu")
                         .HasColumnType("bit");
 
                     b.Property<bool>("EnableOnlineChat")
@@ -3896,6 +3977,9 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<bool>("EnableProductReviews")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("EnableQuickView")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("EnableRecentlyViewed")
                         .HasColumnType("bit");
 
@@ -3906,6 +3990,9 @@ namespace ErrorService.Server.Data.Migrations
                         .HasColumnType("bit");
 
                     b.Property<bool>("EnableReturnRequests")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableReviewGallery")
                         .HasColumnType("bit");
 
                     b.Property<bool>("EnableReviewMedia")
@@ -3920,6 +4007,9 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<bool>("EnableStockAlert")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("EnableStructuredAddress")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("EnableTelegramChat")
                         .HasColumnType("bit");
 
@@ -3927,6 +4017,9 @@ namespace ErrorService.Server.Data.Migrations
                         .HasColumnType("bit");
 
                     b.Property<bool>("EnableTrustBar")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("EnableVerifiedBuyerBadge")
                         .HasColumnType("bit");
 
                     b.Property<bool>("EnableWishlist")
@@ -3938,6 +4031,9 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<string>("GoogleAnalyticsTag")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("HomeErrorSearchMaxResults")
+                        .HasColumnType("int");
+
                     b.Property<int>("HstsMaxAgeDays")
                         .HasColumnType("int");
 
@@ -3946,6 +4042,12 @@ namespace ErrorService.Server.Data.Migrations
 
                     b.Property<int>("MaxImageUploadSizeKb")
                         .HasColumnType("int");
+
+                    b.Property<bool>("RequirePostalCode")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("RequireProvinceCity")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("RequireReviewApproval")
                         .HasColumnType("bit");
@@ -3981,6 +4083,9 @@ namespace ErrorService.Server.Data.Migrations
                         .HasColumnType("bit");
 
                     b.Property<bool>("ShowLatestProducts")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ShowOrderCountStat")
                         .HasColumnType("bit");
 
                     b.Property<bool>("ShowSpecialOffers")
@@ -5425,6 +5530,10 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<string>("TechnicalNotes")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("VideoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Brand", "DeviceType", "Code")
@@ -5489,6 +5598,37 @@ namespace ErrorService.Server.Data.Migrations
                     b.HasIndex("ErrorCodeId", "SortOrder");
 
                     b.ToTable("ErrorCodeDocuments");
+                });
+
+            modelBuilder.Entity("ErrorService.Shared.Models.ErrorCodeFaq", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Answer")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("ErrorCodeId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Question")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ErrorCodeId", "SortOrder");
+
+                    b.ToTable("ErrorCodeFaqs");
                 });
 
             modelBuilder.Entity("ErrorService.Shared.Models.FooterLink", b =>
@@ -6579,6 +6719,15 @@ namespace ErrorService.Server.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ErrorService.Shared.Models.ErrorCodeFaq", b =>
+                {
+                    b.HasOne("ErrorService.Shared.Models.ErrorCode", null)
+                        .WithMany("Faqs")
+                        .HasForeignKey("ErrorCodeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ErrorService.Shared.Models.FooterLink", b =>
                 {
                     b.HasOne("ErrorService.Shared.Models.FooterLinkGroup", null)
@@ -6744,6 +6893,8 @@ namespace ErrorService.Server.Data.Migrations
             modelBuilder.Entity("ErrorService.Shared.Models.ErrorCode", b =>
                 {
                     b.Navigation("Documents");
+
+                    b.Navigation("Faqs");
                 });
 
             modelBuilder.Entity("ErrorService.Shared.Models.FooterLinkGroup", b =>

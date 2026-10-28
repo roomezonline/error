@@ -40,6 +40,9 @@ public class Order
     public decimal TotalAmount { get; set; }
     [Column(TypeName = "decimal(18,2)")]
     public decimal? DiscountAmount { get; set; }
+    /// <summary>سهم تخفیف دستی ادمین در DiscountAmount (برای بازمحاسبهٔ کوپن هنگام انتشار).</summary>
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal? ManualDiscountAmount { get; set; }
     public int? CouponId { get; set; }
     public string? CouponCode { get; set; }
 
@@ -85,6 +88,24 @@ public class Order
 
     [MaxLength(200)]
     public string? PaymentReference { get; set; }
+
+    /// <summary>Authority درگاه آنلاین برای جلوگیری از پرداخت دوباره/جعل callback.</summary>
+    [MaxLength(200)]
+    public string? PaymentAuthority { get; set; }
+
+    public DateTimeOffset? PaymentInitiatedAt { get; set; }
+
+    /// <summary>روش ثبت پرداخت دستی توسط ادمین: cash | card_to_card | pos | transfer | other.</summary>
+    [MaxLength(30)]
+    public string? PaymentMethod { get; set; }
+
+    /// <summary>منشأ سفارش: مشتری یا ساخت ادمین (سبد/پیش‌فاکتور/پرداخت نیابتی).</summary>
+    public OrderOrigin Origin { get; set; } = OrderOrigin.Customer;
+
+    public int? CreatedByAdminId { get; set; }
+
+    /// <summary>مهلت پرداخت سفارش (برای Draft/سفارش‌های آمادهٔ پرداخت ادمین)؛ پاک‌سازی خودکار از آن استفاده می‌کند.</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
 
     [MaxLength(1000)]
     public string? AdminNotes { get; set; }

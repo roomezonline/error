@@ -6,7 +6,7 @@
 {
     @if (members != null && members.Any())
     {
-        <section class="team-section py-5 position-relative overflow-hidden" dir="rtl">
+        <section class="team-section home-section position-relative overflow-hidden" dir="rtl">
             <!-- Abstract Background Elements -->
             <div class="team-bg-decoration">
                 <div class="blob blob-1"></div>
@@ -14,14 +14,13 @@
             </div>
 
             <div class="container-fluid px-2 px-md-4 position-relative">
-                <div class="text-center mb-5">
-                    <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2 mb-2 fw-bold animate__animated animate__fadeInDown">همکاران ما</span>
+                <div class="text-center mb-4">
                     <h2 class="fw-black display-5 mb-3 animate__animated animate__fadeInUp">تیم ارور سرویس</h2>
                     <div class="mx-auto bg-primary rounded-pill" style="width: 60px; height: 4px;"></div>
                 </div>
 
                 <!-- Mobile: Horizontal Scroll | Desktop: Grid -->
-                <div class="team-container mt-5">
+                <div class="team-container mt-4">
                     @foreach (var member in members)
                     {
                         var delay = (members.IndexOf(member) * 0.5).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "s";
@@ -32,7 +31,7 @@
                                         @if (!string.IsNullOrEmpty(member.PhotoUrl))
                                         {
                                             <div class="avatar-ring" style="animation-delay: @delay"></div>
-                                            <img src="@member.PhotoUrl" loading="lazy" class="team-card__img" alt="@member.FullName" style="object-position:@GetPhotoObjectPosition(member.PhotoUrl);" />
+                                            <img src="@ImageUrlHelper.Thumb(member.PhotoUrl, 200)" loading="lazy" decoding="async" class="team-card__img" alt="@member.FullName" style="object-position:@GetPhotoObjectPosition(member.PhotoUrl);" />
                                         }
                                         else
                                         {
@@ -146,6 +145,7 @@
     @@media (min-width: 900px) {
         .team-container {
             padding: 8px 8px 18px 8px;
+            scroll-snap-type: none;
         }
 
         .team-card__inner {
@@ -350,6 +350,7 @@
 
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
+    [Inject] private ErrorService.Client.Services.SiteSettingsService SettingsService { get; set; } = default!;
     private List<TeamMemberDto>? members;
     private SiteSettingsDto? settings;
 
@@ -357,7 +358,7 @@
     {
         try
         {
-            settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+            settings = await SettingsService.GetAsync();
             if (settings != null && !settings.ShowTeamMembers) return;
 
             members = await Http.GetFromJsonAsync<List<TeamMemberDto>>("api/teammembers?onlyPublished=true");

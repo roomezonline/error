@@ -32,6 +32,8 @@ namespace ErrorService.Client.Services
         private async Task ApplyTheme()
         {
             await _js.InvokeVoidAsync("document.documentElement.setAttribute", "data-theme", _isDarkMode ? "dark" : "light");
+            await _js.InvokeVoidAsync("document.documentElement.classList.toggle", "app-dark", _isDarkMode);
+            try { await _js.InvokeVoidAsync("esApplyThemeColor", _isDarkMode); } catch { }
         }
 
         public event Action? OnChange;

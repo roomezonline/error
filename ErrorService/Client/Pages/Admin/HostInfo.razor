@@ -8,7 +8,19 @@
 @inject IJSRuntime JS
 <PageTitle>تحلیل فضای ذخیره‌سازی هاست</PageTitle>
 <div class="hi-page" dir="rtl">
-<header class="hi-header"><div><h1><span class="oi oi-hard-drive"></span> تحلیل فضای ذخیره‌سازی هاست</h1><p>وضعیت دیسک، فایل‌های برنامه، مصرف پایگاه داده و پردازش‌ها</p></div><div class="hi-actions"><button @onclick="RefreshAsync" disabled="@_busy"><span class="oi oi-reload"></span> بروزرسانی تحلیل</button></div></header>
+<header class="hi-header"><div><h1><span class="oi oi-hard-drive"></span> تحلیل فضای ذخیره‌سازی هاست</h1><p>وضعیت دیسک، فایل‌های برنامه، مصرف پایگاه داده و پردازش‌ها</p></div><div class="hi-actions"><button @onclick="RefreshAsync" disabled="@_busy"><span class="oi oi-reload"></span> بروزرسانی تحلیل</button><button type="button" class="hi-settings-btn" @onclick="OpenSettings" disabled="@(_info is null)"><span class="oi oi-cog"></span> تنظیم فضای کل</button></div></header>
+@if(_showSettings)
+{
+<div class="hi-modal-backdrop" @onclick="CloseSettings"></div>
+<div class="hi-modal" role="dialog" aria-modal="true" aria-labelledby="hi-settings-title">
+<div class="hi-modal-head"><h3 id="hi-settings-title"><span class="oi oi-cog"></span> تنظیم فضای کل هاست</h3><button type="button" class="hi-modal-close" @onclick="CloseSettings" aria-label="بستن">×</button></div>
+<p class="hi-modal-desc">فضای اختصاص‌یافته به این هاست را به گیگابایت وارد کنید. ظرفیت کل و درصد مصرف بر همین مبنا محاسبه می‌شود.</p>
+<label class="hi-field"><span>فضای کل (گیگابایت)</span><input type="text" inputmode="decimal" dir="ltr" @bind="_quotaInput" @bind:event="oninput" placeholder="مثلاً 2" /></label>
+<div class="hi-hint">مقدار <b>0</b> یعنی محاسبه بر اساس کل فضای دیسک سرور.</div>
+@if(!string.IsNullOrWhiteSpace(_settingsError)){<div class="hi-error">@_settingsError</div>}
+<div class="hi-modal-actions"><button type="button" class="hi-btn-ghost" @onclick="CloseSettings" disabled="@_saving">انصراف</button><button type="button" class="hi-btn-primary" @onclick="SaveSettings" disabled="@_saving">@(_saving ? "در حال ذخیره..." : "ذخیره تنظیمات")</button></div>
+</div>
+}
 @if(_info is null){<div class="hi-empty">در حال دریافت اطلاعات هاست...</div>}else{
 <section class="hi-kpis"><div class="hi-kpi"><b>@FmtGb(_info.Disk.TotalGb)</b><span>ظرفیت کل</span><small dir="ltr">@_info.Disk.Volume</small></div><div class="hi-kpi"><b>@FmtGb(_info.Disk.UsedGb)</b><span>فضای اشغال‌شده</span><small>@Fa(_info.Disk.UsedPercent.ToString("0.#", CultureInfo.InvariantCulture))٪ از ظرفیت</small></div><div class="hi-kpi"><b>@FmtGb(_info.Disk.FreeGb)</b><span>فضای آزاد</span><small>قابل استفاده</small></div><div class="hi-kpi"><b>@FmtMb(_info.Files.TotalMb)</b><span>فایل‌های برنامه</span><small>@Fa(_info.Files.Folders.Count) پوشه</small></div><div class="hi-kpi"><b>@FmtMb(_info.Database.TotalMb)</b><span>حجم پایگاه داده</span><small>داده @FmtMb(_info.Database.DataMb) · لاگ @FmtMb(_info.Database.LogMb)</small></div></section>
 <div class="hi-note">مجموع فضای اشغال‌شده شامل فایل‌های برنامه، آپلودها، لاگ‌ها، بکاپ‌ها، فایل‌های اجرایی و دیتای پایگاه داده است.</div>
@@ -17,12 +29,37 @@
 </div>
 <style>
 .hi-page{padding:12px 0 32px;color:#172033}.hi-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:20px}.hi-header h1{font-size:22px;font-weight:900;margin:0 0 7px}.hi-header h1 .oi{color:#5146e5;margin-left:7px}.hi-header p{margin:0;color:#667085;font-size:13px}.hi-actions button{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:12px;padding:11px 17px;color:#fff;background:linear-gradient(135deg,#6658e8,#4737c9);font-weight:800;cursor:pointer}.hi-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:13px;margin-bottom:17px}.hi-kpi{background:#fff;border:1px solid #edf0f6;border-radius:17px;padding:17px;box-shadow:0 5px 20px #1018280b}.hi-kpi b,.hi-kpi span,.hi-kpi small{display:block}.hi-kpi b{font-size:18px;font-weight:900}.hi-kpi span{font-weight:800;font-size:12px;margin-top:6px}.hi-kpi small{color:#98a2b3;font-size:11px;margin-top:4px}.hi-note{background:#eef4ff;border:1px solid #dbe7ff;color:#344054;border-radius:13px;padding:13px 16px;font-size:12px;font-weight:600;margin-bottom:17px}.hi-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}.hi-card{background:#fff;border:1px solid #edf0f6;border-radius:18px;padding:18px;box-shadow:0 5px 20px #1018280b}.hi-card h2{font-size:15px;font-weight:900;margin:0 0 16px}.hi-card h2 strong{float:left;color:#4f46e5;background:#eef2ff;padding:6px 10px;border-radius:999px;font-size:11px}.bars{display:grid;gap:15px}.bar-label{display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px}.bar-label span{color:#667085}.track{height:10px;background:#f2f4f7;border-radius:99px;overflow:hidden}.track i{display:block;height:100%;border-radius:99px;min-width:3px}.table-wrap{overflow:auto;border:1px solid #edf0f6;border-radius:12px}.table-wrap table{width:100%;border-collapse:collapse;font-size:12px}.table-wrap th{background:#f8fafc;color:#667085;text-align:right;padding:10px}.table-wrap td{padding:10px;border-top:1px solid #f2f4f7}.table-wrap code{background:#f2f4f7;padding:4px 8px;border-radius:6px}.process{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}.process h2{grid-column:1/-1}.process div{padding:12px;background:#f8fafc;border-radius:12px}.process b,.process span{display:block}.process span{color:#98a2b3;font-size:11px;margin-top:4px}.hi-empty{text-align:center;padding:38px 10px;color:#98a2b3;font-size:12px;font-weight:700}@@media(max-width:1100px){.hi-kpis{grid-template-columns:repeat(3,1fr)}.hi-grid{grid-template-columns:1fr}}@@media(max-width:650px){.hi-kpis{grid-template-columns:repeat(2,1fr);gap:9px}.hi-kpi{padding:12px}.process{grid-template-columns:repeat(2,1fr)}}
+.hi-actions{display:flex;gap:9px;flex-wrap:wrap}.hi-actions .hi-settings-btn{background:#fff;color:#475467;border:1px solid #e4e7ec}.hi-actions .hi-settings-btn .oi{color:#6658e8}.hi-modal-backdrop{position:fixed;inset:0;background:#10182866;z-index:2050}.hi-modal{position:fixed;z-index:2051;top:50%;left:50%;transform:translate(-50%,-50%);width:min(440px,calc(100vw - 32px));background:#fff;border-radius:20px;padding:22px;box-shadow:0 24px 70px #10182840;color:#172033}.hi-modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}.hi-modal-head h3{font-size:16px;font-weight:900;margin:0}.hi-modal-head h3 .oi{color:#5146e5;margin-left:6px}.hi-modal-close{border:0;background:#f2f4f7;color:#667085;width:32px;height:32px;border-radius:10px;font-size:20px;line-height:1;cursor:pointer}.hi-modal-desc{font-size:12px;color:#667085;line-height:1.9;margin:0 0 16px}.hi-field{display:grid;gap:7px;font-size:12px;font-weight:800}.hi-field input{border:1px solid #d0d5dd;border-radius:12px;padding:11px 13px;font-size:14px;font-weight:700;outline:none;color:#172033}.hi-field input:focus{border-color:#6658e8;box-shadow:0 0 0 3px #6658e81f}.hi-hint{font-size:11px;color:#98a2b3;margin-top:8px}.hi-hint b{color:#475467}.hi-error{background:#fef3f2;border:1px solid #fecdca;color:#b42318;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:700;margin-top:12px}.hi-modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:20px}.hi-btn-ghost,.hi-btn-primary{border:0;border-radius:11px;padding:10px 16px;font-weight:800;font-size:12px;cursor:pointer}.hi-btn-ghost{background:#f2f4f7;color:#475467}.hi-btn-primary{background:linear-gradient(135deg,#6658e8,#4737c9);color:#fff}.hi-btn-ghost:disabled,.hi-btn-primary:disabled{opacity:.65;cursor:default}
 </style>
 @code {
 private HostInfoDto? _info; private bool _busy;
+private bool _showSettings; private bool _saving; private string _quotaInput = ""; private string? _settingsError;
 private double MaxFolderMb => (_info != null && _info.Files.Folders.Count > 0) ? _info.Files.Folders.Max(x => x.SizeMb) : 0;
 protected override async Task OnInitializedAsync(){try{_info=await Http.GetFromJsonAsync<HostInfoDto>("api/hostinfo");}catch{}}
 private async Task RefreshAsync(){_busy=true;try{var r=await Http.PostAsJsonAsync("api/hostinfo/refresh",new{});_info=r.IsSuccessStatusCode?await r.Content.ReadFromJsonAsync<HostInfoDto>():await Http.GetFromJsonAsync<HostInfoDto>("api/hostinfo");}catch{}finally{_busy=false;}}
+private void OpenSettings(){_quotaInput=(_info?.Disk.QuotaGb??0).ToString("0.##",CultureInfo.InvariantCulture);_settingsError=null;_showSettings=true;}
+private void CloseSettings(){if(_saving)return;_showSettings=false;}
+private async Task SaveSettings()
+{
+    if(!TryParseQuota(_quotaInput,out var quota)){_settingsError="یک عدد معتبر برای فضای کل وارد کنید.";return;}
+    if(quota<0||quota>1048576){_settingsError="فضای کل باید بین ۰ تا ۱٬۰۴۸٬۵۷۶ گیگابایت باشد.";return;}
+    _saving=true;_settingsError=null;
+    try
+    {
+        var r=await Http.PostAsJsonAsync("api/hostinfo/settings",new{quotaGb=quota});
+        if(r.IsSuccessStatusCode){_info=await r.Content.ReadFromJsonAsync<HostInfoDto>()??_info;_showSettings=false;}
+        else{_settingsError="ذخیره تنظیمات ناموفق بود. دوباره تلاش کنید.";}
+    }
+    catch{_settingsError="خطا در ارتباط با سرور.";}
+    finally{_saving=false;}
+}
+private static bool TryParseQuota(string? value,out double quota)
+{
+    quota=0;
+    if(string.IsNullOrWhiteSpace(value))return false;
+    var normalized=new string(value.Trim().Select(c=>c>='۰'&&c<='۹'?(char)('0'+(c-'۰')):c>='٠'&&c<='٩'?(char)('0'+(c-'٠')):c=='٫'?'.':c).ToArray());
+    return double.TryParse(normalized,NumberStyles.Float,CultureInfo.InvariantCulture,out quota);
+}
 private static string Width(double v)=>Math.Clamp(v,0,100).ToString("0.#",CultureInfo.InvariantCulture)+"%";
 private static string Color(string n)=>n.ToLowerInvariant() switch{"uploads"=>"#6366f1","monitoring-data"=>"#14b8a6","backups"=>"#f43f5e","images"=>"#f59e0b",_=>"#3b82f6"};
 private static string FmtGb(double v)=>$"{v.ToString("0.00",CultureInfo.InvariantCulture)} GB"; private static string FmtMb(double v)=>v>=1024?FmtGb(v/1024):$"{v.ToString("0.00",CultureInfo.InvariantCulture)} MB"; private static string FmtRows(long v)=>v.ToString("N0",CultureInfo.InvariantCulture);

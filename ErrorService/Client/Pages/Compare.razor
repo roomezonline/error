@@ -1,0 +1,329 @@
+@page "/compare"
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@implements IDisposable
+@inject CompareService CompareList
+@inject SiteSettingsService Settings
+@inject CartService CartService
+@inject ToastService Toast
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<SeoHeader
+    Title="مقایسه محصولات | ارورسرویس"
+    Description="محصولات انتخابی خود را از نظر قیمت، موجودی و مشخصات فنی کنار هم مقایسه کنید."
+    OgType="website" />
+
+<section class="cmp" dir="rtl">
+    <div class="container cmp-container">
+        <nav class="cmp-crumb" aria-label="breadcrumb">
+            <a href="/">خانه</a>
+            <span class="oi oi-chevron-left" aria-hidden="true"></span>
+            <a href="/products">فروشگاه</a>
+            <span class="oi oi-chevron-left" aria-hidden="true"></span>
+            <span class="active">مقایسه محصولات</span>
+        </nav>
+
+        <div class="cmp-head">
+            <div>
+                <h1 class="cmp-title">مقایسه محصولات</h1>
+                <p class="cmp-sub">قیمت، موجودی و مشخصات فنی را کنار هم ببینید و انتخاب دقیق‌تری داشته باشید.</p>
+            </div>
+            @if (_products.Count > 0)
+            {
+                <div class="cmp-actions">
+                    <span class="cmp-count">@_products.Count از @_max محصول</span>
+                    <button type="button" class="cmp-btn cmp-btn--ghost" @onclick="ClearAllAsync">
+                        <span class="oi oi-trash" aria-hidden="true"></span>
+                        پاک کردن همه
+                    </button>
+                    <a class="cmp-btn cmp-btn--primary" href="/products">
+                        <span class="oi oi-plus" aria-hidden="true"></span>
+                        افزودن محصول
+                    </a>
+                </div>
+            }
+        </div>
+
+        @if (!_enabled)
+        {
+            <div class="cmp-state">
+                <span class="oi oi-ban cmp-state__icon" aria-hidden="true"></span>
+                <h2>مقایسه محصولات غیرفعال است</h2>
+                <p>این قابلیت در حال حاضر توسط مدیریت فروشگاه فعال نشده است.</p>
+                <a class="cmp-btn cmp-btn--primary" href="/products">رفتن به فروشگاه</a>
+            </div>
+        }
+        else if (_loading)
+        {
+            <div class="cmp-state">
+                <span class="spinner-border text-primary" role="status" aria-hidden="true"></span>
+                <p>در حال آماده‌سازی جدول مقایسه...</p>
+            </div>
+        }
+        else if (_products.Count == 0)
+        {
+            <div class="cmp-state">
+                <span class="oi oi-clipboard cmp-state__icon" aria-hidden="true"></span>
+                <h2>لیست مقایسه خالی است</h2>
+                <p>از کارت محصولات، دکمهٔ مقایسه را بزنید تا محصولات اینجا کنار هم نمایش داده شوند.</p>
+                <a class="cmp-btn cmp-btn--primary" href="/products">انتخاب محصول از فروشگاه</a>
+            </div>
+        }
+        else
+        {
+            <div class="cmp-scroll">
+                <table class="cmp-table" style="min-width:@(170 + _products.Count * 210)px">
+                    <thead>
+                        <tr>
+                            <th class="cmp-row-head" scope="col">محصول</th>
+                            @foreach (var p in _products)
+                            {
+                                <th scope="col" @key="p.Id">
+                                    <div class="cmp-prod">
+                                        <button type="button" class="cmp-x" @onclick="() => RemoveAsync(p.Id)"
+                                                title="حذف از مقایسه" aria-label="حذف @p.Name از مقایسه">×</button>
+                                        <a class="cmp-prod__link" href="@SeoUrl.Product(p.Id, p.Slug)">
+                                            <img src="@(string.IsNullOrEmpty(p.MainImageUrl) ? "/images/placeholder-product.svg" : ImageUrlHelper.Thumb(p.MainImageUrl, 400))"
+                                                 loading="lazy" decoding="async" alt="@p.Name" />
+                                            <span class="cmp-prod__name">@p.Name</span>
+                                        </a>
+                                    </div>
+                                </th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <th scope="row">دسته‌بندی</th>
+                            @foreach (var p in _products)
+                            {
+                                <td>@(string.IsNullOrWhiteSpace(p.CategoryName) ? "—" : p.CategoryName)</td>
+                            }
+                        </tr>
+                        <tr>
+                            <th scope="row">قیمت</th>
+                            @foreach (var p in _products)
+                            {
+                                <td>
+                                    @if (DiscountHelper.IsActive(p))
+                                    {
+                                        <div class="cmp-price">@DiscountHelper.GetEffectivePrice(p).ToString("N0") <small>تومان</small></div>
+                                        <div class="cmp-price__was">@p.Price.ToString("N0")</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="cmp-price">@p.Price.ToString("N0") <small>تومان</small></div>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                        <tr>
+                            <th scope="row">وضعیت</th>
+                            @foreach (var p in _products)
+                            {
+                                <td>
+                                    @if (!p.IsAvailable || p.StockQuantity <= 0)
+                                    {
+                                        <span class="cmp-chip cmp-chip--oos">ناموجود</span>
+                                    }
+                                    else if (p.StockQuantity <= 5)
+                                    {
+                                        <span class="cmp-chip cmp-chip--low">تنها @p.StockQuantity عدد</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="cmp-chip cmp-chip--ok">موجود</span>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                        <tr>
+                            <th scope="row">کد محصول</th>
+                            @foreach (var p in _products)
+                            {
+                                <td dir="ltr">@(string.IsNullOrWhiteSpace(p.Sku) ? "—" : p.Sku)</td>
+                            }
+                        </tr>
+                        @foreach (var key in _specKeys)
+                        {
+                            <tr @key="key">
+                                <th scope="row">@key</th>
+                                @foreach (var p in _products)
+                                {
+                                    <td>@GetSpecValue(p.Id, key)</td>
+                                }
+                            </tr>
+                        }
+                        <tr>
+                            <th scope="row">خرید</th>
+                            @foreach (var p in _products)
+                            {
+                                <td>
+                                    @if (!p.IsAvailable || p.StockQuantity <= 0)
+                                    {
+                                        <span class="cmp-unavailable">فعلاً قابل خرید نیست</span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="cmp-btn cmp-btn--primary cmp-btn--full" @onclick="() => AddAsync(p)">
+                                            <span class="oi oi-cart" aria-hidden="true"></span>
+                                            افزودن به سبد
+                                        </button>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            @if (_specKeys.Count == 0)
+            {
+                <p class="cmp-hint">برای این محصولات مشخصات فنی ثبت نشده است؛ مقایسه بر اساس قیمت و موجودی انجام می‌شود.</p>
+            }
+        }
+    </div>
+</section>
+
+
+@code {
+    private List<CompareItem> _items = new();
+    private List<ProductDto> _products = new();
+    private readonly Dictionary<int, Dictionary<string, string>> _specs = new();
+    private readonly List<string> _specKeys = new();
+    private bool _loading = true;
+    private bool _enabled = true;
+    private int _max = CompareService.DefaultMaxItems;
+
+    protected override async Task OnInitializedAsync()
+    {
+        CompareList.OnChange += HandleChanged;
+
+        try
+        {
+            var settings = await Settings.GetAsync();
+            if (settings != null)
+            {
+                _enabled = settings.EnableCompare;
+                _max = settings.CompareMaxItems <= 0
+                    ? CompareService.DefaultMaxItems
+                    : Math.Clamp(settings.CompareMaxItems, 2, CompareService.HardMaxItems);
+            }
+        }
+        catch { }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync(bool showSpinner = true)
+    {
+        if (showSpinner) _loading = true;
+
+        try
+        {
+            _items = (await CompareList.GetItemsAsync()).ToList();
+        }
+        catch
+        {
+            _items = new();
+        }
+
+        if (_items.Count == 0 || !_enabled)
+        {
+            _products = new();
+            _specKeys.Clear();
+            _specs.Clear();
+            _loading = false;
+            return;
+        }
+
+        var ids = string.Join(',', _items.Select(i => i.ProductId));
+        var loaded = new List<ProductDto>();
+        try
+        {
+            loaded = await Http.GetFromJsonAsync<List<ProductDto>>($"api/products/by-ids?ids={ids}") ?? new();
+        }
+        catch { }
+
+        var byId = loaded.ToDictionary(p => p.Id);
+        _products = _items
+            .Select(i => byId.TryGetValue(i.ProductId, out var p) ? p : null)
+            .Where(p => p != null)
+            .Cast<ProductDto>()
+            .ToList();
+
+        await LoadSpecsAsync();
+        _loading = false;
+    }
+
+    private async Task LoadSpecsAsync()
+    {
+        _specs.Clear();
+        _specKeys.Clear();
+        if (_products.Count == 0) return;
+
+        var results = await Task.WhenAll(_products.Select(async p =>
+        {
+            try
+            {
+                var list = await Http.GetFromJsonAsync<List<ProductSpecDto>>($"api/products/{p.Id}/specs") ?? new();
+                return (p.Id, Items: list);
+            }
+            catch
+            {
+                return (p.Id, Items: new List<ProductSpecDto>());
+            }
+        }));
+
+        foreach (var (productId, items) in results)
+        {
+            var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var spec in items.OrderBy(s => s.SortOrder).ThenBy(s => s.Id))
+            {
+                if (string.IsNullOrWhiteSpace(spec.SpecKey)) continue;
+                dict[spec.SpecKey] = spec.SpecValue;
+                if (!_specKeys.Contains(spec.SpecKey, StringComparer.OrdinalIgnoreCase))
+                    _specKeys.Add(spec.SpecKey);
+            }
+            _specs[productId] = dict;
+        }
+
+        try { await JS.InvokeVoidAsync("trackGaEvent", "compare_view", new { items = _products.Count }); } catch { }
+    }
+
+    private string GetSpecValue(int productId, string key)
+        => _specs.TryGetValue(productId, out var dict) && dict.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : "—";
+
+    private async Task AddAsync(ProductDto product)
+    {
+        try
+        {
+            await CartService.AddToCartAsync(product, 1);
+            Toast.ShowSuccess($"{product.Name} به سبد خرید اضافه شد.");
+        }
+        catch
+        {
+            Toast.ShowError("خطا در افزودن به سبد خرید");
+        }
+    }
+
+    private async Task RemoveAsync(int productId)
+    {
+        await CompareList.RemoveAsync(productId);
+    }
+
+    private async Task ClearAllAsync()
+    {
+        await CompareList.ClearAsync();
+    }
+
+    private void HandleChanged() => _ = InvokeAsync(() => LoadAsync(showSpinner: false));
+
+    public void Dispose()
+    {
+        CompareList.OnChange -= HandleChanged;
+    }
+}

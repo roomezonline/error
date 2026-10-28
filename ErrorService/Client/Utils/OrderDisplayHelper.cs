@@ -7,7 +7,8 @@ public static class OrderDisplayHelper
     public static OrderStage? EffectiveStage(OrderStatus status, OrderStage? stage)
     {
         if (status is OrderStatus.Rejected or OrderStatus.Cancelled
-            or OrderStatus.PendingPayment or OrderStatus.ReceiptUploaded)
+            or OrderStatus.PendingPayment or OrderStatus.ReceiptUploaded
+            or OrderStatus.Draft)
             return null;
 
         if (stage.HasValue) return stage.Value;
@@ -16,6 +17,7 @@ public static class OrderDisplayHelper
 
     public static string Label(OrderStatus status, OrderStage? stage) => status switch
     {
+        OrderStatus.Draft => "پیش‌فاکتور",
         OrderStatus.PendingPayment => "در انتظار پرداخت",
         OrderStatus.ReceiptUploaded => "در انتظار تایید",
         OrderStatus.Rejected => "رد شده",
@@ -37,6 +39,7 @@ public static class OrderDisplayHelper
 
     public static string Color(OrderStatus status, OrderStage? stage) => status switch
     {
+        OrderStatus.Draft => "#7c3aed",
         OrderStatus.PendingPayment => "#f59e0b",
         OrderStatus.ReceiptUploaded => "#0891b2",
         OrderStatus.Rejected => "#dc2626",

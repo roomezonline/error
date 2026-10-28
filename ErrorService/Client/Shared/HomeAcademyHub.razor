@@ -1,0 +1,187 @@
+@using ErrorService.Shared
+@using System.Net.Http.Json
+
+@if (_loading || _tabs.Count > 0)
+{
+    <section class="home-academy home-section" dir="rtl">
+        <div class="container">
+            <div class="home-head">
+                <h2 class="home-head__title">آکادمی ارورسرویس</h2>
+                <div class="home-head__actions">
+                    <a href="/academy" class="home-more">مشاهده همه <span class="oi oi-arrow-left" aria-hidden="true"></span></a>
+                    @if (!_loading && _tabs.Count > 0)
+                    {
+                        <CarouselControls @key="_active" TrackId="@_tabs[_active].TrackId" />
+                    }
+                </div>
+            </div>
+
+            @if (_loading)
+            {
+                <div class="academy-scroll-container">
+                    @for (var i = 0; i < 3; i++)
+                    {
+                        <div class="academy-scroll-item">
+                            <div class="academy-item-skeleton rounded-4 bg-white p-3 shadow-sm">
+                                <div class="skeleton-thumb rounded-3 mb-3"></div>
+                                <div class="skeleton-line mb-2"></div>
+                                <div class="skeleton-line w-50"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                @if (_tabs.Count > 1)
+                {
+                    <div class="hps-tabs hah-tabs" role="tablist" aria-label="دوره‌ها و آموزش‌ها">
+                        @for (var i = 0; i < _tabs.Count; i++)
+                        {
+                            var index = i;
+                            <button type="button"
+                                    role="tab"
+                                    class="hps-tab @(index == _active ? "is-active" : "")"
+                                    aria-selected="@(index == _active)"
+                                    @onclick="() => _active = index">
+                                @_tabs[index].Label
+                            </button>
+                        }
+                    </div>
+                }
+
+                @for (var i = 0; i < _tabs.Count; i++)
+                {
+                    var tab = _tabs[i];
+                    <div class="hah-panel" hidden="@(i != _active)">
+                        <div class="academy-scroll-container hah-track" id="@tab.TrackId">
+                            @foreach (var item in tab.Items)
+                            {
+                                <div class="academy-scroll-item" @key="item.Href">
+                                    <a href="@item.Href" class="text-decoration-none">
+                                        <div class="academy-card rounded-4 overflow-hidden h-100 shadow-sm border-0">
+                                            <div class="academy-card__thumb position-relative">
+                                                <img src="@(string.IsNullOrEmpty(item.CoverImageUrl) ? "/images/placeholder-academy.svg" : ImageUrlHelper.Thumb(item.CoverImageUrl, 400))"
+                                                     srcset="@ImageUrlHelper.SrcSet(item.CoverImageUrl)"
+                                                     sizes="(max-width: 576px) 78vw, 260px"
+                                                     loading="lazy" decoding="async" alt="@(string.IsNullOrWhiteSpace(item.Title) ? "Academy content" : item.Title)" />
+                                                <div class="academy-card__badge @item.BadgeClass">
+                                                    <span class="oi @item.Icon me-1"></span>
+                                                    @item.Badge
+                                                </div>
+                                            </div>
+                                            <div class="academy-card__content p-4">
+                                                <h3 class="academy-card__title h6 fw-bold text-dark mb-3">@item.Title</h3>
+                                                <div class="academy-card__desc text-muted small line-clamp-2">@item.Summary</div>
+                                                <div class="academy-card__footer mt-4 pt-3 border-top d-flex justify-content-between align-items-center">
+                                                    <div class="@item.ActionClass small fw-bold">@item.Action</div>
+                                                    <span class="oi oi-arrow-left @item.ActionClass small"></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </a>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private sealed class HubTab
+    {
+        public string Label { get; init; } = "";
+        public string TrackId { get; init; } = "";
+        public List<HubItem> Items { get; init; } = new();
+    }
+
+    private sealed class HubItem
+    {
+        public string Href { get; init; } = "";
+        public string Title { get; init; } = "";
+        public string Summary { get; init; } = "";
+        public string? CoverImageUrl { get; init; }
+        public string Badge { get; init; } = "";
+        public string BadgeClass { get; init; } = "";
+        public string Icon { get; init; } = "";
+        public string Action { get; init; } = "";
+        public string ActionClass { get; init; } = "";
+    }
+
+    private readonly List<HubTab> _tabs = new();
+    private bool _loading = true;
+    private int _active;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var coursesTask = FetchAsync<List<TrainingCourseDto>>("api/trainings/courses?onlyPublished=true&take=8");
+        var articlesTask = FetchAsync<List<TrainingArticleDto>>("api/trainingarticles?onlyPublished=true&take=8");
+
+        await Task.WhenAll(coursesTask, articlesTask);
+
+        var courses = coursesTask.Result ?? new();
+        var articles = articlesTask.Result ?? new();
+
+        if (courses.Count > 0)
+        {
+            _tabs.Add(new HubTab
+            {
+                Label = "دوره‌های آموزشی",
+                TrackId = "hah-track-courses",
+                Items = courses.Select(x => new HubItem
+                {
+                    Href = SeoUrl.Course(x.Id, x.Slug),
+                    Title = x.Title,
+                    Summary = x.Summary ?? "",
+                    CoverImageUrl = x.CoverImageUrl,
+                    Badge = "دوره آموزشی",
+                    BadgeClass = "academy-card__badge--course",
+                    Icon = "oi-layers",
+                    Action = "مشاهده دوره",
+                    ActionClass = "text-primary"
+                }).ToList()
+            });
+        }
+
+        if (articles.Count > 0)
+        {
+            _tabs.Add(new HubTab
+            {
+                Label = "آموزش‌های تخصصی",
+                TrackId = "hah-track-articles",
+                Items = articles.Select(x => new HubItem
+                {
+                    Href = SeoUrl.Article(x.Id, x.Slug),
+                    Title = x.Title,
+                    Summary = x.Summary ?? "",
+                    CoverImageUrl = x.CoverImageUrl,
+                    Badge = "آموزش",
+                    BadgeClass = "academy-card__badge--article",
+                    Icon = "oi-document",
+                    Action = "مطالعه آموزش",
+                    ActionClass = "text-success"
+                }).ToList()
+            });
+        }
+
+        _active = 0;
+        _loading = false;
+    }
+
+    private async Task<T?> FetchAsync<T>(string url) where T : class
+    {
+        try
+        {
+            return await Http.GetFromJsonAsync<T>(url);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}

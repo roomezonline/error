@@ -122,7 +122,7 @@ public sealed class NotificationEventService
             idempotencyKey: $"order-status:{order.Id}:{previousStatus}:{order.Status}:{order.UpdatedAt.UtcTicks}",
             legacySeverity: severity,
             legacyTitle: "وضعیت سفارش به‌روزرسانی شد",
-            legacyBody: $"وضعیت سفارش {order.OrderNumber} به «{label}» تغییر کرد.",
+            legacyBody: $"وضعیت سفارش {order.OrderNumber} به مبلغ {PayableAmount(order):N0} تومان به «{label}» تغییر کرد.",
             legacyUrl: $"/my-orders/{order.Id}",
             appUserId: order.UserId));
     }
@@ -174,6 +174,31 @@ public sealed class NotificationEventService
             appUserId: order.UserId));
     }
 
+    /// <summary>
+    /// سفارشی که مدیر برای مشتری می‌سازد یا پیش‌فاکتور او را منتشر می‌کند.
+    /// کانال پیش‌فرض این رویداد علاوه بر اعلان داخلی، بله است.
+    /// </summary>
+    public Task NotifyOrderCreatedByAdminAsync(Order order)
+    {
+        if (!order.UserId.HasValue && string.IsNullOrWhiteSpace(order.PhoneNumber))
+            return Task.CompletedTask;
+        return GuardAsync("order.created_by_admin", () => EmitAsync(
+            eventType: "order.created_by_admin",
+            values: new Dictionary<string, string?>
+            {
+                ["OrderNumber"] = order.OrderNumber,
+                ["Amount"] = PayableAmount(order).ToString("N0"),
+                ["OrderId"] = order.Id.ToString()
+            },
+            idempotencyKey: $"order.created_by_admin:{order.Id}",
+            legacySeverity: NotificationSeverity.Info,
+            legacyTitle: "سفارش شما آماده پرداخت است",
+            legacyBody: $"سفارش {order.OrderNumber} به مبلغ {PayableAmount(order):N0} تومان توسط فروشگاه برای شما ثبت شد و آماده پرداخت است.",
+            legacyUrl: $"/my-orders/{order.Id}",
+            appUserId: order.UserId,
+            phone: order.PhoneNumber));
+    }
+
     public Task NotifyOrderReceiptUploadedAsync(Order order)
     {
         if (!order.UserId.HasValue)
@@ -184,12 +209,13 @@ public sealed class NotificationEventService
             values: new Dictionary<string, string?>
             {
                 ["OrderNumber"] = order.OrderNumber,
+                ["Amount"] = PayableAmount(order).ToString("N0"),
                 ["OrderId"] = order.Id.ToString()
             },
             idempotencyKey: $"order.receipt:{order.Id}:{when.UtcTicks}",
             legacySeverity: NotificationSeverity.Info,
             legacyTitle: "رسید پرداخت دریافت شد",
-            legacyBody: $"رسید پرداخت سفارش {order.OrderNumber} دریافت شد و در انتظار تأیید است.",
+            legacyBody: $"رسید پرداخت سفارش {order.OrderNumber} به مبلغ {PayableAmount(order):N0} تومان دریافت شد و در انتظار تأیید است.",
             legacyUrl: $"/my-orders/{order.Id}",
             appUserId: order.UserId));
     }
@@ -203,14 +229,37 @@ public sealed class NotificationEventService
             values: new Dictionary<string, string?>
             {
                 ["OrderNumber"] = order.OrderNumber,
+                ["Amount"] = PayableAmount(order).ToString("N0"),
                 ["OrderId"] = order.Id.ToString()
             },
             idempotencyKey: $"order.cancelled:{order.Id}",
             legacySeverity: NotificationSeverity.Warning,
             legacyTitle: "سفارش لغو شد",
-            legacyBody: $"سفارش {order.OrderNumber} به دلیل عدم پرداخت در مهلت مقرر لغو شد.",
+            legacyBody: $"سفارش {order.OrderNumber} به مبلغ {PayableAmount(order):N0} تومان به دلیل عدم پرداخت در مهلت مقرر لغو شد.",
             legacyUrl: $"/my-orders/{order.Id}",
             appUserId: order.UserId));
+    }
+
+    /// <summary>لغو سفارشِ پرداخت‌نشده توسط مشتری؛ اعلان برای مشتری و (طبق قاعده) مدیران.</summary>
+    public Task NotifyOrderCustomerCancelledAsync(Order order, string? reason)
+    {
+        var reasonText = string.IsNullOrWhiteSpace(reason) ? "—" : reason.Trim();
+        return GuardAsync("order.customer_cancelled", () => EmitAsync(
+            eventType: "order.customer_cancelled",
+            values: new Dictionary<string, string?>
+            {
+                ["OrderNumber"] = order.OrderNumber,
+                ["Amount"] = PayableAmount(order).ToString("N0"),
+                ["Reason"] = reasonText,
+                ["OrderId"] = order.Id.ToString()
+            },
+            idempotencyKey: $"order.customer_cancelled:{order.Id}",
+            legacySeverity: NotificationSeverity.Warning,
+            legacyTitle: "سفارش لغو شد",
+            legacyBody: $"سفارش {order.OrderNumber} به مبلغ {PayableAmount(order):N0} تومان توسط مشتری لغو شد. دلیل: {reasonText}",
+            legacyUrl: $"/my-orders/{order.Id}",
+            appUserId: order.UserId,
+            phone: order.PhoneNumber));
     }
 
     public Task NotifyReturnCreatedAsync(Order order, OrderReturn orderReturn)
@@ -300,6 +349,7 @@ public sealed class NotificationEventService
         string? actionUrl;
         NotificationSeverity severity;
         bool broadcast;
+        var channels = NotificationChannelFlags.Internal;
 
         if (rule != null)
         {
@@ -308,6 +358,7 @@ public sealed class NotificationEventService
             actionUrl = string.IsNullOrWhiteSpace(rule.ActionUrlTemplate) ? null : Render(rule.ActionUrlTemplate, values);
             severity = rule.Severity ?? legacySeverity;
             broadcast = rule.BroadcastToAdmins;
+            channels = rule.Channels;
         }
         else if (NotificationRuleDefaults.TryGet(eventType, out var def))
         {
@@ -316,6 +367,7 @@ public sealed class NotificationEventService
             actionUrl = def.ActionUrl == null ? null : Render(def.ActionUrl, values);
             severity = def.Severity ?? legacySeverity;
             broadcast = def.BroadcastToAdmins;
+            channels = def.Channels;
         }
         else
         {
@@ -388,7 +440,7 @@ public sealed class NotificationEventService
         if (notification.Recipients.Count == 0)
             return;
 
-        await CreateDeliveriesAsync(notification, rule?.Channels ?? NotificationChannelFlags.Internal);
+        await CreateDeliveriesAsync(notification, channels);
 
         _db.Notifications.Add(notification);
     }

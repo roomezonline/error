@@ -159,6 +159,14 @@
                             </div>
                         </div>
 
+                        @if (order.Status == OrderStatus.Draft)
+                        {
+                            <div class="alert alert-warning rounded-4 border-0 p-4 mb-4">
+                                <span class="oi oi-warning me-2"></span>
+                                این سند <b>پیش‌فاکتور</b> است و هنوز برای پرداخت منتشر نشده است. پس از تأیید فروشنده، امکان ثبت رسید و پرداخت برای این سفارش فعال می‌شود.
+                            </div>
+                        }
+
                         <div class="section-header">
                             <div class="step-num">۱</div>
                             <div>
@@ -245,7 +253,7 @@
                                             @foreach (var url in order.ReceiptImageUrls)
                                             {
                                                 <a class="receipt-thumb" href="@url" target="_blank" rel="noopener">
-                                                    <img src="@url" alt="رسید پرداخت" />
+                                                    <img src="@ImageUrlHelper.Thumb(url, 200)" alt="رسید پرداخت" loading="lazy" decoding="async" />
                                                 </a>
                                             }
                                         </div>
@@ -293,7 +301,7 @@
                                                     var index = i;
                                                     var preview = selectedFiles[i];
                                                     <div class="preview-box">
-                                                        <img src="@preview.PreviewUrl" alt="پیش‌نمایش رسید" class="preview-img" />
+                                                        <img src="@preview.PreviewUrl" alt="پیش‌نمایش رسید" class="preview-img" decoding="async" />
                                                         <button type="button" class="preview-remove" @onclick="() => selectedFiles.RemoveAt(index)" aria-label="حذف تصویر">×</button>
                                                     </div>
                                                 }

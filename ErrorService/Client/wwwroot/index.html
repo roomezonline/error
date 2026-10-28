@@ -1,14 +1,67 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html lang="fa" dir="rtl" class="app-booting">
 
 <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ws: wss: https://www.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com; media-src 'self' blob: https:; frame-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+        window.esApplyThemeColor = function (dark) {
+            var meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', dark ? '#0f172a' : '#2563eb');
+        };
+
+        // ── Modal helpers (scroll lock + Escape) with owner-based reference counting ──
+        window.__esLocks = {};
+        window.esSetScrollLock = function (owner, lock) {
+            try {
+                if (lock) { window.__esLocks[owner] = 1; }
+                else { delete window.__esLocks[owner]; }
+                var any = Object.keys(window.__esLocks).length > 0;
+                document.body.style.overflow = any ? 'hidden' : '';
+                document.body.classList.toggle('es-modal-open', any);
+            } catch (e) { }
+        };
+
+        window.__esEscRefs = {};
+        window.__esEscHandler = function (e) {
+            if (e.key !== 'Escape') return;
+            var keys = Object.keys(window.__esEscRefs);
+            if (keys.length === 0) return;
+            var ref = window.__esEscRefs[keys[keys.length - 1]];
+            if (ref) { try { ref.invokeMethodAsync('CloseFromJs'); } catch (err) { } }
+        };
+        window.esOnEsc = function (owner, dotNetRef) {
+            try {
+                window.__esEscRefs[owner] = dotNetRef;
+                if (!window.__esEscListening) {
+                    document.addEventListener('keydown', window.__esEscHandler);
+                    window.__esEscListening = true;
+                }
+            } catch (e) { }
+        };
+        window.esOffEsc = function (owner) {
+            try {
+                delete window.__esEscRefs[owner];
+            } catch (e) { }
+        };
+
+        (function () {
+            try {
+                var theme = localStorage.getItem('theme');
+                if (theme === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    document.documentElement.classList.add('app-dark');
+                } else if (theme === 'light') {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                }
+            } catch (e) { }
+        })();
+    </script>
     <title>ارورسرویس | تعمیر و سرویس لوازم خانگی، کد خطا و قطعات یدکی</title>
     <meta name="description" content="ارورسرویس، مرجع تخصصی کدهای خطای لوازم خانگی، آموزش تعمیرات، قطعات یدکی و سرویس در منزل. بانک جامع ارور ماشین لباسشویی، یخچال، ظرفشویی و ماکروفر." />
     <meta name="keywords" content="کد خطای لوازم خانگی, تعمیر لوازم خانگی, قطعات یدکی, سرویس لوازم خانگی, ارور ماشین لباسشویی, ارور یخچال, تعمیرات لوازم خانگی" />
-    <meta name="robots" content="index, follow" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <meta name="google-site-verification" content="pOLe48KLHLou_2yz7U3J8wttbEFyv14RDjRG6vyW8ts" />
     <link rel="canonical" href="https://errorservice.ir/" />
     <link rel="alternate" hreflang="fa-IR" href="https://errorservice.ir/" />
@@ -19,6 +72,7 @@
     <link rel="dns-prefetch" href="https://errorservice.ir" />
     <link rel="preload" href="/css/app.css" as="style" />
     <link rel="preload" href="/css/theme.css" as="style" />
+    <link rel="preload" href="/css/components.css" as="style" />
     <link rel="preload" href="/fonts/vazirmatn/Vazirmatn-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/vazirmatn/Vazirmatn-Bold.woff2" as="font" type="font/woff2" crossorigin />
 
@@ -44,12 +98,18 @@
     <link href="css/app.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <link href="css/theme.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <link href="css/dropdown.css" rel="stylesheet" media="print" onload="this.media='all'" />
+    <link href="css/components.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <link href="vendor/jalalidatepicker/jalalidatepicker.min.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <noscript>
+        <style>
+            #app-splash { display: none !important; }
+            html.app-booting, html.app-booting body { overflow: auto !important; }
+        </style>
         <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
         <link href="css/app.css" rel="stylesheet" />
         <link href="css/theme.css" rel="stylesheet" />
         <link href="css/dropdown.css" rel="stylesheet" />
+        <link href="css/components.css" rel="stylesheet" />
         <link href="vendor/jalalidatepicker/jalalidatepicker.min.css" rel="stylesheet" />
         <link href="ErrorService.Client.styles.css" rel="stylesheet" />
     </noscript>
@@ -78,6 +138,11 @@
         .app-splash--hide {
             opacity: 0;
             visibility: hidden;
+            pointer-events: none;
+        }
+        html.app-booting,
+        html.app-booting body {
+            overflow: hidden;
         }
 
         .app-splash__card {
@@ -141,6 +206,63 @@
         @keyframes splash-dots {
             0%, 100% { transform: translateY(0); opacity: 0.25; }
             50% { transform: translateY(-5px); opacity: 1; }
+        }
+
+        /* Server-rendered home shell: visible immediately while Blazor boots */
+        .seo-shell {
+            min-height: 100vh;
+            padding: 14px 16px 24px;
+            background: #f8fafc;
+            font-family: Vazirmatn, Tahoma, sans-serif;
+        }
+        .seo-shell__top {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 4px 4px 14px;
+            font-size: 18px;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .seo-shell__top img { width: 40px; height: 40px; }
+        .seo-shell__hero {
+            max-width: 1200px;
+            margin: 0 auto;
+            border-radius: 18px;
+            overflow: hidden;
+            background: #e2e8f0;
+        }
+        .seo-shell__img {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-height: 420px;
+            object-fit: cover;
+        }
+        .seo-shell__text {
+            max-width: 1200px;
+            margin: 18px auto 0;
+            padding: 0 4px;
+        }
+        .seo-shell__title {
+            margin: 0 0 8px;
+            font-size: 1.35rem;
+            font-weight: 800;
+            line-height: 1.7;
+            color: #0f172a;
+        }
+        .seo-shell__desc {
+            margin: 0;
+            font-size: .95rem;
+            line-height: 1.9;
+            color: #475569;
+        }
+        @media (min-width: 900px) {
+            .seo-shell { padding: 18px 24px 28px; }
+            .seo-shell__title { font-size: 1.6rem; }
+            .seo-shell__desc { font-size: 1rem; }
         }
 
         .lesson-lightbox {
@@ -244,6 +366,19 @@
 </head>
 
 <body>
+    <div id="app-splash" class="app-splash" aria-label="Loading">
+        <div class="app-splash__card">
+            <div class="app-splash__logo" aria-hidden="true">
+                <img class="app-splash__logo-img" src="images/branding/logo.svg" alt="لوگوی ارورسرویس" width="66" height="66" />
+            </div>
+            <div class="app-splash__brand">ارورسرویس</div>
+            <div class="app-splash__subtitle">در حال بارگذاری…</div>
+            <div class="app-splash__loader" aria-hidden="true">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
+    </div>
+
     <div id="app"></div>
 
     <noscript>
@@ -260,19 +395,6 @@
             </ul>
         </div>
     </noscript>
-
-    <div id="app-splash" class="app-splash" aria-label="Loading">
-        <div class="app-splash__card">
-            <div class="app-splash__logo" aria-hidden="true">
-                <img class="app-splash__logo-img" src="images/branding/logo.svg" alt="لوگوی ارورسرویس" width="66" height="66" />
-            </div>
-            <div class="app-splash__brand">ارورسرویس</div>
-            <div class="app-splash__subtitle">در حال بارگذاری…</div>
-            <div class="app-splash__loader" aria-hidden="true">
-                <span></span><span></span><span></span>
-            </div>
-        </div>
-    </div>
 
     <div id="blazor-error-ui">
         An unhandled error has occurred.
@@ -414,7 +536,7 @@
     </script>
     <script src="js/inline.js?v=1" defer></script>
     <script src="vendor/jalalidatepicker/jalalidatepicker.min.js" defer></script>
-    <script src="js/site.js?v=3" defer></script>
+    <script src="js/site.js?v=8" defer></script>
     <script src="_framework/blazor.webassembly.js" defer></script>
     <script>
         document.addEventListener('error', function(e) {
@@ -428,6 +550,33 @@
                 if (!img.closest('#app-splash')) img.loading = 'lazy';
             });
         });
+
+        // Mega menu: after a link inside a panel is chosen, SPA navigation keeps
+        // the pointer/focus over the item, so the CSS :hover panel stays open.
+        // Close it explicitly until the pointer leaves or re-enters the trigger.
+        (function () {
+            document.addEventListener('click', function (e) {
+                var link = e.target && e.target.closest ? e.target.closest('.mega-panel a') : null;
+                var item = link && link.closest ? link.closest('.mega-item') : null;
+                if (!item) return;
+                item.classList.add('mega-item--closed');
+                var active = document.activeElement;
+                if (active && active.blur) active.blur();
+            }, true);
+
+            document.addEventListener('mouseover', function (e) {
+                var trigger = e.target && e.target.closest ? e.target.closest('.mega-item--closed .mega-trigger') : null;
+                var item = trigger && trigger.closest ? trigger.closest('.mega-item') : null;
+                if (item) item.classList.remove('mega-item--closed');
+            }, true);
+
+            document.addEventListener('mouseout', function (e) {
+                var item = e.target && e.target.closest ? e.target.closest('.mega-item--closed') : null;
+                if (!item) return;
+                if (e.relatedTarget && item.contains(e.relatedTarget)) return;
+                item.classList.remove('mega-item--closed');
+            }, true);
+        })();
 
         window.downloadFile = function(fileName, base64) {
             var link = document.createElement('a');
@@ -633,10 +782,23 @@
             if (!splash || !app) return;
 
             var done = false;
+            var failed = false;
+
+            // The server injects a .seo-shell into #app for faster first paint.
+            // It is not the real app: keep the splash until Blazor has replaced it
+            // (or rendered a layout such as the maintenance/status page).
+            function isAppReady() {
+                if (!app.childElementCount) return false;
+                if (app.querySelector('.app-wrapper, .admin-shell')) return true;
+                return !app.querySelector('.seo-shell');
+            }
+
             function hide() {
                 if (done) return;
                 done = true;
                 splash.classList.add('app-splash--hide');
+                document.documentElement.classList.remove('app-booting');
+                document.documentElement.classList.add('app-ready');
                 window.setTimeout(function () {
                     if (splash && splash.parentElement) {
                         splash.parentElement.removeChild(splash);
@@ -645,8 +807,8 @@
             }
 
             function showError() {
-                if (done) return;
-                done = true;
+                if (done || failed) return;
+                failed = true;
                 var card = splash.querySelector('.app-splash__card');
                 if (card) {
                     card.innerHTML =
@@ -658,22 +820,21 @@
                 }
             }
 
-            var observer = new MutationObserver(function () {
-                if (app.childElementCount > 0) {
-                    hide();
-                    observer.disconnect();
-                }
-            });
+            function check() {
+                if (isAppReady()) hide();
+            }
 
-            observer.observe(app, { childList: true, subtree: true });
+            var observer = new MutationObserver(check);
 
-            // After 8 seconds, if Blazor hasn't started, show error with retry
-            window.setTimeout(function () {
-                if (app.childElementCount === 0) {
-                    observer.disconnect();
-                    showError();
-                }
-            }, 8000);
+            if (isAppReady()) {
+                hide();
+            } else {
+                observer.observe(app, { childList: true, subtree: true });
+            }
+
+            // After 12 seconds, if Blazor still hasn't mounted, offer a retry.
+            // Keep observing so a late successful mount still hides the splash.
+            window.setTimeout(showError, 12000);
         })();
     </script>
 

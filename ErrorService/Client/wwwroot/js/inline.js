@@ -929,12 +929,23 @@
                 window._gaLoaded = true;
                 window.dataLayer = window.dataLayer || [];
                 function gtag(){dataLayer.push(arguments);}
+                window.gtag = window.gtag || gtag;
                 gtag('js', new Date());
                 gtag('config', tag);
                 var s = document.createElement('script');
                 s.async = true;
                 s.src = 'https://www.googletagmanager.com/gtag/js?id=' + tag;
                 document.head.appendChild(s);
+            };
+
+            // رویداد سفارشی GA4 (اگر تگ آنالیتیکس تنظیم نشده باشد بی‌صدا نادیده گرفته می‌شود)
+            window.trackGaEvent = function (name, params) {
+                try {
+                    if (!name) return;
+                    if (typeof window.gtag === 'function') {
+                        window.gtag('event', name, params || {});
+                    }
+                } catch (e) { }
             };
 
             // بررسی وجود تابع بعد از بارگذاری

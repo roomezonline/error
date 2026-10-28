@@ -6,7 +6,7 @@
         @if (!string.IsNullOrEmpty(ImageUrl))
         {
             <div class="modern-uploader__preview">
-                <img src="@ImageUrl" alt="Preview" />
+                <img src="@ImageUrl" alt="Preview" decoding="async" />
                 <div class="modern-uploader__overlay">
                     <button type="button" class="modern-uploader__action-btn delete" @onclick="RemoveImage" title="حذف تصویر">
                         <span class="oi oi-trash"></span>

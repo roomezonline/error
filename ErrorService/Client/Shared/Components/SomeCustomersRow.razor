@@ -19,8 +19,6 @@ else if (items.Count == 0)
 }
 else
 {
-    var durationSeconds = Math.Clamp(items.Count * 6, 30, 120);
-
     <div class="container my-4" dir="rtl">
         <div class="customers-card shadow-sm rounded-4">
             <div class="customers-card__header">
@@ -28,37 +26,31 @@ else
                     همکاران ما
                     <span class="customers-card__spark">✨</span>
                 </div>
+                <CarouselControls TrackId="home-customers-track" />
             </div>
 
-            <div class="customers-marquee" style="--customers-marquee-duration: @(durationSeconds)s" aria-label="همکاران ما">
-                <div class="customers-marquee__track" aria-hidden="true">
-                    @for (var i = 0; i < 10; i++)
-                    {
-                        <div class="customers-marquee__segment">
-                            @foreach (var it in items)
-                            {
-                                <a class="customer-item" href="/workshops/@it.Id" aria-label="@it.WorkshopName">
-                                    <div class="customer-item__card">
-                                        <div class="customer-item__badge">@it.OwnerFullName</div>
-                                        <div class="customer-item__thumb">
-                                            @if (!string.IsNullOrWhiteSpace(it.ImageUrl))
-                                            {
-                                                <img class="customer-item__img" src="@it.ImageUrl" alt="@it.WorkshopName" loading="lazy" decoding="async" />
-                                            }
-                                            else
-                                            {
-                                                <div class="customer-item__fallback">@GetFallback(it.WorkshopName)</div>
-                                            }
-                                        </div>
-                                        <div class="customer-item__meta">
-                                            <div class="customer-item__name">@it.WorkshopName</div>
-                                        </div>
-                                    </div>
-                                </a>
-                            }
+            <div class="customers-track" id="home-customers-track" aria-label="همکاران ما" data-auto-scroll="26">
+                @foreach (var it in items)
+                {
+                    <a class="customer-item" href="/workshops/@it.Id" aria-label="@it.WorkshopName">
+                        <div class="customer-item__card">
+                            <div class="customer-item__badge">@it.OwnerFullName</div>
+                            <div class="customer-item__thumb">
+                                @if (!string.IsNullOrWhiteSpace(it.ImageUrl))
+                                {
+                                    <img class="customer-item__img" src="@ImageUrlHelper.Thumb(it.ImageUrl, 200)" alt="@it.WorkshopName" loading="lazy" decoding="async" />
+                                }
+                                else
+                                {
+                                    <img class="customer-item__img" src="/images/default-workshop.jpg" alt="@it.WorkshopName" loading="lazy" decoding="async" />
+                                }
+                            </div>
+                            <div class="customer-item__meta">
+                                <div class="customer-item__name">@it.WorkshopName</div>
+                            </div>
                         </div>
-                    }
-                </div>
+                    </a>
+                }
             </div>
         </div>
     </div>
@@ -78,12 +70,5 @@ else
         {
             items = new();
         }
-    }
-
-    private static string GetFallback(string title)
-    {
-        if (string.IsNullOrWhiteSpace(title)) return "WS";
-        var t = title.Trim();
-        return t.Length <= 2 ? t : t.Substring(0, 2);
     }
 }

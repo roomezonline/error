@@ -128,7 +128,7 @@
     <div class="sd-modal-overlay" @onclick="CloseImage">
         <div class="sd-modal-content" @onclick:stopPropagation="true">
             <button class="sd-modal-close" @onclick="CloseImage"><span class="oi oi-x"></span></button>
-            <img src="@selectedImageUrl" alt="@selectedImageTitle" />
+            <img src="@selectedImageUrl" alt="@selectedImageTitle" decoding="async" />
         </div>
     </div>
 }

@@ -196,6 +196,10 @@
                             }
                             else
                             {
+                                <div class="ws-logo-preview ws-logo-preview--default">
+                                    <img src="/images/default-workshop.jpg" alt="تصویر پیش‌فرض کارگاه" />
+                                    <span class="ws-logo-default-badge">تصویر پیش‌فرض</span>
+                                </div>
                                 <div class="ws-logo-options">
                                     <label class="ws-logo-option">
                                         <div class="ws-logo-option__icon">
@@ -1083,6 +1087,26 @@
         display: block;
         padding: 16px;
         box-sizing: border-box;
+    }
+
+    .ws-logo-preview--default {
+        margin-bottom: 10px;
+    }
+
+    .ws-logo-preview--default img {
+        max-height: 170px;
+    }
+
+    .ws-logo-default-badge {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.72);
+        color: #fff;
+        font-size: 0.68rem;
+        font-weight: 800;
     }
 
     .ws-logo-overlay {

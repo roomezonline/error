@@ -20,6 +20,7 @@ public sealed class WishlistService
     private const string StorageKey = "wishlist";
     private List<WishlistItem>? _items;
     private bool _initialized;
+    private Task<List<WishlistItem>>? _loadingTask;
 
     public event Action? OnChange;
 
@@ -30,15 +31,24 @@ public sealed class WishlistService
 
     public async Task<List<WishlistItem>> GetItemsAsync()
     {
-        if (!_initialized)
-        {
-            var json = await _js.InvokeAsync<string?>("localStorage.getItem", StorageKey);
-            _items = !string.IsNullOrEmpty(json)
-                ? System.Text.Json.JsonSerializer.Deserialize<List<WishlistItem>>(json) ?? new()
-                : new();
-            _initialized = true;
-        }
-        return _items ??= new();
+        if (_initialized) return _items ??= new();
+
+        // یک‌بار خواندن از localStorage حتی وقتی چند کارت هم‌زمان رندر می‌شوند.
+        if (_loadingTask != null) return await _loadingTask;
+
+        _loadingTask = LoadAsync();
+        try { return await _loadingTask; }
+        finally { _loadingTask = null; }
+    }
+
+    private async Task<List<WishlistItem>> LoadAsync()
+    {
+        var json = await _js.InvokeAsync<string?>("localStorage.getItem", StorageKey);
+        _items = !string.IsNullOrEmpty(json)
+            ? System.Text.Json.JsonSerializer.Deserialize<List<WishlistItem>>(json) ?? new()
+            : new();
+        _initialized = true;
+        return _items;
     }
 
     public async Task<bool> HasItemAsync(int productId)

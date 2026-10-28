@@ -12,6 +12,9 @@ public sealed class ProductReview
     public ProductReview? Parent { get; set; }
     public List<ProductReview> Replies { get; set; } = new();
 
+    // شناسهٔ کاربر ثبت‌کنندهٔ نظر (در صورت ورود)؛ مبنای نشان «خریدار تأییدشده».
+    public int? UserId { get; set; }
+
     [Required]
     [MaxLength(200)]
     public string FullName { get; set; } = string.Empty;

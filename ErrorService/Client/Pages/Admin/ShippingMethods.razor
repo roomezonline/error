@@ -432,10 +432,18 @@ else
         isSaving = true;
         try
         {
-            if (editingId == 0)
-                await Http.PostAsJsonAsync("api/shippingmethods", editModel);
-            else
-                await Http.PutAsJsonAsync($"api/shippingmethods/{editingId}", editModel);
+            var response = editingId == 0
+                ? await Http.PostAsJsonAsync("api/shippingmethods", editModel)
+                : await Http.PutAsJsonAsync($"api/shippingmethods/{editingId}", editModel);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(body)
+                    ? $"خطا در ذخیره ({(int)response.StatusCode})"
+                    : body);
+                return;
+            }
 
             ToastService.ShowSuccess("ذخیره شد.");
             showEditor = false;

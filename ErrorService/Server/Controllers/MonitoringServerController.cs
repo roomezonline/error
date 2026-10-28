@@ -20,15 +20,21 @@ public class MonitoringServerController : ControllerBase
     private readonly ErrorServiceDbContext _db;
     private readonly ILogger<MonitoringServerController> _logger;
     private readonly NotificationEventService _notificationEvents;
+    private readonly MonitoringAuthorizationService _authz;
 
-    public MonitoringServerController(MonitoringCacheService cache, ErrorServiceDbContext db, ILogger<MonitoringServerController> logger, NotificationEventService notificationEvents)
+    public MonitoringServerController(MonitoringCacheService cache, ErrorServiceDbContext db, ILogger<MonitoringServerController> logger, NotificationEventService notificationEvents, MonitoringAuthorizationService authz)
     {
         _cache = cache;
         _db = db;
         _logger = logger;
         _notificationEvents = notificationEvents;
+        _authz = authz;
     }
 
+    private ObjectResult CreditInactive() =>
+        StatusCode(403, new { message = "اعتبار این دستگاه به پایان رسیده است؛ کنترل دستگاه و دریافت داده زنده امکان‌پذیر نیست." });
+
+    [Authorize]
     [HttpPost("command")]
     public async Task<IActionResult> SendCommand([FromBody] SendCommandRequest request)
     {
@@ -37,6 +43,9 @@ public class MonitoringServerController : ControllerBase
 
         if (request.Value != "on" && request.Value != "off")
             return BadRequest("value must be 'on' or 'off'");
+
+        if (!await _authz.CanOperateDevice(User, request.Code))
+            return CreditInactive();
 
         var deviceCode = request.Code;
         var baseDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "monitoring-data");
@@ -94,11 +103,15 @@ public class MonitoringServerController : ControllerBase
         return Ok(new { message = "ok" });
     }
 
+    [Authorize]
     [HttpPost("setting")]
     public async Task<IActionResult> SaveSetting([FromBody] SaveSettingRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Code))
             return BadRequest("code is required");
+
+        if (!await _authz.CanOperateDevice(User, request.Code))
+            return CreditInactive();
 
         var deviceCode = request.Code;
         var baseDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "monitoring-data");
@@ -353,12 +366,15 @@ public class MonitoringServerController : ControllerBase
                     }
                     if (activeAssignment?.EndAt != null && activeAssignment.EndAt < DateTimeOffset.UtcNow)
                     {
-                        if (connection.GracePeriodEndAt == null)
+                        var graceEnd = activeAssignment.EndAt.Value.AddHours(24);
+
+                        if (connection.GracePeriodEndAt == null || connection.GracePeriodEndAt < activeAssignment.EndAt)
                         {
-                            connection.GracePeriodEndAt = DateTimeOffset.UtcNow.AddHours(24);
+                            connection.GracePeriodEndAt = graceEnd;
                             await _db.SaveChangesAsync();
                         }
-                        else if (DateTimeOffset.UtcNow >= connection.GracePeriodEndAt)
+
+                        if (DateTimeOffset.UtcNow >= graceEnd)
                         {
                             var graceCmdDir = Path.Combine(baseDir, deviceCode, "command");
                             Directory.CreateDirectory(graceCmdDir);
@@ -381,12 +397,10 @@ public class MonitoringServerController : ControllerBase
 
                                 if (deviceOff || forceEnd)
                                 {
-                                    connection.EndedAt = DateTimeOffset.UtcNow;
-                                    connection.EndReason = deviceOff
+                                    var reason = deviceOff
                                         ? "پایان خودکار مانیتورینگ پس از اتمام مهلت ۲۴ ساعته (دستگاه خاموش شد)"
                                         : "پایان خودکار مانیتورینگ پس از اتمام مهلت ۲۴ ساعته (قطع اجباری - دستگاه خاموش نشد)";
-                                    await _db.SaveChangesAsync();
-                                    await CreateArchiveForConnection(connection.Id, connection.WorkshopId, connection.CustomerReceiptId, deviceCode, connection.CreatedAt);
+                                    await MonitoringConnectionLifecycle.CloseAndArchiveAsync(_db, connection, deviceCode, reason);
                                 }
                                 else
                                 {
@@ -394,6 +408,12 @@ public class MonitoringServerController : ControllerBase
                                 }
                             }
                         }
+                    }
+                    else if (activeAssignment != null && connection.GracePeriodEndAt != null)
+                    {
+                        // تمدید شده است؛ مهلت قبلی پاک شود تا انقضای بعدی درست محاسبه شود.
+                        connection.GracePeriodEndAt = null;
+                        await _db.SaveChangesAsync();
                     }
 
                     monitoringId = connection.Id;
@@ -750,21 +770,42 @@ public class MonitoringServerController : ControllerBase
 
             if (changes.Count == 0) return;
 
-            var snapshotObj = new
-            {
-                newData.Code, newData.Priz, newData.MotorState, newData.Element1, newData.Element2,
-                newData.Temp1, newData.Temp2, newData.Jaryan, newData.CntM, newData.CntE1, newData.CntE2,
-                newData.Temp3, newData.CurrentType, newData.Inverter, newData.Voltage, newData.Tavan,
-                newData.Freq, newData.Dc1, newData.Dc2, newData.Ac1, newData.Ac2, newData.DeviceType,
-                Timestamp = DateTime.UtcNow,
-                TimestampFa = PersianDateHelper.ToPersianDateTimeString(DateTime.Now, true)
-            };
-            var snapshotJson = JsonSerializer.Serialize(snapshotObj);
-
+            var now = DateTime.UtcNow;
             var nowFa = PersianDateHelper.ToPersianDateTimeString(DateTime.Now, true);
+
+            // هر تجهیزی که خاموش می‌شود، مدت روشن‌بودنش از آخرین تغییر «روشن»
+            // محاسبه و کنار همان رکورد توقف ذخیره می‌شود.
+            var runtimes = new Dictionary<string, (long Seconds, string? StartedAtFa)?>(StringComparer.Ordinal);
+            try
+            {
+                foreach (var (type, oldVal, newVal, _) in changes)
+                {
+                    if (IsOn(oldVal) && !IsOn(newVal))
+                        runtimes[type] = await GetRuntimeAsync(monitoringId, type, now);
+                }
+            }
+            catch (Exception ex)
+            {
+                // محاسبهٔ مدت کارکرد نباید مانع ثبت خودِ رویداد تغییر شود.
+                _logger.LogWarning(ex, "Failed to compute runtime for device {Code}", deviceCode);
+                runtimes.Clear();
+            }
 
             foreach (var (type, oldVal, newVal, desc) in changes)
             {
+                runtimes.TryGetValue(type, out var runtime);
+                var snapshotObj = new
+                {
+                    newData.Code, newData.Priz, newData.MotorState, newData.Element1, newData.Element2,
+                    newData.Temp1, newData.Temp2, newData.Jaryan, newData.CntM, newData.CntE1, newData.CntE2,
+                    newData.Temp3, newData.CurrentType, newData.Inverter, newData.Voltage, newData.Tavan,
+                    newData.Freq, newData.Dc1, newData.Dc2, newData.Ac1, newData.Ac2, newData.DeviceType,
+                    RuntimeSeconds = runtime?.Seconds,
+                    RuntimeStartedAtFa = runtime?.StartedAtFa,
+                    Timestamp = now,
+                    TimestampFa = nowFa
+                };
+
                 _db.MonitoringDeviceChangeLogs.Add(new MonitoringDeviceChangeLog
                 {
                     DeviceCode = deviceCode,
@@ -772,11 +813,11 @@ public class MonitoringServerController : ControllerBase
                     OldValue = oldVal,
                     NewValue = newVal,
                     ChangeDescription = desc,
-                    DataSnapshot = snapshotJson,
+                    DataSnapshot = JsonSerializer.Serialize(snapshotObj),
                     MonitoringId = monitoringId,
                     CustomerReceiptId = customerReceiptId,
                     WorkshopId = workshopId,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = now,
                     CreatedAtFa = nowFa
                 });
             }
@@ -789,20 +830,98 @@ public class MonitoringServerController : ControllerBase
         }
     }
 
-    private async Task NotifyMonitoringAlertAsync(string deviceCode, string message, int num, string type)
+    /// <summary>
+    /// مدت روشن‌بودن تجهیز تا لحظهٔ خاموش‌شدن، بر اساس آخرین رکورد «روشن» همان تجهیز.
+    /// اگر رکورد روشن قبلی نباشد (شروع پایش در میانهٔ سیکل یا حذف تاریخچه) مقدار null است.
+    /// </summary>
+    private async Task<(long Seconds, string? StartedAtFa)?> GetRuntimeAsync(int monitoringId, string changeType, DateTime stoppedAt)
     {
+        var previous = await _db.MonitoringDeviceChangeLogs
+            .AsNoTracking()
+            .Where(x => x.MonitoringId == monitoringId
+                        && x.ChangeType == changeType
+                        && x.CreatedAt < stoppedAt)
+            .OrderByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
+            .Select(x => new { x.CreatedAt, x.CreatedAtFa, x.NewValue })
+            .FirstOrDefaultAsync();
+
+        if (previous == null || !IsOn(previous.NewValue))
+            return null;
+
+        var seconds = (long)(stoppedAt - previous.CreatedAt).TotalSeconds;
+        return seconds > 0 ? (seconds, previous.CreatedAtFa) : null;
+    }
+
+    private sealed record AlertContext(string DeviceTitle, string? WorkshopName, int? WorkshopId, int? ReceiptId);
+
+    private async Task NotifyMonitoringAlertAsync(string deviceCode, string message, int num, string type, int monitoringId)
+    {
+        var context = await ResolveAlertContextAsync(deviceCode, monitoringId);
+        var fullMessage = BuildAlertMessage(context, message);
+
         await _notificationEvents.NotifyAsync(
             eventType: "monitoring.alert",
             values: new Dictionary<string, string?>
             {
-                ["Message"] = message,
-                ["DeviceName"] = deviceCode
+                ["Message"] = fullMessage,
+                ["DeviceName"] = context.DeviceTitle,
+                ["WorkshopName"] = context.WorkshopName ?? string.Empty,
+                ["ReceiptId"] = context.ReceiptId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty
             },
             idempotencyKey: $"monitoring.alert:{deviceCode}:{type}:{num}",
             fallbackSeverity: NotificationSeverity.Critical,
-            fallbackTitle: "هشدار پایش دستگاه",
-            fallbackBody: message,
-            fallbackUrl: "/admin/monitoring-devices");
+            fallbackTitle: $"هشدار پایش: {context.DeviceTitle}",
+            fallbackBody: fullMessage,
+            fallbackUrl: "/admin/monitoring-devices",
+            workshopId: context.WorkshopId);
+    }
+
+    /// <summary>
+    /// هشدار باید بدون تکیه بر قالب اعلان هم قابل تشخیص باشند:
+    /// نام دستگاه، کارگاه و شماره رسید از همان اتصالی خوانده می‌شود که هشدار روی آن ثبت شده
+    /// (اتصال ممکن است در همین درخواست بسته شده باشد، پس با EndedAt فیلتر نمی‌کنیم).
+    /// </summary>
+    private async Task<AlertContext> ResolveAlertContextAsync(string deviceCode, int monitoringId)
+    {
+        var connection = await _db.MonitoringReceiptConnections
+            .AsNoTracking()
+            .Include(c => c.MonitoringDevice)
+            .FirstOrDefaultAsync(c => c.Id == monitoringId);
+
+        string? deviceTitle = connection?.MonitoringDevice?.Title;
+        if (string.IsNullOrWhiteSpace(deviceTitle))
+        {
+            deviceTitle = await _db.MonitoringDevices
+                .AsNoTracking()
+                .Where(d => d.DeviceNumber == deviceCode)
+                .Select(d => d.Title)
+                .FirstOrDefaultAsync();
+        }
+        if (string.IsNullOrWhiteSpace(deviceTitle))
+            deviceTitle = deviceCode;
+
+        if (connection == null)
+            return new AlertContext(deviceTitle, null, null, null);
+
+        var workshopName = await _db.Workshops
+            .AsNoTracking()
+            .Where(w => w.Id == connection.WorkshopId)
+            .Select(w => w.WorkshopName)
+            .FirstOrDefaultAsync();
+
+        return new AlertContext(deviceTitle, workshopName, connection.WorkshopId, connection.CustomerReceiptId);
+    }
+
+    private static string BuildAlertMessage(AlertContext context, string message)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(context.DeviceTitle)) parts.Add(context.DeviceTitle);
+        if (!string.IsNullOrWhiteSpace(context.WorkshopName)) parts.Add($"کارگاه {context.WorkshopName}");
+        if (context.ReceiptId.HasValue)
+            parts.Add($"رسید {context.ReceiptId.Value.ToString(CultureInfo.InvariantCulture)}");
+
+        return parts.Count == 0 ? message : string.Join(" • ", parts) + " — " + message;
     }
 
     private static bool IsOn(string? val) =>
@@ -863,7 +982,7 @@ public class MonitoringServerController : ControllerBase
                 CreatedAt = DateTime.UtcNow
             });
 
-            await NotifyMonitoringAlertAsync(deviceCode, message, num, typeAlarm);
+            await NotifyMonitoringAlertAsync(deviceCode, message, num, typeAlarm, monitoringId);
             await _db.SaveChangesAsync();
         }
         catch (Exception ex)
@@ -906,7 +1025,7 @@ public class MonitoringServerController : ControllerBase
                 CreatedAt = DateTime.UtcNow
             });
 
-            await NotifyMonitoringAlertAsync(deviceCode, message, num, "ambient_temp");
+            await NotifyMonitoringAlertAsync(deviceCode, message, num, "ambient_temp", monitoringId);
             await _db.SaveChangesAsync();
         }
         catch (Exception ex)

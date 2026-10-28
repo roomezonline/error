@@ -24,7 +24,8 @@ public class CouponsController : ControllerBase
     [EnableRateLimiting("commerce")]
     public async Task<ActionResult<CouponApplyResult>> Apply([FromBody] CouponApplyRequest request)
     {
-        var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code == request.Code);
+        var code = NormalizeCode(request.Code);
+        var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == code);
 
         if (coupon == null)
             return Ok(new CouponApplyResult { IsValid = false, Message = "کد تخفیف یافت نشد." });
@@ -59,7 +60,7 @@ public class CouponsController : ControllerBase
             discount = coupon.DiscountAmount.Value;
         }
 
-        discount = Math.Min(discount, request.OrderAmount);
+        discount = Math.Max(0, Math.Min(discount, request.OrderAmount));
 
         return Ok(new CouponApplyResult
         {
@@ -123,16 +124,18 @@ public class CouponsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<CouponDto>> Create([FromBody] CouponDto dto)
     {
-        var code = dto.Code?.Trim();
+        var code = NormalizeCode(dto.Code);
         if (string.IsNullOrWhiteSpace(code))
             return BadRequest("کد تخفیف نمی‌تواند خالی باشد.");
+        if (ValidateCoupon(dto) is { } validationError)
+            return BadRequest(validationError);
 
         // SERIALIZABLE: قفل محدوده روی کد، تا دو درخواست همزمان نتوانند کد تکراری
         // ثبت کنند. (ایندکس Code عمداً unique نیست چون ممکن است ردیف تکراری قدیمی
         // در داده وجود داشته باشد؛ یکتایی را همین‌جا تضمین می‌کنیم.)
         await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
 
-        if (await _db.Coupons.AnyAsync(c => c.Code == code))
+        if (await _db.Coupons.AnyAsync(c => c.Code.ToUpper() == code))
             return BadRequest("کد تخفیف با این نام قبلاً ثبت شده است.");
 
         var coupon = new Coupon
@@ -158,16 +161,18 @@ public class CouponsController : ControllerBase
     [HttpPut("{id:int}")]
     public async Task<IActionResult> Update(int id, [FromBody] CouponDto dto)
     {
-        var code = dto.Code?.Trim();
+        var code = NormalizeCode(dto.Code);
         if (string.IsNullOrWhiteSpace(code))
             return BadRequest("کد تخفیف نمی‌تواند خالی باشد.");
+        if (ValidateCoupon(dto) is { } validationError)
+            return BadRequest(validationError);
 
         var coupon = await _db.Coupons.FindAsync(id);
         if (coupon == null) return NotFound();
 
         await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
 
-        if (await _db.Coupons.AnyAsync(c => c.Code == code && c.Id != id))
+        if (await _db.Coupons.AnyAsync(c => c.Code.ToUpper() == code && c.Id != id))
             return BadRequest("کد تخفیف با این نام قبلاً ثبت شده است.");
 
         coupon.Code = code;
@@ -195,6 +200,27 @@ public class CouponsController : ControllerBase
         _db.Coupons.Remove(coupon);
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    private static string NormalizeCode(string? code) => (code ?? "").Trim().ToUpperInvariant();
+
+    private static string? ValidateCoupon(CouponDto dto)
+    {
+        if (dto.DiscountPercent.HasValue && dto.DiscountAmount.HasValue)
+            return "فقط یکی از درصد یا مبلغ تخفیف را وارد کنید.";
+        if (!dto.DiscountPercent.HasValue && !dto.DiscountAmount.HasValue)
+            return "درصد یا مبلغ تخفیف را وارد کنید.";
+        if (dto.DiscountPercent is <= 0 or > 100)
+            return "درصد تخفیف باید بین ۱ تا ۱۰۰ باشد.";
+        if (dto.DiscountAmount is <= 0)
+            return "مبلغ تخفیف باید بزرگتر از صفر باشد.";
+        if (dto.MinOrderAmount is < 0)
+            return "حداقل مبلغ سفارش نمی‌تواند منفی باشد.";
+        if (dto.MaxUsageCount is <= 0)
+            return "حداکثر تعداد استفاده باید بزرگتر از صفر باشد.";
+        if (dto.ExpiryDate.HasValue && dto.ExpiryDate.Value <= DateTimeOffset.UtcNow)
+            return "تاریخ انقضا باید در آینده باشد.";
+        return null;
     }
 
     private static CouponDto MapDto(Coupon c) => new()

@@ -148,6 +148,24 @@
                             </div>
                         </div>
                     }
+
+                    @if (settings.EnableCompare)
+                    {
+                        <div class="p-3 bg-light rounded-3">
+                            <label class="form-label fw-bold small mb-1">حداکثر تعداد محصول در مقایسه</label>
+                            <input type="number" min="2" max="6" class="form-control" @bind="settings.CompareMaxItems" />
+                            <div class="form-text">بین ۲ تا ۶ محصول؛ مقدار پیش‌فرض ۴.</div>
+                        </div>
+                    }
+
+                    @if (settings.EnableHomeErrorSearch)
+                    {
+                        <div class="p-3 bg-light rounded-3 mt-3">
+                            <label class="form-label fw-bold small mb-1">حداکثر نتایج جستجوی کد خطا در صفحه اصلی</label>
+                            <input type="number" min="3" max="10" class="form-control" @bind="settings.HomeErrorSearchMaxResults" />
+                            <div class="form-text">بین ۳ تا ۱۰ نتیجه؛ مقدار پیش‌فرض ۶.</div>
+                        </div>
+                    }
                 </div>
             </div>
 
@@ -198,6 +216,82 @@
                             <input class="form-check-input" type="checkbox" @bind="settings.EnableReorder">
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h5 class="fw-bold mb-1 border-bottom pb-3">آدرس در تسویه‌حساب</h5>
+                    <p class="small text-muted mb-4">انتخاب استان/شهر و کد پستی در کنار آدرس متنی؛ برای ارسال دقیق‌تر و کاهش سفارش‌های برگشتی.</p>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">آدرس ساختاریافته</h6>
+                            <p class="small text-muted mb-0">در صفحهٔ تسویه، انتخاب استان و شهر و فیلد کد پستی نمایش داده می‌شود.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableStructuredAddress">
+                        </div>
+                    </div>
+
+                    @if (settings.EnableStructuredAddress)
+                    {
+                        <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                            <div>
+                                <h6 class="fw-bold mb-1">الزام استان و شهر</h6>
+                                <p class="small text-muted mb-0">سفارش بدون انتخاب استان و شهر ثبت نمی‌شود.</p>
+                            </div>
+                            <div class="form-check form-switch fs-4 m-0">
+                                <input class="form-check-input" type="checkbox" @bind="settings.RequireProvinceCity">
+                            </div>
+                        </div>
+
+                        <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-light rounded-3">
+                            <div>
+                                <h6 class="fw-bold mb-1">الزام کد پستی</h6>
+                                <p class="small text-muted mb-0">کد پستی ۱۰ رقمی برای ثبت سفارش الزامی می‌شود.</p>
+                            </div>
+                            <div class="form-check form-switch fs-4 m-0">
+                                <input class="form-check-input" type="checkbox" @bind="settings.RequirePostalCode">
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h5 class="fw-bold mb-1 border-bottom pb-3">لغو سفارش توسط مشتری</h5>
+                    <p class="small text-muted mb-4">مشتری فقط سفارش پرداخت‌نشده و قبل از شروع پرداخت آنلاین یا ارسال را می‌تواند لغو کند؛ موجودی و کوپن خودکار برمی‌گردد.</p>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">فعال بودن لغو سفارش</h6>
+                            <p class="small text-muted mb-0">دکمهٔ «لغو سفارش» در جزئیات سفارش مشتری نمایش داده می‌شود.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableCustomerOrderCancel">
+                        </div>
+                    </div>
+
+                    @if (settings.EnableCustomerOrderCancel)
+                    {
+                        <div class="mb-3 p-3 bg-light rounded-3">
+                            <label class="form-label fw-bold small mb-1">مهلت لغو از زمان ثبت سفارش (ساعت)</label>
+                            <input type="number" min="0" max="720" class="form-control" @bind="settings.CustomerCancelWindowHours" />
+                            <div class="form-text">صفر یعنی بدون محدودیت زمانی (تا مهلت پرداخت یا لغو خودکار). حداکثر ۷۲۰ ساعت.</div>
+                        </div>
+
+                        <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-light rounded-3">
+                            <div>
+                                <h6 class="fw-bold mb-1">الزام دلیل لغو</h6>
+                                <p class="small text-muted mb-0">مشتری برای لغو باید دلیل کوتاهی وارد کند؛ دلیل در رویدادهای سفارش ثبت می‌شود.</p>
+                            </div>
+                            <div class="form-check form-switch fs-4 m-0">
+                                <input class="form-check-input" type="checkbox" @bind="settings.CustomerCancelRequireReason">
+                            </div>
+                        </div>
+                    }
                 </div>
             </div>
 
@@ -268,7 +362,7 @@
     {
         try
         {
-            settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+            settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings/admin");
         }
         catch
         {
@@ -296,8 +390,18 @@
         {
             new("علاقه‌مندی‌ها", "دکمهٔ افزودن به علاقه‌مندی و صفحهٔ /wishlist.", () => s.EnableWishlist, v => s.EnableWishlist = v),
             new("اعلام موجودی", "مشتری وقتی کالا ناموجود است می‌تواند اطلاع‌رسانی بخواهد.", () => s.EnableStockAlert, v => s.EnableStockAlert = v),
+            new("پیوست عکس/ویدیو در دیدگاه", "امکان ارسال تصویر یا ویدیو همراه با نظر محصول؛ پیش‌نیاز گالری تصاویر دیدگاه‌ها.", () => s.EnableReviewMedia, v => s.EnableReviewMedia = v),
+            new("نشان «خریدار تأییدشده»", "برچسب تأیید خریدار برای نظرهایی که با حسابی دارای سفارش پرداخت‌شدهٔ همان محصول ثبت شده‌اند.", () => s.EnableVerifiedBuyerBadge, v => s.EnableVerifiedBuyerBadge = v),
+            new("گالری تصاویر دیدگاه‌ها", "نمایش نوار تصاویر ارسال‌شده توسط خریداران بالای فهرست نظرهای محصول.", () => s.EnableReviewGallery, v => s.EnableReviewGallery = v),
+            new("نمایش سریع", "دکمهٔ چشم روی کارت محصول برای پیش‌نمایش سریع با تصویر، قیمت و افزودن به سبد.", () => s.EnableQuickView, v => s.EnableQuickView = v),
+            new("مقایسه محصولات", "انتخاب چند محصول از کارت‌ها و مقایسهٔ آن‌ها در صفحهٔ /compare.", () => s.EnableCompare, v => s.EnableCompare = v),
             new("محصولات مرتبط", "کاروسل «محصولات مرتبط» زیر توضیحات محصول.", () => s.EnableRelatedProducts, v => s.EnableRelatedProducts = v),
             new("بازدید اخیر", "کاروسل «آخرین محصولاتی که دیده‌اید».", () => s.EnableRecentlyViewed, v => s.EnableRecentlyViewed = v),
+            new("مگامنو", "منوی کشویی دسته‌بندی‌ها در نوار بالای سایت (فقط دسکتاپ).", () => s.EnableMegaMenu, v => s.EnableMegaMenu = v),
+            new("بردکرامب سراسری", "نمایش مسیر صفحه در بالای صفحات داخلی.", () => s.EnableBreadcrumb, v => s.EnableBreadcrumb = v),
+            new("شمارنده‌های صفحه اصلی", "نوار آمار (مانیتورینگ دیتالاگر، کدهای خطا، آموزش‌ها) در صفحه اصلی.", () => s.EnableHomeStats, v => s.EnableHomeStats = v),
+            new("کارت «خدمات تکمیل‌شده»", "افزودن آمار مجموع رسیدهای ثبت‌شده در همهٔ کارگاه‌ها به نوار شمارنده‌های صفحه اصلی.", () => s.ShowOrderCountStat, v => s.ShowOrderCountStat = v),
+            new("جستجوی کد خطا در صفحه اصلی", "کادر جستجوی تعاملی کد خطا با پیشنهاد نتایج و لینک مستقیم به صفحهٔ هر خطا.", () => s.EnableHomeErrorSearch, v => s.EnableHomeErrorSearch = v),
         };
     }
 

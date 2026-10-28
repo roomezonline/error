@@ -37,7 +37,9 @@
                             <div class="news-card__img-wrap position-relative">
                                 @if (!string.IsNullOrWhiteSpace(news.ImageUrl))
                                 {
-                                    <img src="@news.ImageUrl" loading="lazy" class="card-img-top" alt="@news.Title" />
+                                    <img src="@ImageUrlHelper.Thumb(news.ImageUrl, 400)" srcset="@ImageUrlHelper.SrcSet(news.ImageUrl)"
+                                         sizes="(max-width: 768px) 100vw, 640px"
+                                         loading="lazy" decoding="async" class="card-img-top" alt="@news.Title" />
                                 }
                                 else
                                 {

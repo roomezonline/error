@@ -1,0 +1,134 @@
+@using ErrorService.Shared
+@using System.Net.Http.Json
+
+@if (_loading || _tabs.Count > 0)
+{
+    <section class="pr-row hps home-section bg-light" dir="rtl">
+        <div class="container-fluid px-2 px-md-4">
+            <div class="home-head home-head--compact px-2">
+                <h2 class="home-head__title">ویترین محصولات</h2>
+                <div class="home-head__actions">
+                    <a href="/products" class="home-more">مشاهده همه <span class="oi oi-arrow-left" aria-hidden="true"></span></a>
+                    @if (!_loading && _tabs.Count > 0)
+                    {
+                        <CarouselControls @key="_active" TrackId="@_tabs[_active].TrackId" />
+                    }
+                </div>
+            </div>
+
+            @if (_loading)
+            {
+                <div class="pr-row__scroll">
+                    @for (var i = 0; i < 4; i++)
+                    {
+                        <div class="pr-row__item">
+                            <div class="product-card-skeleton rounded-4 bg-white shadow-sm p-3 w-100">
+                                <div class="skeleton-img rounded-3 mb-3"></div>
+                                <div class="skeleton-text mb-2"></div>
+                                <div class="skeleton-text w-50"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                @if (_tabs.Count > 1)
+                {
+                    <div class="hps-tabs" role="tablist" aria-label="دسته‌بندی محصولات">
+                        @for (var i = 0; i < _tabs.Count; i++)
+                        {
+                            var index = i;
+                            <button type="button"
+                                    role="tab"
+                                    class="hps-tab @(index == _active ? "is-active" : "")"
+                                    aria-selected="@(index == _active)"
+                                    @onclick="() => _active = index">
+                                @_tabs[index].Label
+                            </button>
+                        }
+                    </div>
+                }
+
+                @for (var i = 0; i < _tabs.Count; i++)
+                {
+                    var tab = _tabs[i];
+                    <div class="hps-panel" hidden="@(i != _active)">
+                        <div class="pr-row__scroll" id="@tab.TrackId">
+                            @for (var j = 0; j < tab.Items.Count; j++)
+                            {
+                                var prod = tab.Items[j];
+                                <div class="pr-row__item" @key="prod.Id">
+                                    <ProductCard Product="prod" Variant="row" Index="j" />
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    [Parameter] public bool ShowLatest { get; set; } = true;
+    [Parameter] public bool ShowBest { get; set; } = true;
+    [Parameter] public bool ShowRestocked { get; set; } = true;
+
+    private sealed class ShowcaseTab
+    {
+        public string Label { get; init; } = "";
+        public string TrackId { get; init; } = "";
+        public List<ProductDto> Items { get; init; } = new();
+    }
+
+    private readonly List<ShowcaseTab> _tabs = new();
+    private bool _loading = true;
+    private int _active;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var latestTask = ShowLatest
+            ? FetchAsync("api/products?onlyAvailable=true&skip=0&take=8")
+            : Task.FromResult(new List<ProductDto>());
+        var bestTask = ShowBest
+            ? FetchAsync("api/products/bestsellers?take=8")
+            : Task.FromResult(new List<ProductDto>());
+        var restockedTask = ShowRestocked
+            ? FetchAsync("api/products/restocked?take=8")
+            : Task.FromResult(new List<ProductDto>());
+
+        await Task.WhenAll(latestTask, bestTask, restockedTask);
+
+        if (ShowLatest) AddTab("جدیدترین", latestTask.Result);
+        if (ShowBest) AddTab("پرفروش‌ترین", bestTask.Result);
+        if (ShowRestocked) AddTab("تازه موجود", restockedTask.Result);
+
+        _loading = false;
+    }
+
+    private void AddTab(string label, List<ProductDto> items)
+    {
+        if (items.Count == 0) return;
+        _tabs.Add(new ShowcaseTab
+        {
+            Label = label,
+            TrackId = "hps-track-" + _tabs.Count,
+            Items = items
+        });
+    }
+
+    private async Task<List<ProductDto>> FetchAsync(string url)
+    {
+        try
+        {
+            return await Http.GetFromJsonAsync<List<ProductDto>>(url) ?? new();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+}

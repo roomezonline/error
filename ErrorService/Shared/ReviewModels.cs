@@ -36,6 +36,7 @@ public sealed class ProductReviewDto
     public string? MediaUrl { get; set; }
     public bool IsApproved { get; set; }
     public bool IsAdminRead { get; set; }
+    public bool IsVerifiedBuyer { get; set; }
     public string CreatedAtFa { get; set; } = string.Empty;
     public List<ProductReviewDto> Replies { get; set; } = new();
 }

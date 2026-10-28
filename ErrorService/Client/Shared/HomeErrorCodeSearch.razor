@@ -1,0 +1,287 @@
+@using System.Net.Http.Json
+@using ErrorService.Shared
+@using ErrorService.Shared.Models
+@using ErrorService.Client.Services
+@inject HttpClient Http
+@inject SiteSettingsService Settings
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
+
+@if (_visible)
+{
+    <section class="hes" dir="rtl" aria-label="جستجوی کد خطا">
+        <div class="container">
+            <div class="hes-card">
+                <div class="hes-copy">
+                    <span class="hes-eyebrow"><span class="oi oi-bolt" aria-hidden="true"></span> عیب‌یابی سریع</span>
+                    <h2 class="hes-title">کد خطای دستگاهت را جستجو کن</h2>
+                    <p class="hes-sub">کد خطا، برند یا نوع دستگاه را بنویس تا علت و راه‌حل را ببینی.</p>
+                </div>
+
+                <div class="hes-panel" @onkeydown="HandleKeyDown">
+                    <div class="hes-box">
+                        <span class="oi oi-magnifying-glass hes-icon" aria-hidden="true"></span>
+                        <input class="hes-input"
+                               type="text"
+                               role="combobox"
+                               aria-expanded="@(_open && _items.Count > 0)"
+                               aria-controls="hes-results"
+                               aria-autocomplete="list"
+                               autocomplete="off"
+                               placeholder="مثلاً E1 یا 5E یا برند سامسونگ"
+                               value="@_query"
+                               @oninput="OnInput" />
+                        @if (_loading)
+                        {
+                            <span class="hes-spinner" aria-hidden="true"></span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_query))
+                        {
+                            <button type="button" class="hes-clear" @onclick="Clear" aria-label="پاک کردن جستجو">
+                                <span class="oi oi-x" aria-hidden="true"></span>
+                            </button>
+                        }
+                    </div>
+
+                    @if (_chips.Count > 0 && !_open && string.IsNullOrWhiteSpace(_query))
+                    {
+                        <div class="hes-chips" aria-label="کدهای تازه">
+                            <span class="hes-chips__label">کدهای تازه</span>
+                            @foreach (var chip in _chips)
+                            {
+                                <a class="hes-chip" href="@ItemUrl(chip)" title="@chip.Description">
+                                    <span class="hes-chip__code">@chip.Code</span>
+                                    <span class="hes-chip__brand">@chip.Brand</span>
+                                </a>
+                            }
+                        </div>
+                    }
+
+                    @if (_open && _items.Count > 0)
+                    {
+                        <div class="hes-results" id="hes-results" role="listbox">
+                            @for (var i = 0; i < _items.Count; i++)
+                            {
+                                var idx = i;
+                                var item = _items[idx];
+                                <a class="hes-item @(idx == _selectedIndex ? "is-selected" : "")"
+                                   role="option"
+                                   aria-selected="@(idx == _selectedIndex)"
+                                   href="@ItemUrl(item)"
+                                   @onclick="() => OnSelect(item)">
+                                    <span class="hes-code">@item.Code</span>
+                                    <span class="hes-item-body">
+                                        <span class="hes-item-title">@item.Brand · @item.DeviceType</span>
+                                        <span class="hes-item-desc">@item.Description</span>
+                                    </span>
+                                    <span class="oi oi-arrow-left hes-item-arrow" aria-hidden="true"></span>
+                                </a>
+                            }
+
+                            <a class="hes-all" href="@SeeAllUrl()">
+                                مشاهده همهٔ نتایج
+                                @if (_total > _items.Count)
+                                {
+                                    <span class="hes-all-count">@_total.ToString("N0")</span>
+                                }
+                            </a>
+                        </div>
+                    }
+                    else if (_open && !_loading && _query.Trim().Length >= 2)
+                    {
+                        <div class="hes-empty">
+                            کدی با «@_query.Trim()» پیدا نشد.
+                            <a href="/technical/error-codes">مرور بانک کدهای خطا</a>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+}
+
+
+@code {
+    private bool _visible;
+    private int _maxResults = 6;
+
+    private string _query = string.Empty;
+    private List<ErrorCodeQuickSearchItem> _items = new();
+    private List<ErrorCodeQuickSearchItem> _chips = new();
+    private int _total;
+    private bool _loading;
+    private bool _open;
+    private int _selectedIndex = -1;
+
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Match SiteSettingsDto's default (enabled) when settings are momentarily
+        // unavailable, so the box does not vanish on a cold/failed first fetch.
+        _visible = true;
+        try
+        {
+            var s = await Settings.GetAsync();
+            if (s != null)
+            {
+                _visible = s.EnableHomeErrorSearch;
+                _maxResults = s.HomeErrorSearchMaxResults <= 0 ? 6 : Math.Clamp(s.HomeErrorSearchMaxResults, 3, 10);
+            }
+        }
+        catch { }
+
+        if (_visible)
+            _ = LoadChipsAsync();
+    }
+
+    private async Task LoadChipsAsync()
+    {
+        try
+        {
+            var recent = await Http.GetFromJsonAsync<List<ErrorCodeQuickSearchItem>>(
+                "api/technical/error-codes/recent?take=4");
+            if (recent != null)
+                _chips = recent;
+        }
+        catch { }
+        try { await InvokeAsync(StateHasChanged); } catch { }
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? string.Empty;
+        await SearchAsync(_query);
+    }
+
+    private async Task SearchAsync(string q)
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
+        var term = q.Trim();
+        if (term.Length < 2)
+        {
+            _items = new();
+            _total = 0;
+            _loading = false;
+            _open = false;
+            _selectedIndex = -1;
+            return;
+        }
+
+        _loading = true;
+        _open = true;
+        try
+        {
+            await Task.Delay(300, token);
+            var result = await Http.GetFromJsonAsync<ErrorCodeQuickSearchResult>(
+                $"api/technical/error-codes/quick-search?q={Uri.EscapeDataString(term)}&take={_maxResults}", token);
+
+            _items = result?.Items ?? new();
+            _total = result?.Total ?? 0;
+            _selectedIndex = _items.Count > 0 ? 0 : -1;
+        }
+        catch (OperationCanceledException) { return; }
+        catch
+        {
+            _items = new();
+            _total = 0;
+            _selectedIndex = -1;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+                _loading = false;
+        }
+
+        _open = true;
+    }
+
+    private void Clear()
+    {
+        _cts?.Cancel();
+        _query = string.Empty;
+        _items = new();
+        _total = 0;
+        _open = false;
+        _loading = false;
+        _selectedIndex = -1;
+    }
+
+    private void OnSelect(ErrorCodeQuickSearchItem item)
+    {
+        _open = false;
+        _ = TrackSelectAsync(item);
+    }
+
+    private async Task TrackSelectAsync(ErrorCodeQuickSearchItem item)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("trackGaEvent", "error_code_search", new
+            {
+                search_term = _query.Trim(),
+                code = item.Code,
+                brand = item.Brand,
+                results = _total
+            });
+        }
+        catch { }
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _open = false;
+            return;
+        }
+
+        if (!_open || _items.Count == 0)
+            return;
+
+        if (e.Key == "ArrowDown")
+        {
+            _selectedIndex = _selectedIndex < 0 ? 0 : Math.Min(_selectedIndex + 1, _items.Count - 1);
+            return;
+        }
+
+        if (e.Key == "ArrowUp")
+        {
+            _selectedIndex = _selectedIndex <= 0 ? 0 : _selectedIndex - 1;
+            return;
+        }
+
+        if (e.Key == "Enter" && _selectedIndex >= 0 && _selectedIndex < _items.Count)
+        {
+            var item = _items[_selectedIndex];
+            OnSelect(item);
+            Nav.NavigateTo(ItemUrl(item));
+        }
+    }
+
+    private static string ItemUrl(ErrorCodeQuickSearchItem item) =>
+        $"/technical/error-codes/{Uri.EscapeDataString(item.Brand.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(item.DeviceType.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(item.Code.Trim().ToLowerInvariant())}";
+
+    private string SeeAllUrl()
+    {
+        var term = _query.Trim();
+        if (string.IsNullOrEmpty(term))
+            return "/technical/error-codes";
+
+        var brand = _items.FirstOrDefault()?.Brand?.Trim();
+        return string.IsNullOrEmpty(brand)
+            ? $"/technical/error-codes?code={Uri.EscapeDataString(term)}"
+            : $"/technical/error-codes?brand={Uri.EscapeDataString(brand)}&code={Uri.EscapeDataString(term)}";
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

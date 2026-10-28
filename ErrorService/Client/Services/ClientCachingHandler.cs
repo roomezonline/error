@@ -24,7 +24,10 @@ public sealed class ClientCachingHandler : DelegatingHandler
         {
             var path = request.RequestUri.AbsolutePath;
 
-            if (CacheablePrefixes.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+            if (CacheablePrefixes.Any(p =>
+                    string.Equals(path, p, StringComparison.OrdinalIgnoreCase)
+                    || (p != "/api/sitesettings"
+                        && path.StartsWith(p, StringComparison.OrdinalIgnoreCase))))
             {
                 var key = request.RequestUri.ToString();
 

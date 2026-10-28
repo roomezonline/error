@@ -1,7 +1,10 @@
 @page "/payment/result"
+@using ErrorService.Shared
+@using System.Net.Http.Json
 @inject NavigationManager Nav
 @inject HttpClient Http
 @inject ErrorService.Client.Services.CheckoutRecoveryService Recovery
+@inject ErrorService.Client.Services.AuthService AuthService
 
 <PageTitle>نتیجه پرداخت | ارورسرویس</PageTitle>
 
@@ -11,35 +14,63 @@
 
 <div class="pr-page" dir="rtl">
     <div class="pr-card">
-        @if (isLoading)
+        @if (State == ResultState.Loading)
         {
             <div class="pr-icon pr-icon--wait"><div class="spinner-border text-primary" role="status"></div></div>
             <h1 class="pr-title">در حال بررسی پرداخت...</h1>
-            <p class="pr-desc">لطفاً چند لحظه صبر کنید.</p>
+            <p class="pr-desc">وضعیت پرداخت از سرور در حال بررسی است؛ لطفاً چند لحظه صبر کنید.</p>
         }
-        else if (isSuccess)
+        else if (State == ResultState.Success)
         {
             <div class="pr-icon pr-icon--ok"><span class="oi oi-check"></span></div>
             <h1 class="pr-title">پرداخت با موفقیت انجام شد</h1>
             <p class="pr-desc">@Message</p>
-            @if (OrderId.HasValue)
+            @if (!string.IsNullOrWhiteSpace(_order?.OrderNumber))
             {
-                <div class="pr-meta">سفارش شماره <b>@OrderId</b></div>
+                <div class="pr-meta">
+                    سفارش شماره <b dir="ltr">@_order!.OrderNumber</b>
+                    @if (_order.TotalAmount > 0)
+                    {
+                        <span> — مبلغ @PayableAmount.ToString("N0") تومان</span>
+                    }
+                </div>
             }
+        }
+        else if (State == ResultState.Pending)
+        {
+            <div class="pr-icon pr-icon--wait"><span class="oi oi-clock"></span></div>
+            <h1 class="pr-title">پرداخت در انتظار تأیید نهایی</h1>
+            <p class="pr-desc">@Message</p>
+            @if (!string.IsNullOrWhiteSpace(_order?.OrderNumber))
+            {
+                <div class="pr-meta">سفارش شماره <b dir="ltr">@_order!.OrderNumber</b></div>
+            }
+        }
+        else if (State == ResultState.Unverifiable)
+        {
+            <div class="pr-icon pr-icon--wait"><span class="oi oi-warning"></span></div>
+            <h1 class="pr-title">وضعیت پرداخت قابل بررسی نیست</h1>
+            <p class="pr-desc">@Message</p>
         }
         else
         {
             <div class="pr-icon pr-icon--fail"><span class="oi oi-x"></span></div>
             <h1 class="pr-title">پرداخت ناموفق بود</h1>
             <p class="pr-desc">@Message</p>
-            @if (OrderId.HasValue)
+            @if (!string.IsNullOrWhiteSpace(_order?.OrderNumber))
             {
-                <div class="pr-meta">سفارش شماره <b>@OrderId</b></div>
+                <div class="pr-meta">سفارش شماره <b dir="ltr">@_order!.OrderNumber</b></div>
             }
         }
 
         <div class="pr-actions">
-            @if (OrderId.HasValue)
+            @if (State is ResultState.Pending or ResultState.Unverifiable)
+            {
+                <button type="button" class="pr-btn pr-btn--primary" @onclick="RetryAsync">
+                    بررسی مجدد وضعیت
+                </button>
+            }
+            @if (_signedIn && OrderId.HasValue)
             {
                 <a class="pr-btn pr-btn--primary" href="/my-orders/@OrderId">مشاهده سفارش</a>
             }
@@ -84,7 +115,7 @@
 
     .pr-icon--ok { background: #16a34a; }
     .pr-icon--fail { background: #dc2626; }
-    .pr-icon--wait { background: #e2e8f0; }
+    .pr-icon--wait { background: #e2e8f0; color: #475569; }
 
     .pr-title { font-size: 1.2rem; font-weight: 900; color: #0f172a; margin: 0 0 10px; }
     .pr-desc { font-size: .9rem; color: #475569; line-height: 1.9; margin: 0; word-break: break-word; }
@@ -100,6 +131,8 @@
         font-size: .9rem;
         text-decoration: none;
         transition: all .2s;
+        border: none;
+        width: 100%;
     }
 
     .pr-btn--primary { background: #4f46e5; color: #fff; }
@@ -114,11 +147,22 @@
 </style>
 
 @code {
+    private enum ResultState { Loading, Success, Pending, Failed, Unverifiable }
+
+    private ResultState State = ResultState.Loading;
+    private OrderDto? _order;
     private int? OrderId;
-    private bool isSuccess;
     private string Message = "";
-    private bool isLoading = true;
     private string? TrackingUrl;
+    private bool _signedIn;
+
+    private string? _queryOrderNumber;
+    private string? _queryPhone;
+    private string? _queryToken;
+    private string? _queryStatus;
+    private string? _queryMessage;
+
+    private decimal PayableAmount => _order == null ? 0 : _order.TotalAmount - (_order.DiscountAmount ?? 0);
 
     protected override async Task OnInitializedAsync()
     {
@@ -127,28 +171,152 @@
         if (int.TryParse(query["orderId"], out var orderId) && orderId > 0)
             OrderId = orderId;
 
-        var orderNumber = query["orderNumber"];
-        var phone = query["phone"];
-        if (!string.IsNullOrWhiteSpace(orderNumber) && !string.IsNullOrWhiteSpace(phone))
-            TrackingUrl = $"/order-tracking?orderNumber={Uri.EscapeDataString(orderNumber)}&phone={Uri.EscapeDataString(phone)}";
+        _queryOrderNumber = query["orderNumber"];
+        _queryPhone = query["phone"];
+        _queryToken = query["token"];
+        _queryStatus = query["status"];
+        _queryMessage = query["msg"];
 
-        isSuccess = string.Equals(query["status"], "success", StringComparison.OrdinalIgnoreCase);
+        try { _signedIn = await AuthService.GetMeAsync() != null; } catch { _signedIn = false; }
 
-        var rawMessage = query["msg"];
-        Message = string.IsNullOrWhiteSpace(rawMessage)
-            ? (isSuccess ? "پرداخت شما با موفقیت ثبت شد." : "پرداخت انجام نشد؛ می‌توانید دوباره تلاش کنید.")
-            : rawMessage!;
+        await VerifyAsync();
+    }
 
-        if (isSuccess)
+    private async Task RetryAsync()
+    {
+        State = ResultState.Loading;
+        Message = "";
+        await InvokeAsync(StateHasChanged);
+        await VerifyAsync();
+    }
+
+    /// <summary>
+    /// نتیجهٔ پرداخت فقط از دل وضعیت واقعی سفارش در سرور خوانده می‌شود؛
+    /// query string درگاه به‌تنهایی ملاک موفقیت نیست و فقط متن خطا/وضعیت اولیه را می‌دهد.
+    /// </summary>
+    private async Task VerifyAsync()
+    {
+        var order = await LoadVerifiedOrderAsync();
+        if (order != null)
+        {
+            _order = order;
+            OrderId = order.Id;
+            if (!string.IsNullOrWhiteSpace(order.OrderNumber) && !string.IsNullOrWhiteSpace(order.PhoneNumber))
+                TrackingUrl = $"/order-tracking?orderNumber={Uri.EscapeDataString(order.OrderNumber)}&phone={Uri.EscapeDataString(order.PhoneNumber)}";
+
+            switch (order.Status)
+            {
+                case OrderStatus.Approved:
+                case OrderStatus.Completed:
+                case OrderStatus.ReceiptUploaded:
+                    State = ResultState.Success;
+                    Message = order.Status == OrderStatus.ReceiptUploaded
+                        ? "پرداخت شما ثبت شد و رسید آن در انتظار تأیید فروشنده است."
+                        : "پرداخت شما ثبت و توسط فروشگاه تأیید شد.";
+                    try
+                    {
+                        // نشان سفارش مهمان فقط وقتی پاک می‌شود که به همین سفارش اشاره کند.
+                        var marker = await Recovery.GetPendingMarkerAsync();
+                        if (marker == null || marker.Id == order.Id)
+                            await Recovery.ClearPendingOrderAsync();
+                        await Recovery.ClearDraftAsync();
+                    }
+                    catch { }
+                    break;
+
+                case OrderStatus.PendingPayment when IsPaymentStarted(order):
+                    State = ResultState.Pending;
+                    Message = "پرداخت شما در درگاه انجام شده و در انتظار تأیید نهایی است. اگر مبلغ کسر شده باشد، تأیید به‌صورت خودکار ثبت می‌شود.";
+                    break;
+
+                case OrderStatus.PendingPayment:
+                    State = ResultState.Failed;
+                    Message = FailureMessage("پرداخت این سفارش ثبت نشده است. اگر مبلغی کسر شده باشد، طی ۷۲ ساعت به‌صورت خودکار بازگردانده می‌شود.");
+                    break;
+
+                case OrderStatus.Cancelled:
+                case OrderStatus.Rejected:
+                    State = ResultState.Failed;
+                    Message = "این سفارش لغو یا رد شده است و پرداخت جدیدی برای آن ثبت نمی‌شود.";
+                    break;
+
+                default:
+                    State = ResultState.Failed;
+                    Message = FailureMessage("امکان تأیید پرداخت برای این سفارش وجود ندارد.");
+                    break;
+            }
+
+            return;
+        }
+
+        // سفارش قابل خواندن نبود: هرگز بر اساس query string ادعای موفقیت نمی‌کنیم.
+        if (string.Equals(_queryStatus, "failed", StringComparison.OrdinalIgnoreCase))
+        {
+            State = ResultState.Failed;
+            Message = FailureMessage("پرداخت انجام نشد؛ می‌توانید دوباره تلاش کنید.");
+        }
+        else
+        {
+            State = ResultState.Unverifiable;
+            Message = "در حال حاضر امکان بررسی نتیجه از سرور نیست. اگر مبلغی از حساب شما کسر شده است، نگران نباشید؛ نتیجهٔ پرداخت به‌صورت خودکار در سفارش شما ثبت می‌شود.";
+        }
+    }
+
+    private static bool IsPaymentStarted(OrderDto order)
+        => order.PaymentInitiatedAt.HasValue || !string.IsNullOrWhiteSpace(order.PaymentAuthority);
+
+    private string FailureMessage(string fallback)
+        => string.IsNullOrWhiteSpace(_queryMessage) ? fallback : _queryMessage!;
+
+    private async Task<OrderDto?> LoadVerifiedOrderAsync()
+    {
+        // ۱) مسیر پیگیری عمومی: شماره سفارش + موبایل (همان چیزی که callback درگاه می‌فرستد).
+        if (!string.IsNullOrWhiteSpace(_queryOrderNumber) && !string.IsNullOrWhiteSpace(_queryPhone))
         {
             try
             {
-                await Recovery.ClearPendingOrderAsync();
-                await Recovery.ClearDraftAsync();
+                var byTrack = await Http.GetFromJsonAsync<OrderDto>(
+                    $"api/orders/track?orderNumber={Uri.EscapeDataString(_queryOrderNumber!)}&phone={Uri.EscapeDataString(_queryPhone!)}");
+                if (byTrack != null) return byTrack;
             }
             catch { }
         }
 
-        isLoading = false;
+        if (!OrderId.HasValue) return null;
+
+        // ۲) توکن دسترسی سفارش: از query یا نشان سفارش مهمانِ ذخیره‌شده.
+        var token = _queryToken;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            try
+            {
+                var marker = await Recovery.GetPendingMarkerAsync();
+                if (marker != null && marker.Id == OrderId.Value) token = marker.AccessToken;
+            }
+            catch { }
+        }
+
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            try
+            {
+                var byToken = await Http.GetFromJsonAsync<OrderDto>(
+                    $"api/orders/{OrderId.Value}?token={Uri.EscapeDataString(token!)}");
+                if (byToken != null) return byToken;
+            }
+            catch { }
+        }
+
+        // ۳) کاربر وارد شده: احراز هویت خودکار JWT.
+        if (_signedIn)
+        {
+            try
+            {
+                return await Http.GetFromJsonAsync<OrderDto>($"api/orders/{OrderId.Value}");
+            }
+            catch { }
+        }
+
+        return null;
     }
 }

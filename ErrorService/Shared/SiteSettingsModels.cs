@@ -18,7 +18,9 @@ public enum SiteHomeModuleKey
     SomeCustomers = 12,
     TechnicalGuide = 13,
     BestSellers = 14,
-    Restocked = 15
+    Restocked = 15,
+    AcademyHub = 17,
+    TrustStrip = 18
 }
 
 public sealed class SiteHomeModuleDto
@@ -83,6 +85,8 @@ public sealed class SiteSettingsDto
     // ===== تنظیمات فروشگاه =====
     public bool EnableProductReviews { get; set; } = true;
     public bool EnableReviewMedia { get; set; }
+    public bool EnableVerifiedBuyerBadge { get; set; } = true;
+    public bool EnableReviewGallery { get; set; } = true;
     public bool EnableProductQna { get; set; }
     public bool EnableSpecsTable { get; set; } = true;
     public bool EnablePriceHistoryChart { get; set; }
@@ -97,9 +101,38 @@ public sealed class SiteSettingsDto
     public decimal? FreeShippingThreshold { get; set; }
     public bool EnableReturnRequests { get; set; }
     public bool EnableReorder { get; set; }
+    public bool EnableQuickView { get; set; } = true;
+    public bool EnableCompare { get; set; } = true;
+    public int CompareMaxItems { get; set; } = 4;
+    public bool EnableMegaMenu { get; set; } = true;
+    public bool EnableBreadcrumb { get; set; } = true;
+    public bool EnableHomeStats { get; set; } = true;
+    public bool ShowOrderCountStat { get; set; } = true;
+    public bool EnableHomeErrorSearch { get; set; } = true;
+    public int HomeErrorSearchMaxResults { get; set; } = 6;
+
+    // ===== تسویه‌حساب: آدرس ساختاریافته =====
+    public bool EnableStructuredAddress { get; set; } = true;
+    public bool RequireProvinceCity { get; set; }
+    public bool RequirePostalCode { get; set; }
+
+    // ===== لغو سفارش توسط مشتری =====
+    public bool EnableCustomerOrderCancel { get; set; } = true;
+    public int CustomerCancelWindowHours { get; set; } = 24;
+    public bool CustomerCancelRequireReason { get; set; } = true;
+
     public bool EnableHomeBestSellers { get; set; } = true;
     public bool EnableHomeRestocked { get; set; } = true;
     public bool ShowEnamadSeal { get; set; } = true;
 
     public List<SiteHomeModuleDto> HomeModules { get; set; } = new();
+}
+
+/// <summary>آمار عمومی و کش‌شدهٔ سایت برای نوار شمارنده‌های صفحه اصلی.</summary>
+public sealed class SiteStatsDto
+{
+    public int MonitoringCount { get; set; }
+    public int ErrorCodesCount { get; set; }
+    public int LearningCount { get; set; }
+    public int CompletedServicesCount { get; set; }
 }

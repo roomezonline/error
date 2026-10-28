@@ -83,9 +83,13 @@
                     {
                         <a class="wsp-btn wsp-btn--primary" href="@TelHref"><span class="oi oi-phone"></span> تماس با ما</a>
                     }
-                    @if (!string.IsNullOrEmpty(MapsHref))
+                    @if (!string.IsNullOrEmpty(GoogleDirectionsHref))
                     {
-                        <a class="wsp-btn wsp-btn--ghost" href="@MapsHref" target="_blank" rel="noopener noreferrer"><span class="oi oi-external-link"></span> نمایش روی نقشه</a>
+                        <a class="wsp-btn wsp-btn--ghost" href="@GoogleDirectionsHref" target="_blank" rel="noopener noreferrer"><span class="oi oi-map-marker"></span> مسیریابی با گوگل مپ</a>
+                    }
+                    @if (!string.IsNullOrEmpty(NeshanHref))
+                    {
+                        <a class="wsp-btn wsp-btn--ghost wsp-btn--neshan" href="@NeshanHref" target="_blank" rel="noopener noreferrer"><span class="oi oi-map-marker"></span> مسیریابی با نشان</a>
                     }
                 </div>
             </div>
@@ -104,6 +108,13 @@
                         <div class="wsp-info__b">
                             <div class="wsp-info__l">آدرس</div>
                             <div class="wsp-info__v">@ws.Address</div>
+                            @if (!string.IsNullOrEmpty(GoogleDirectionsHref))
+                            {
+                                <div class="wsp-route">
+                                    <a class="wsp-route__l" href="@GoogleDirectionsHref" target="_blank" rel="noopener noreferrer">مسیریابی در گوگل مپ <span class="oi oi-arrow-left"></span></a>
+                                    <a class="wsp-route__l wsp-route__l--nsh" href="@NeshanHref" target="_blank" rel="noopener noreferrer">مسیریابی در نشان <span class="oi oi-arrow-left"></span></a>
+                                </div>
+                            }
                         </div>
                     </div>
 
@@ -318,6 +329,28 @@
     .wsp-info__lnk { color: var(--wsp-ink); text-decoration: none; }
     .wsp-info__lnk:hover { color: var(--wsp-blue); }
 
+    .wsp-route { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .6rem; }
+    .wsp-route__l {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .35rem .7rem;
+        border-radius: 999px;
+        border: 1px solid rgba(37, 99, 235, .28);
+        background: rgba(37, 99, 235, .06);
+        color: var(--wsp-blue);
+        font-size: .78rem;
+        font-weight: 800;
+        text-decoration: none;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .wsp-route__l .oi { font-size: .7rem; }
+    .wsp-route__l:hover { background: var(--wsp-blue); border-color: var(--wsp-blue); color: #fff; }
+    .wsp-route__l--nsh { border-color: rgba(13, 148, 136, .35); background: rgba(13, 148, 136, .08); color: #0f766e; }
+    .wsp-route__l--nsh:hover { background: #0f766e; border-color: #0f766e; color: #fff; }
+    .wsp-btn--neshan { color: #0f766e; border-color: rgba(13, 148, 136, .35); }
+    .wsp-btn--neshan:hover { color: #0f766e; border-color: #0f766e; background: rgba(13, 148, 136, .07); }
+
     .wsp-side { display: flex; flex-direction: column; gap: 1rem; }
     .wsp-cta {
         background: linear-gradient(150deg, #1d4ed8 0%, #2563eb 45%, #0ea5e9 100%);
@@ -431,17 +464,24 @@
         }
     }
 
-    private string MapsHref
+    private string AddressQuery
     {
         get
         {
             if (ws == null) return "";
-            var q = string.Join(" ", new[] { ws.Address, ws.CityName, ws.ProvinceName }
+            return string.Join("، ", new[] { ws.Address, ws.CityName, ws.ProvinceName }
                 .Where(s => !string.IsNullOrWhiteSpace(s)));
-            if (q.Length == 0) return "";
-            return "https://www.google.com/maps/search/?api=1&query=" + Uri.EscapeDataString(q);
         }
     }
+
+    private string GoogleDirectionsHref =>
+        AddressQuery.Length == 0 ? "" : "https://www.google.com/maps/dir/?api=1&destination=" + Uri.EscapeDataString(AddressQuery);
+
+    private string GoogleMapSearchHref =>
+        AddressQuery.Length == 0 ? "" : "https://www.google.com/maps/search/?api=1&query=" + Uri.EscapeDataString(AddressQuery);
+
+    private string NeshanHref =>
+        AddressQuery.Length == 0 ? "" : "https://neshan.org/maps/search/" + Uri.EscapeDataString(AddressQuery);
 
     private string JoinedFa => ws == null ? "" : PersianDate.ToLongPersianDate(ws.CreatedAt);
 
@@ -573,6 +613,9 @@
 
         if (place.Length > 0)
             localBusiness["areaServed"] = new Dictionary<string, object?> { ["@type"] = "City", ["name"] = place };
+
+        if (GoogleMapSearchHref.Length > 0)
+            localBusiness["hasMap"] = GoogleMapSearchHref;
 
         if (!string.IsNullOrWhiteSpace(ws.OwnerFullName))
             localBusiness["founder"] = new Dictionary<string, object?> { ["@type"] = "Person", ["name"] = ws.OwnerFullName };

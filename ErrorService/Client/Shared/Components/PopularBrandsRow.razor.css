@@ -8,8 +8,12 @@
 }
 
 .brands-card__header {
-    text-align: center;
-    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 25px;
+    margin-bottom: 6px;
 }
 
 .brands-card__title {
@@ -28,50 +32,21 @@
     color: #f59e0b;
 }
 
-.brands-marquee {
-    position: relative;
-    overflow: hidden;
-    padding: 0;
-    --brands-marquee-duration: 45s;
-    direction: ltr; /* Ensure consistent behavior for marquee */
-}
-
-.brands-marquee__track {
+.brands-track {
     display: flex;
     align-items: center;
     gap: 0;
-    width: max-content;
-    will-change: transform;
-    /* Move from left to right (natural feel for infinite loop) */
-    animation: brands-marquee-scroll var(--brands-marquee-duration) linear infinite;
+    overflow-x: auto;
+    padding: 0 25px 6px;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline-start: 25px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
 }
 
-.brands-marquee__segment {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    flex: 0 0 auto;
-}
-
-/* 
-   To create a seamless loop:
-   We render 10 segments. 
-   We only need to scroll the width of ONE segment (1/10 = 10%)
-   to make it look infinite without any jumps or gaps.
-*/
-@keyframes brands-marquee-scroll {
-    from { transform: translateX(-10%); }
-    to { transform: translateX(0); }
-}
-
-.brands-marquee:hover .brands-marquee__track {
-    animation-play-state: paused;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .brands-marquee__track {
-        animation: none;
-    }
+.brands-track::-webkit-scrollbar {
+    display: none;
 }
 
 .brand-item {
@@ -83,6 +58,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    scroll-snap-align: start;
 }
 
 /* Faded vertical divider with sharp tips - mimicking reference exactly */
@@ -136,6 +112,12 @@
     border-radius: 12px;
 }
 
+@media (min-width: 768px) {
+    .brands-track {
+        scroll-snap-type: none;
+    }
+}
+
 @media (max-width: 768px) {
     .brands-card {
         padding: 20px 0;
@@ -143,7 +125,13 @@
     }
     
     .brands-card__header {
-        margin-bottom: 15px;
+        padding: 0 16px;
+        margin-bottom: 10px;
+    }
+
+    .brands-track {
+        padding: 0 16px 6px;
+        scroll-padding-inline-start: 16px;
     }
 
     .brand-item {

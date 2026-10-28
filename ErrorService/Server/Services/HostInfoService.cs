@@ -1,4 +1,5 @@
 using ErrorService.Server.Data;
+using ErrorService.Server.Models;
 using ErrorService.Shared;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
@@ -25,6 +26,7 @@ public sealed class HostInfoService : BackgroundService
     private DateTime _dbCacheAt = DateTime.MinValue;
     private DateTime _scannedAt = DateTime.MinValue;
     private bool _scanning;
+    private double _quotaGb;
     private static readonly DateTime _startedAt = DateTime.UtcNow;
 
     public HostInfoService(IWebHostEnvironment env, IServiceScopeFactory scopeFactory, IConfiguration config, ILogger<HostInfoService> logger)
@@ -33,6 +35,7 @@ public sealed class HostInfoService : BackgroundService
         _scopeFactory = scopeFactory;
         _config = config;
         _logger = logger;
+        _quotaGb = ReadQuotaGb();
     }
 
     public HostInfoDto GetSnapshot()
@@ -52,7 +55,7 @@ public sealed class HostInfoService : BackgroundService
     /// <summary>ÃƒËœÃ‚Â¯ÃƒËœÃ‚Â±ÃƒËœÃ‚Â®Ãƒâ„¢Ã‹â€ ÃƒËœÃ‚Â§ÃƒËœÃ‚Â³ÃƒËœÃ‚Âª ÃƒËœÃ‚Â¨ÃƒËœÃ‚Â±Ãƒâ„¢Ã‹â€ ÃƒËœÃ‚Â²ÃƒËœÃ‚Â±ÃƒËœÃ‚Â³ÃƒËœÃ‚Â§Ãƒâ„¢Ã¢â‚¬Â Ãƒâ€ºÃ…â€™ Ãƒâ„¢Ã‚ÂÃƒâ„¢Ã‹â€ ÃƒËœÃ‚Â±Ãƒâ€ºÃ…â€™ (ÃƒËœÃ‚Â¯ÃƒÅ¡Ã‚Â©Ãƒâ„¢Ã¢â‚¬Â¦Ãƒâ„¢Ã¢â‚¬Â¡ Refresh ÃƒËœÃ‚Â¯ÃƒËœÃ‚Â± UI).</summary>
     public async Task RefreshAsync()
     {
-        await ComputeAsync(force: true);
+        await ComputeAsync(force: true, waitIfBusy: true);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -75,16 +78,21 @@ public sealed class HostInfoService : BackgroundService
         }
     }
 
-    private async Task ComputeAsync(bool force)
+    private async Task ComputeAsync(bool force, bool waitIfBusy = false)
     {
         if (!force && _cache != null && DateTime.UtcNow - _scannedAt < ScanInterval) return;
-        if (!await _computeLock.WaitAsync(0)) return;
+        if (waitIfBusy)
+        {
+            await _computeLock.WaitAsync();
+        }
+        else if (!await _computeLock.WaitAsync(0)) return;
 
         try
         {
             _scanning = true;
             var files = await Task.Run(ScanFiles);
             var db = await GetDatabaseInfoAsync(force);
+            _quotaGb = await GetConfiguredQuotaGbAsync();
             var disk = BuildDiskInfo(files, db);
 
             _cache = new HostInfoDto
@@ -125,6 +133,69 @@ public sealed class HostInfoService : BackgroundService
             : 0;
     }
 
+    /// <summary>
+    /// خواندن سهمیه فضای هاست از بانک اطلاعاتی. اگر مقداری ثبت نشده باشد،
+    /// مقدار HostInfo:QuotaGb از appsettings به عنوان پیش‌فرض استفاده می‌شود.
+    /// </summary>
+    public async Task<double> GetConfiguredQuotaGbAsync()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ErrorServiceDbContext>();
+            var saved = await db.HostInfoSettings
+                .AsNoTracking()
+                .OrderBy(x => x.Id)
+                .Select(x => (double?)x.QuotaGb)
+                .FirstOrDefaultAsync();
+
+            if (saved.HasValue) return NormalizeQuota(saved.Value);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read host quota settings from database");
+        }
+
+        return NormalizeQuota(ReadQuotaGb());
+    }
+
+    /// <summary>
+    /// ثبت سهمیه فضای هاست و محاسبه مجدد تحلیل. مقدار صفر یعنی استفاده از کل دیسک سرور.
+    /// </summary>
+    public async Task<double> SaveQuotaGbAsync(double quotaGb)
+    {
+        quotaGb = NormalizeQuota(quotaGb);
+
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ErrorServiceDbContext>();
+            var settings = await db.HostInfoSettings.OrderBy(x => x.Id).FirstOrDefaultAsync();
+
+            if (settings == null)
+            {
+                settings = new HostInfoSettings { QuotaGb = quotaGb };
+                db.HostInfoSettings.Add(settings);
+            }
+            else
+            {
+                settings.QuotaGb = quotaGb;
+            }
+
+            settings.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        _quotaGb = quotaGb;
+        await ComputeAsync(force: true, waitIfBusy: true);
+        return _quotaGb;
+    }
+
+    private static double NormalizeQuota(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value)) return 0;
+        return Math.Round(Math.Clamp(value, 0, 1048576), 2);
+    }
+
     private HostDiskInfoDto BuildDiskInfo(HostFilesDto files, HostDatabaseDto db)
     {
         double physicalTotal = 0, physicalFree = 0;
@@ -159,7 +230,7 @@ public sealed class HostInfoService : BackgroundService
             UsedPercent = physicalTotal > 0 ? Math.Round((physicalTotal - physicalFree) / physicalTotal * 100, 1) : 0
         };
 
-        var quotaGb = ReadQuotaGb();
+        var quotaGb = _quotaGb;
         if (quotaGb <= 0) return physical;
 
         var usedMb = files.AppTotalMb + db.TotalMb;

@@ -5,6 +5,7 @@ using ErrorService.Server.Models;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
@@ -142,6 +143,7 @@ public sealed class WorkshopsController : ControllerBase
     }
 
     [HttpGet("customers-row")]
+    [OutputCache(Duration = 180)]
     public async Task<ActionResult<List<WorkshopDto>>> GetCustomersRow()
     {
         return await _db.Workshops
@@ -153,20 +155,11 @@ public sealed class WorkshopsController : ControllerBase
                 Id = x.Id,
                 WorkshopName = x.WorkshopName,
                 OwnerFullName = x.OwnerFullName,
-                MobileNumber = x.MobileNumber,
-                ProvinceId = x.ProvinceId,
                 ProvinceName = x.Province.Name,
-                CityId = x.CityId,
                 CityName = x.City.Name,
-                Address = x.Address,
-                IsActive = x.IsActive,
-                IsDeleted = x.IsDeleted,
-                DeletedAt = x.DeletedAt,
                 ImageUrl = x.ImageUrl,
                 ShowInCustomersRow = x.ShowInCustomersRow,
-                CreatedAt = x.CreatedAt,
-                MaxMonitoringConnections = x.MaxMonitoringConnections,
-                MonitoringDurationHours = x.MonitoringDurationHours
+                CreatedAt = x.CreatedAt
             })
             .ToListAsync();
     }

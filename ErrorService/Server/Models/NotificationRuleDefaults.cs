@@ -12,7 +12,8 @@ public sealed record NotificationRuleDef(
     NotificationSeverity? Severity,
     bool IsEnabled,
     bool BroadcastToAdmins,
-    string[] Placeholders);
+    string[] Placeholders,
+    int Channels = NotificationChannelFlags.Internal);
 
 public static class NotificationRuleDefaults
 {
@@ -24,23 +25,37 @@ public static class NotificationRuleDefaults
             "/my-orders/{OrderId}", NotificationSeverity.Info, true, false,
             new[] { "OrderNumber", "Amount", "OrderId" }),
 
+        new("order.created_by_admin", "سفارش و پرداخت", "ثبت سفارش توسط فروشگاه",
+            "سفارش شما آماده پرداخت است",
+            "سفارش {OrderNumber} به مبلغ {Amount} تومان توسط فروشگاه برای شما ثبت شد و آماده پرداخت است.",
+            "/my-orders/{OrderId}", NotificationSeverity.Info, true, false,
+            new[] { "OrderNumber", "Amount", "OrderId" },
+            NotificationChannelFlags.Internal | NotificationChannelFlags.Bale),
+
         new("order.receipt_uploaded", "سفارش و پرداخت", "دریافت رسید پرداخت",
             "رسید پرداخت دریافت شد",
-            "رسید پرداخت سفارش {OrderNumber} دریافت شد و در انتظار تأیید است.",
+            "رسید پرداخت سفارش {OrderNumber} به مبلغ {Amount} تومان دریافت شد و در انتظار تأیید است.",
             "/my-orders/{OrderId}", NotificationSeverity.Info, true, false,
-            new[] { "OrderNumber", "OrderId" }),
+            new[] { "OrderNumber", "Amount", "OrderId" }),
 
         new("order.status_changed", "سفارش و پرداخت", "تغییر وضعیت سفارش",
             "وضعیت سفارش به‌روزرسانی شد",
-            "وضعیت سفارش {OrderNumber} به «{Status}» تغییر کرد.",
+            "وضعیت سفارش {OrderNumber} به مبلغ {Amount} تومان به «{Status}» تغییر کرد.",
             "/my-orders/{OrderId}", null, true, false,
-            new[] { "OrderNumber", "Status", "OrderId" }),
+            new[] { "OrderNumber", "Amount", "Status", "OrderId" }),
 
         new("order.auto_cancelled", "سفارش و پرداخت", "لغو خودکار سفارش",
             "سفارش لغو شد",
-            "سفارش {OrderNumber} به دلیل عدم پرداخت در مهلت مقرر لغو شد.",
+            "سفارش {OrderNumber} به مبلغ {Amount} تومان به دلیل عدم پرداخت در مهلت مقرر لغو شد.",
             "/my-orders/{OrderId}", NotificationSeverity.Warning, true, false,
-            new[] { "OrderNumber", "OrderId" }),
+            new[] { "OrderNumber", "Amount", "OrderId" }),
+
+        new("order.customer_cancelled", "سفارش و پرداخت", "لغو سفارش توسط مشتری",
+            "سفارش لغو شد",
+            "سفارش {OrderNumber} به مبلغ {Amount} تومان توسط مشتری لغو شد. دلیل: {Reason}",
+            "/my-orders/{OrderId}", NotificationSeverity.Warning, true, true,
+            new[] { "OrderNumber", "Amount", "Reason", "OrderId" },
+            NotificationChannelFlags.Internal | NotificationChannelFlags.Bale),
 
         new("return.created", "مرجوعی", "ثبت درخواست مرجوعی",
             "درخواست مرجوعی ثبت شد",
@@ -199,10 +214,10 @@ public static class NotificationRuleDefaults
             new[] { "DeviceName", "Reason" }),
 
         new("monitoring.alert", "پایش دستگاه‌ها", "هشدار پایش دستگاه",
-            "هشدار پایش دستگاه",
+            "هشدار پایش: {DeviceName}",
             "{Message}",
             "/admin/monitoring-devices", NotificationSeverity.Critical, true, true,
-            new[] { "Message", "DeviceName" }),
+            new[] { "Message", "DeviceName", "WorkshopName", "ReceiptId" }),
 
         new("sms.low_balance", "پیامک", "کمبود اعتبار پیامک",
             "اعتبار پیامک رو به پایان است",

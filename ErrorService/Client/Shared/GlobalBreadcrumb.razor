@@ -1,0 +1,155 @@
+@using ErrorService.Client.Services
+@implements IDisposable
+@inject NavigationManager Nav
+@inject SiteSettingsService Settings
+
+@if (_enabled && _crumbs.Count > 1)
+{
+    <nav class="gb" aria-label="مسیر صفحه">
+        <div class="container">
+            <ol>
+                @for (int i = 0; i < _crumbs.Count; i++)
+                {
+                    var crumb = _crumbs[i];
+                    if (i == _crumbs.Count - 1)
+                    {
+                        <li class="gb-current" aria-current="page">@crumb.Label</li>
+                    }
+                    else
+                    {
+                        <li><a href="@crumb.Url">@crumb.Label</a></li>
+                    }
+                }
+            </ol>
+        </div>
+    </nav>
+}
+
+
+@code {
+    private sealed record Crumb(string Label, string Url);
+
+    private readonly List<Crumb> _crumbs = new();
+    private bool _enabled = true;
+
+    private static readonly Dictionary<string, string> Labels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["/about"] = "درباره ما",
+        ["/contact"] = "تماس با ما",
+        ["/faq"] = "سوالات متداول",
+        ["/help"] = "راهنما",
+        ["/help/faq"] = "سوالات متداول",
+        ["/privacy"] = "حریم خصوصی",
+        ["/terms"] = "قوانین و مقررات",
+        ["/commitment"] = "تعهدنامه دیجیتال",
+        ["/profile"] = "پروفایل من",
+        ["/wishlist"] = "علاقه‌مندی‌ها",
+        ["/my-orders"] = "سفارش‌های من",
+        ["/order-tracking"] = "پیگیری سفارش",
+        ["/search"] = "نتایج جستجو",
+        ["/monitoring"] = "پایش دستگاه",
+        ["/monitoring/shared"] = "مشاهده اشتراکی دستگاه",
+        ["/technical"] = "خدمات فنی",
+        ["/technical/calculators"] = "محاسبات فنی",
+        ["/technical/consultation"] = "مشاوره فنی",
+        ["/technical/error-codes"] = "بانک کدهای خطا",
+        ["/technical/sensor-finder"] = "سنسور یاب",
+        ["/workshops"] = "تعمیرکاران",
+        ["/admission"] = "پذیرش",
+        ["/admission/repair"] = "درخواست تعمیر",
+        ["/admission/expertise"] = "درخواست همکاری تخصصی",
+        ["/trust"] = "اعتماد",
+        ["/trust/portfolio"] = "نمونه‌کارها",
+        ["/products"] = "فروشگاه"
+    };
+
+    private static readonly Dictionary<string, string> DynamicLabels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["/products"] = "جزئیات محصول",
+        ["/workshops"] = "پروفایل تعمیرکار",
+        ["/my-orders"] = "جزئیات سفارش",
+        ["/technical/error-codes"] = "جزئیات کد خطا",
+        ["/technical/sensor-finder"] = "جزئیات سنسور"
+    };
+
+    private static readonly string[] HiddenPrefixes =
+    {
+        "academy", "news", "compare", "auth", "cart", "checkout", "payment", "admin"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += HandleLocationChanged;
+
+        try
+        {
+            var settings = await Settings.GetAsync();
+            if (settings != null) _enabled = settings.EnableBreadcrumb;
+        }
+        catch { }
+
+        Build();
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(() =>
+    {
+        Build();
+        StateHasChanged();
+    });
+
+    private void Build()
+    {
+        _crumbs.Clear();
+
+        var path = new Uri(Nav.Uri).AbsolutePath.Trim('/');
+        if (string.IsNullOrEmpty(path) || IsHidden(path)) return;
+
+        _crumbs.Add(new Crumb("خانه", "/"));
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var accumulated = string.Empty;
+        for (var i = 0; i < segments.Length; i++)
+        {
+            accumulated += "/" + segments[i];
+
+            if (i == segments.Length - 1)
+            {
+                _crumbs.Add(new Crumb(LabelFor(accumulated, i), accumulated));
+            }
+            else
+            {
+                _crumbs.Add(new Crumb(Labels.TryGetValue(accumulated, out var label) ? label : "بخش", accumulated));
+            }
+        }
+    }
+
+    private static string LabelFor(string fullPath, int index)
+    {
+        if (Labels.TryGetValue(fullPath, out var label)) return label;
+
+        var parent = fullPath[..fullPath.LastIndexOf('/')];
+        if (DynamicLabels.TryGetValue(parent, out var dynamicLabel)) return dynamicLabel;
+
+        return index == 0 ? "صفحه" : "جزئیات";
+    }
+
+    private static bool IsHidden(string path)
+    {
+        if (string.Equals(path, "products", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        foreach (var prefix in HiddenPrefixes)
+        {
+            if (path.Equals(prefix, StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith(prefix + "/", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= HandleLocationChanged;
+    }
+}

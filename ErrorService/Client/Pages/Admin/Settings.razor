@@ -30,7 +30,14 @@
         <div class="row g-4">
             <div class="col-md-6">
                 <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
-                    <h5 class="fw-bold mb-4 border-bottom pb-3">نمایش ماژول‌های صفحه اصلی</h5>
+                    <h5 class="fw-bold mb-3 border-bottom pb-3">نمایش ماژول‌های صفحه اصلی</h5>
+
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                        <p class="small text-muted mb-0">با ▲ ▼ ترتیب را تغییر دهید. «چیدمان پیشنهادی» فقط ترتیب بخش‌ها را بازمی‌چیند و هیچ بخشی را خاموش نمی‌کند.</p>
+                        <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" @onclick="ApplyRecommendedLayout">
+                            <span class="oi oi-loop-circular me-1"></span> چیدمان پیشنهادی
+                        </button>
+                    </div>
 
                     @foreach (var module in settings.HomeModules
                         .Where(m => Enum.IsDefined(typeof(SiteHomeModuleKey), m.Key))
@@ -301,7 +308,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+        settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings/admin");
 
         if (settings != null && (settings.HomeModules == null || settings.HomeModules.Count == 0))
         {
@@ -348,6 +355,48 @@
         }
     }
 
+    // ترتیب پیشنهادی: کد خطا نزدیک جستجو، محصولات قبل از محتوای آموزشی،
+    // برندها و مشتریان در انتها به‌عنوان نوار اعتماد.
+    private static readonly SiteHomeModuleKey[] RecommendedHomeOrder =
+    {
+        SiteHomeModuleKey.Stories,
+        SiteHomeModuleKey.HomeCategories,
+        SiteHomeModuleKey.TechnicalGuide,
+        SiteHomeModuleKey.LatestProducts,
+        SiteHomeModuleKey.SpecialOffers,
+        SiteHomeModuleKey.FeatureCards,
+        SiteHomeModuleKey.LatestNews,
+        SiteHomeModuleKey.AcademyHub,
+        SiteHomeModuleKey.LatestCourses,
+        SiteHomeModuleKey.LatestArticles,
+        SiteHomeModuleKey.LatestAcademy,
+        SiteHomeModuleKey.TrustStrip,
+        SiteHomeModuleKey.PopularBrands,
+        SiteHomeModuleKey.SomeCustomers,
+        SiteHomeModuleKey.TeamMembers
+    };
+
+    private void ApplyRecommendedLayout()
+    {
+        if (settings?.HomeModules == null) return;
+
+        var position = new Dictionary<int, int>();
+        for (var i = 0; i < RecommendedHomeOrder.Length; i++)
+            position[(int)RecommendedHomeOrder[i]] = (i + 1) * 10;
+
+        var tail = position.Count * 10;
+        foreach (var module in settings.HomeModules)
+        {
+            if (position.TryGetValue((int)module.Key, out var sortOrder))
+                module.SortOrder = sortOrder;
+            else
+                module.SortOrder = tail += 10;
+        }
+
+        settings.HomeModules = settings.HomeModules.OrderBy(x => x.SortOrder).ToList();
+        ToastService.ShowSuccess("چیدمان پیشنهادی اعمال شد؛ برای ثبت، تنظیمات را ذخیره کنید.");
+    }
+
     private void MoveModule(SiteHomeModuleKey key, int direction)
     {
         if (settings?.HomeModules == null || settings.HomeModules.Count < 2) return;
@@ -381,6 +430,11 @@
             SiteHomeModuleKey.Stories => "استوری‌ها (اینستاگرامی)",
             SiteHomeModuleKey.PopularBrands => "محبوب‌ترین برندها",
             SiteHomeModuleKey.SomeCustomers => "همکاران ما",
+            SiteHomeModuleKey.TechnicalGuide => "راهنمای فنی (کد خطا و سنسوریاب)",
+            SiteHomeModuleKey.BestSellers => "پرفروش‌ترین محصولات",
+            SiteHomeModuleKey.Restocked => "محصولات تازه موجود",
+            SiteHomeModuleKey.AcademyHub => "آکادمی یکپارچه (تبی)",
+            SiteHomeModuleKey.TrustStrip => "نوار اعتماد (برندها و همکاران)",
             _ => key.ToString()
         };
     }
@@ -391,16 +445,21 @@
         {
             SiteHomeModuleKey.SpecialOffers => "نمایش ردیف محصولات تخفیف‌دار و تایمردار",
             SiteHomeModuleKey.LatestNews => "نمایش بخش خبرها و اطلاعیه‌های جدید",
-            SiteHomeModuleKey.LatestProducts => "نمایش جدیدترین ابزارها و قطعات",
+            SiteHomeModuleKey.LatestProducts => "جدیدترین محصولات (با روشن بودن پرفروش‌ها/تازه‌ها در ویترین تب‌دار ادغام می‌شود)",
             SiteHomeModuleKey.LatestAcademy => "نمایش جدیدترین مقالات و دوره‌های آموزشی (یکجا)",
-            SiteHomeModuleKey.LatestCourses => "نمایش ردیف اختصاصی جدیدترین دوره‌های آموزشی",
-            SiteHomeModuleKey.LatestArticles => "نمایش ردیف اختصاصی جدیدترین آموزش‌های تکی",
+            SiteHomeModuleKey.LatestCourses => "تب دوره‌ها در آکادمی یکپارچه؛ خاموش کردن یعنی حذف این تب",
+            SiteHomeModuleKey.LatestArticles => "تب آموزش‌ها در آکادمی یکپارچه؛ خاموش کردن یعنی حذف این تب",
             SiteHomeModuleKey.TeamMembers => "نمایش اعضای تیم ارور سرویس در صفحه اصلی",
             SiteHomeModuleKey.HomeCategories => "نمایش دسته بندی های اصلی سایت بصورت دایره ای",
-            SiteHomeModuleKey.FeatureCards => "نمایش ۴ کارت خدمات زیر اسلایدر",
+            SiteHomeModuleKey.FeatureCards => "نمایش ۴ کارت خدمات و مزایا",
             SiteHomeModuleKey.Stories => "نمایش استوری‌های ۲۴ ساعت اخیر یا ۳ استوری آخر به سبک اینستاگرام",
-            SiteHomeModuleKey.PopularBrands => "نمایش ردیف لوگو برندهای محبوب به صورت اسکرولی",
-            SiteHomeModuleKey.SomeCustomers => "نمایش ردیف برخی مشتریان (کارگاه‌ها) به صورت اسکرولی",
+            SiteHomeModuleKey.PopularBrands => "ردیف برندها؛ با روشن بودن نوار اعتماد در آن ادغام می‌شود",
+            SiteHomeModuleKey.SomeCustomers => "ردیف همکاران؛ با روشن بودن نوار اعتماد در آن ادغام می‌شود",
+            SiteHomeModuleKey.TechnicalGuide => "نمایش بانک کد خطا و سنسوریاب در یک بخش دوستونه",
+            SiteHomeModuleKey.BestSellers => "تب «پرفروش‌ترین» در ویترین محصولات",
+            SiteHomeModuleKey.Restocked => "تب «تازه موجود» در ویترین محصولات",
+            SiteHomeModuleKey.AcademyHub => "دوره‌ها و آموزش‌ها را در یک بخش تب‌دار ادغام می‌کند",
+            SiteHomeModuleKey.TrustStrip => "برندهای محبوب و همکاران را در یک نوار فشرده ادغام می‌کند",
             _ => string.Empty
         };
     }

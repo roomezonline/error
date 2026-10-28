@@ -82,6 +82,7 @@
             user.HasClaim("perm", "admin.products.manage") ||
             user.HasClaim("perm", "admin.categories.view") ||
             user.HasClaim("perm", "admin.orders.view") ||
+            user.HasClaim("perm", "admin.orders.manage") ||
             user.HasClaim("perm", "admin.bankaccounts.manage");
 
         CanSeeProjectsSection =
@@ -1052,6 +1053,15 @@
                                     <span class="oi oi-cart"></span>
                                 </div>
                                 <span class="app-name">سفارشات</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.orders.manage">
+                            <a class="app-item shadow-sm" href="/admin/shop-assist">
+                                <div class="app-icon-box bg-info-subtle text-info">
+                                    <span class="oi oi-briefcase"></span>
+                                </div>
+                                <span class="app-name">سبد و پیش‌فاکتور مشتری</span>
                             </a>
                         </AuthorizeView>
 
@@ -2211,6 +2221,11 @@
                 await JSRuntime.InvokeVoidAsync("pwaClearDismissedAt");
                 _pwaInstallable = false;
                 StateHasChanged();
+            }
+            else
+            {
+                // پرامپت مصرف شده (قبول یا رد) — وضعیت را تازه می‌کنیم تا دکمه بلااثر نماند.
+                await RefreshInstallState();
             }
         }
         catch { }

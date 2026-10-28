@@ -33,5 +33,21 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "screenshots": [
+    {
+      "src": "images/pwa/home-mobile.png",
+      "sizes": "1170x2532",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "صفحه اصلی ErrorService در موبایل"
+    },
+    {
+      "src": "images/pwa/home-desktop.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "صفحه اصلی ErrorService در دسکتاپ"
+    }
   ]
 }

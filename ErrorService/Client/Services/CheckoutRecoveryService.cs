@@ -11,9 +11,14 @@ public sealed class CheckoutDraft
     public string? PhoneNumber { get; set; }
     public string? Email { get; set; }
     public string? Address { get; set; }
+    public int? ProvinceId { get; set; }
+    public int? CityId { get; set; }
+    public string? PostalCode { get; set; }
     public int? ShippingMethodId { get; set; }
     public int? GatewayId { get; set; }
     public string? CouponCode { get; set; }
+    /// <summary>همان کلیدی که برای ثبت سفارش استفاده شده؛ تا رفرش/قطع شبکه سفارش تکراری نسازد.</summary>
+    public string? IdempotencyKey { get; set; }
     public DateTimeOffset SavedAt { get; set; }
 }
 
@@ -234,6 +239,9 @@ public sealed class CheckoutRecoveryService
         try { await _storage.RemoveAsync(PendingOrderKey); } catch { }
         OnChange?.Invoke();
     }
+
+    /// <summary>خواندن نشان سفارش مهمانِ پرداخت‌نشده (مثلاً برای تأیید نتیجهٔ پرداخت).</summary>
+    public Task<PendingOrderMarker?> GetPendingMarkerAsync() => ReadPendingMarkerAsync();
 
     private async Task<PendingOrderMarker?> ReadPendingMarkerAsync()
     {

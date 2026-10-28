@@ -833,6 +833,12 @@
                                 <span class="oi oi-cart"></span>
                                 <span>سفارشات</span>
                             </a>
+                            <AuthorizeView Policy="perm:admin.orders.manage" Context="shopAssistAuth">
+                                <a href="/admin/shop-assist" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                    <span class="oi oi-briefcase"></span>
+                                    <span>سبد و پیش‌فاکتور مشتری</span>
+                                </a>
+                            </AuthorizeView>
                             <AuthorizeView Policy="perm:admin.orders.view" Context="shopAccountingAuth">
                                 <a href="/admin/shop-accounting" class="admin-drawer__item" @onclick="ToggleNavDrawer">
                                     <span class="oi oi-calculator"></span>

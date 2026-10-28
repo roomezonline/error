@@ -29,4 +29,19 @@ public sealed class HostInfoController : ControllerBase
         await _host.RefreshAsync();
         return Ok(_host.GetSnapshot());
     }
+
+    [HttpPost("settings")]
+    public async Task<ActionResult<HostInfoDto>> SaveSettings([FromBody] HostQuotaUpdateRequest request)
+    {
+        if (double.IsNaN(request.QuotaGb) || double.IsInfinity(request.QuotaGb))
+            return BadRequest(new { message = "مقدار فضای کل معتبر نیست." });
+
+        if (request.QuotaGb < 0 || request.QuotaGb > 1_048_576)
+            return BadRequest(new { message = "فضای کل باید بین صفر تا ۱٬۰۴۸٬۵۷۶ گیگابایت باشد." });
+
+        await _host.SaveQuotaGbAsync(request.QuotaGb);
+        return Ok(_host.GetSnapshot());
+    }
 }
+
+public sealed record HostQuotaUpdateRequest(double QuotaGb);

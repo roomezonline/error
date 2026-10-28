@@ -12,15 +12,21 @@ namespace ErrorService.Server.Controllers;
 [Authorize]
 public class MonitoringLatestController : ControllerBase
 {
-    public MonitoringLatestController()
+    private readonly MonitoringAuthorizationService _authz;
+
+    public MonitoringLatestController(MonitoringAuthorizationService authz)
     {
+        _authz = authz;
     }
 
     [HttpGet]
-    public IActionResult Get([FromQuery] string? code)
+    public async Task<IActionResult> Get([FromQuery] string? code)
     {
         if (string.IsNullOrWhiteSpace(code))
             return BadRequest("code is required");
+
+        if (!await _authz.CanAccessLiveData(User, code))
+            return Forbid();
 
         var data = ReadFromFile(code);
         return Ok(data);

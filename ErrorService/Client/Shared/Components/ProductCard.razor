@@ -1,0 +1,377 @@
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@using Microsoft.JSInterop
+@inject CartService CartService
+@inject WishlistService Ws
+@inject QuickViewService QuickView
+@inject CompareService Compare
+@inject StockAlertService StockAlerts
+@inject SiteSettingsService Settings
+@inject ToastService Toast
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@implements IDisposable
+
+<article class="pc @(Variant == "row" ? "pc--row" : "") @(IsOutOfStock ? "pc--oos" : "")">
+    <a class="pc-link" href="@SeoUrl.Product(Product.Id, Product.Slug)" aria-label="@Product.Name"></a>
+
+    <div class="pc-media">
+        @if (BadgeText != null)
+        {
+            <span class="pc-badge @BadgeClass">@BadgeText</span>
+        }
+
+        <img src="@(string.IsNullOrEmpty(Product.MainImageUrl) ? "/images/placeholder-product.svg" : ImageUrlHelper.Thumb(Product.MainImageUrl, 400))"
+             srcset="@ImageUrlHelper.SrcSet(Product.MainImageUrl)"
+             sizes="(max-width: 576px) 46vw, (max-width: 992px) 240px, 230px"
+             loading="@(Index < 4 ? "eager" : "lazy")"
+             fetchpriority="@(Index == 0 ? "high" : "auto")"
+             decoding="async"
+             class="pc-img"
+             alt="@(string.IsNullOrWhiteSpace(Product.Name) ? "تصویر محصول" : Product.Name)" />
+    </div>
+
+    <div class="pc-body">
+        @if (!string.IsNullOrWhiteSpace(Product.CategoryName) || _wishlistEnabled || _quickViewEnabled || _compareEnabled)
+        {
+            <div class="pc-top">
+                <span class="pc-cat">@Product.CategoryName</span>
+
+                <div class="pc-tools">
+                    @if (_wishlistEnabled)
+                    {
+                        <button type="button" class="pc-tool pc-wish @(_inWishlist ? "is-on" : "")"
+                                @onclick="ToggleWishlist" @onclick:stopPropagation @onclick:preventDefault
+                                title="@(_inWishlist ? "حذف از علاقه‌مندی" : "افزودن به علاقه‌مندی")"
+                                aria-label="@(_inWishlist ? "حذف از علاقه‌مندی" : "افزودن به علاقه‌مندی")"
+                                aria-pressed="@_inWishlist">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="@(_inWishlist ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+                            </svg>
+                        </button>
+                    }
+                    @if (_quickViewEnabled)
+                    {
+                        <button type="button" class="pc-tool pc-quick"
+                                @onclick="OpenQuickView" @onclick:stopPropagation @onclick:preventDefault
+                                title="نمایش سریع" aria-label="نمایش سریع @Product.Name">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg>
+                        </button>
+                    }
+                    @if (_compareEnabled)
+                    {
+                        <button type="button" class="pc-tool pc-compare @(_inCompare ? "is-on" : "")"
+                                @onclick="ToggleCompare" @onclick:stopPropagation @onclick:preventDefault
+                                title="@(_inCompare ? "حذف از مقایسه" : "افزودن به مقایسه")"
+                                aria-label="@(_inCompare ? "حذف از مقایسه" : "افزودن به مقایسه")"
+                                aria-pressed="@_inCompare">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M12 3v18" />
+                                <path d="M5 8l-3 6h6L5 8z" />
+                                <path d="M19 8l-3 6h6l-3-6z" />
+                                <path d="M3 21h18" />
+                            </svg>
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+
+        <h3 class="pc-title">@Product.Name</h3>
+
+        @if (ShowNewFlag || IsOutOfStock || ShowLowStockFlag || !string.IsNullOrWhiteSpace(CountdownText))
+        {
+            <div class="pc-flags">
+                @if (IsOutOfStock)
+                {
+                    <span class="pc-flag pc-flag--oos">ناموجود</span>
+                }
+                else if (ShowLowStockFlag)
+                {
+                    <span class="pc-flag pc-flag--low">تنها @Product.StockQuantity عدد</span>
+                }
+
+                @if (ShowNewFlag)
+                {
+                    <span class="pc-flag pc-flag--new">جدید</span>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(CountdownText))
+                {
+                    <span class="pc-flag pc-flag--timer">
+                        <span class="oi oi-timer" aria-hidden="true"></span>
+                        <span>@CountdownText</span>
+                    </span>
+                }
+            </div>
+        }
+
+        <div class="pc-price">
+            @if (DiscountHelper.IsActive(Product))
+            {
+                <span class="pc-now">@DiscountHelper.GetEffectivePrice(Product).ToString("N0") <small>تومان</small></span>
+                <span class="pc-was">@Product.Price.ToString("N0")</span>
+            }
+            else
+            {
+                <span class="pc-now">@Product.Price.ToString("N0") <small>تومان</small></span>
+            }
+        </div>
+
+        <div class="pc-cart">
+            @if (IsOutOfStock)
+            {
+                @if (_alertEnabled)
+                {
+                    <button type="button" class="pc-notify @(_alertActive ? "is-on" : "")"
+                            disabled="@_alertBusy"
+                            @onclick="ToggleAlert" @onclick:stopPropagation @onclick:preventDefault
+                            title="خبرم کن وقتی موجود شد"
+                            aria-label="خبرم کن وقتی @Product.Name موجود شد">
+                        <span class="oi oi-bell" aria-hidden="true"></span>
+                        @(_alertBusy ? "..." : (_alertActive ? "خبرم کن ✓" : "خبرم کن"))
+                    </button>
+                }
+                else
+                {
+                    <button type="button" class="pc-cta" disabled>ناموجود</button>
+                }
+            }
+            else
+            {
+                <QuantityControl Quantity="@CartService.GetQuantity(Product.Id)"
+                                 Disabled="@(!Product.IsAvailable || Product.StockQuantity <= 0)"
+                                 IncreaseDisabled="@(Product.StockQuantity > 0 && CartService.GetQuantity(Product.Id) >= Product.StockQuantity)"
+                                 AddLabel="افزودن به سبد"
+                                 OnAdd="Add"
+                                 OnIncrease="Increase"
+                                 OnDecrease="Decrease" />
+            }
+        </div>
+    </div>
+</article>
+
+
+@code {
+    [Parameter, EditorRequired] public ProductDto Product { get; set; } = new();
+    [Parameter] public string Variant { get; set; } = "grid";
+    [Parameter] public int Index { get; set; } = 99;
+    [Parameter] public string? CountdownText { get; set; }
+    [Parameter] public bool ShowNewBadge { get; set; }
+
+    private bool _inWishlist;
+    private bool _inCompare;
+    private bool _alertActive;
+    private bool _alertBusy;
+    private bool _badgesEnabled = true;
+    private bool _wishlistEnabled = true;
+    private bool _quickViewEnabled = true;
+    private bool _compareEnabled = true;
+    private bool _alertEnabled = true;
+    private int _compareMax = CompareService.DefaultMaxItems;
+
+    private bool IsOutOfStock => !Product.IsAvailable || Product.StockQuantity <= 0;
+    private bool ShowLowStockFlag => _badgesEnabled && !IsOutOfStock && Product.StockQuantity <= 5;
+    private bool ShowNewFlag => _badgesEnabled && ShowNewBadge && (DateTimeOffset.Now - Product.CreatedAt).TotalDays <= 14;
+
+    private string? BadgeText
+    {
+        get
+        {
+            if (!_badgesEnabled) return null;
+            if (DiscountHelper.IsTimedActive(Product))
+            {
+                var percent = DiscountHelper.CalculatePercent(Product);
+                return percent > 0 ? $"{percent}٪ تخفیف" : "تخفیف";
+            }
+            if (DiscountHelper.IsPermanentActive(Product)) return "تخفیف ویژه";
+            if (Product.IsFeatured) return "پیشنهاد";
+            return null;
+        }
+    }
+
+    private string BadgeClass
+    {
+        get
+        {
+            if (DiscountHelper.IsTimedActive(Product)) return "pc-badge--sale";
+            if (DiscountHelper.IsPermanentActive(Product)) return "pc-badge--perm";
+            return "pc-badge--star";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        CartService.OnChange += StateHasChanged;
+        Ws.OnChange += StateHasChanged;
+        Compare.OnChange += HandleCompareChanged;
+
+        try
+        {
+            var s = await Settings.GetAsync();
+            if (s != null)
+            {
+                _badgesEnabled = s.EnableProductBadges;
+                _wishlistEnabled = s.EnableWishlist;
+                _quickViewEnabled = s.EnableQuickView;
+                _compareEnabled = s.EnableCompare;
+                _alertEnabled = s.EnableStockAlert;
+                _compareMax = s.CompareMaxItems <= 0 ? CompareService.DefaultMaxItems : s.CompareMaxItems;
+            }
+        }
+        catch { }
+
+        if (_wishlistEnabled)
+        {
+            try { _inWishlist = await Ws.HasItemAsync(Product.Id); } catch { }
+        }
+
+        if (_compareEnabled)
+        {
+            try { _inCompare = await Compare.ContainsAsync(Product.Id); } catch { }
+        }
+
+        if (_alertEnabled && IsOutOfStock)
+        {
+            StockAlerts.OnChange += HandleAlertChanged;
+            await StockAlerts.EnsureLoadedAsync();
+            _alertActive = StockAlerts.Contains(Product.Id);
+        }
+    }
+
+    private async Task ToggleWishlist()
+    {
+        try
+        {
+            await Ws.ToggleAsync(Product.Id, Product.Name, Product.MainImageUrl, Product.Price,
+                Product.DiscountPrice, Product.DiscountStartDate, Product.DiscountExpiryDate);
+            _inWishlist = await Ws.HasItemAsync(Product.Id);
+            Toast.ShowSuccess(_inWishlist ? "به علاقه‌مندی‌ها اضافه شد" : "از علاقه‌مندی‌ها حذف شد");
+            TrackEvent("wishlist_toggle", new { product_id = Product.Id, action = _inWishlist ? "add" : "remove" });
+        }
+        catch
+        {
+            Toast.ShowError("خطا در به‌روزرسانی علاقه‌مندی‌ها");
+        }
+    }
+
+    private void OpenQuickView()
+    {
+        TrackEvent("quick_view", new { product_id = Product.Id, product_name = Product.Name });
+        QuickView.Open(Product.Id);
+    }
+
+    private async Task ToggleCompare()
+    {
+        try
+        {
+            var result = await Compare.ToggleAsync(Product, _compareMax);
+            _inCompare = await Compare.ContainsAsync(Product.Id);
+            switch (result)
+            {
+                case CompareToggleResult.Added:
+                    Toast.ShowSuccess("به لیست مقایسه اضافه شد");
+                    TrackEvent("compare_toggle", new { product_id = Product.Id, action = "add" });
+                    break;
+                case CompareToggleResult.Removed:
+                    Toast.ShowInfo("از لیست مقایسه حذف شد");
+                    TrackEvent("compare_toggle", new { product_id = Product.Id, action = "remove" });
+                    break;
+                case CompareToggleResult.LimitReached:
+                    Toast.ShowWarning($"حداکثر {_compareMax} محصول را می‌توانید مقایسه کنید");
+                    break;
+            }
+        }
+        catch
+        {
+            Toast.ShowError("خطا در به‌روزرسانی لیست مقایسه");
+        }
+    }
+
+    private async Task ToggleAlert()
+    {
+        if (_alertBusy) return;
+        _alertBusy = true;
+        try
+        {
+            var result = await StockAlerts.ToggleAsync(Product.Id);
+            switch (result)
+            {
+                case StockAlertToggleResult.Added:
+                    _alertActive = true;
+                    Toast.ShowSuccess("ثبت شد؛ هنگام موجود شدن کالا به شما اطلاع می‌دهیم.");
+                    TrackEvent("stock_alert", new { product_id = Product.Id, action = "add" });
+                    break;
+                case StockAlertToggleResult.Removed:
+                    _alertActive = false;
+                    Toast.ShowInfo("اعلان موجودی این محصول غیرفعال شد.");
+                    break;
+                case StockAlertToggleResult.Unauthorized:
+                    Nav.NavigateTo($"/auth/login?returnUrl={Uri.EscapeDataString(Nav.Uri)}");
+                    break;
+                default:
+                    Toast.ShowError("تغییر وضعیت اعلان انجام نشد؛ دوباره تلاش کنید.");
+                    break;
+            }
+        }
+        finally
+        {
+            _alertBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private void HandleAlertChanged() => _ = InvokeAsync(() =>
+    {
+        _alertActive = StockAlerts.Contains(Product.Id);
+        StateHasChanged();
+    });
+
+    private async void TrackEvent(string name, object payload)
+    {
+        try { await JS.InvokeVoidAsync("trackGaEvent", name, payload); } catch { }
+    }
+
+    private async void HandleCompareChanged()
+    {
+        try { _inCompare = await Compare.ContainsAsync(Product.Id); } catch { }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Add()
+    {
+        try
+        {
+            await CartService.AddToCartAsync(Product, 1);
+            Toast.ShowSuccess($"{Product.Name} به سبد خرید اضافه شد.");
+        }
+        catch
+        {
+            Toast.ShowError("خطا در افزودن به سبد خرید");
+        }
+    }
+
+    private async Task Increase()
+    {
+        var current = CartService.GetQuantity(Product.Id);
+        if (Product.StockQuantity > 0 && current >= Product.StockQuantity) return;
+        await CartService.UpdateQuantityAsync(Product.Id, current + 1);
+    }
+
+    private async Task Decrease()
+    {
+        var current = CartService.GetQuantity(Product.Id);
+        await CartService.UpdateQuantityAsync(Product.Id, current - 1);
+    }
+
+    public void Dispose()
+    {
+        CartService.OnChange -= StateHasChanged;
+        Ws.OnChange -= StateHasChanged;
+        Compare.OnChange -= HandleCompareChanged;
+        StockAlerts.OnChange -= HandleAlertChanged;
+    }
+}

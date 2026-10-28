@@ -41,4 +41,10 @@ public class AppUser
 
     public bool ChatAiDisabled { get; set; }
     public int? ChatAiDailyLimitOverride { get; set; }
+
+    /// <summary>
+    /// نسخهٔ سبد سروری؛ با هر تغییر (مشتری یا ادمین) افزایش می‌یابد تا همگام‌سازی
+    /// قدیمی کلاینت، تغییرات ادمین را بازنویسی نکند.
+    /// </summary>
+    public long CartRevision { get; set; }
 }

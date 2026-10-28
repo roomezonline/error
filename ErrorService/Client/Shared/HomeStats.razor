@@ -1,0 +1,102 @@
+@using System.Net.Http.Json
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@inject HttpClient Http
+@inject SiteSettingsService Settings
+
+@if (_visible)
+{
+    <section class="hs" dir="rtl" aria-label="آمار ارورسرویس">
+        <div class="container">
+            <div class="hs-grid" role="list">
+                <div class="hs-card hs-card--monitor" role="listitem">
+                    <span class="hs-icon hs-icon--pulse" aria-hidden="true"><span class="oi oi-pulse"></span></span>
+                    <span class="hs-value">@_monitoring.ToString("N0")</span>
+                    <span class="hs-label">تعداد مانیتورینگ دیتالاگر</span>
+                </div>
+                <div class="hs-card hs-card--errors" role="listitem">
+                    <span class="hs-icon hs-icon--search" aria-hidden="true"><span class="oi oi-magnifying-glass"></span></span>
+                    <span class="hs-value">@_errorCodes.ToString("N0")</span>
+                    <span class="hs-label">کد خطای ثبت‌شده</span>
+                </div>
+                <div class="hs-card hs-card--learning" role="listitem">
+                    <span class="hs-icon hs-icon--book" aria-hidden="true"><span class="oi oi-book"></span></span>
+                    <span class="hs-value">@_learning.ToString("N0")</span>
+                    <span class="hs-label">آموزش و مقاله</span>
+                </div>
+                @if (_showServices)
+                {
+                    <div class="hs-card hs-card--services" role="listitem">
+                        <span class="hs-icon hs-icon--wrench" aria-hidden="true"><span class="oi oi-wrench"></span></span>
+                        <span class="hs-value">@_services.ToString("N0")</span>
+                        <span class="hs-label">خدمات تکمیل‌شده</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+}
+
+
+@code {
+    private bool _visible;
+    private bool _showServices;
+    private int _monitoring;
+    private int _errorCodes;
+    private int _learning;
+    private int _services;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await Settings.GetAsync();
+        if (settings != null)
+        {
+            _visible = settings.EnableHomeStats;
+            _showServices = settings.ShowOrderCountStat;
+        }
+        else
+        {
+            _visible = true;
+            _showServices = true;
+        }
+
+        if (!_visible) return;
+
+        SiteStatsDto? stats = null;
+        try
+        {
+            stats = await Http.GetFromJsonAsync<SiteStatsDto>("api/site-stats");
+        }
+        catch { }
+
+        if (stats == null)
+        {
+            _visible = false;
+            return;
+        }
+
+        await AnimateAsync(stats);
+    }
+
+    private async Task AnimateAsync(SiteStatsDto stats)
+    {
+        const int steps = 26;
+        for (var step = 1; step <= steps; step++)
+        {
+            var progress = 1 - Math.Pow(1 - (double)step / steps, 3);
+            _monitoring = (int)Math.Round(stats.MonitoringCount * progress);
+            _errorCodes = (int)Math.Round(stats.ErrorCodesCount * progress);
+            _learning = (int)Math.Round(stats.LearningCount * progress);
+            _services = (int)Math.Round(stats.CompletedServicesCount * progress);
+
+            await InvokeAsync(StateHasChanged);
+            if (step < steps) await Task.Delay(28);
+        }
+
+        _monitoring = stats.MonitoringCount;
+        _errorCodes = stats.ErrorCodesCount;
+        _learning = stats.LearningCount;
+        _services = stats.CompletedServicesCount;
+        await InvokeAsync(StateHasChanged);
+    }
+}

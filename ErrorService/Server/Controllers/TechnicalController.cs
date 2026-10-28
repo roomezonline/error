@@ -47,7 +47,41 @@ public class TechnicalController : ControllerBase
         errorCode.DeviceType = Norm(errorCode.DeviceType);
         errorCode.Code = Norm(errorCode.Code);
         errorCode.Category = string.IsNullOrWhiteSpace(errorCode.Category) ? null : Norm(errorCode.Category);
+        errorCode.VideoUrl = string.IsNullOrWhiteSpace(errorCode.VideoUrl) ? null : Norm(errorCode.VideoUrl);
+        errorCode.Faqs = (errorCode.Faqs ?? new())
+            .Where(f => !string.IsNullOrWhiteSpace(f.Question) && !string.IsNullOrWhiteSpace(f.Answer))
+            .Select(f => new ErrorCodeFaq
+            {
+                Question = f.Question.Trim(),
+                Answer = f.Answer.Trim()
+            })
+            .ToList();
         return errorCode;
+    }
+
+    private static string? ValidateErrorCodeExtras(ErrorCode errorCode)
+    {
+        if (errorCode.VideoUrl != null)
+        {
+            if (errorCode.VideoUrl.Length > 500)
+                return "آدرس ویدیو بیش از حد مجاز است.";
+            if (!Uri.TryCreate(errorCode.VideoUrl, UriKind.Absolute, out var videoUri) ||
+                (videoUri.Scheme != Uri.UriSchemeHttp && videoUri.Scheme != Uri.UriSchemeHttps))
+                return "آدرس ویدیو باید یک لینک معتبر http یا https باشد.";
+        }
+
+        if (errorCode.Faqs.Count > 30)
+            return "حداکثر ۳۰ پرسش برای هر کد خطا مجاز است.";
+
+        foreach (var faq in errorCode.Faqs)
+        {
+            if (faq.Question.Length > 300)
+                return "متن پرسش حداکثر ۳۰۰ کاراکتر است.";
+            if (faq.Answer.Length > 2000)
+                return "متن پاسخ حداکثر ۲۰۰۰ کاراکتر است.";
+        }
+
+        return null;
     }
 
     private async Task<bool> IsDuplicateErrorCodeAsync(string brand, string deviceType, string code, int? excludeId = null)
@@ -318,6 +352,43 @@ public class TechnicalController : ControllerBase
         return await query.ToListAsync();
     }
 
+    [HttpGet("error-codes/quick-search")]
+    [OutputCache(Duration = 300, VaryByQueryKeys = new[] { "*" }, Tags = new[] { ErrorCodeCacheTag })]
+    public async Task<ActionResult<ErrorCodeQuickSearchResult>> QuickSearchErrorCodes(string? q = null, int take = 6)
+    {
+        take = Math.Clamp(take, 1, 20);
+        var term = q?.Trim();
+        if (string.IsNullOrEmpty(term) || term.Length < 2)
+            return Ok(new ErrorCodeQuickSearchResult());
+
+        var key = term.ToLowerInvariant();
+        var query = _context.ErrorCodes
+            .AsNoTracking()
+            .Where(e => e.Code.ToLower().Contains(key) ||
+                        e.Description.ToLower().Contains(key) ||
+                        e.Brand.ToLower().Contains(key) ||
+                        e.DeviceType.ToLower().Contains(key));
+
+        var total = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(e => e.Code.ToLower() == key)
+            .ThenByDescending(e => e.Code.ToLower().StartsWith(key))
+            .ThenBy(e => e.Code.Length)
+            .ThenByDescending(e => e.Id)
+            .Take(take)
+            .Select(e => new ErrorCodeQuickSearchItem
+            {
+                Id = e.Id,
+                Brand = e.Brand,
+                DeviceType = e.DeviceType,
+                Code = e.Code,
+                Description = e.Description
+            })
+            .ToListAsync();
+
+        return Ok(new ErrorCodeQuickSearchResult { Total = total, Items = items });
+    }
+
     [HttpGet("error-codes/recent")]
     [OutputCache(Duration = 600, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<IEnumerable<object>>> GetRecentErrorCodes([FromQuery] int take = 3)
@@ -353,6 +424,7 @@ public class TechnicalController : ControllerBase
 
         var errorCode = await _context.ErrorCodes
             .Include(e => e.Documents)
+            .Include(e => e.Faqs)
             .FirstOrDefaultAsync(e => e.Brand.Trim().ToLower() == brandKey &&
                                       e.DeviceType.Trim().ToLower() == deviceKey &&
                                       e.Code.Trim().ToLower() == codeKey);
@@ -445,6 +517,7 @@ public class TechnicalController : ControllerBase
     {
         var ec = await _context.ErrorCodes
             .Include(e => e.Documents)
+            .Include(e => e.Faqs)
             .FirstOrDefaultAsync(e => e.Id == id);
         if (ec == null) return NotFound();
         return Ok(ec);
@@ -500,6 +573,9 @@ public class TechnicalController : ControllerBase
             string.IsNullOrWhiteSpace(errorCode.Code))
             return BadRequest("برند، نوع دستگاه و کد خطا الزامی هستند.");
 
+        if (ValidateErrorCodeExtras(errorCode) is { } extrasError)
+            return BadRequest(extrasError);
+
         if (await IsDuplicateErrorCodeAsync(errorCode.Brand, errorCode.DeviceType, errorCode.Code))
             return Conflict(new { message = $"کد {errorCode.Code} برای «{errorCode.Brand} - {errorCode.DeviceType}» قبلاً ثبت شده است." });
 
@@ -552,11 +628,15 @@ public class TechnicalController : ControllerBase
             string.IsNullOrWhiteSpace(errorCode.Code))
             return BadRequest("برند، نوع دستگاه و کد خطا الزامی هستند.");
 
+        if (ValidateErrorCodeExtras(errorCode) is { } extrasError)
+            return BadRequest(extrasError);
+
         if (await IsDuplicateErrorCodeAsync(errorCode.Brand, errorCode.DeviceType, errorCode.Code, id))
             return Conflict(new { message = $"کد {errorCode.Code} برای «{errorCode.Brand} - {errorCode.DeviceType}» قبلاً ثبت شده است." });
 
         var existing = await _context.ErrorCodes
             .Include(e => e.Documents)
+            .Include(e => e.Faqs)
             .FirstOrDefaultAsync(e => e.Id == id);
 
         if (existing == null) return NotFound();
@@ -570,6 +650,7 @@ public class TechnicalController : ControllerBase
         existing.ModelNames = errorCode.ModelNames;
         existing.RelatedProductIds = errorCode.RelatedProductIds;
         existing.ImageUrl = errorCode.ImageUrl;
+        existing.VideoUrl = errorCode.VideoUrl;
         existing.Category = errorCode.Category;
 
         await SyncCatalogFromErrorCodeAsync(errorCode);
@@ -588,6 +669,16 @@ public class TechnicalController : ControllerBase
                 })
                 .ToList();
         }
+
+        _context.ErrorCodeFaqs.RemoveRange(existing.Faqs);
+        existing.Faqs = errorCode.Faqs
+            .Select((f, i) => new ErrorCodeFaq
+            {
+                Question = f.Question,
+                Answer = f.Answer,
+                SortOrder = i
+            })
+            .ToList();
 
         await _context.SaveChangesAsync();
         await EvictErrorCodesCacheAsync();

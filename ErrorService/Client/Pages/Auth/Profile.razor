@@ -640,7 +640,7 @@
                                                                                             @foreach (var img in o.ReceiptImageUrls)
                                                                                             {
                                                                                                 <a href="@img" target="_blank" rel="noopener">
-                                                                                                    <img src="@img" class="pf-receipt-img" />
+                                                                                                    <img src="@ImageUrlHelper.Thumb(img, 200)" class="pf-receipt-img" loading="lazy" decoding="async" alt="رسید پرداخت" />
                                                                                                 </a>
                                                                                             }
                                                                                         </div>
@@ -732,7 +732,7 @@
                                                                              <div class="pf-detail-receipt">
                                                                                  <div class="pf-detail-label mb-2">رسید پرداخت</div>
                                                                                  <a href="@o.ReceiptImageUrl" target="_blank">
-                                                                                     <img src="@o.ReceiptImageUrl" class="pf-receipt-img" />
+                                                                                     <img src="@ImageUrlHelper.Thumb(o.ReceiptImageUrl, 200)" class="pf-receipt-img" loading="lazy" decoding="async" alt="رسید پرداخت" />
                                                                                  </a>
                                                                              </div>
                                                                          }
@@ -766,11 +766,11 @@
                                                                                     <div class="pf-order-item-img">
                                                                                         @if (!string.IsNullOrEmpty(it.ImageUrl))
                                                                                         {
-                                                                                            <img src="@it.ImageUrl" alt="@it.ProductName" />
+                                                                                            <img src="@ImageUrlHelper.Thumb(it.ImageUrl, 200)" loading="lazy" decoding="async" alt="@it.ProductName" />
                                                                                         }
                                                                                         else
                                                                                         {
-                                                                                            <img src="/images/placeholder-product.svg" alt="@it.ProductName" />
+                                                                                            <img src="/images/placeholder-product.svg" loading="lazy" decoding="async" alt="@it.ProductName" />
                                                                                         }
                                                                                     </div>
                                                                                     <div class="pf-order-item-body">
@@ -1360,7 +1360,7 @@
                                                 <a href="/products/@item.ProductId" class="pf-wishlist-img">
                                                     @if (!string.IsNullOrEmpty(item.ImageUrl))
                                                     {
-                                                        <img src="@item.ImageUrl" alt="@item.Name" />
+                                                        <img src="@ImageUrlHelper.Thumb(item.ImageUrl, 200)" loading="lazy" decoding="async" alt="@item.Name" />
                                                     }
                                                     else
                                                     {
@@ -1454,7 +1454,7 @@
                                             <a href="/products/@item.ProductId" class="pf-cart-img">
                                                 @if (!string.IsNullOrEmpty(item.ImageUrl))
                                                 {
-                                                    <img src="@item.ImageUrl" alt="@item.Name" />
+                                                    <img src="@ImageUrlHelper.Thumb(item.ImageUrl, 200)" loading="lazy" decoding="async" alt="@item.Name" />
                                                 }
                                                 else
                                                 {

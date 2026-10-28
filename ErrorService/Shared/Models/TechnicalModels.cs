@@ -30,10 +30,46 @@ namespace ErrorService.Shared.Models
 
         public string? ImageUrl { get; set; }
 
+        public string? VideoUrl { get; set; }
+
         [MaxLength(100)]
         public string? Category { get; set; }
 
         public List<ErrorCodeDocument> Documents { get; set; } = new();
+
+        public List<ErrorCodeFaq> Faqs { get; set; } = new();
+    }
+
+    public class ErrorCodeQuickSearchItem
+    {
+        public int Id { get; set; }
+        public string Brand { get; set; } = string.Empty;
+        public string DeviceType { get; set; } = string.Empty;
+        public string Code { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+    }
+
+    public class ErrorCodeQuickSearchResult
+    {
+        public int Total { get; set; }
+        public List<ErrorCodeQuickSearchItem> Items { get; set; } = new();
+    }
+
+    public class ErrorCodeFaq
+    {
+        public int Id { get; set; }
+
+        public int ErrorCodeId { get; set; }
+
+        [Required(ErrorMessage = "متن پرسش الزامی است")]
+        [MaxLength(300)]
+        public string Question { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "متن پاسخ الزامی است")]
+        [MaxLength(2000)]
+        public string Answer { get; set; } = string.Empty;
+
+        public int SortOrder { get; set; }
     }
 
     public static class ErrorCodeCategories

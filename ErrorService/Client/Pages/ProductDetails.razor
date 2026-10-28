@@ -44,7 +44,7 @@
         {
             <SeoHeader 
                 Title="@($"{product.Name} | قیمت و مشخصات | ارور سرویس")" 
-                Description="@(string.IsNullOrEmpty(product.Description) ? $"خرید و مشاهده مشخصات فنی {product.Name} در دسته {product.CategoryName}" : (product.Description.Length > 160 ? product.Description.Substring(0, 157) + "..." : product.Description))"
+                Description="@(string.IsNullOrEmpty(product.Description) ? $"خرید و مشاهده مشخصات فنی {product.Name} در دسته {product.CategoryName}" : TruncateText(StripHtml(product.Description), 160))"
                 OgType="product"
                 OgImage="@(product.MainImageUrl ?? "/images/og-default.jpg")"
                 CanonicalUrl="@($"https://errorservice.ir{SeoUrl.Product(product.Id, product.Slug)}")"
@@ -86,7 +86,14 @@
                                 var img = GetAllImages()[i];
                                 <div class="pd-gallery-slide">
                                     <div class="pd-img-wrap">
-                                        <img src="@img" alt="@product.Name" loading="lazy" draggable="false" class="pd-main-img" @onclick="() => OpenLightbox(i)" @onerror="() => HandleImageError(i)" />
+                                        <img src="@ImageUrlHelper.Thumb(img, 800)"
+                                             srcset="@ImageUrlHelper.SrcSet(img, new[] { 400, 800 })"
+                                             sizes="(max-width: 768px) 100vw, 520px"
+                                             alt="@product.Name"
+                                             loading="@(i == 0 ? "eager" : "lazy")"
+                                             fetchpriority="@(i == 0 ? "high" : "auto")"
+                                             decoding="async" draggable="false" class="pd-main-img"
+                                             @onclick="() => OpenLightbox(i)" @onerror="() => HandleImageError(i)" />
                                     </div>
                                 </div>
                             }
@@ -126,7 +133,7 @@
                                 <button class="pd-thumb @(currentImageIndex == idx ? "pd-thumb--active" : "")"
                                         @onclick="() => currentImageIndex = idx"
                                         aria-label="تصویر کوچک @(i + 1)">
-                                    <img src="@img" alt="" @onerror="() => HandleThumbError(idx)" />
+                                    <img src="@ImageUrlHelper.Thumb(img, 200)" alt="" loading="lazy" decoding="async" @onerror="() => HandleThumbError(idx)" />
                                 </button>
                             }
                         </div>
@@ -134,30 +141,31 @@
                 </div>
 
                 <div class="pd-info">
-                    <span class="pd-category">@product.CategoryName</span>
-                    <h1 class="pd-title">@product.Name</h1>
-
-                    @if (Flag("badges"))
-                    {
-                        <div class="pd-badges">
-                            @if ((DateTimeOffset.Now - product.CreatedAt).TotalDays <= 14)
-                            {
-                                <span class="pd-badge pd-badge--new">جدید</span>
-                            }
-                            @if (IsDiscountActive(product))
-                            {
-                                <span class="pd-badge pd-badge--sale">تخفیف‌دار</span>
-                            }
-                            @if (product.StockQuantity > 0 && product.StockQuantity <= 5 && product.IsAvailable)
-                            {
-                                <span class="pd-badge pd-badge--low">کم‌موجود</span>
-                            }
-                            @if (product.IsFeatured)
-                            {
-                                <span class="pd-badge pd-badge--hot">پرفروش</span>
-                            }
-                        </div>
-                    }
+                    <div class="pd-head">
+                        <span class="pd-category">@product.CategoryName</span>
+                        <h1 class="pd-title">@product.Name</h1>
+                        @if (Flag("badges"))
+                        {
+                            <div class="pd-badges">
+                                @if ((DateTimeOffset.Now - product.CreatedAt).TotalDays <= 14)
+                                {
+                                    <span class="pd-badge pd-badge--new">جدید</span>
+                                }
+                                @if (IsDiscountActive(product))
+                                {
+                                    <span class="pd-badge pd-badge--sale">تخفیف‌دار</span>
+                                }
+                                @if (product.StockQuantity > 0 && product.StockQuantity <= 5 && product.IsAvailable)
+                                {
+                                    <span class="pd-badge pd-badge--low">کم‌موجود</span>
+                                }
+                                @if (product.IsFeatured)
+                                {
+                                    <span class="pd-badge pd-badge--hot">پرفروش</span>
+                                }
+                            </div>
+                        }
+                    </div>
 
                     <div class="pd-extra">
                         <span class="pd-extra-item pd-code-copy" @onclick="CopyProductCode" title="کلیک برای کپی">
@@ -165,13 +173,13 @@
                             کد محصول: #@product.Id.ToString("D6")
                         </span>
                         <span class="pd-extra-item">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                             @product.ViewCount.ToString("N0") بازدید
                         </span>
                         @if (product.IsAvailable && product.StockQuantity > 0)
                         {
                             <span class="pd-extra-item pd-instock">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#198754" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
                                 @if (product.StockQuantity <= 5)
                                 {
                                     <span>تنها @product.StockQuantity عدد در انبار</span>
@@ -185,46 +193,122 @@
                         else
                         {
                             <span class="pd-extra-item pd-outstock">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc3545" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                 ناموجود
                             </span>
                         }
                     </div>
 
-                    @if (reviewSummary != null)
-                    {
-                        <div class="pd-rating-stars">
-                            <div class="pd-stars">
+                    <div class="pd-statcard">
+                        <div class="pd-stat">
+                            <div class="pd-stat-stars">
                                 @for (int i = 1; i <= 5; i++)
                                 {
-                                    var fill = i <= Math.Round(reviewSummary.AverageRating, MidpointRounding.AwayFromZero) ? "#f59e0b" : "none";
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="@fill" stroke="#f59e0b" stroke-width="2">
+                                    var fill = reviewSummary != null && i <= Math.Round(reviewSummary.AverageRating, MidpointRounding.AwayFromZero) ? "#f59e0b" : "none";
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="@fill" stroke="#f59e0b" stroke-width="2">
                                         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                                     </svg>
                                 }
                             </div>
-                            <span class="pd-rating-text">@reviewSummary.AverageRating.ToString("F1") از ۵ (@reviewSummary.TotalCount امتیاز)</span>
+                            <b>@(reviewSummary == null ? "—" : reviewSummary.AverageRating.ToString("F1"))</b>
+                            <span>امتیاز کاربران</span>
                         </div>
-                    }
+                        <div class="pd-stat">
+                            <b>@(reviewSummary?.TotalCount ?? 0)</b>
+                            <span>امتیاز ثبت‌شده</span>
+                        </div>
+                        <div class="pd-stat">
+                            <b>@_questions.Count</b>
+                            <span>پرسش و پاسخ</span>
+                        </div>
+                    </div>
 
-                    <div class="pd-pricebox">
-                        @if (IsDiscountActive(product))
+                    <div class="pd-buy">
+                        <div class="pd-pricebox">
+                            @if (IsDiscountActive(product))
+                            {
+                                <div class="pd-price-row">
+                                    <span class="pd-price-old">@product.Price.ToString("N0") تومان</span>
+                                    <span class="pd-price-badge">تخفیف ویژه</span>
+                                </div>
+                                <div class="pd-price-current">
+                                    <span class="pd-price-num">@product.DiscountPrice!.Value.ToString("N0")</span>
+                                    <span class="pd-price-unit">تومان</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="pd-price-current">
+                                    <span class="pd-price-num">@product.Price.ToString("N0")</span>
+                                    <span class="pd-price-unit">تومان</span>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="pd-actions">
+                            <div class="pd-qty">
+                                <span class="pd-qty-label">تعداد:</span>
+                                <div class="pd-qty-box">
+                                    <button class="pd-qty-btn" @onclick="DecrementQty" disabled="@(_quantity <= 1)" aria-label="کاهش">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                    </button>
+                                    <span class="pd-qty-val">@_quantity</span>
+                                    <button class="pd-qty-btn" @onclick="IncrementQty" disabled="@(_quantity >= QtyMax)" aria-label="افزایش">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="pd-actions-tools">
+                                <button class="pd-share" @onclick="OpenShareModal" title="اشتراک‌گذاری" aria-label="اشتراک‌گذاری">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                                    <span>اشتراک</span>
+                                </button>
+                                @if (Flag("wishlist"))
+                                {
+                                    <button class="pd-share @(isInWishlist ? "pd-wishlist-active" : "")" @onclick="ToggleWishlist" title="علاقمندی" aria-label="افزودن به علاقمندی‌ها">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="@(isInWishlist ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                        <span>علاقمندی</span>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        @if (Flag("stockalert") && IsProductOutOfStock)
                         {
-                            <div class="pd-price-row">
-                                <span class="pd-price-old">@product.Price.ToString("N0") تومان</span>
-                                <span class="pd-price-badge">تخفیف ویژه</span>
-                            </div>
-                            <div class="pd-price-current">
-                                <span class="pd-price-num">@product.DiscountPrice!.Value.ToString("N0")</span>
-                                <span class="pd-price-unit">تومان</span>
-                            </div>
+                            <button class="pd-notify-btn @(_stockAlertSubscribed ? "pd-notify-subscribed" : "")"
+                                    @onclick="HandleStockAlertClick" disabled="@_stockAlertBusy">
+                                @if (_stockAlertBusy)
+                                {
+                                    <span class="pd-cart-spinner"></span>
+                                }
+                                else if (_stockAlertSubscribed)
+                                {
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                }
+                                else
+                                {
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                                }
+                                <span>@(_stockAlertSubscribed ? "یادآوری ثبت شد — برای لغو بزنید" : "خبرم کن وقتی موجود شد")</span>
+                            </button>
                         }
                         else
                         {
-                            <div class="pd-price-current">
-                                <span class="pd-price-num">@product.Price.ToString("N0")</span>
-                                <span class="pd-price-unit">تومان</span>
-                            </div>
+                            <button class="pd-add-cart @_cartBtnClass" @onclick="AddToCart" disabled="@(!product.IsAvailable || product.StockQuantity <= 0 || _isAddingToCart)">
+                                @if (_cartBtnState == CartBtnState.Spinner)
+                                {
+                                    <span class="pd-cart-spinner"></span>
+                                }
+                                else if (_cartBtnState == CartBtnState.Done)
+                                {
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                }
+                                else
+                                {
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                                }
+                                <span>@_cartBtnText</span>
+                            </button>
                         }
                     </div>
 
@@ -234,8 +318,11 @@
                         {
                             <div class="pd-chart">
                                 <div class="pd-chart__head">
-                                    <b>تاریخچه کامل قیمت</b>
-                                    <span>@_pricePoints.Count ثبت</span>
+                                    <div class="pd-chart__title">
+                                        <b>تاریخچه قیمت</b>
+                                        <small>@_pricePoints.Count ثبت — از قدیمی‌ترین (چپ) تا جدیدترین (راست)</small>
+                                    </div>
+                                    <span class="pd-chart__legend"><i aria-hidden="true"></i> قیمت (تومان)</span>
                                 </div>
                                 <div class="pd-chart__body">
                                     @{
@@ -243,59 +330,81 @@
                                         var minP = _pricePoints.Min(p => p.DiscountPrice ?? p.Price);
                                         var maxP = _pricePoints.Max(p => p.DiscountPrice ?? p.Price);
                                         var range = maxP > minP ? maxP - minP : 1m;
+                                        var isFlat = maxP == minP;
                                         var inv = System.Globalization.CultureInfo.InvariantCulture;
                                         var lineSb = new System.Text.StringBuilder();
                                         var areaSb = new System.Text.StringBuilder();
                                         for (var i = 0; i < n; i++)
                                         {
                                             var v = _pricePoints[i].DiscountPrice ?? _pricePoints[i].Price;
-                                            var x = n == 1 ? 50m : 100m * i / (n - 1);
-                                            var y = 92m - 84m * (v - minP) / range;
+                                            var x = 100m * i / (n - 1);
+                                            var y = isFlat ? 50m : 88m - 76m * (v - minP) / range;
                                             var xs = x.ToString("0.####", inv);
                                             var ys = y.ToString("0.####", inv);
-                                            if (i > 0)
+                                            if (i == 0)
                                             {
-                                                lineSb.Append(' ');
-                                                areaSb.Append(" L");
+                                                lineSb.Append(xs).Append(',').Append(ys);
+                                                areaSb.Append('M').Append(xs).Append(",100 L").Append(xs).Append(',').Append(ys);
                                             }
                                             else
                                             {
-                                                areaSb.Append('M');
+                                                lineSb.Append(' ').Append(xs).Append(',').Append(ys);
+                                                areaSb.Append(" L").Append(xs).Append(',').Append(ys);
                                             }
-                                            lineSb.Append(xs).Append(',').Append(ys);
-                                            areaSb.Append(xs).Append(',').Append(ys);
                                         }
-                                        areaSb.Append(" L100,100 L0,100 Z");
+                                        areaSb.Append(" L100,100 Z");
                                         var lineS = lineSb.ToString();
                                         var areaS = areaSb.ToString();
                                     }
-                                    <svg class="pd-chart__svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                                        <defs>
-                                            <linearGradient id="pdPriceGrad" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="0%" stop-color="#2563eb" stop-opacity="0.30" />
-                                                <stop offset="100%" stop-color="#2563eb" stop-opacity="0.02" />
-                                            </linearGradient>
-                                        </defs>
-                                        <path d="@areaS" fill="url(#pdPriceGrad)" />
-                                        <polyline points="@lineS" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
-                                    </svg>
-                                    <div class="pd-chart__cols">
-                                        @for (var i = 0; i < n; i++)
-                                        {
-                                            var pt = _pricePoints[i];
-                                            var v = pt.DiscountPrice ?? pt.Price;
-                                            var yVal = 92m - 84m * (v - minP) / range;
-                                            var yPct = yVal.ToString("0.##", inv);
-                                            var tipB = Math.Clamp(106m - yVal, 0m, 60m).ToString("0.##", inv);
-                                            <div class="pd-chart__col">
-                                                <span class="pd-chart__xline"></span>
-                                                <span class="pd-chart__dot" style="top:@(yPct)%"></span>
-                                                <span class="pd-chart__tip" style="bottom:@(tipB)%">
-                                                    <b>@v.ToString("N0") تومان</b>
-                                                    <i>@pt.DateFa</i>
-                                                </span>
-                                            </div>
-                                        }
+                                    <div class="pd-chart__plot">
+                                        <svg class="pd-chart__svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                                            <defs>
+                                                <linearGradient id="pdPriceGrad" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="0%" stop-color="#2563eb" stop-opacity="0.30" />
+                                                    <stop offset="100%" stop-color="#2563eb" stop-opacity="0.02" />
+                                                </linearGradient>
+                                            </defs>
+                                            <path d="@areaS" fill="url(#pdPriceGrad)" />
+                                            <polyline points="@lineS" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+                                        </svg>
+                                        <div class="pd-chart__cols">
+                                            @for (var i = 0; i < n; i++)
+                                            {
+                                                var idx = i;
+                                                var pt = _pricePoints[i];
+                                                var v = pt.DiscountPrice ?? pt.Price;
+                                                var yVal = isFlat ? 50m : 88m - 76m * (v - minP) / range;
+                                                var yPct = yVal.ToString("0.##", inv);
+                                                var xPct = (100m * i / (n - 1)).ToString("0.####", inv);
+                                                var tipB = Math.Clamp(104m - yVal, 0m, 64m).ToString("0.##", inv);
+                                                var label = $"قیمت {v:N0} تومان در تاریخ {pt.DateFa}";
+                                                <button type="button"
+                                                        class="pd-chart__col @(idx == _chartIndex ? "is-active" : "")"
+                                                        style="left:@(xPct)%"
+                                                        @onclick="() => _chartIndex = idx"
+                                                        aria-label="@label"
+                                                        aria-pressed="@(idx == _chartIndex ? "true" : "false")">
+                                                    <span class="pd-chart__xline"></span>
+                                                    <span class="pd-chart__dot" style="top:@(yPct)%"></span>
+                                                    <span class="pd-chart__tip" style="bottom:@(tipB)%">
+                                                        <b>@v.ToString("N0") تومان</b>
+                                                        <i>@pt.DateFa</i>
+                                                    </span>
+                                                </button>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                                @{
+                                    var si = Math.Clamp(_chartIndex, 0, n - 1);
+                                    var sel = _pricePoints[si];
+                                    var selV = sel.DiscountPrice ?? sel.Price;
+                                }
+                                <div class="pd-chart__summary">
+                                    <div class="pd-chart__sum">
+                                        <span class="pd-chart__sum-label">@(si == n - 1 ? "آخرین قیمت ثبت‌شده" : "قیمت ثبت‌شده")</span>
+                                        <b>@selV.ToString("N0") <small>تومان</small></b>
+                                        <span class="pd-chart__sum-date">@sel.DateFa</span>
                                     </div>
                                 </div>
                                 <div class="pd-chart__foot">
@@ -319,91 +428,37 @@
                         }
                     }
 
-                    @if (Flag("trust"))
+                    @if (Flag("trust") || Flag("eta"))
                     {
                         <div class="pd-highlights">
-                            <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>ضمانت اصالت</span></div>
-                            <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>ارسال سریع</span></div>
-                            <div class="pd-hl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>پشتیبانی</span></div>
+                            @if (Flag("trust"))
+                            {
+                                <div class="pd-hl">
+                                    <span class="pd-hl-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                                    <span class="pd-hl-text"><b>ضمانت اصالت</b><small>تضمین اصل بودن کالا</small></span>
+                                </div>
+                                <div class="pd-hl">
+                                    <span class="pd-hl-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+                                    <span class="pd-hl-text"><b>ارسال سریع</b><small>ارسال به سراسر کشور</small></span>
+                                </div>
+                                <div class="pd-hl">
+                                    <span class="pd-hl-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+                                    <span class="pd-hl-text"><b>پشتیبانی</b><small>پاسخگویی کارشناسان فروشگاه</small></span>
+                                </div>
+                            }
+                            @if (Flag("eta"))
+                            {
+                                <div class="pd-hl">
+                                    <span class="pd-hl-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>
+                                    <span class="pd-hl-text">
+                                        <b>زمان تقریبی تحویل</b>
+                                        <small>@(string.IsNullOrWhiteSpace(product.EstimatedDeliveryText) ? StoreDefaults.DeliveryEta : product.EstimatedDeliveryText)@(IsProductOutOfStock ? " — پس از موجود شدن" : "")</small>
+                                    </span>
+                                </div>
+                            }
                         </div>
                     }
 
-                    @if (Flag("eta"))
-                    {
-                        <div class="pd-eta">
-                            <span class="oi oi-truck"></span>
-                            <div>
-                                <b>زمان تقریبی تحویل</b>
-                                <span>@(string.IsNullOrWhiteSpace(product.EstimatedDeliveryText) ? StoreDefaults.DeliveryEta : product.EstimatedDeliveryText)@(IsProductOutOfStock ? " — پس از موجود شدن" : "")</span>
-                            </div>
-                        </div>
-                    }
-
-                    <div class="pd-actions">
-                        <div class="pd-qty">
-                            <span class="pd-qty-label">تعداد:</span>
-                            <div class="pd-qty-box">
-                                <button class="pd-qty-btn" @onclick="DecrementQty" disabled="@(_quantity <= 1)" aria-label="کاهش">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                </button>
-                                <span class="pd-qty-val">@_quantity</span>
-                                <button class="pd-qty-btn" @onclick="IncrementQty" disabled="@(_quantity >= QtyMax)" aria-label="افزایش">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="pd-actions-tools d-flex gap-1">
-                            <button class="pd-share" @onclick="OpenShareModal" title="اشتراک‌گذاری">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
-                                <span>اشتراک</span>
-                            </button>
-                            @if (Flag("wishlist"))
-                            {
-                                <button class="pd-share @(isInWishlist ? "pd-wishlist-active" : "")" @onclick="ToggleWishlist" title="علاقمندی">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="@(isInWishlist ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                                    <span>علاقمندی</span>
-                                </button>
-                            }
-                        </div>
-                    </div>
-
-                    @if (Flag("stockalert") && IsProductOutOfStock)
-                    {
-                        <button class="pd-notify-btn @(_stockAlertSubscribed ? "pd-notify-subscribed" : "")"
-                                @onclick="HandleStockAlertClick" disabled="@_stockAlertBusy">
-                            @if (_stockAlertBusy)
-                            {
-                                <span class="pd-cart-spinner"></span>
-                            }
-                            else if (_stockAlertSubscribed)
-                            {
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                            }
-                            else
-                            {
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                            }
-                            <span>@(_stockAlertSubscribed ? "یادآوری ثبت شد — برای لغو بزنید" : "خبرم کن وقتی موجود شد")</span>
-                        </button>
-                    }
-                    else
-                    {
-                    <button class="pd-add-cart @_cartBtnClass" @onclick="AddToCart" disabled="@(!product.IsAvailable || product.StockQuantity <= 0 || _isAddingToCart)">
-                        @if (_cartBtnState == CartBtnState.Spinner)
-                        {
-                            <span class="pd-cart-spinner"></span>
-                        }
-                        else if (_cartBtnState == CartBtnState.Done)
-                        {
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                        }
-                        else
-                        {
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-                        }
-                        <span>@_cartBtnText</span>
-                    </button>
-                    }
                 </div>
             </div>
 
@@ -440,20 +495,29 @@
             }
 
             <div class="pd-tabs-wrap">
-                <div class="pd-tabs-header">
-                    <button class="pd-tab-btn @(_activeTab == 0 ? "pd-tab-active" : "")" @onclick="() => SwitchTab(0)">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                        توضیحات
+                <div class="pd-tabs-header" role="tablist" aria-label="اطلاعات محصول">
+                    <button type="button" role="tab" aria-selected="@(_activeTab == 0)" class="pd-tab-btn @(_activeTab == 0 ? "pd-tab-active" : "")" @onclick="() => SwitchTab(0)">
+                        <span class="pd-tab-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
+                        <span>توضیحات</span>
                     </button>
-                    <button class="pd-tab-btn @(_activeTab == 1 ? "pd-tab-active" : "")" @onclick="() => SwitchTab(1)">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                        مشخصات فنی
+                    <button type="button" role="tab" aria-selected="@(_activeTab == 1)" class="pd-tab-btn @(_activeTab == 1 ? "pd-tab-active" : "")" @onclick="() => SwitchTab(1)">
+                        <span class="pd-tab-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
+                        <span>مشخصات فنی</span>
                     </button>
                     @if (Flag("qna"))
                     {
-                        <button class="pd-tab-btn @(_activeTab == 2 ? "pd-tab-active" : "")" @onclick="() => SwitchTab(2)">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                            پرسش و پاسخ (@_questions.Count)
+                        <button type="button" role="tab" aria-selected="@(_activeTab == 2)" class="pd-tab-btn @(_activeTab == 2 ? "pd-tab-active" : "")" @onclick="() => SwitchTab(2)">
+                            <span class="pd-tab-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                            <span>پرسش و پاسخ</span>
+                            <span class="pd-tab-count">@_questions.Count</span>
+                        </button>
+                    }
+                    @if (Flag("reviews"))
+                    {
+                        <button type="button" role="tab" aria-selected="@(_activeTab == 3)" class="pd-tab-btn @(_activeTab == 3 ? "pd-tab-active" : "")" @onclick="() => SwitchTab(3)">
+                            <span class="pd-tab-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
+                            <span>نظرات کاربران</span>
+                            <span class="pd-tab-count">@(reviewSummary?.TotalCount ?? 0)</span>
                         </button>
                     }
                 </div>
@@ -477,15 +541,13 @@
                         <div class="pd-specs pd-specs--sheet">
                             @{
                                 var orderedSpecs = _serverSpecs.OrderBy(s => s.SortOrder).ThenBy(s => s.Id).ToList();
-                                var specColorIdx = 0;
                             }
                             @if (Flag("specs") && orderedSpecs.Count > 0)
                             {
                                 @foreach (var sp in orderedSpecs)
                                 {
-                                    var chipClass = $"pd-spec-chip pd-spec-chip--{(specColorIdx++ % 4)}";
                                     <div class="pd-spec">
-                                        <span class="@chipClass">@sp.SpecKey</span>
+                                        <span class="pd-spec-chip">@sp.SpecKey</span>
                                         <span class="pd-spec-val">@sp.SpecValue</span>
                                     </div>
                                 }
@@ -541,7 +603,7 @@
                             }
                         </div>
                     }
-                    else
+                    else if (_activeTab == 2)
                     {
                         <div class="pd-qna">
                             <div class="pd-qna-topbar">
@@ -677,116 +739,117 @@
                             }
                         </div>
                     }
+                    else if (_activeTab == 3 && Flag("reviews"))
+                    {
+                        <div class="pd-reviews">
+                            @if (reviewSummary == null)
+                            {
+                                <div class="text-center py-4">
+                                    <div class="spinner-border text-primary" role="status"></div>
+                                </div>
+                            }
+                            else
+                            {
+                                <CommentSection ShowStarSummary="false"
+                                                ShowRating="true"
+                                                RequireEmail="true"
+                                                AllowMedia="@Flag("media")"
+                                                ShowVerifiedBadge="@Flag("verified")"
+                                                EnableGallery="@Flag("gallery")"
+                                                SubmitEndpoint="@($"api/products/{(product?.Id ?? 0)}/reviews")"
+                                                AverageRating="@reviewSummary.AverageRating"
+                                                TotalCount="@reviewSummary.TotalCount"
+                                                Comments="@_productCommentDtos"
+                                                SubmitComment="@HandleProductReviewSubmit" />
+                            }
+                        </div>
+                    }
                 </div>
             </div>
 
-            @if (Flag("related") && relatedProducts != null && relatedProducts.Any())
+            var recentList = _recentItems.Where(r => product == null || r.Id != product.Id).ToList();
+            var hasRelated = Flag("related") && relatedProducts != null && relatedProducts.Any();
+            var hasRecent = Flag("recent") && recentList.Count > 0;
+            var showRelated = hasRelated && (_suggestTab == 0 || !hasRecent);
+            var suggestCards = new List<(int Id, string? Slug, string Name, string? Image, decimal Price, bool HasDiscount, decimal Effective)>();
+            if (showRelated)
             {
-                <div class="pd-related">
-                    <h2 class="pd-related-title">محصولات مرتبط</h2>
-                    <div class="pd-related-track">
-                        @foreach (var rp in relatedProducts)
-                        {
-                            <a href="@SeoUrl.Product(rp.Id, rp.Slug)" class="pd-related-card">
-                                <div class="pd-related-img">
-                                    @if (!string.IsNullOrEmpty(rp.MainImageUrl))
-                                    {
-                                        <img src="@rp.MainImageUrl" alt="@rp.Name" loading="lazy" />
-                                    }
-                                    else
-                                    {
-                                        <div class="pd-related-placeholder">
-                                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#adb5bd" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                                        </div>
-                                    }
-                                </div>
-                                <div class="pd-related-body">
-                                    <span class="pd-related-name">@rp.Name</span>
-                                    <div class="pd-related-price">
-                                        @if (IsDiscountActive(rp))
-                                        {
-                                            <span class="pd-related-old">@rp.Price.ToString("N0")</span>
-                                            <span class="pd-related-current">@DiscountHelper.GetEffectivePrice(rp).ToString("N0")</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="pd-related-current">@rp.Price.ToString("N0")</span>
-                                        }
-                                        <span class="pd-related-unit">تومان</span>
-                                    </div>
-                                </div>
-                            </a>
-                        }
-                    </div>
-                </div>
+                foreach (var rp in relatedProducts!)
+                    suggestCards.Add((rp.Id, rp.Slug, rp.Name, rp.MainImageUrl, rp.Price, IsDiscountActive(rp), DiscountHelper.GetEffectivePrice(rp)));
             }
-
-            @if (Flag("recent") && _recentItems.Any())
+            else if (hasRecent)
             {
-                <div class="pd-recently">
-                    <h2 class="pd-related-title">بازدیدهای اخیر شما</h2>
-                    <div class="pd-related-track">
-                        @foreach (var ri in _recentItems)
-                        {
-                            <a href="@SeoUrl.Product(ri.Id, ri.Slug)" class="pd-related-card">
-                                <div class="pd-related-img">
-                                    @if (!string.IsNullOrEmpty(ri.ImageUrl))
-                                    {
-                                        <img src="@ri.ImageUrl" alt="@ri.Name" loading="lazy" />
-                                    }
-                                    else
-                                    {
-                                        <div class="pd-related-placeholder">
-                                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#adb5bd" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                                        </div>
-                                    }
-                                </div>
-                                <div class="pd-related-body">
-                                    <span class="pd-related-name">@ri.Name</span>
-                                    <div class="pd-related-price">
-                                        @if (IsDiscountActive(ri))
-                                        {
-                                            <span class="pd-related-old">@ri.Price.ToString("N0")</span>
-                                            <span class="pd-related-current">@DiscountHelper.GetEffectivePrice(ri).ToString("N0")</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="pd-related-current">@ri.Price.ToString("N0")</span>
-                                        }
-                                        <span class="pd-related-unit">تومان</span>
-                                    </div>
-                                </div>
-                            </a>
-                        }
-                    </div>
-                </div>
+                foreach (var ri in recentList)
+                    suggestCards.Add((ri.Id, ri.Slug, ri.Name, ri.ImageUrl, ri.Price, IsDiscountActive(ri), DiscountHelper.GetEffectivePrice(ri)));
             }
-
-            @if (Flag("reviews"))
+            @if (hasRelated || hasRecent)
             {
-                <div class="pd-reviews mt-5">
-                    <h3 class="fw-bold mb-4">نظرات کاربران</h3>
-
-                    @if (reviewSummary == null)
-                    {
-                        <div class="text-center py-4">
-                            <div class="spinner-border text-primary" role="status"></div>
+                <section class="pd-sug" aria-label="پیشنهاد محصولات">
+                    <div class="pd-sug-head">
+                        <div class="pd-sug-title">
+                            <span class="pd-sug-ico" aria-hidden="true">
+                                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg>
+                            </span>
+                            <div class="pd-sug-title-text">
+                                <b>@(showRelated ? "محصولات مرتبط" : "بازدیدهای اخیر شما")</b>
+                                <small>@(showRelated ? "گزینه‌های نزدیک به این محصول برای مقایسه" : "محصولاتی که اخیراً دیده‌اید")</small>
+                            </div>
                         </div>
-                    }
-                    else
-                    {
-                        <CommentSection ShowStarSummary="false"
-                                        ShowRating="true"
-                                        RequireEmail="true"
-                                        AllowMedia="@Flag("media")"
-                                        SubmitEndpoint="@($"api/products/{(product?.Id ?? 0)}/reviews")"
-                                        AverageRating="@reviewSummary.AverageRating"
-                                        TotalCount="@reviewSummary.TotalCount"
-                                        Comments="@_productCommentDtos"
-                                        SubmitComment="@HandleProductReviewSubmit" />
-                    }
-                </div>
+                        @if (hasRelated && hasRecent)
+                        {
+                            <div class="pd-sug-tabs" role="tablist" aria-label="انتخاب فهرست پیشنهادها">
+                                <button type="button" role="tab" aria-selected="@showRelated" class="pd-sug-tab @(showRelated ? "pd-sug-tab--on" : "")" @onclick="() => _suggestTab = 0">
+                                    مرتبط
+                                    <span class="pd-sug-count">@relatedProducts!.Count</span>
+                                </button>
+                                <button type="button" role="tab" aria-selected="@(!showRelated)" class="pd-sug-tab @(!showRelated ? "pd-sug-tab--on" : "")" @onclick="() => _suggestTab = 1">
+                                    بازدیدهای اخیر
+                                    <span class="pd-sug-count">@recentList.Count</span>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                    <div class="pd-sug-track">
+                        @foreach (var c in suggestCards)
+                        {
+                            <a href="@SeoUrl.Product(c.Id, c.Slug)" class="pd-sug-card">
+                                <span class="pd-sug-media">
+                                    @if (!string.IsNullOrEmpty(c.Image))
+                                    {
+                                        <img src="@c.Image" alt="@c.Name" loading="lazy" />
+                                    }
+                                    else
+                                    {
+                                        <span class="pd-sug-placeholder">
+                                            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                        </span>
+                                    }
+                                    @if (c.HasDiscount && c.Price > 0 && c.Effective < c.Price)
+                                    {
+                                        var off = (int)Math.Round((1 - (double)(c.Effective / c.Price)) * 100);
+                                        if (off > 0)
+                                        {
+                                            <span class="pd-sug-off">@off٪</span>
+                                        }
+                                    }
+                                </span>
+                                <span class="pd-sug-body">
+                                    <span class="pd-sug-name">@c.Name</span>
+                                    <span class="pd-sug-price">
+                                        <b>@c.Effective.ToString("N0")</b>
+                                        <small>تومان</small>
+                                        @if (c.HasDiscount && c.Effective < c.Price)
+                                        {
+                                            <del>@c.Price.ToString("N0")</del>
+                                        }
+                                    </span>
+                                </span>
+                            </a>
+                        }
+                    </div>
+                </section>
             }
+
         }
     </div>
 </div>
@@ -799,7 +862,7 @@
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
             <div class="pd-lightbox-img-wrap">
-                <img src="@GetAllImages()[_lightboxIndex]" alt="@product?.Name" class="pd-lightbox-img" />
+                <img src="@GetAllImages()[_lightboxIndex]" alt="@product?.Name" class="pd-lightbox-img" decoding="async" />
             </div>
             <div class="pd-lightbox-counter">@(_lightboxIndex + 1) از @GetAllImages().Count</div>
             @if (GetAllImages().Count > 1)
@@ -970,878 +1033,7 @@
     };
 </script>
 
-<style>
-    .pd-wrap *, .pd-wrap *::before, .pd-wrap *::after { box-sizing: border-box; }
-    .pd-wrap { font-family: 'Vazirmatn', system-ui, sans-serif; color: #212529; line-height: 1.6; }
-    .pd-container { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1rem; }
 
-    /* ===== Skeleton ===== */
-    @@keyframes pd-shimmer { 0%{background-position:-400px 0}100%{background-position:400px 0} }
-    .pd-skeleton { padding: 1rem 0; }
-    .pd-sk-grid { display:grid; grid-template-columns:1fr 1fr; gap:2rem; }
-    .pd-sk-gallery { height:420px; background:#e9ecef; border-radius:1.25rem; }
-    .pd-sk-info { display:flex; flex-direction:column; gap:1rem; }
-    .pd-sk-line { height:20px; border-radius:0.5rem; background: linear-gradient(90deg,#e9ecef 25%,#f8f9fa 50%,#e9ecef 75%); background-size:800px 100%; animation:pd-shimmer 1.8s infinite linear; }
-    .pd-sk-line.h2 { height:32px; }
-    .pd-sk-line.h4 { height:28px; }
-    .pd-sk-line.w-25 { width:25%; }
-    .pd-sk-line.w-50 { width:50%; }
-    .pd-sk-line.w-75 { width:75%; }
-    .pd-sk-line.w-100 { width:100%; }
-    .pd-sk-details { margin-top:2rem; }
-    @@media (max-width:767.98px) { .pd-sk-grid { grid-template-columns:1fr; } .pd-sk-gallery { height:280px; } }
-
-    .pd-notfound { text-align:center;padding:4rem 1rem;background:#fff;border-radius:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,.06);max-width:400px;margin:3rem auto; }
-    .pd-notfound h3 { font-size:1.15rem;color:#343a40;margin:1rem 0 1.5rem; }
-    .pd-back-btn { display:inline-block;padding:.6rem 1.75rem;background:#0d6efd;color:#fff;border-radius:2rem;text-decoration:none;font-weight:600;font-size:.9rem;transition:background .2s; }
-    .pd-back-btn:hover { background:#0b5ed7; }
-
-    .pd-breadcrumb { margin-bottom:1.5rem; }
-    .pd-breadcrumb ol { list-style:none;display:flex;flex-wrap:wrap;gap:.4rem;padding:0;margin:0;font-size:.85rem;color:#6c757d; }
-    .pd-breadcrumb li { display:flex;align-items:center; }
-    .pd-breadcrumb li+li::before { content:"/";color:#adb5bd;margin:0 .35rem; }
-    .pd-breadcrumb a { color:#0d6efd;text-decoration:none; }
-    .pd-breadcrumb a:hover { text-decoration:underline; }
-
-    /* Mobile Header Sticky */
-    .pd-header-sticky {
-        position: sticky;
-        top: 0;
-        z-index: 1020;
-        min-height: 56px;
-        background: rgba(255, 255, 255, 0.98);
-        backdrop-filter: blur(15px);
-        -webkit-backdrop-filter: blur(15px);
-        border-bottom: 1px solid rgba(0,0,0,0.06);
-        display: flex;
-        align-items: center;
-        margin: -0.75rem -0.6rem 0.75rem;
-        padding: 0 0.6rem;
-        padding-top: env(safe-area-inset-top, 0px);
-    }
-    .pd-header-inner {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        width: 100%;
-        max-width: 1200px;
-        margin: 0 auto;
-        min-height: 56px;
-    }
-    .pd-header-back {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        background: #f8fafc;
-        color: #475569;
-        text-decoration: none;
-        transition: all 0.2s;
-        border: 1px solid rgba(0,0,0,0.04);
-        flex-shrink: 0;
-    }
-    .pd-header-back:active { transform: scale(0.92); background: #f1f5f9; }
-    .pd-header-title {
-        flex: 1;
-        text-align: center;
-        font-weight: 700;
-        font-size: 0.85rem;
-        color: #0f172a;
-        line-height: 1.3;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
-    .pd-header-action {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        background: #f8fafc;
-        color: #475569;
-        border: 1px solid rgba(0,0,0,0.04);
-        cursor: pointer;
-        transition: all 0.2s;
-        flex-shrink: 0;
-    }
-    .pd-header-action:active { transform: scale(0.92); background: #f1f5f9; }
-
-    .pd-main { display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start; }
-
-    .pd-gallery-view { position:relative;background:#f8f9fa;border-radius:1rem;overflow:hidden;user-select:none;touch-action:none; }
-    .pd-gallery-track { display:flex;transition:transform .4s cubic-bezier(.25,1,.5,1); }
-    .pd-gallery-slide { min-width:100%;display:flex;align-items:center;justify-content:center;padding:1rem; }
-    .pd-img-wrap { width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:.75rem; }
-    .pd-main-img { max-width:100%;max-height:460px;width:auto;height:auto;object-fit:contain;border-radius:.5rem;cursor:zoom-in;transition:transform .35s ease; }
-    .pd-main-img:hover { transform:scale(1.06); }
-
-    .pd-discount-ribbon { position:absolute;top:.75rem;right:.75rem;background:linear-gradient(135deg,#dc3545,#e4606d);color:#fff;padding:.45rem .9rem;border-radius:.65rem;z-index:5;box-shadow:0 4px 14px rgba(220,53,69,.35);text-align:center;min-width:100px;font-size:.8rem; }
-    .pd-discount-label { font-weight:700;font-size:.7rem;opacity:.95;display:block; }
-    .pd-discount-timer { font-family:'Courier New',monospace;font-weight:700;font-size:.95rem;direction:ltr; }
-
-    .pd-dots { position:absolute;bottom:.75rem;left:50%;transform:translateX(-50%);display:flex;gap:.4rem; }
-    .pd-dot { width:7px;height:7px;border-radius:50%;border:none;background:rgba(0,0,0,.18);cursor:pointer;transition:all .3s;padding:0; }
-    .pd-dot--active { background:#0d6efd;width:22px;border-radius:4px; }
-
-    .pd-thumbs { display:flex;gap:.6rem;justify-content:center;margin-top:.75rem;flex-wrap:wrap; }
-    .pd-thumb { width:64px;height:64px;border-radius:.65rem;overflow:hidden;border:2.5px solid transparent;background:#f8f9fa;cursor:pointer;transition:all .2s;padding:0;display:flex;align-items:center;justify-content:center; }
-    .pd-thumb img { width:100%;height:100%;object-fit:contain;padding:4px; }
-    .pd-thumb--active { border-color:#0d6efd;background:#fff;box-shadow:0 2px 8px rgba(13,110,253,.15); }
-
-    .pd-info { display:flex;flex-direction:column;gap:1rem; }
-    .pd-category { display:inline-flex;align-self:flex-start;background:#e8f4fd;color:#0d6efd;font-size:.75rem;font-weight:700;padding:.3rem .8rem;border-radius:2rem;letter-spacing:.3px; }
-    .pd-title { font-size:1.4rem;font-weight:800;color:#212529;margin:0;line-height:1.4;word-break:break-word; }
-    .pd-extra { display:flex;flex-wrap:wrap;gap:.4rem 1.5rem;font-size:.8rem;color:#6c757d; }
-    .pd-extra-item { display:inline-flex;align-items:center;gap:.3rem; }
-    .pd-extra-item svg { flex-shrink:0; }
-    .pd-code-copy { cursor:pointer;transition:color .2s; }
-    .pd-code-copy:hover { color:#0d6efd; }
-    .pd-instock { color:#198754;font-weight:700; }
-    .pd-outstock { color:#dc3545;font-weight:700; }
-
-    .pd-rating-stars { display:flex;align-items:center;gap:.5rem;flex-wrap:wrap; }
-    .pd-stars { display:flex;gap:2px; }
-    .pd-stars svg { display:block; }
-    .pd-rating-text { font-size:.8rem;color:#6c757d; }
-
-    .pd-pricebox { background:#f8f9fa;border-radius:1rem;padding:1rem 1.25rem; }
-    .pd-price-row { display:flex;align-items:center;gap:.75rem;margin-bottom:.25rem; }
-    .pd-price-old { font-size:.9rem;color:#adb5bd;text-decoration:line-through; }
-    .pd-price-badge { font-size:.65rem;font-weight:700;background:#dc3545;color:#fff;padding:.15rem .5rem;border-radius:.35rem; }
-    .pd-price-current { display:flex;align-items:baseline;gap:.35rem; }
-    .pd-price-num { font-size:1.75rem;font-weight:800;color:#0d6efd;line-height:1.1; }
-    .pd-price-unit { font-size:.85rem;color:#6c757d;font-weight:600; }
-
-    .pd-highlights { display:grid;grid-template-columns:1fr 1fr;gap:.5rem; }
-    .pd-hl { display:flex;align-items:center;gap:.4rem;font-size:.78rem;font-weight:600;color:#495057;padding:.5rem;background:#f8f9fa;border-radius:.65rem;transition:background .2s,transform .2s; }
-    .pd-hl:hover { background:#e8f4fd;transform:translateY(-1px); }
-    .pd-hl svg { flex-shrink:0;stroke:#2c7da0; }
-
-    .pd-actions { display:flex;align-items:center;gap:.75rem;flex-wrap:wrap; }
-    .pd-qty { display:flex;align-items:center;gap:.6rem;flex-shrink:0; }
-    .pd-qty-label { font-weight:600;color:#495057;font-size:.9rem; }
-    .pd-qty-box { display:flex;align-items:center;border:1.5px solid #dee2e6;border-radius:.65rem;overflow:hidden;background:#fff; }
-    .pd-qty-btn { display:flex;align-items:center;justify-content:center;width:38px;height:38px;border:none;background:#f8f9fa;color:#495057;cursor:pointer;transition:background .15s,color .15s;padding:0;min-width:44px;min-height:44px; }
-    .pd-qty-btn:hover:not(:disabled) { background:#e9ecef;color:#0d6efd; }
-    .pd-qty-btn:disabled { opacity:.3;cursor:not-allowed; }
-    .pd-qty-val { min-width:44px;text-align:center;font-weight:700;font-size:1rem;color:#212529;user-select:none; }
-
-    .pd-share { display:inline-flex;align-items:center;gap:.35rem;padding:.5rem .9rem;border:1.5px solid #dee2e6;border-radius:.65rem;cursor:pointer;font-size:.8rem;font-weight:600;color:#495057;transition:all .2s;min-height:44px;background:#fff; }
-    .pd-share:hover { background:#e8f4fd;border-color:#0d6efd;color:#0d6efd; }
-    .pd-wishlist-active { background:#fff0f0;border-color:#dc3545;color:#dc3545; }
-    .pd-wishlist-active:hover { background:#ffe0e0;border-color:#dc3545;color:#dc3545; }
-    .pd-actions-tools { display:flex;gap:4px;flex-wrap:wrap; }
-
-    .pd-add-cart { display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.85rem 1.5rem;border:none;border-radius:.85rem;background:#0d6efd;color:#fff;font-size:1rem;font-weight:700;cursor:pointer;transition:background .2s,transform .1s,box-shadow .2s;box-shadow:0 4px 14px rgba(13,110,253,.25);min-height:48px;white-space:nowrap; }
-    .pd-add-cart svg { flex-shrink:0; }
-    .pd-add-cart:hover:not(:disabled) { background:#0b5ed7;box-shadow:0 6px 20px rgba(13,110,253,.35);transform:translateY(-1px); }
-    .pd-add-cart:active:not(:disabled) { transform:translateY(0); }
-    .pd-add-cart:disabled { opacity:.5;cursor:not-allowed; }
-    .pd-add-cart.pd-cart-done { background:#198754 !important;box-shadow:0 4px 14px rgba(25,135,84,.25); }
-
-    @@keyframes pd-cart-spin { to { transform:rotate(360deg); } }
-    .pd-cart-spinner { display:inline-block;width:18px;height:18px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:pd-cart-spin .6s linear infinite; }
-
-    /* ===== Back-in-stock notify button ===== */
-    .pd-notify-btn { display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.85rem 1.5rem;border:2px dashed #fd7e14;border-radius:.85rem;background:#fff7e6;color:#d9480f;font-size:1rem;font-weight:700;cursor:pointer;transition:all .2s;min-height:48px;white-space:nowrap; }
-    .pd-notify-btn svg { flex-shrink:0; }
-    .pd-notify-btn:hover:not(:disabled) { background:#fd7e14;border-style:solid;border-color:#fd7e14;color:#fff;box-shadow:0 4px 14px rgba(253,126,20,.3); }
-    .pd-notify-btn:disabled { opacity:.6;cursor:not-allowed; }
-    .pd-notify-btn.pd-notify-subscribed { border-style:solid;border-color:#198754;background:#e8f5ee;color:#146c43; }
-    .pd-notify-btn.pd-notify-subscribed:hover:not(:disabled) { background:#198754;border-color:#198754;color:#fff;box-shadow:0 4px 14px rgba(25,135,84,.3); }
-    .pd-sticky-notify { display:flex;align-items:center;justify-content:center;gap:.4rem;flex:1;padding:.7rem 1rem;border:2px dashed #fd7e14;border-radius:.75rem;background:#fff7e6;color:#d9480f;font-size:.9rem;font-weight:700;cursor:pointer;transition:all .2s;min-height:44px;white-space:nowrap; }
-    .pd-sticky-notify svg { flex-shrink:0; }
-    .pd-sticky-notify:hover:not(:disabled) { background:#fd7e14;border-style:solid;border-color:#fd7e14;color:#fff; }
-    .pd-sticky-notify:disabled { opacity:.6;cursor:not-allowed; }
-    .pd-sticky-notify.pd-notify-subscribed { border-style:solid;border-color:#198754;background:#e8f5ee;color:#146c43; }
-    .pd-sticky-notify.pd-notify-subscribed:hover:not(:disabled) { background:#198754;border-color:#198754;color:#fff; }
-/* Out-of-stock: notify gets its own full-width row at the bottom of the bar */
-.pd-sticky-bar > .pd-sticky-notify { margin:.55rem auto 0;max-width:1200px;width:100%; }
-
-    /* ===== Messenger connect modal ===== */
-    .pd-connect-overlay { position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:1rem;z-index:1080;animation:pd-fade-in .2s ease; }
-    @@keyframes pd-fade-in { from { opacity:0; } to { opacity:1; } }
-    .pd-connect-modal { position:relative;background:#fff;border-radius:1rem;padding:1.75rem 1.5rem 1.25rem;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:pd-modal-up .25s ease; }
-    @@keyframes pd-modal-up { from { opacity:0; transform:translateY(24px) scale(.97); } to { opacity:1; transform:translateY(0) scale(1); } }
-    .pd-connect-close { position:absolute;top:.75rem;left:.75rem;width:34px;height:34px;border:none;border-radius:50%;background:#f1f3f5;color:#6c757d;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s; }
-    .pd-connect-close:hover { background:#e9ecef;color:#212529; }
-    .pd-connect-head { text-align:center;margin-bottom:1.1rem; }
-    .pd-connect-icon { width:56px;height:56px;margin:0 auto .6rem;border-radius:50%;background:#fff7e6;color:#fd7e14;display:flex;align-items:center;justify-content:center; }
-    .pd-connect-head h3 { margin:0 0 .35rem;font-size:1.1rem;font-weight:800;color:#212529; }
-    .pd-connect-head p { margin:0;font-size:.85rem;color:#6c757d;line-height:1.7; }
-    .pd-connect-loading { display:flex;justify-content:center;padding:1.25rem; }
-    .pd-connect-loading .pd-cart-spinner { border-color:rgba(13,110,253,.2);border-top-color:#0d6efd; }
-    .pd-connect-list { display:flex;flex-direction:column;gap:.65rem;margin-bottom:1.1rem; }
-    .pd-connect-item { display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.8rem .9rem;border:1px solid #e9ecef;border-radius:.75rem;background:#fafbfc;flex-wrap:wrap; }
-    .pd-connect-item-info { flex:1;min-width:180px; }
-    .pd-connect-item-info b { display:block;font-size:.92rem;color:#212529;margin-bottom:.2rem; }
-    .pd-connect-item-info p { margin:0;font-size:.78rem;color:#6c757d;line-height:1.7; }
-    .pd-connect-item-btn { display:inline-flex;align-items:center;gap:.35rem;padding:.5rem .9rem;border-radius:.6rem;background:#0d6efd;color:#fff;font-size:.82rem;font-weight:700;text-decoration:none;white-space:nowrap;transition:background .15s; }
-    .pd-connect-item-btn:hover { background:#0b5ed7;color:#fff; }
-    .pd-connect-footer { display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;border-top:1px solid #f1f3f5;padding-top:.9rem; }
-    .pd-connect-guide { display:inline-flex;align-items:center;gap:.35rem;font-size:.8rem;color:#0d6efd;text-decoration:none; }
-    .pd-connect-guide:hover { text-decoration:underline; }
-    .pd-connect-done { padding:.55rem 1.4rem;border:none;border-radius:.6rem;background:#212529;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s; }
-    .pd-connect-done:hover { background:#000; }
-
-    /* ===== Tab transitions ===== */
-    @@keyframes pd-tab-fade-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
-    .pd-tabs-wrap { margin-top:2.5rem;background:#fff;border:1px solid #e9ecef;border-radius:1rem;overflow:hidden; }
-    .pd-tabs-header { display:flex;border-bottom:1px solid #e9ecef;background:#fafbfc;overflow-x:auto; }
-    .pd-tab-btn { display:inline-flex;align-items:center;gap:.4rem;padding:.85rem 1.25rem;border:none;background:transparent;color:#6c757d;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px; }
-    .pd-tab-btn:hover { color:#0d6efd;background:#f0f4ff; }
-    .pd-tab-active { color:#0d6efd !important;border-bottom-color:#0d6efd !important;background:#fff !important; }
-    .pd-tab-content { padding:1.25rem;animation:pd-tab-fade-in .3s ease; }
-    .pd-tab-fade-in { animation:pd-tab-fade-in .3s ease; }
-    .pd-tab-fade-out { animation:none; }
-    .pd-tab-panel { }
-    .pd-desc { color:#495057;line-height:2;font-size:.9rem; }
-    .pd-desc p { margin-bottom:.7rem; }
-    .pd-tab-empty { text-align:center;padding:2rem;color:#adb5bd;font-size:.9rem; }
-
-    .pd-specs { display:flex;flex-direction:column; }
-    .pd-specs--sheet {
-        background:#fff;
-        border:1.5px dashed #cbd5e1;
-        border-radius:16px;
-        padding:.4rem 1rem;
-        display:flex;flex-direction:column;
-        box-shadow:0 1px 4px rgba(15,23,42,.04);
-    }
-    .pd-specs--sheet .pd-spec {
-        display:flex;justify-content:space-between;align-items:center;gap:1rem;
-        padding:.62rem .35rem;
-        border-bottom:1px dashed #e2e8f0;
-        transition:background .15s;
-    }
-    .pd-specs--sheet .pd-spec:nth-child(even) { background:rgba(148,163,184,.045); }
-    .pd-specs--sheet .pd-spec:hover { background:rgba(37,99,235,.055); }
-    .pd-specs--sheet .pd-spec:last-child { border-bottom:none; }
-    .pd-spec-chip {
-        flex-shrink:0;
-        display:inline-flex;align-items:center;
-        border:1.5px dashed;
-        border-radius:999px;
-        padding:.28rem .85rem;
-        font-size:.78rem;font-weight:800;
-        letter-spacing:.2px;
-        white-space:nowrap;
-    }
-    .pd-spec-chip--0 { color:#1d4ed8;border-color:rgba(37,99,235,.45);background:rgba(37,99,235,.07); }
-    .pd-spec-chip--1 { color:#0f766e;border-color:rgba(13,148,136,.45);background:rgba(13,148,136,.07); }
-    .pd-spec-chip--2 { color:#b45309;border-color:rgba(217,119,6,.45);background:rgba(217,119,6,.08); }
-    .pd-spec-chip--3 { color:#6d28d9;border-color:rgba(124,58,237,.45);background:rgba(124,58,237,.07); }
-    .pd-spec-val { color:#0f172a;font-weight:700;font-size:.88rem;text-align:left;min-width:0;overflow-wrap:anywhere; }
-    .pd-spec-val--mono { direction:ltr;unicode-bidi:isolate;font-family:'Courier New',monospace;font-weight:800;letter-spacing:.5px;color:#334155; }
-    .pd-spec-val--price { color:#1d4ed8;font-weight:900;font-size:.95rem; }
-    .pd-spec-status {
-        display:inline-flex;align-items:center;gap:.4rem;
-        border-radius:999px;padding:.28rem .9rem;
-        font-size:.78rem;font-weight:900;white-space:nowrap;
-    }
-    .pd-spec-status i { width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px rgba(0,0,0,.06); }
-    .pd-spec-status.is-ok { background:rgba(16,185,129,.12);color:#047857;border:1.5px dashed rgba(5,150,105,.45); }
-    .pd-spec-status.is-no { background:rgba(244,63,94,.1);color:#be123c;border:1.5px dashed rgba(225,29,72,.4); }
-    .pd-green { color:#198754 !important; }
-    .pd-red { color:#dc3545 !important; }
-
-    .pd-tech-card {
-        display:flex;align-items:flex-start;gap:.75rem;
-        padding:.9rem 1rem;margin-top:.5rem;
-        background:#f8f9fa;border-radius:.75rem;
-        border:1px solid #e9ecef;transition:all .2s;
-    }
-    .pd-tech-card:hover { background:#fff;border-color:#dee2e6;box-shadow:0 2px 12px rgba(0,0,0,.05); }
-    .pd-tech-card.pd-tech-link { text-decoration:none;color:inherit;cursor:pointer;align-items:center; }
-    .pd-tech-card.pd-tech-link:hover { border-color:#0d6efd;background:#f0f4ff; }
-    .pd-tech-icon {
-        width:36px;height:36px;border-radius:10px;
-        display:grid;place-items:center;flex-shrink:0;
-        background:#e9ecef;color:#495057;font-size:.9rem;
-    }
-    .pd-tech-card.pd-tech-link .pd-tech-icon { background:#dbe4ff;color:#0d6efd; }
-    .pd-tech-body { flex:1;min-width:0; }
-    .pd-tech-label { font-weight:700;font-size:.78rem;color:#495057;margin-bottom:4px; }
-    .pd-tech-text { font-size:.85rem;color:#212529;line-height:1.7;word-wrap:break-word; }
-    .pd-tech-text--link { color:#0d6efd;font-weight:600;font-size:.8rem; }
-    .pd-tech-ext { color:#0d6efd;font-size:.75rem;flex-shrink:0; }
-
-    /* ===== Related ===== */
-    .pd-related { margin-top:2rem; }
-    .pd-related-title { font-size:1.1rem;font-weight:700;color:#212529;margin:0 0 1rem; }
-    .pd-related-track { display:flex;gap:.75rem;overflow-x:auto;padding-bottom:.5rem;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch; }
-    .pd-related-track::-webkit-scrollbar { height:4px; }
-    .pd-related-track::-webkit-scrollbar-track { background:#e9ecef;border-radius:2px; }
-    .pd-related-track::-webkit-scrollbar-thumb { background:#adb5bd;border-radius:2px; }
-    .pd-related-card { flex:0 0 180px;scroll-snap-align:start;background:#fff;border:1px solid #e9ecef;border-radius:.85rem;overflow:hidden;text-decoration:none;color:inherit;transition:transform .2s,box-shadow .2s; }
-    .pd-related-card:hover { transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.08); }
-    .pd-related-img { height:140px;background:#f8f9fa;display:flex;align-items:center;justify-content:center;overflow:hidden; }
-    .pd-related-img img { width:100%;height:100%;object-fit:contain;padding:.5rem; }
-    .pd-related-placeholder { display:flex;align-items:center;justify-content:center; }
-    .pd-related-body { padding:.6rem .75rem .75rem; }
-    .pd-related-name { display:block;font-size:.8rem;font-weight:600;color:#212529;margin-bottom:.35rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-    .pd-related-price { display:flex;align-items:baseline;gap:.25rem;flex-wrap:wrap; }
-    .pd-related-old { font-size:.7rem;color:#adb5bd;text-decoration:line-through; }
-    .pd-related-current { font-size:.9rem;font-weight:700;color:#0d6efd; }
-    .pd-related-unit { font-size:.65rem;color:#6c757d; }
-
-    /* ===== Lightbox ===== */
-    .pd-lightbox { position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(4px);animation:pd-lb-in .25s ease;outline:none; }
-    @@keyframes pd-lb-in { from { opacity:0; } to { opacity:1; } }
-    .pd-lightbox-content { position:relative;max-width:90vw;max-height:90vh;display:flex;flex-direction:column;align-items:center; }
-    .pd-lightbox-close { position:absolute;top:-2.5rem;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.15);border:none;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s;z-index:10; }
-    .pd-lightbox-close:hover { background:rgba(255,255,255,.3); }
-    .pd-lightbox-img-wrap { display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:.75rem;max-height:80vh; }
-    .pd-lightbox-img { max-width:100%;max-height:80vh;object-fit:contain;border-radius:.5rem;cursor:zoom-in;transition:transform .3s ease; }
-    .pd-lightbox-img:hover { transform:scale(1.5); }
-    .pd-lightbox-counter { margin-top:.75rem;color:rgba(255,255,255,.6);font-size:.8rem; }
-    .pd-lightbox-nav { position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s;z-index:10; }
-    .pd-lightbox-nav:hover { background:rgba(255,255,255,.3); }
-    .pd-lightbox-prev { right:calc(100% + .75rem); }
-    .pd-lightbox-next { left:calc(100% + .75rem); }
-
-    /* ===== Toast ===== */
-    .pd-toast { position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#212529;color:#fff;padding:.7rem 1.5rem;border-radius:2rem;font-size:.9rem;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.2);animation:pd-fade 2.5s ease forwards;white-space:nowrap; }
-    @@keyframes pd-fade { 0%{opacity:0;transform:translateX(-50%) translateY(10px)}15%{opacity:1;transform:translateX(-50%) translateY(0)}75%{opacity:1}100%{opacity:0;transform:translateX(-50%) translateY(-10px)} }
-
-    /* ===== Sticky Bar ===== */
-    .pd-sticky-bar { display:none;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e9ecef;box-shadow:0 -4px 20px rgba(0,0,0,.08);z-index:1000;padding:.6rem 1rem;padding-bottom:calc(.6rem + env(safe-area-inset-bottom,0px)); }
-    .pd-sticky-inner { display:flex;align-items:center;gap:.75rem;max-width:1200px;margin:0 auto; }
-    .pd-sticky-price { flex-shrink:0;display:flex;flex-direction:column;align-items:center;line-height:1.2; }
-    .pd-sticky-old { font-size:.65rem;color:#adb5bd;text-decoration:line-through;line-height:1; }
-    .pd-sticky-current { font-size:.95rem;font-weight:800;color:#0d6efd; }
-    .pd-sticky-label { font-size:.6rem;color:#94a3b8;font-weight:600; }
-    .pd-sticky-actions { display:flex;align-items:center;gap:.5rem;flex:1;min-width:0; }
-    .pd-sticky-qty { display:flex;align-items:center;border:1.5px solid #dee2e6;border-radius:.65rem;overflow:hidden;background:#fff;flex-shrink:0; }
-    .pd-sticky-qty-btn { display:flex;align-items:center;justify-content:center;width:38px;height:38px;border:none;background:#f8f9fa;color:#495057;cursor:pointer;padding:0;min-width:42px;min-height:42px; }
-    .pd-sticky-qty-btn:hover:not(:disabled) { background:#e9ecef;color:#0d6efd; }
-    .pd-sticky-qty-btn:disabled { opacity:.3;cursor:not-allowed; }
-    .pd-sticky-qty-val { min-width:36px;text-align:center;font-weight:700;font-size:.95rem;color:#212529;user-select:none; }
-    .pd-sticky-cart { display:flex;align-items:center;justify-content:center;gap:.4rem;flex:1;padding:.7rem 1rem;border:none;border-radius:.75rem;background:#0d6efd;color:#fff;font-size:.9rem;font-weight:700;cursor:pointer;transition:background .2s;min-height:44px;white-space:nowrap; }
-    .pd-sticky-cart:hover:not(:disabled) { background:#0b5ed7; }
-    .pd-sticky-cart:disabled { opacity:.5;cursor:not-allowed; }
-    .pd-sticky-cart.pd-cart-done { background:#198754 !important; }
-    .pd-sticky-cart svg { flex-shrink:0; }
-
-    /* ===== Scroll to Top ===== */
-    .pd-scroll-top { position:fixed;bottom:80px;right:1rem;width:44px;height:44px;border-radius:50%;border:none;background:#0d6efd;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 14px rgba(13,110,253,.3);transition:all .25s ease;z-index:999;opacity:0;visibility:hidden;transform:translateY(10px); }
-    .pd-scroll-top.pd-scroll-visible { opacity:1;visibility:visible;transform:translateY(0); }
-    .pd-scroll-top:hover { background:#0b5ed7;transform:translateY(-2px);box-shadow:0 6px 20px rgba(13,110,253,.4); }
-    .pd-scroll-top.pd-scroll-visible:hover { transform:translateY(-2px); }
-
-    @@media (min-width:992px) {
-        .pd-container { padding:2rem 1.5rem; }
-        .pd-main { grid-template-columns:1fr 1fr;gap:2.5rem; }
-        .pd-title { font-size:1.6rem; }
-        .pd-price-num { font-size:2rem; }
-        .pd-highlights { gap:.65rem; }
-        .pd-gallery-view { border-radius:1.25rem; }
-        .pd-gallery-slide { padding:1.5rem;min-height:420px; }
-        .pd-main-img { max-height:500px; }
-        .pd-thumb { width:72px;height:72px; }
-        .pd-sticky-bar { display:none !important; }
-        .pd-lightbox-img:hover { transform:scale(1.8); }
-        .pd-related-card { flex:0 0 200px; }
-        .pd-header-sticky { display: none; }
-    }
-
-    @@media (max-width:991.98px) {
-        .pd-main { grid-template-columns:1fr;gap:1.5rem; }
-        .pd-gallery-slide { min-height:350px; }
-        .pd-main-img { max-height:400px; }
-        .pd-container { padding:1rem .75rem; }
-        .pd-header-sticky { margin: -1rem -0.75rem 0.75rem; padding: 0 0.75rem; }
-    }
-
-    @@media (max-width:767.98px) {
-        .pd-container { padding:.75rem .6rem; }
-        .pd-breadcrumb { margin-bottom:.75rem; }
-        .pd-breadcrumb ol { font-size:.78rem; }
-        .pd-gallery-slide { min-height:280px;padding:.75rem; }
-        .pd-main-img { max-height:300px; }
-        .pd-thumbs { gap:.4rem; }
-        .pd-thumb { width:52px;height:52px; }
-        .pd-title { font-size:1.15rem; }
-        .pd-price-num { font-size:1.5rem; }
-        .pd-pricebox { padding:.75rem 1rem; }
-        .pd-highlights { grid-template-columns:1fr 1fr;gap:.4rem; }
-        .pd-hl { font-size:.7rem;padding:.35rem; }
-        .pd-actions { flex-direction:column;align-items:stretch;gap:.6rem; }
-        .pd-qty { justify-content:center; }
-        .pd-qty-box { flex:1;max-width:160px; }
-        .pd-share { justify-content:center; }
-        .pd-add-cart { min-height:48px;font-size:.92rem;padding:.75rem 1rem; }
-        .pd-notify-btn { min-height:48px;font-size:.92rem;padding:.75rem 1rem; }
-        .pd-tab-btn { font-size:.82rem;padding:.65rem .85rem; }
-        .pd-tab-content { padding:1rem; }
-        .pd-specs--sheet { padding:.35rem .7rem;border-radius:14px; }
-        .pd-specs--sheet .pd-spec { padding:.55rem .2rem;gap:.6rem; }
-        .pd-spec-chip { font-size:.68rem;padding:.24rem .65rem; }
-        .pd-spec-val { font-size:.8rem; }
-        .pd-spec-status { font-size:.68rem;padding:.24rem .7rem; }
-        .pd-desc { font-size:.85rem;line-height:1.8; }
-        .pd-related-card { flex:0 0 150px; }
-        .pd-related-img { height:110px; }
-        .pd-related-name { font-size:.75rem; }
-        .pd-lightbox-prev { right:auto;left:.5rem;top:50%; }
-        .pd-lightbox-next { left:auto;right:.5rem;top:50%; }
-        .pd-sticky-bar { display:block; }
-        .pd-scroll-top { bottom:72px;right:.75rem;width:40px;height:40px; }
-    }
-
-    @@media (max-width:400px) {
-        .pd-gallery-slide { min-height:220px; }
-        .pd-main-img { max-height:240px; }
-        .pd-price-num { font-size:1.3rem; }
-        .pd-qty-box { max-width:140px; }
-        .pd-related-card { flex:0 0 130px; }
-        .pd-related-img { height:90px; }
-        .pd-add-cart { font-size:.85rem;padding:.7rem .75rem;gap:.35rem; }
-        .pd-notify-btn { font-size:.85rem;padding:.7rem .75rem;gap:.35rem; }
-        .pd-sticky-price { display:none; }
-        .pd-sticky-inner { gap:.5rem; }
-        .pd-sticky-qty-btn { min-width:38px;min-height:38px;width:34px;height:34px; }
-        .pd-sticky-qty-val { min-width:30px;font-size:.85rem; }
-        .pd-sticky-cart { font-size:.82rem;padding:.6rem .75rem;gap:.3rem;min-height:40px; }
-        .pd-sticky-notify { font-size:.78rem;padding:.6rem .6rem;gap:.3rem;min-height:40px; }
-    }
-
-    @@media (max-width:360px) {
-        .pd-sticky-cart { font-size:.75rem;padding:.5rem .6rem;gap:.25rem;min-height:38px; }
-        .pd-sticky-notify { font-size:.72rem;padding:.5rem .5rem;gap:.25rem;min-height:38px; }
-        .pd-sticky-qty-btn { min-width:34px;min-height:34px;width:30px;height:30px; }
-        .pd-sticky-qty-val { min-width:26px;font-size:.8rem; }
-        .pd-sticky-inner { gap:.35rem; }
-    }
-
-    @@media (prefers-reduced-motion: reduce) {
-        .pd-skeleton, .pd-sk-line, .pd-cart-spinner, .pd-tab-content, .pd-lightbox, .pd-toast, .pd-share-modal {
-            animation: none !important;
-            transition: none !important;
-        }
-        .pd-scroll-top, .pd-share, .pd-add-cart, .pd-related-card, .pd-hl, .pd-main-img {
-            transition: none !important;
-        }
-    }
-
-    @@media (prefers-color-scheme: dark) {
-        .pd-wrap { color: #cbd5e1; }
-        .pd-container { background: transparent; }
-        .pd-title { color: #f1f5f9; }
-        .pd-pricebox { background: #1e293b; }
-        .pd-price-old { color: #64748b; }
-        .pd-price-num { color: #60a5fa; }
-        .pd-hl { background: #1e293b; color: #94a3b8; }
-        .pd-hl:hover { background: #334155; }
-        .pd-qty-box { border-color: #334155; background: #1e293b; }
-        .pd-qty-btn { background: #0f172a; color: #94a3b8; }
-        .pd-qty-btn:hover:not(:disabled) { background: #334155; color: #60a5fa; }
-        .pd-qty-val { color: #f1f5f9; }
-        .pd-share { background: #1e293b; border-color: #334155; color: #94a3b8; }
-        .pd-share:hover { background: #334155; border-color: #3b82f6; color: #60a5fa; }
-        .pd-category { background: #1e293b; color: #60a5fa; }
-        .pd-extra-item { color: #94a3b8; }
-        .pd-instock { color: #34d399; }
-        .pd-outstock { color: #f87171; }
-        .pd-rating-text { color: #94a3b8; }
-        .pd-gallery-view { background: #1e293b; }
-        .pd-thumb { background: #1e293b; border-color: transparent; }
-        .pd-thumb--active { border-color: #3b82f6; background: #0f172a; }
-        .pd-tabs-wrap { background: #1e293b; border-color: #334155; }
-        .pd-tabs-header { background: #0f172a; border-bottom-color: #334155; }
-        .pd-tab-btn { color: #94a3b8; }
-        .pd-tab-btn:hover { color: #60a5fa; background: #1e293b; }
-        .pd-tab-active { color: #60a5fa !important; background: #1e293b !important; border-bottom-color: #3b82f6 !important; }
-        .pd-desc { color: #cbd5e1; }
-        .pd-specs--sheet { background:#1e293b;border-color:#475569;box-shadow:none; }
-        .pd-specs--sheet .pd-spec { border-bottom-color:#334155; }
-        .pd-specs--sheet .pd-spec:nth-child(even) { background:rgba(148,163,184,.05); }
-        .pd-specs--sheet .pd-spec:hover { background:rgba(59,130,246,.1); }
-        .pd-spec-chip--0 { color:#93c5fd;border-color:rgba(96,165,250,.45);background:rgba(59,130,246,.12); }
-        .pd-spec-chip--1 { color:#5eead4;border-color:rgba(45,212,191,.45);background:rgba(20,184,166,.12); }
-        .pd-spec-chip--2 { color:#fcd34d;border-color:rgba(252,211,77,.45);background:rgba(245,158,11,.12); }
-        .pd-spec-chip--3 { color:#d8b4fe;border-color:rgba(216,180,254,.45);background:rgba(168,85,247,.12); }
-        .pd-spec-val { color:#f1f5f9; }
-        .pd-spec-val--mono { color:#cbd5e1; }
-        .pd-spec-val--price { color:#60a5fa; }
-        .pd-spec-status.is-ok { background:rgba(16,185,129,.15);color:#34d399;border-color:rgba(52,211,153,.4); }
-        .pd-spec-status.is-no { background:rgba(244,63,94,.15);color:#fb7185;border-color:rgba(251,113,133,.4); }
-        .pd-tech-card { background: #0f172a; border-color: #334155; }
-        .pd-tech-card:hover { background: #1e293b; border-color: #3b82f6; }
-        .pd-tech-label { color: #94a3b8; }
-        .pd-tech-text { color: #cbd5e1; }
-        .pd-tech-icon { background: #334155; color: #94a3b8; }
-        .pd-related-card { background: #1e293b; border-color: #334155; }
-        .pd-related-name { color: #f1f5f9; }
-        .pd-related-current { color: #60a5fa; }
-        .pd-related-unit { color: #64748b; }
-        .pd-related-old { color: #64748b; }
-        .pd-reviews { --cs-bg: #0f172a; --cs-surface: #1e293b; --cs-border: #334155; --cs-text: #f1f5f9; --cs-muted: #94a3b8; --cs-input-bg: #1e293b; --cs-input-border: #334155; --cs-shadow: 0 4px 24px rgba(0,0,0,.3); }
-        .pd-sticky-bar { background: #1e293b; border-top-color: #334155; }
-        .pd-sticky-current { color: #60a5fa; }
-        .pd-sticky-old { color: #64748b; }
-        .pd-sticky-qty-btn { background: #0f172a; color: #94a3b8; }
-        .pd-sticky-qty-btn:hover:not(:disabled) { background: #334155; color: #60a5fa; }
-        .pd-sticky-qty-val { color: #f1f5f9; }
-        .pd-header-sticky { background: rgba(15,23,42,0.98); border-bottom-color: #334155; }
-        .pd-header-back { background: #1e293b; color: #94a3b8; border-color: #334155; }
-        .pd-header-action { background: #1e293b; color: #94a3b8; border-color: #334155; }
-        .pd-header-title { color: #f1f5f9; }
-        .pd-breadcrumb a { color: #60a5fa; }
-        .pd-breadcrumb li, .pd-breadcrumb li+li::before { color: #64748b; }
-
-        .pd-lightbox { background: rgba(0,0,0,0.92); }
-        .pd-toast { background: #334155; }
-        .pd-scroll-top { box-shadow: 0 4px 14px rgba(59,130,246,0.3); }
-        .pd-discount-ribbon { background: linear-gradient(135deg, #dc2626, #ef4444); }
-        .pd-notfound { background: #1e293b; }
-        .pd-notfound h3 { color: #f1f5f9; }
-    }
-</style>
-
-<style>
-    .pd-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: .5rem 0 0; }
-    .pd-badge {
-        font-size: .7rem;
-        font-weight: 800;
-        padding: 3px 10px;
-        border-radius: 999px;
-        border: 1px solid transparent;
-    }
-    .pd-badge--new { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
-    .pd-badge--sale { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
-    .pd-badge--low { background: #fef3c7; color: #b45309; border-color: #fde68a; }
-    .pd-badge--hot { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
-
-    .pd-chart {
-        margin-top: .9rem;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        padding: .9rem 1rem;
-    }
-    .pd-chart__head { display: flex; align-items: center; justify-content: space-between; font-size: .82rem; }
-    .pd-chart__head span { color: #64748b; font-size: .72rem; }
-    .pd-chart__body {
-        position: relative;
-        height: 130px;
-        margin-top: .75rem;
-        direction: ltr;
-    }
-    .pd-chart__svg {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        display: block;
-        overflow: visible;
-    }
-    .pd-chart__cols {
-        position: absolute;
-        inset: 0;
-        display: flex;
-    }
-    .pd-chart__col {
-        position: relative;
-        flex: 1 1 0;
-        min-width: 0;
-        cursor: crosshair;
-        -webkit-tap-highlight-color: transparent;
-    }
-    .pd-chart__col > span { pointer-events: none; }
-    .pd-chart__xline {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        left: 50%;
-        border-left: 1px dashed #2563eb;
-        opacity: 0;
-        transition: opacity .15s;
-    }
-    .pd-chart__dot {
-        position: absolute;
-        left: 50%;
-        width: 10px;
-        height: 10px;
-        margin: -5px 0 0 -5px;
-        border-radius: 50%;
-        background: #fff;
-        border: 2.5px solid #2563eb;
-        box-shadow: 0 2px 8px rgba(37,99,235,.4);
-        opacity: 0;
-        transform: scale(.4);
-        transition: opacity .15s, transform .15s;
-    }
-    .pd-chart__tip {
-        position: absolute;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 1px;
-        background: #0f172a;
-        color: #fff;
-        padding: .38rem .55rem;
-        border-radius: .5rem;
-        font-size: .68rem;
-        line-height: 1.6;
-        white-space: nowrap;
-        opacity: 0;
-        visibility: hidden;
-        transition: opacity .15s;
-        box-shadow: 0 8px 20px rgba(15,23,42,.3);
-        z-index: 6;
-    }
-    .pd-chart__tip::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        margin-left: -5px;
-        border: 5px solid transparent;
-        border-top-color: #0f172a;
-    }
-    .pd-chart__tip b { font-weight: 800; color: #86efac; }
-    .pd-chart__tip i { font-style: normal; color: #cbd5e1; font-size: .64rem; direction: ltr; }
-    .pd-chart__col:hover .pd-chart__xline { opacity: 1; }
-    .pd-chart__col:hover .pd-chart__dot { opacity: 1; transform: scale(1); }
-    .pd-chart__col:hover .pd-chart__tip { opacity: 1; visibility: visible; }
-    .pd-chart__col:nth-child(1):hover .pd-chart__tip,
-    .pd-chart__col:nth-child(2):hover .pd-chart__tip { left: 0; transform: none; }
-    .pd-chart__col:nth-child(1):hover .pd-chart__tip::after,
-    .pd-chart__col:nth-child(2):hover .pd-chart__tip::after { left: 16px; margin-left: 0; }
-    .pd-chart__col:nth-last-child(1):hover .pd-chart__tip,
-    .pd-chart__col:nth-last-child(2):hover .pd-chart__tip { left: auto; right: 0; transform: none; }
-    .pd-chart__col:nth-last-child(1):hover .pd-chart__tip::after,
-    .pd-chart__col:nth-last-child(2):hover .pd-chart__tip::after { left: auto; right: 16px; margin-left: 0; }
-    .pd-chart__foot {
-        display: flex;
-        justify-content: space-between;
-        font-size: .68rem;
-        color: #94a3b8;
-        margin-top: 6px;
-        direction: ltr;
-    }
-
-    .pd-chart--empty { background: #f8fafc; border-style: dashed; border-color: #cbd5e1; }
-    .pd-chart__empty {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        text-align: center;
-        padding: 1.4rem 1rem .6rem;
-    }
-    .pd-chart__empty .oi { font-size: 1.7rem; color: #94a3b8; }
-    .pd-chart__empty b { font-size: .82rem; color: #475569; }
-    .pd-chart__empty span:last-child { font-size: .72rem; color: #94a3b8; line-height: 1.9; max-width: 340px; }
-
-    .pd-eta {
-        display: flex;
-        align-items: center;
-        gap: .75rem;
-        margin-top: .9rem;
-        padding: .8rem 1rem;
-        background: #f0fdf4;
-        border: 1px solid #bbf7d0;
-        border-radius: 1rem;
-        color: #166534;
-    }
-    .pd-eta .oi { font-size: 1.3rem; color: #16a34a; }
-    .pd-eta b { display: block; font-size: .82rem; }
-    .pd-eta span { font-size: .74rem; color: #4b5563; }
-
-    .pd-subs {
-        margin-top: 1rem;
-        padding: .9rem 1rem;
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
-        border-radius: 1rem;
-    }
-    .pd-subs__head { display: flex; align-items: center; gap: .5rem; color: #1d4ed8; font-size: .85rem; font-weight: 800; margin-bottom: .7rem; }
-    .pd-subs__list { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; }
-    .pd-subs__item { display: flex; flex-direction: column; gap: .4rem; padding: .6rem; background: #fff; border: 1px solid #e2e8f0; border-radius: .8rem; text-decoration: none; color: inherit; transition: box-shadow .15s, transform .15s; }
-    .pd-subs__item:hover { box-shadow: 0 6px 16px rgba(29,78,216,.12); transform: translateY(-2px); }
-    .pd-subs__img { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: .6rem; background: #f8fafc; }
-    .pd-subs__img img { width: 100%; height: 100%; object-fit: contain; }
-    .pd-subs__name { font-size: .74rem; font-weight: 700; line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.4em; }
-    .pd-subs__price { display: flex; align-items: baseline; gap: .3rem; font-size: .78rem; color: #16a34a; }
-    .pd-subs__price b { font-weight: 800; }
-    .pd-subs__price span { font-size: .68rem; color: #6b7280; }
-    .pd-subs__old { font-size: .68rem; color: #9ca3af; text-decoration: line-through; }
-    @@media (max-width: 576px) { .pd-subs__list { grid-template-columns: repeat(2, 1fr); } }
-
-    .pd-qna { padding-top: .25rem; }
-    .pd-qna-form {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        padding: 1rem;
-        margin-bottom: 1.25rem;
-    }
-    .pd-qna-form-head b { display: block; font-size: .95rem; }
-    .pd-qna-form-head span { font-size: .75rem; color: #64748b; }
-    .pd-qna-fields { display: grid; gap: .6rem; margin-top: .8rem; }
-    .pd-qna-input {
-        width: 100%;
-        border: 1px solid #e2e8f0;
-        border-radius: .75rem;
-        padding: .65rem .8rem;
-        font-size: .85rem;
-        background: #fff;
-    }
-    .pd-qna-input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
-    .pd-qna-textarea { min-height: 90px; resize: vertical; }
-    .pd-qna-submit {
-        justify-self: start;
-        border: 0;
-        background: #4f46e5;
-        color: #fff;
-        font-weight: 800;
-        font-size: .85rem;
-        padding: .6rem 1.4rem;
-        border-radius: .75rem;
-        cursor: pointer;
-    }
-    .pd-qna-submit:disabled { opacity: .6; cursor: not-allowed; }
-    .pd-qna-list { display: flex; flex-direction: column; gap: .9rem; }
-    .pd-qna-item {
-        display: flex;
-        align-items: flex-start;
-        gap: .9rem;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        padding: .9rem 1rem;
-        background: #fff;
-    }
-    .pd-qna-item-main { flex: 1; min-width: 0; }
-    .pd-qna-item-head { display: flex; align-items: center; gap: .6rem; font-size: .82rem; }
-    .pd-qna-date { color: #94a3b8; font-size: .7rem; }
-    .pd-qna-q { margin: .4rem 0 0; font-size: .9rem; color: #0f172a; }
-    .pd-qna-answer {
-        margin-top: .7rem;
-        background: #f0f9ff;
-        border: 1px solid #e0f2fe;
-        border-radius: .75rem;
-        padding: .6rem .8rem;
-    }
-    .pd-qna-answer-label { font-size: .7rem; font-weight: 900; color: #0369a1; }
-    .pd-qna-answer p { margin: .3rem 0 0; font-size: .85rem; color: #0c4a6e; }
-    .pd-qna-vote {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 3px;
-        border: 1px solid #e2e8f0;
-        background: #fff;
-        border-radius: .75rem;
-        padding: .45rem .6rem;
-        font-size: .75rem;
-        color: #64748b;
-        cursor: pointer;
-        transition: all .15s;
-    }
-    .pd-qna-vote:hover { border-color: #6366f1; color: #4f46e5; }
-    .pd-qna-vote--on { background: #eef2ff; border-color: #6366f1; color: #4f46e5; }
-
-    .pd-qna-topbar {
-        display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; justify-content: space-between;
-        background: #fff; border: 1px solid #e8edf3; border-radius: 1rem; padding: .7rem .85rem; margin-bottom: 1rem;
-        box-shadow: 0 1px 2px rgba(15,23,42,.04);
-    }
-    .pd-qna-stats { display: flex; gap: .4rem; flex-wrap: wrap; }
-    .pd-qna-stat { font-size: .72rem; font-weight: 900; padding: .3rem .6rem; border-radius: 999px; }
-    .pd-qna-stat--q { background: #eef2ff; color: #4338ca; }
-    .pd-qna-stat--a { background: #ecfdf5; color: #047857; }
-    .pd-qna-stat--w { background: #fffbeb; color: #b45309; }
-    .pd-qna-filters { display: flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
-    .pd-qna-chip {
-        border: 1px solid #e2e8f0; background: #fff; color: #475569;
-        font-size: .74rem; font-weight: 800; padding: .32rem .7rem; border-radius: 999px;
-        cursor: pointer; transition: all .15s;
-    }
-    .pd-qna-chip:hover { border-color: #c7d2fe; color: #4338ca; }
-    .pd-qna-chip--on { background: #4f46e5; border-color: #4f46e5; color: #fff; }
-    .pd-qna-search {
-        border: 1px solid #e2e8f0; border-radius: 999px; padding: .34rem .85rem;
-        font-size: .78rem; font-weight: 700; min-width: 175px; outline: none; transition: all .15s;
-    }
-    .pd-qna-search:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.14); }
-
-    .pd-qna-empty {
-        display: flex; flex-direction: column; align-items: center; gap: .3rem; text-align: center;
-        padding: 2.2rem 1rem; color: #64748b; background: #f8fafc; border: 1px dashed #e2e8f0; border-radius: 1rem;
-    }
-    .pd-qna-empty .oi { font-size: 1.9rem; color: #c7d2fe; }
-    .pd-qna-empty b { color: #334155; font-size: .9rem; }
-    .pd-qna-empty span:last-child { font-size: .78rem; }
-
-    .pd-qna-item {
-        display: flex; gap: .7rem; align-items: flex-start;
-        background: #fff; border: 1px solid #e8edf3; border-right: 4px solid #e2e8f0;
-        border-radius: .9rem; padding: .85rem .9rem;
-        transition: box-shadow .15s, border-color .15s;
-    }
-    .pd-qna-item:hover { box-shadow: 0 6px 18px rgba(15,23,42,.07); }
-    .pd-qna-item--answered { border-right-color: #10b981; background: linear-gradient(180deg,#ffffff 0%,#f7fffd 100%); }
-    .pd-qna-avatar {
-        width: 34px; height: 34px; flex: 0 0 34px; border-radius: 50%;
-        background: #eef2ff; color: #4f46e5; border: 1px solid #e0e7ff;
-        font-weight: 900; font-size: 1rem; display: flex; align-items: center; justify-content: center;
-    }
-    .pd-qna-item--answered .pd-qna-avatar { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
-    .pd-qna-item-head b { font-size: .85rem; color: #0f172a; }
-    .pd-qna-tag { font-size: .65rem; font-weight: 900; padding: .14rem .5rem; border-radius: 999px; }
-    .pd-qna-tag--ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
-    .pd-qna-tag--wait { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
-
-    .pd-qna-answer {
-        margin-top: .55rem; background: #f0fdfa; border: 1px solid #99f6e4;
-        border-right: 3px solid #14b8a6; border-radius: .7rem; padding: .6rem .75rem;
-    }
-    .pd-qna-answer-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
-    .pd-qna-answer-label { font-size: .7rem; font-weight: 900; color: #0f766e; display: inline-flex; align-items: center; gap: .25rem; }
-    .pd-qna-answer p { margin: .35rem 0 0; font-size: .85rem; color: #134e4a; line-height: 1.9; white-space: pre-wrap; }
-
-    .pd-qna-replies { margin-top: .6rem; border-top: 1px dashed #e2e8f0; padding-top: .55rem; display: flex; flex-direction: column; gap: .5rem; }
-    .pd-qna-reply { display: flex; gap: .5rem; align-items: flex-start; background: #f8fafc; border: 1px solid #eef2f7; border-radius: .65rem; padding: .5rem .6rem; }
-    .pd-qna-reply--admin { background: #eef2ff; border-color: #e0e7ff; }
-    .pd-qna-reply-avatar {
-        width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%;
-        background: #fff; border: 1px solid #e2e8f0; color: #475569;
-        font-size: .8rem; font-weight: 900; display: flex; align-items: center; justify-content: center;
-    }
-    .pd-qna-reply--admin .pd-qna-reply-avatar { background: #4f46e5; color: #fff; border-color: #4f46e5; }
-    .pd-qna-reply-head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-size: .76rem; }
-    .pd-qna-reply-head b { color: #0f172a; font-size: .78rem; }
-    .pd-qna-reply-body p { margin: .2rem 0 0; font-size: .82rem; color: #334155; line-height: 1.85; white-space: pre-wrap; }
-    .pd-qna-badge-admin { background: #4f46e5; color: #fff; font-size: .62rem; font-weight: 900; padding: .1rem .45rem; border-radius: 999px; }
-
-    .pd-qna-reply-btn {
-        margin-top: .55rem; background: transparent; border: 1px dashed #c7d2fe; color: #4f46e5;
-        font-size: .75rem; font-weight: 800; padding: .3rem .7rem; border-radius: 999px;
-        cursor: pointer; transition: all .15s;
-    }
-    .pd-qna-reply-btn:hover { background: #eef2ff; border-style: solid; }
-    .pd-qna-reply-form { margin-top: .55rem; display: flex; flex-direction: column; gap: .45rem; }
-    .pd-qna-reply-actions { display: flex; gap: .5rem; align-items: center; }
-    .pd-qna-link { background: none; border: 0; color: #64748b; font-size: .76rem; font-weight: 800; cursor: pointer; }
-    .pd-qna-link:hover { color: #0f172a; }
-    .pd-qna-submit--sm { padding: .45rem .95rem; font-size: .78rem; }
-
-    @@media (max-width: 575.98px) {
-        .pd-qna-topbar { flex-direction: column; align-items: stretch; }
-        .pd-qna-search { min-width: 0; width: 100%; }
-        .pd-qna-item { flex-wrap: wrap; }
-    }
-</style>
 
 @code {
     [Parameter] public int? Id { get; set; }
@@ -1870,6 +1062,7 @@
     private bool showLightbox;
     private int _lightboxIndex;
     private int _activeTab;
+    private int _suggestTab;
     private bool showShareModal;
     private bool _showScrollTop;
     private bool _isAddingToCart;
@@ -1893,6 +1086,7 @@
     private SiteSettingsDto? _shop;
     private List<ProductSpecDto> _serverSpecs = new();
     private List<ProductPricePointDto> _pricePoints = new();
+    private int _chartIndex = -1;
     private List<ProductQuestionDto> _questions = new();
     private bool _qnaLoading;
     private bool _qnaSending;
@@ -1911,6 +1105,8 @@
         {
             "reviews" => _shop.EnableProductReviews,
             "media" => _shop.EnableReviewMedia,
+            "verified" => _shop.EnableVerifiedBuyerBadge,
+            "gallery" => _shop.EnableReviewGallery,
             "qna" => _shop.EnableProductQna,
             "specs" => _shop.EnableSpecsTable,
             "chart" => _shop.EnablePriceHistoryChart,
@@ -2130,6 +1326,7 @@
             Rating = r.Rating,
             CreatedAtFa = r.CreatedAtFa,
             MediaUrl = r.MediaUrl,
+            IsVerifiedBuyer = r.IsVerifiedBuyer,
             Replies = r.Replies != null ? ConvertProductReviews(r.Replies) : new()
         }).ToList();
     }
@@ -2147,8 +1344,9 @@
     {
         var images = GetAllImages();
         if (images.Count <= 1 || Math.Abs(diff) < 30) return;
-        if (diff > 0) { if (currentImageIndex < images.Count - 1) currentImageIndex++; }
-        else { if (currentImageIndex > 0) currentImageIndex--; }
+        // گالری RTL است؛ کشیدن به چپ باید تصویر را به چپ ببرد (ایندکس قبلی)
+        if (diff > 0) { if (currentImageIndex > 0) currentImageIndex--; }
+        else { if (currentImageIndex < images.Count - 1) currentImageIndex++; }
         StateHasChanged();
     }
 
@@ -2276,6 +1474,7 @@
     {
         _quantity = 1;
         _activeTab = 0;
+        _suggestTab = 0;
         currentImageIndex = 0;
         _lightboxIndex = 0;
         showLightbox = false;
@@ -2310,6 +1509,8 @@
         {
             try { _pricePoints = await HttpApi.GetFromJsonAsync<List<ProductPricePointDto>>($"api/products/{product.Id}/price-history") ?? new(); }
             catch { _pricePoints = new(); }
+            // پیش‌فرض روی جدیدترین ثبت قیمت (سمت راست نمودار)
+            _chartIndex = _pricePoints.Count - 1;
         }
 
         if (Flag("qna"))
@@ -2601,7 +1802,7 @@
             ["@type"] = "Product",
             ["name"] = product.Name,
             ["image"] = images.Count == 1 ? images[0] : images.ToArray(),
-            ["description"] = TruncateText(product.Description ?? product.FailureSymptoms ?? product.Name, 500),
+            ["description"] = TruncateText(StripHtml(product.Description ?? product.FailureSymptoms ?? product.Name), 500),
             ["url"] = $"{baseUrl}{SeoUrl.Product(product.Id, product.Slug)}",
             ["sku"] = $"ES-{product.Id:D6}",
             ["brand"] = new Dictionary<string, object?> { ["@type"] = "Brand", ["name"] = "ErrorService" },

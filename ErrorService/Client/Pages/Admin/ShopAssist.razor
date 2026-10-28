@@ -1,0 +1,857 @@
+@page "/admin/shop-assist"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.orders.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@inject HttpClient Http
+@inject ToastService ToastService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>سبد و پیش‌فاکتور مشتری | ارورسرویس</PageTitle>
+
+<div class="sa-page" dir="rtl">
+    <div class="sa-header">
+        <div>
+            <div class="sa-header-title">سبد و پیش‌فاکتور مشتری</div>
+            <div class="sa-header-sub">اصلاح سبد، ساخت پیش‌فاکتور و سفارش آماده پرداخت برای مشتری</div>
+        </div>
+        <a class="sa-header-link" href="/admin/orders">سفارش‌ها</a>
+    </div>
+
+    @if (editingOrderId.HasValue)
+    {
+        <div class="sa-banner">
+            <span class="oi oi-document"></span>
+            در حال ویرایش پیش‌فاکتور #@editingOrderNumber
+            <a href="/admin/orders/@editingOrderId">مشاهده سند</a>
+        </div>
+    }
+
+    <section class="sa-card">
+        <div class="sa-card-title"><span class="oi oi-person"></span> انتخاب مشتری</div>
+
+        <div class="sa-search">
+            <span class="oi oi-magnifying-glass"></span>
+            <input placeholder="نام، موبایل یا ایمیل مشتری..." @bind="customerSearch" @bind:event="oninput" @bind:after="OnCustomerSearchInput" />
+            @if (isSearchingCustomers) { <span class="sa-mini-spinner"></span> }
+        </div>
+
+        @if (customers.Count > 0 && !editingOrderId.HasValue)
+        {
+            <div class="sa-results">
+                @foreach (var c in customers)
+                {
+                    <button class="sa-result @(selectedUserId == c.Id ? "selected" : "")" @onclick="() => SelectCustomer(c)">
+                        <div class="sa-result-main">
+                            <strong>@c.FullName</strong>
+                            <span class="ltr">@c.PhoneNumber</span>
+                        </div>
+                        <div class="sa-result-meta">
+                            <span>سبد: @c.CartItemCount</span>
+                            @if (c.LastOrderAt.HasValue)
+                            {
+                                <span>آخرین سفارش: @PersianDate.ToJalaliDate(c.LastOrderAt.Value)</span>
+                            }
+                        </div>
+                    </button>
+                }
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(customerSearch) && !isSearchingCustomers && customers.Count == 0 && !editingOrderId.HasValue)
+        {
+            <div class="sa-empty">مشتری‌ای یافت نشد.</div>
+        }
+
+        @if (selectedUserId.HasValue)
+        {
+            <div class="sa-selected">
+                <span class="oi oi-check"></span>
+                مشتری انتخاب‌شده: <b>@fullName</b> <span class="ltr">(@phone)</span>
+                @if (!editingOrderId.HasValue)
+                {
+                    <button class="sa-link-btn" @onclick="ClearCustomer">تغییر</button>
+                }
+            </div>
+        }
+    </section>
+
+    @if (selectedUserId.HasValue || editingOrderId.HasValue)
+    {
+        <section class="sa-card">
+            <div class="sa-card-title"><span class="oi oi-location"></span> اطلاعات گیرنده</div>
+            <div class="sa-grid">
+                <label class="sa-field">
+                    <span>نام و نام خانوادگی *</span>
+                    <input @bind="fullName" />
+                </label>
+                <label class="sa-field">
+                    <span>موبایل *</span>
+                    <input class="ltr" @bind="phone" />
+                </label>
+                <label class="sa-field">
+                    <span>ایمیل</span>
+                    <input class="ltr" @bind="email" />
+                </label>
+                <label class="sa-field">
+                    <span>کد پستی</span>
+                    <input class="ltr" @bind="postalCode" />
+                </label>
+                <label class="sa-field">
+                    <span>استان</span>
+                    <input @bind="provinceName" />
+                </label>
+                <label class="sa-field">
+                    <span>شهر</span>
+                    <input @bind="cityName" />
+                </label>
+                <label class="sa-field sa-field-wide">
+                    <span>آدرس *</span>
+                    <textarea rows="2" @bind="address"></textarea>
+                </label>
+            </div>
+        </section>
+
+        @if (selectedUserId.HasValue && !editingOrderId.HasValue)
+        {
+            <section class="sa-card">
+                <div class="sa-card-title">
+                    <span class="oi oi-cart"></span> سبد سروری مشتری
+                    @if (cart != null)
+                    {
+                        <span class="sa-badge">نسخه @cart.Revision</span>
+                    }
+                </div>
+
+                @if (isLoadingCart)
+                {
+                    <div class="sa-empty">در حال بارگذاری سبد...</div>
+                }
+                else if (cart == null || cart.Items.Count == 0)
+                {
+                    <div class="sa-empty">سبد سروری مشتری خالی است.</div>
+                }
+                else
+                {
+                    @if (cartHasIssues)
+                    {
+                        <div class="sa-warn">برخی اقلام سبد ناموجود یا بیش از موجودی هستند. با «ترمیم خودکار» اصلاح می‌شوند.</div>
+                    }
+
+                    <div class="sa-rows">
+                        @foreach (var item in cart.Items)
+                        {
+                            <div class="sa-row @(!string.IsNullOrEmpty(item.Issue) ? "has-issue" : "")">
+                                <div class="sa-row-main">
+                                    <strong>@item.ProductName</strong>
+                                    <span class="sa-muted">موجودی: @item.StockQuantity | قیمت: @item.Price.ToString("N0")</span>
+                                    @if (!string.IsNullOrEmpty(item.Issue))
+                                    {
+                                        <span class="sa-issue">@item.Issue</span>
+                                    }
+                                </div>
+                                <div class="sa-row-actions">
+                                    <input class="sa-qty" type="number" min="0" @bind="item.Quantity" />
+                                    <button class="sa-icon-btn danger" title="حذف" @onclick="() => cart.Items.Remove(item)">×</button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="sa-cart-total">جمع سبد: <b>@cart.TotalAmount.ToString("N0")</b> تومان</div>
+
+                    <div class="sa-actions">
+                        <button class="sa-btn ghost" @onclick="RepairCart" disabled="@isSavingCart">
+                            @if (isSavingCart) { <span class="sa-mini-spinner"></span> }
+                            ترمیم خودکار
+                        </button>
+                        <button class="sa-btn ghost" @onclick="SaveCart" disabled="@isSavingCart">ذخیره سبد</button>
+                        <button class="sa-btn ghost" @onclick="CopyCartToOrder">کپی اقلام به سفارش</button>
+                        <button class="sa-btn ghost" @onclick="NotifyCustomer" disabled="@isSavingCart">اطلاع‌رسانی به مشتری</button>
+                        <div class="sa-spacer"></div>
+                        <button class="sa-btn primary" @onclick="() => CheckoutCart(false)" disabled="@isSavingCart">تبدیل به پیش‌فاکتور</button>
+                        <button class="sa-btn success" @onclick="() => CheckoutCart(true)" disabled="@isSavingCart">تبدیل به آماده پرداخت</button>
+                    </div>
+                }
+            </section>
+        }
+
+        <section class="sa-card">
+            <div class="sa-card-title"><span class="oi oi-box"></span> اقلام سفارش / پیش‌فاکتور</div>
+
+            <div class="sa-search">
+                <span class="oi oi-magnifying-glass"></span>
+                <input placeholder="جست‌وجوی محصول برای افزودن..." @bind="productSearch" @bind:event="oninput" @bind:after="OnProductSearchInput" />
+                @if (isSearchingProducts) { <span class="sa-mini-spinner"></span> }
+            </div>
+
+            @if (productResults.Count > 0)
+            {
+                <div class="sa-products">
+                    @foreach (var p in productResults)
+                    {
+                        var price = DiscountHelper.IsActive(p) ? p.DiscountPrice!.Value : p.Price;
+                        <button class="sa-product" @onclick="() => AddProduct(p)">
+                            <span class="sa-product-name">@p.Name</span>
+                            <span class="sa-product-meta">@price.ToString("N0") تومان | موجودی @p.StockQuantity</span>
+                        </button>
+                    }
+                </div>
+            }
+
+            @if (orderItems.Count == 0)
+            {
+                <div class="sa-empty">هنوز قلمی اضافه نشده است.</div>
+            }
+            else
+            {
+                <div class="sa-rows">
+                    @foreach (var item in orderItems)
+                    {
+                        <div class="sa-row">
+                            <div class="sa-row-main">
+                                <strong>@item.Name</strong>
+                                <span class="sa-muted">@item.Price.ToString("N0") تومان | موجودی: @item.Stock</span>
+                            </div>
+                            <div class="sa-row-actions">
+                                <input class="sa-qty" type="number" min="1" @bind="item.Quantity" />
+                                <button class="sa-icon-btn danger" title="حذف" @onclick="() => orderItems.Remove(item)">×</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="sa-cart-total">جمع اقلام: <b>@ItemsTotal.ToString("N0")</b> تومان</div>
+            }
+
+            <div class="sa-grid">
+                <label class="sa-field">
+                    <span>کد تخفیف</span>
+                    <input class="ltr" @bind="couponCode" placeholder="اختیاری" />
+                </label>
+                <label class="sa-field">
+                    <span>تخفیف دستی (تومان)</span>
+                    <input class="ltr" type="number" min="0" @bind="manualDiscount" />
+                </label>
+                <label class="sa-field">
+                    <span>روش ارسال</span>
+                    <select @bind="shippingMethodId">
+                        <option value="">بدون ارسال / انتخاب نشده</option>
+                        @foreach (var s in shippingMethods)
+                        {
+                            <option value="@s.Id">@s.Name — @(s.IsFree ? "رایگان" : $"{s.Price:N0} تومان")</option>
+                        }
+                    </select>
+                </label>
+                @if (!editingOrderId.HasValue)
+                {
+                    <label class="sa-field">
+                        <span>مهلت پرداخت (ساعت)</span>
+                        <input class="ltr" type="number" min="1" max="168" @bind="expiresInHours" />
+                    </label>
+                }
+                <label class="sa-field sa-field-wide">
+                    <span>یادداشت مشتری</span>
+                    <input @bind="customerNotes" placeholder="اختیاری" />
+                </label>
+                <label class="sa-field sa-field-wide">
+                    <span>یادداشت مدیر</span>
+                    <input @bind="adminNotes" placeholder="اختیاری" />
+                </label>
+            </div>
+
+            <div class="sa-note">مبلغ نهایی، تخفیف کوپن و هزینه ارسال در سرور محاسبه می‌شود.</div>
+
+            <div class="sa-actions">
+                @if (editingOrderId.HasValue)
+                {
+                    <button class="sa-btn primary" @onclick="SaveDraft" disabled="@isSavingOrder">
+                        @if (isSavingOrder) { <span class="sa-mini-spinner"></span> }
+                        ذخیره تغییرات پیش‌فاکتور
+                    </button>
+                }
+                else
+                {
+                    <button class="sa-btn primary" @onclick="() => CreateOrder(false)" disabled="@isSavingOrder">ذخیره پیش‌فاکتور</button>
+                    <button class="sa-btn success" @onclick="() => CreateOrder(true)" disabled="@isSavingOrder">ایجاد سفارش آماده پرداخت</button>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+<style>
+    .ltr { direction: ltr; text-align: left; }
+    .sa-page { max-width: 1000px; margin: 0 auto; padding: 0 16px 100px; }
+    .sa-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; padding: 18px 16px; margin: 0 -16px 14px; border-radius: 0 0 22px 22px; }
+    .sa-header-title { font-weight: 800; font-size: 1.05rem; }
+    .sa-header-sub { font-size: .72rem; opacity: .85; margin-top: 4px; }
+    .sa-header-link { background: rgba(255,255,255,.2); color: #fff; text-decoration: none; padding: 7px 12px; border-radius: 10px; font-size: .78rem; font-weight: 700; white-space: nowrap; }
+    .sa-banner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #f5f3ff; border: 1px solid #c4b5fd; color: #5b21b6; border-radius: 12px; padding: 10px 12px; font-size: .8rem; margin-bottom: 12px; }
+    .sa-banner a { margin-inline-start: auto; color: #6d28d9; font-weight: 700; }
+    .sa-card { background: #fff; border: 1px solid #e9edf5; border-radius: 16px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(15,23,42,.04); }
+    .sa-card-title { display: flex; align-items: center; gap: 8px; font-weight: 800; color: #334155; font-size: .92rem; margin-bottom: 12px; }
+    .sa-card-title .oi { color: #6366f1; }
+    .sa-badge { margin-inline-start: auto; background: #eef2ff; color: #4338ca; font-size: .65rem; font-weight: 700; border-radius: 999px; padding: 2px 8px; }
+    .sa-search { display: flex; align-items: center; gap: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 9px 12px; }
+    .sa-search input { flex: 1; border: none; background: transparent; outline: none; font-family: inherit; font-size: .85rem; }
+    .sa-search .oi { color: #94a3b8; }
+    .sa-results { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; max-height: 260px; overflow: auto; }
+    .sa-result { text-align: right; border: 1px solid #e2e8f0; background: #fff; border-radius: 12px; padding: 9px 11px; cursor: pointer; font-family: inherit; }
+    .sa-result:hover { border-color: #a5b4fc; background: #f8faff; }
+    .sa-result.selected { border-color: #6366f1; background: #eef2ff; }
+    .sa-result-main { display: flex; justify-content: space-between; gap: 8px; font-size: .85rem; }
+    .sa-result-meta { display: flex; gap: 12px; margin-top: 3px; color: #94a3b8; font-size: .7rem; }
+    .sa-selected { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: #ecfdf5; color: #047857; border-radius: 10px; padding: 8px 10px; font-size: .8rem; margin-top: 10px; }
+    .sa-link-btn { margin-inline-start: auto; background: none; border: none; color: #2563eb; font-family: inherit; font-size: .75rem; font-weight: 700; cursor: pointer; }
+    .sa-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .sa-field { display: flex; flex-direction: column; gap: 4px; font-size: .75rem; color: #64748b; }
+    .sa-field-wide { grid-column: 1 / -1; }
+    .sa-field input, .sa-field select, .sa-field textarea { width: 100%; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; font-family: inherit; font-size: .82rem; background: #fff; outline: none; }
+    .sa-field input:focus, .sa-field select:focus, .sa-field textarea:focus { border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,.12); }
+    .sa-rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .sa-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: #f8fafc; border: 1px solid #eef2f7; border-radius: 11px; padding: 8px 10px; }
+    .sa-row.has-issue { background: #fff7ed; border-color: #fed7aa; }
+    .sa-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: .82rem; }
+    .sa-row-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sa-muted { color: #94a3b8; font-size: .7rem; }
+    .sa-issue { color: #c2410c; font-size: .7rem; font-weight: 700; }
+    .sa-row-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .sa-qty { width: 62px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px; text-align: center; font-family: inherit; font-size: .8rem; }
+    .sa-icon-btn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; cursor: pointer; font-size: 1rem; line-height: 1; }
+    .sa-icon-btn.danger { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+    .sa-warn { background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; border-radius: 10px; padding: 8px 10px; font-size: .75rem; margin-bottom: 10px; }
+    .sa-note { color: #94a3b8; font-size: .7rem; margin-top: 10px; }
+    .sa-cart-total { font-size: .82rem; color: #475569; margin-bottom: 10px; }
+    .sa-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .sa-spacer { flex: 1; }
+    .sa-btn { border: none; border-radius: 10px; padding: 9px 14px; font-family: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .sa-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .sa-btn.ghost { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+    .sa-btn.primary { background: #4f46e5; color: #fff; }
+    .sa-btn.success { background: #059669; color: #fff; }
+    .sa-products { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; max-height: 240px; overflow: auto; }
+    .sa-product { text-align: right; display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1px dashed #c7d2fe; background: #f8faff; border-radius: 10px; padding: 8px 10px; cursor: pointer; font-family: inherit; }
+    .sa-product:hover { border-color: #6366f1; background: #eef2ff; }
+    .sa-product-name { font-size: .82rem; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sa-product-meta { font-size: .7rem; color: #64748b; white-space: nowrap; }
+    .sa-empty { color: #94a3b8; font-size: .8rem; padding: 14px 6px; text-align: center; }
+    .sa-mini-spinner { width: 15px; height: 15px; border: 2px solid #e2e8f0; border-top-color: #6366f1; border-radius: 50%; animation: sa-spin .7s linear infinite; flex-shrink: 0; }
+    @@keyframes sa-spin { to { transform: rotate(360deg); } }
+    @@media (max-width: 620px) {
+        .sa-grid { grid-template-columns: 1fr; }
+        .sa-header-sub { display: none; }
+        .sa-actions .sa-spacer { display: none; }
+    }
+</style>
+
+@code {
+    [SupplyParameterFromQuery(Name = "order")]
+    public int? OrderQueryId { get; set; }
+
+    private int? editingOrderId;
+    private string editingOrderNumber = "";
+
+    private string customerSearch = "";
+    private List<AdminCustomerLookupDto> customers = new();
+    private bool isSearchingCustomers;
+    private CancellationTokenSource? customerSearchCts;
+
+    private string productSearch = "";
+    private List<ProductDto> productResults = new();
+    private bool isSearchingProducts;
+    private CancellationTokenSource? productSearchCts;
+
+    private AdminCartDto? cart;
+    private bool isLoadingCart;
+    private bool isSavingCart;
+
+    private List<ShippingMethodDto> shippingMethods = new();
+    private List<AdminOrderLineItem> orderItems = new();
+
+    private int? selectedUserId;
+    private string fullName = "";
+    private string phone = "";
+    private string? email;
+    private string address = "";
+    private string? postalCode;
+    private string? provinceName;
+    private string? cityName;
+    private string? couponCode;
+    private decimal? manualDiscount;
+    private int? shippingMethodId;
+    private string? customerNotes;
+    private string? adminNotes;
+    private int expiresInHours = 24;
+    private bool isSavingOrder;
+
+    private decimal ItemsTotal => orderItems.Sum(i => i.Price * i.Quantity);
+    private bool cartHasIssues => cart?.Items.Any(i => !string.IsNullOrEmpty(i.Issue)) == true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            shippingMethods = await Http.GetFromJsonAsync<List<ShippingMethodDto>>("api/shippingmethods") ?? new();
+        }
+        catch { }
+
+        if (OrderQueryId.HasValue)
+        {
+            await LoadDraft(OrderQueryId.Value);
+        }
+    }
+
+    private async Task LoadDraft(int id)
+    {
+        try
+        {
+            var order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/admin/{id}");
+            if (order == null)
+            {
+                ToastService.ShowError("پیش‌فاکتور یافت نشد.");
+                return;
+            }
+            if (order.Status != OrderStatus.Draft)
+            {
+                ToastService.ShowWarning("این سفارش پیش‌فاکتور نیست و قابل ویرایش در این صفحه نیست.");
+                return;
+            }
+
+            editingOrderId = order.Id;
+            editingOrderNumber = order.OrderNumber;
+            selectedUserId = order.UserId;
+            fullName = order.FullName;
+            phone = order.PhoneNumber;
+            email = order.Email;
+            address = order.Address ?? "";
+            postalCode = order.PostalCode;
+            provinceName = order.ProvinceName;
+            cityName = order.CityName;
+            couponCode = order.CouponCode;
+            manualDiscount = order.ManualDiscountAmount;
+            shippingMethodId = order.ShippingMethodId;
+            customerNotes = order.CustomerNotes;
+            adminNotes = order.AdminNotes;
+
+            orderItems = (order.Items ?? new List<OrderItemDto>())
+                .Select(i => new AdminOrderLineItem
+                {
+                    ProductId = i.ProductId,
+                    Name = i.ProductName,
+                    Price = i.Price,
+                    Quantity = i.Quantity,
+                    Stock = int.MaxValue
+                })
+                .ToList();
+
+            if (order.UserId.HasValue)
+            {
+                try
+                {
+                    cart = await Http.GetFromJsonAsync<AdminCartDto>($"api/admin/carts/{order.UserId.Value}");
+                }
+                catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطا در بارگذاری پیش‌فاکتور: " + ex.Message);
+        }
+    }
+
+    private async Task OnCustomerSearchInput()
+    {
+        customerSearchCts?.Cancel();
+        customerSearchCts = new CancellationTokenSource();
+        var token = customerSearchCts.Token;
+        try { await Task.Delay(350, token); }
+        catch (TaskCanceledException) { return; }
+
+        await SearchCustomers(token);
+    }
+
+    private async Task SearchCustomers(CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(customerSearch))
+        {
+            customers = new();
+            return;
+        }
+
+        isSearchingCustomers = true;
+        try
+        {
+            var url = $"api/orders/admin/customers?take=15&search={Uri.EscapeDataString(customerSearch.Trim())}";
+            customers = await Http.GetFromJsonAsync<List<AdminCustomerLookupDto>>(url, token) ?? new();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { ToastService.ShowError("خطا در جست‌وجوی مشتری: " + ex.Message); }
+        finally { isSearchingCustomers = false; }
+    }
+
+    private async Task SelectCustomer(AdminCustomerLookupDto customer)
+    {
+        selectedUserId = customer.Id;
+        fullName = customer.FullName;
+        phone = customer.PhoneNumber;
+        email = customer.Email;
+        address = customer.Address ?? "";
+        postalCode = customer.PostalCode;
+        customers = new();
+
+        await LoadCart();
+    }
+
+    private void ClearCustomer()
+    {
+        selectedUserId = null;
+        cart = null;
+        fullName = "";
+        phone = "";
+        email = null;
+        address = "";
+        postalCode = null;
+    }
+
+    private async Task LoadCart()
+    {
+        if (!selectedUserId.HasValue) return;
+        isLoadingCart = true;
+        try
+        {
+            cart = await Http.GetFromJsonAsync<AdminCartDto>($"api/admin/carts/{selectedUserId.Value}");
+        }
+        catch (Exception ex)
+        {
+            cart = null;
+            ToastService.ShowError("خطا در بارگذاری سبد: " + ex.Message);
+        }
+        finally { isLoadingCart = false; }
+    }
+
+    private async Task RepairCart()
+    {
+        if (!selectedUserId.HasValue || isSavingCart) return;
+        isSavingCart = true;
+        try
+        {
+            var resp = await Http.PostAsync($"api/admin/carts/{selectedUserId.Value}/repair", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                cart = await resp.Content.ReadFromJsonAsync<AdminCartDto>();
+                ToastService.ShowSuccess("سبد مشتری ترمیم شد.");
+            }
+            else
+            {
+                ToastService.ShowError(await ReadErrorAsync(resp, "ترمیم سبد ناموفق بود."));
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSavingCart = false; }
+    }
+
+    private async Task SaveCart()
+    {
+        if (cart == null || !selectedUserId.HasValue || isSavingCart) return;
+        isSavingCart = true;
+        try
+        {
+            var payload = new AdminCartSaveRequest
+            {
+                ExpectedRevision = cart.Revision,
+                Items = cart.Items.Select(i => new AdminCartItemDto
+                {
+                    ProductId = i.ProductId,
+                    Quantity = i.Quantity
+                }).ToList()
+            };
+            var resp = await Http.PutAsJsonAsync($"api/admin/carts/{selectedUserId.Value}", payload);
+            var result = await resp.Content.ReadFromJsonAsync<AdminCartSaveResult>();
+            if (resp.IsSuccessStatusCode && result?.Success != false)
+            {
+                cart = result?.Cart ?? await Http.GetFromJsonAsync<AdminCartDto>($"api/admin/carts/{selectedUserId.Value}");
+                ToastService.ShowSuccess("سبد مشتری ذخیره شد.");
+            }
+            else
+            {
+                cart = result?.Cart ?? cart;
+                ToastService.ShowError(result?.Message ?? "ذخیره سبد ناموفق بود.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSavingCart = false; }
+    }
+
+    private void CopyCartToOrder()
+    {
+        if (cart == null) return;
+        orderItems = cart.Items
+            .Where(i => string.IsNullOrEmpty(i.Issue))
+            .Select(i => new AdminOrderLineItem
+            {
+                ProductId = i.ProductId,
+                Name = i.ProductName,
+                Price = i.Price,
+                Quantity = i.Quantity,
+                Stock = i.StockQuantity
+            })
+            .ToList();
+        ToastService.ShowSuccess($"{orderItems.Count} قلم از سبد به سفارش منتقل شد.");
+    }
+
+    private async Task NotifyCustomer()
+    {
+        if (!selectedUserId.HasValue || isSavingCart) return;
+        isSavingCart = true;
+        try
+        {
+            var message = $"سبد خرید شما توسط پشتیبانی بررسی و به‌روزرسانی شد. لطفاً سبد خرید خود را بازبینی کنید.";
+            var resp = await Http.PostAsJsonAsync($"api/admin/carts/{selectedUserId.Value}/notify", new AdminCartNotifyRequest { Message = message });
+            if (resp.IsSuccessStatusCode)
+                ToastService.ShowSuccess("اطلاع‌رسانی برای مشتری ارسال شد.");
+            else
+                ToastService.ShowError(await ReadErrorAsync(resp, "اطلاع‌رسانی ناموفق بود."));
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSavingCart = false; }
+    }
+
+    private async Task CheckoutCart(bool publish)
+    {
+        if (cart == null || !selectedUserId.HasValue || isSavingCart) return;
+        if (cart.Items.Count == 0)
+        {
+            ToastService.ShowError("سبد مشتری خالی است.");
+            return;
+        }
+
+        isSavingCart = true;
+        try
+        {
+            var payload = new AdminCartCheckoutRequest
+            {
+                CouponCode = couponCode,
+                ManualDiscountAmount = manualDiscount,
+                ShippingMethodId = shippingMethodId,
+                CustomerNotes = customerNotes,
+                AdminNotes = adminNotes,
+                Publish = publish,
+                ExpiresInHours = expiresInHours
+            };
+            var resp = await Http.PostAsJsonAsync($"api/admin/carts/{selectedUserId.Value}/checkout", payload);
+            if (resp.IsSuccessStatusCode)
+            {
+                var order = await resp.Content.ReadFromJsonAsync<OrderDto>();
+                if (order != null)
+                {
+                    ToastService.ShowSuccess(publish ? "سفارش آماده پرداخت ایجاد شد." : "پیش‌فاکتور ایجاد شد.");
+                    Nav.NavigateTo($"/admin/orders/{order.Id}");
+                    return;
+                }
+            }
+            ToastService.ShowError(await ReadErrorAsync(resp, "تبدیل سبد به سفارش ناموفق بود."));
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSavingCart = false; }
+    }
+
+    private async Task OnProductSearchInput()
+    {
+        productSearchCts?.Cancel();
+        productSearchCts = new CancellationTokenSource();
+        var token = productSearchCts.Token;
+        try { await Task.Delay(350, token); }
+        catch (TaskCanceledException) { return; }
+
+        await SearchProducts(token);
+    }
+
+    private async Task SearchProducts(CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(productSearch))
+        {
+            productResults = new();
+            return;
+        }
+
+        isSearchingProducts = true;
+        try
+        {
+            var url = $"api/orders/admin/products?take=15&search={Uri.EscapeDataString(productSearch.Trim())}";
+            productResults = await Http.GetFromJsonAsync<List<ProductDto>>(url, token) ?? new();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { ToastService.ShowError("خطا در جست‌وجوی محصول: " + ex.Message); }
+        finally { isSearchingProducts = false; }
+    }
+
+    private void AddProduct(ProductDto product)
+    {
+        var price = DiscountHelper.IsActive(product) ? product.DiscountPrice!.Value : product.Price;
+        var existing = orderItems.FirstOrDefault(i => i.ProductId == product.Id);
+        if (existing != null)
+        {
+            existing.Quantity++;
+        }
+        else
+        {
+            orderItems.Add(new AdminOrderLineItem
+            {
+                ProductId = product.Id,
+                Name = product.Name,
+                Price = price,
+                Quantity = 1,
+                Stock = product.StockQuantity
+            });
+        }
+
+        productSearch = "";
+        productResults = new();
+    }
+
+    private AdminOrderSaveRequest BuildOrderRequest(bool publish) => new()
+    {
+        UserId = selectedUserId,
+        FullName = fullName,
+        PhoneNumber = phone,
+        Email = email,
+        Address = address,
+        ProvinceName = provinceName,
+        CityName = cityName,
+        PostalCode = postalCode,
+        Items = orderItems.Select(i => new OrderItemDto
+        {
+            ProductId = i.ProductId,
+            ProductName = i.Name,
+            Price = i.Price,
+            Quantity = i.Quantity
+        }).ToList(),
+        CouponCode = string.IsNullOrWhiteSpace(couponCode) ? null : couponCode.Trim(),
+        ManualDiscountAmount = manualDiscount,
+        ShippingMethodId = shippingMethodId,
+        CustomerNotes = customerNotes,
+        AdminNotes = adminNotes,
+        Publish = publish,
+        ExpiresInHours = publish ? expiresInHours : null
+    };
+
+    private async Task CreateOrder(bool publish)
+    {
+        if (isSavingOrder) return;
+        if (!ValidateForm()) return;
+
+        isSavingOrder = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/orders/admin/create", BuildOrderRequest(publish));
+            if (resp.IsSuccessStatusCode)
+            {
+                var order = await resp.Content.ReadFromJsonAsync<OrderDto>();
+                if (order != null)
+                {
+                    ToastService.ShowSuccess(publish ? "سفارش آماده پرداخت ایجاد شد." : "پیش‌فاکتور ایجاد شد.");
+                    Nav.NavigateTo($"/admin/orders/{order.Id}");
+                    return;
+                }
+            }
+            ToastService.ShowError(await ReadErrorAsync(resp, "ایجاد سفارش ناموفق بود."));
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSavingOrder = false; }
+    }
+
+    private async Task SaveDraft()
+    {
+        if (!editingOrderId.HasValue || isSavingOrder) return;
+        if (!ValidateForm()) return;
+
+        isSavingOrder = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{editingOrderId.Value}/draft", BuildOrderRequest(false));
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("پیش‌فاکتور بروزرسانی شد.");
+                Nav.NavigateTo($"/admin/orders/{editingOrderId.Value}");
+                return;
+            }
+            ToastService.ShowError(await ReadErrorAsync(resp, "ویرایش پیش‌فاکتور ناموفق بود."));
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSavingOrder = false; }
+    }
+
+    private bool ValidateForm()
+    {
+        if (orderItems.Count == 0)
+        {
+            ToastService.ShowError("حداقل یک قلم به سفارش اضافه کنید.");
+            return false;
+        }
+        if (orderItems.Any(i => i.Quantity <= 0))
+        {
+            ToastService.ShowError("تعداد هر قلم باید بزرگ‌تر از صفر باشد.");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(fullName) || fullName.Trim().Length < 3)
+        {
+            ToastService.ShowError("نام گیرنده را کامل وارد کنید.");
+            return false;
+        }
+        if (!System.Text.RegularExpressions.Regex.IsMatch(phone ?? "", @"^09\d{9}$"))
+        {
+            ToastService.ShowError("شماره موبایل باید با 09 شروع شود و ۱۱ رقم باشد.");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(address) || address.Trim().Length < 10)
+        {
+            ToastService.ShowError("آدرس گیرنده را کامل وارد کنید.");
+            return false;
+        }
+        return true;
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage resp, string fallback)
+    {
+        var body = await resp.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(body)) return fallback;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var s = root.GetString();
+                return string.IsNullOrWhiteSpace(s) ? fallback : s!;
+            }
+            if (root.TryGetProperty("message", out var m) && !string.IsNullOrWhiteSpace(m.GetString()))
+                return m.GetString()!;
+            if (root.TryGetProperty("title", out var t) && !string.IsNullOrWhiteSpace(t.GetString()))
+                return t.GetString()!;
+            if (root.TryGetProperty("errors", out var errors) && errors.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (var prop in errors.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Array && prop.Value.GetArrayLength() > 0)
+                        return prop.Value[0].GetString() ?? fallback;
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException) { }
+
+        return body.Length > 200 ? body[..200] : body;
+    }
+
+    private sealed class AdminOrderLineItem
+    {
+        public int ProductId { get; set; }
+        public string Name { get; set; } = "";
+        public decimal Price { get; set; }
+        public int Quantity { get; set; } = 1;
+        public int Stock { get; set; }
+    }
+}

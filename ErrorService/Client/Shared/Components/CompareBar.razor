@@ -1,0 +1,274 @@
+@using ErrorService.Client.Services
+@implements IDisposable
+@inject CompareService Compare
+@inject SiteSettingsService Settings
+@inject NavigationManager Nav
+
+@if (_enabled && _items.Count > 0 && !IsComparePage)
+{
+    <div class="cb" role="region" aria-label="لیست مقایسه محصولات">
+        <div class="cb-head">
+            <span class="cb-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 3v18"/><path d="M5 8l-3 6h6L5 8z"/><path d="M19 8l-3 6h6l-3-6z"/><path d="M3 21h18"/>
+                </svg>
+                <b>مقایسه</b>
+                <span class="cb-count">@_items.Count از @_max</span>
+            </span>
+            <button type="button" class="cb-clear" @onclick="ClearAsync" title="پاک کردن لیست مقایسه" aria-label="پاک کردن لیست مقایسه">
+                <span class="oi oi-trash" aria-hidden="true"></span>
+            </button>
+        </div>
+
+        <div class="cb-body">
+            <div class="cb-thumbs">
+                @foreach (var item in _items)
+                {
+                    <div class="cb-thumb" @key="item.ProductId">
+                        <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-product.svg" : ImageUrlHelper.Thumb(item.ImageUrl, 200))"
+                             loading="lazy" decoding="async" alt="@item.Name" title="@item.Name" />
+                        <button type="button" class="cb-x" @onclick="() => RemoveAsync(item.ProductId)"
+                                aria-label="حذف @item.Name از مقایسه">×</button>
+                    </div>
+                }
+                @if (_items.Count < _max)
+                {
+                    <a class="cb-add" href="/products" title="افزودن محصول دیگر به مقایسه" aria-label="افزودن محصول دیگر">
+                        <span class="oi oi-plus" aria-hidden="true"></span>
+                    </a>
+                }
+            </div>
+
+            <a class="cb-go" href="/compare">
+                مقایسه کن
+                <span class="cb-go__n">@_items.Count</span>
+                <span class="oi oi-arrow-left" aria-hidden="true"></span>
+            </a>
+        </div>
+    </div>
+}
+
+<style>
+    .cb {
+        position: fixed;
+        z-index: 1025;
+        right: 20px;
+        bottom: 20px;
+        width: min(540px, calc(100vw - 40px));
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        padding: 0.7rem 0.8rem;
+        background: var(--app-surface, #fff);
+        color: var(--app-text, #0f172a);
+        border: 1px solid var(--app-border, rgba(15, 23, 42, 0.1));
+        border-radius: 18px;
+        box-shadow: 0 20px 44px rgba(2, 6, 23, 0.22);
+        animation: cb-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @@keyframes cb-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+    .cb-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+
+    .cb-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.8rem;
+        color: var(--app-text-secondary, #334155);
+    }
+
+    .cb-title svg { color: var(--app-primary, #2563eb); }
+    .cb-title b { font-size: 0.85rem; font-weight: 900; color: var(--app-text, #0f172a); }
+
+    .cb-count {
+        font-size: 0.68rem;
+        font-weight: 800;
+        padding: 0.1rem 0.45rem;
+        border-radius: 999px;
+        background: rgba(37, 99, 235, 0.1);
+        color: var(--app-primary, #2563eb);
+    }
+
+    .cb-clear {
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: #94a3b8;
+        cursor: pointer;
+        font-size: 0.78rem;
+        transition: background 0.15s, color 0.15s;
+    }
+
+    .cb-clear:hover { background: rgba(239, 68, 68, 0.1); color: #dc2626; }
+
+    .cb-body { display: flex; align-items: center; gap: 0.6rem; }
+
+    .cb-thumbs { display: flex; align-items: center; gap: 0.4rem; flex: 1 1 auto; min-width: 0; }
+
+    .cb-thumb {
+        position: relative;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+        border-radius: 10px;
+        border: 1px solid var(--app-border, rgba(15, 23, 42, 0.1));
+        background: var(--app-bg, #f8fafc);
+        overflow: hidden;
+    }
+
+    .cb-thumb img { width: 100%; height: 100%; object-fit: contain; padding: 3px; }
+
+    .cb-x {
+        position: absolute;
+        top: -5px;
+        left: -5px;
+        width: 16px;
+        height: 16px;
+        display: grid;
+        place-items: center;
+        border: none;
+        border-radius: 50%;
+        background: #dc2626;
+        color: #fff;
+        font-size: 0.62rem;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0;
+        box-shadow: 0 2px 6px rgba(220, 38, 38, 0.4);
+    }
+
+    .cb-add {
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+        display: grid;
+        place-items: center;
+        border-radius: 10px;
+        border: 1px dashed var(--app-border-strong, rgba(15, 23, 42, 0.2));
+        color: var(--app-text-muted, #94a3b8);
+        text-decoration: none;
+        font-size: 0.7rem;
+        transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+
+    .cb-add:hover {
+        border-color: var(--app-primary, #2563eb);
+        color: var(--app-primary, #2563eb);
+        background: rgba(37, 99, 235, 0.06);
+    }
+
+    .cb-go {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        padding: 0.55rem 0.95rem;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #2563eb, #4f46e5);
+        color: #fff;
+        font-size: 0.8rem;
+        font-weight: 900;
+        text-decoration: none;
+        white-space: nowrap;
+        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.28);
+        transition: background 0.15s, transform 0.15s;
+    }
+
+    .cb-go:hover { background: linear-gradient(135deg, #1d4ed8, #4338ca); color: #fff; transform: translateY(-1px); }
+    .cb-go:active { transform: none; }
+
+    .cb-go__n {
+        min-width: 18px;
+        height: 18px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.24);
+        font-size: 0.68rem;
+        font-weight: 900;
+    }
+
+    [data-theme="dark"] .cb { box-shadow: 0 22px 50px rgba(0, 0, 0, 0.45); }
+    [data-theme="dark"] .cb-count { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+    [data-theme="dark"] .cb-title b { color: #f1f5f9; }
+    [data-theme="dark"] .cb-add:hover { background: rgba(59, 130, 246, 0.12); }
+
+    @@media (max-width: 767.98px) {
+        .cb {
+            right: 12px;
+            bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+            width: min(460px, calc(100vw - 88px));
+            border-radius: 16px;
+        }
+
+        .cb-body { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+        .cb-go { width: 100%; }
+        .cb-thumb, .cb-add { width: 36px; height: 36px; flex-basis: 36px; }
+    }
+
+    @@media (prefers-reduced-motion: reduce) {
+        .cb { animation: none; }
+    }
+</style>
+
+@code {
+    private List<CompareItem> _items = new();
+    private bool _enabled = true;
+    private int _max = CompareService.DefaultMaxItems;
+
+    private bool IsComparePage
+    {
+        get
+        {
+            var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
+            return path == "/compare";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Compare.OnChange += HandleChanged;
+        Nav.LocationChanged += HandleNavigation;
+        try
+        {
+            var settings = await Settings.GetAsync();
+            if (settings != null)
+            {
+                _enabled = settings.EnableCompare;
+                _max = settings.CompareMaxItems <= 0 ? CompareService.DefaultMaxItems : Math.Clamp(settings.CompareMaxItems, 2, CompareService.HardMaxItems);
+            }
+        }
+        catch { }
+        try { _items = await Compare.GetItemsAsync(); } catch { _items = new(); }
+    }
+
+    private void HandleNavigation(object? sender, LocationChangedEventArgs e) => StateHasChanged();
+
+    private void HandleChanged() => _ = InvokeAsync(async () =>
+    {
+        try { _items = await Compare.GetItemsAsync(); } catch { }
+        StateHasChanged();
+    });
+
+    private async Task RemoveAsync(int productId)
+    {
+        await Compare.RemoveAsync(productId);
+    }
+
+    private async Task ClearAsync()
+    {
+        await Compare.ClearAsync();
+    }
+
+    public void Dispose()
+    {
+        Compare.OnChange -= HandleChanged;
+        Nav.LocationChanged -= HandleNavigation;
+    }
+}

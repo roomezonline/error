@@ -77,10 +77,44 @@
                                         <InputText @bind-Value="request.Email" class="field-input" placeholder="mail@example.com" />
                                     </div>
                                 </div>
+                                @if (StructuredAddressEnabled)
+                                {
+                                    <div class="col-md-6">
+                                        <div class="field-group">
+                                            <label class="field-label">استان @if (RequireProvinceCity) { <span class="req">*</span> }</label>
+                                            <select class="field-input" value="@(request.ProvinceId?.ToString() ?? "")" @onchange="OnProvinceChanged">
+                                                <option value="">انتخاب استان</option>
+                                                @foreach (var p in _provinces)
+                                                {
+                                                    <option value="@p.Id">@p.Name</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="field-group">
+                                            <label class="field-label">شهر @if (RequireProvinceCity) { <span class="req">*</span> }</label>
+                                            <select class="field-input" value="@(request.CityId?.ToString() ?? "")" @onchange="OnCityChanged" disabled="@(!request.ProvinceId.HasValue || _citiesLoading)">
+                                                <option value="">@(request.ProvinceId.HasValue ? "انتخاب شهر" : "ابتدا استان را انتخاب کنید")</option>
+                                                @foreach (var c in _cities)
+                                                {
+                                                    <option value="@c.Id">@c.Name</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="field-group">
+                                            <label class="field-label">کد پستی @if (RequirePostalCode) { <span class="req">*</span> } else { <span class="optional">(اختیاری)</span> }</label>
+                                            <InputText @bind-Value="request.PostalCode" class="field-input" placeholder="مثال: 1234567890" inputmode="numeric" maxlength="10" dir="ltr" />
+                                        </div>
+                                        <div class="field-hint">کد پستی ۱۰ رقمی بدون خط تیره یا فاصله.</div>
+                                    </div>
+                                }
                                 <div class="col-12">
                                     <div class="field-group">
                                         <label class="field-label">آدرس پستی</label>
-                                        <InputTextArea @bind-Value="request.Address" class="field-input" style="height: 110px" placeholder="آدرس دقیق شامل استان، شهر، خیابان و..." />
+                                        <InputTextArea @bind-Value="request.Address" class="field-input" style="height: 110px" placeholder="@(StructuredAddressEnabled ? "خیابان، کوچه، پلاک، واحد و نشانه‌های محلی" : "آدرس دقیق شامل استان، شهر، خیابان و...")" />
                                         <ValidationMessage For="@(() => request.Address)" class="field-error" />
                                     </div>
                                 </div>
@@ -223,11 +257,25 @@
                                         <span class="summary-info-val ltr" dir="ltr">@request.PhoneNumber</span>
                                     </div>
                                 }
+                                @if (StructuredAddressEnabled && !string.IsNullOrWhiteSpace(AddressRegionText))
+                                {
+                                    <div class="summary-info-row">
+                                        <span class="summary-info-label"><span class="oi oi-map-marker"></span> استان/شهر</span>
+                                        <span class="summary-info-val">@AddressRegionText</span>
+                                    </div>
+                                }
                                 @if (!string.IsNullOrWhiteSpace(request.Address) && request.Address.Length > 5)
                                 {
                                     <div class="summary-info-row">
                                         <span class="summary-info-label"><span class="oi oi-location"></span> آدرس</span>
                                         <span class="summary-info-val summary-info-val--addr">@request.Address</span>
+                                    </div>
+                                }
+                                @if (StructuredAddressEnabled && !string.IsNullOrWhiteSpace(request.PostalCode))
+                                {
+                                    <div class="summary-info-row">
+                                        <span class="summary-info-label"><span class="oi oi-home"></span> کد پستی</span>
+                                        <span class="summary-info-val ltr" dir="ltr">@request.PostalCode</span>
                                     </div>
                                 }
                                 @if (_selectedShippingMethodId.HasValue)
@@ -251,13 +299,13 @@
                             </div>
                             <div class="price-row price-row--ship">
                                 <span>ارسال (@_shippingName)</span>
-                                @if (_shippingIsFree)
+                                @if (_selectedShippingMethodId.HasValue && EffectiveShippingCost <= 0)
                                 {
                                     <span class="text-success">رایگان</span>
                                 }
                                 else
                                 {
-                                    <span>@_shippingCost.ToString("N0") <small>تومان</small></span>
+                                    <span>@EffectiveShippingCost.ToString("N0") <small>تومان</small></span>
                                 }
                             </div>
                             @if (_couponDiscount > 0)
@@ -325,7 +373,7 @@
 
                         <div class="price-total">
                             <span>مبلغ نهایی</span>
-                            <span class="price-total-amount">@((CartService.GetTotalAmount() + _shippingCost - _couponDiscount).ToString("N0")) <small>تومان</small></span>
+                            <span class="price-total-amount">@((CartService.GetTotalAmount() + EffectiveShippingCost - _couponDiscount).ToString("N0")) <small>تومان</small></span>
                         </div>
                     </div>
                 </div>
@@ -399,6 +447,10 @@
     .field-group { margin-bottom: 4px; }
     .field-label { display: block; font-size: 0.8rem; font-weight: 700; color: #475569; margin-bottom: 6px; }
     .field-label .optional { font-weight: 500; color: #cbd5e1; }
+    .field-label .req { color: #dc2626; }
+    .field-hint { font-size: 0.72rem; color: #94a3b8; margin-top: 4px; }
+    select.field-input { cursor: pointer; padding-inline-end: 34px; }
+    select.field-input:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
     .field-input {
         width: 100%; padding: 13px 16px; font-size: 0.88rem;
         border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc;
@@ -611,10 +663,35 @@
     private List<ShippingMethodDto> _shippingMethods = new();
     private int? _selectedShippingMethodId;
     private SiteSettingsDto? _shop;
+    private List<ProvinceDto> _provinces = new();
+    private List<CityDto> _cities = new();
+    private bool _citiesLoading;
+
+    private bool StructuredAddressEnabled => _shop?.EnableStructuredAddress == true;
+    private bool RequireProvinceCity => _shop?.RequireProvinceCity == true;
+    private bool RequirePostalCode => _shop?.RequirePostalCode == true;
+
+    private string AddressRegionText
+    {
+        get
+        {
+            var province = _provinces.FirstOrDefault(p => p.Id == request.ProvinceId)?.Name;
+            var city = _cities.FirstOrDefault(c => c.Id == request.CityId)?.Name;
+            if (string.IsNullOrWhiteSpace(province)) return city ?? string.Empty;
+            return string.IsNullOrWhiteSpace(city) ? province : $"{province} - {city}";
+        }
+    }
+
     private bool FreeShippingEnabled =>
         _shop != null && _shop.EnableFreeShipping && (_shop.FreeShippingThreshold ?? 0) > 0;
     private decimal _shippingCost => _shippingMethods.FirstOrDefault(m => m.Id == _selectedShippingMethodId)?.Price ?? 0;
     private bool _shippingIsFree => _shippingMethods.FirstOrDefault(m => m.Id == _selectedShippingMethodId)?.IsFree == true;
+    private bool ReachedFreeShippingThreshold =>
+        FreeShippingEnabled && CartService.GetTotalAmount() >= (_shop!.FreeShippingThreshold ?? decimal.MaxValue);
+    // همان قاعده‌ای که سرور در CreateOrder اعمال می‌کند؛ تا مبلغ نمایش‌داده‌شده
+    // با مبلغی که درگاه/سفارش ثبت می‌شود یکسان باشد.
+    private decimal EffectiveShippingCost =>
+        _shippingIsFree || ReachedFreeShippingThreshold ? 0 : _shippingCost;
     private string _shippingName => _shippingMethods.FirstOrDefault(m => m.Id == _selectedShippingMethodId)?.Name ?? "در انتظار انتخاب";
 
     private void SelectManual() { _selectedGatewayId = null; _ = SaveDraftAsync(); }
@@ -652,9 +729,13 @@
             request.PhoneNumber = me.PhoneNumber;
             request.Email = me.Email;
             request.Address = me.Address;
+            if (!string.IsNullOrWhiteSpace(me.PostalCode)) request.PostalCode = me.PostalCode;
             await InvokeAsync(StateHasChanged);
         }
         catch { }
+
+        if (StructuredAddressEnabled)
+            await LoadProvincesAsync();
 
         try
         {
@@ -676,9 +757,13 @@
         PhoneNumber = request.PhoneNumber,
         Email = request.Email,
         Address = request.Address,
+        ProvinceId = request.ProvinceId,
+        CityId = request.CityId,
+        PostalCode = request.PostalCode,
         ShippingMethodId = _selectedShippingMethodId,
         GatewayId = _selectedGatewayId,
-        CouponCode = _couponApplied ? _couponCode : null
+        CouponCode = _couponApplied ? _couponCode : null,
+        IdempotencyKey = _idempotencyKey
     });
 
     /// <summary>فرمی کاربر وسط کار رها کرده بود را برمی‌گرداند و همان بخش را برجسته می‌کند.</summary>
@@ -689,9 +774,14 @@
             var draft = await Recovery.LoadDraftAsync();
             if (draft == null) return;
 
+            if (!string.IsNullOrWhiteSpace(draft.IdempotencyKey))
+                _idempotencyKey = draft.IdempotencyKey;
+
             var hasContent = !string.IsNullOrWhiteSpace(draft.FullName)
                 || !string.IsNullOrWhiteSpace(draft.PhoneNumber)
                 || !string.IsNullOrWhiteSpace(draft.Address)
+                || draft.ProvinceId.HasValue
+                || !string.IsNullOrWhiteSpace(draft.PostalCode)
                 || draft.ShippingMethodId.HasValue
                 || draft.GatewayId.HasValue
                 || !string.IsNullOrWhiteSpace(draft.CouponCode);
@@ -701,6 +791,15 @@
             if (!string.IsNullOrWhiteSpace(draft.PhoneNumber)) request.PhoneNumber = draft.PhoneNumber;
             if (!string.IsNullOrWhiteSpace(draft.Email)) request.Email = draft.Email;
             if (!string.IsNullOrWhiteSpace(draft.Address)) request.Address = draft.Address;
+            if (!string.IsNullOrWhiteSpace(draft.PostalCode)) request.PostalCode = draft.PostalCode;
+
+            if (draft.ProvinceId.HasValue && _provinces.Any(p => p.Id == draft.ProvinceId.Value))
+            {
+                request.ProvinceId = draft.ProvinceId;
+                await LoadCitiesAsync(draft.ProvinceId.Value);
+                if (draft.CityId.HasValue && _cities.Any(c => c.Id == draft.CityId.Value))
+                    request.CityId = draft.CityId;
+            }
 
             if (draft.ShippingMethodId.HasValue && _shippingMethods.Any(m => m.Id == draft.ShippingMethodId.Value))
                 _selectedShippingMethodId = draft.ShippingMethodId;
@@ -749,6 +848,40 @@
         _selectedShippingMethodId = id;
         request.ShippingMethodId = id;
         _ = SaveDraftAsync();
+    }
+
+    // ─────────── آدرس ساختاریافته (استان/شهر/کد پستی) ───────────
+    private async Task LoadProvincesAsync()
+    {
+        try { _provinces = await Http.GetFromJsonAsync<List<ProvinceDto>>("api/locations/provinces") ?? new(); }
+        catch { _provinces = new(); }
+    }
+
+    private async Task LoadCitiesAsync(int provinceId)
+    {
+        _citiesLoading = true;
+        StateHasChanged();
+        try { _cities = await Http.GetFromJsonAsync<List<CityDto>>($"api/locations/cities/{provinceId}") ?? new(); }
+        catch { _cities = new(); }
+        finally { _citiesLoading = false; }
+    }
+
+    private async Task OnProvinceChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        request.ProvinceId = int.TryParse(value, out var id) ? id : null;
+        request.CityId = null;
+        _cities = new();
+        if (request.ProvinceId.HasValue)
+            await LoadCitiesAsync(request.ProvinceId.Value);
+        await SaveDraftAsync();
+    }
+
+    private async Task OnCityChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        request.CityId = int.TryParse(value, out var id) ? id : null;
+        await SaveDraftAsync();
     }
 
     private void OnCouponInputChanged(ChangeEventArgs e)
@@ -811,13 +944,41 @@
         if (string.IsNullOrWhiteSpace(request.Address)) { ToastService.ShowError("آدرس پستی را وارد کنید"); return; }
         if (request.Address.Length < 10) { ToastService.ShowError("آدرس بسیار کوتاه است"); return; }
 
+        if (StructuredAddressEnabled)
+        {
+            if (RequireProvinceCity && !request.ProvinceId.HasValue) { ToastService.ShowError("استان را انتخاب کنید"); return; }
+            if (RequireProvinceCity && !request.CityId.HasValue) { ToastService.ShowError("شهر را انتخاب کنید"); return; }
+            if (request.ProvinceId.HasValue && !request.CityId.HasValue) { ToastService.ShowError("شهر را انتخاب کنید"); return; }
+
+            request.PostalCode = OrderAddressHelper.NormalizePostalCode(request.PostalCode);
+            if (RequirePostalCode && !OrderAddressHelper.IsValidPostalCode(request.PostalCode))
+            {
+                ToastService.ShowError("کد پستی ۱۰ رقمی را کامل وارد کنید");
+                return;
+            }
+            if (!string.IsNullOrEmpty(request.PostalCode) && !OrderAddressHelper.IsValidPostalCode(request.PostalCode))
+            {
+                ToastService.ShowError("کد پستی باید ۱۰ رقم باشد");
+                return;
+            }
+        }
+        else
+        {
+            request.ProvinceId = null;
+            request.CityId = null;
+            request.PostalCode = null;
+        }
+
         isProcessing = true;
         try
         {
             request.Items = CartService.GetItems().Select(x => new OrderItemDto { ProductId = x.ProductId, ProductName = x.Name, Price = x.Price, Quantity = x.Quantity }).ToList();
             request.CouponCode = _couponApplied ? _couponCode : null;
             request.ShippingMethodId = _selectedShippingMethodId;
-            request.IdempotencyKey = _idempotencyKey;
+            request.IdempotencyKey = _idempotencyKey ??= Guid.NewGuid().ToString("N");
+            // کلید را قبل از ارسال ذخیره می‌کنیم تا اگر پاسخ گم شود، تلاش بعدی
+            // همان سفارش را بازیابی کند و سفارش دوم ساخته نشود.
+            await SaveDraftAsync();
             var response = await Http.PostAsJsonAsync("api/orders", request);
             if (response.IsSuccessStatusCode)
             {

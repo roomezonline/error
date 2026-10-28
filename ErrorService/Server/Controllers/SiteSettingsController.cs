@@ -3,6 +3,7 @@ using ErrorService.Server.Models;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
@@ -11,18 +12,34 @@ namespace ErrorService.Server.Controllers;
 [Route("api/[controller]")]
 public sealed class SiteSettingsController : ControllerBase
 {
+    private const string SettingsCacheTag = "site-settings";
+
     private readonly ErrorServiceDbContext _db;
     private readonly IWebHostEnvironment _env;
+    private readonly IOutputCacheStore _outputCache;
 
-    public SiteSettingsController(ErrorServiceDbContext db, IWebHostEnvironment env)
+    public SiteSettingsController(ErrorServiceDbContext db, IWebHostEnvironment env, IOutputCacheStore outputCache)
     {
         _db = db;
         _env = env;
+        _outputCache = outputCache;
     }
 
     [HttpGet]
-    [OutputCache(Duration = 60)]
+    [OutputCache(Duration = 60, Tags = new[] { SettingsCacheTag })]
     public async Task<ActionResult<SiteSettingsDto>> Get()
+    {
+        Response.Headers.CacheControl = "private, max-age=60";
+        return await BuildDtoAsync(includeSecrets: false);
+    }
+
+    // تنظیمات کامل فقط برای پنل ادمین؛ توکن‌ها و کلید AI هرگز در پاسخ عمومی قرار نمی‌گیرند.
+    [Authorize(Policy = "perm:admin.settings.manage")]
+    [HttpGet("admin")]
+    public async Task<ActionResult<SiteSettingsDto>> GetAdmin()
+        => await BuildDtoAsync(includeSecrets: true);
+
+    private async Task<SiteSettingsDto> BuildDtoAsync(bool includeSecrets)
     {
         SiteSettings? settings;
         var homeModulesAvailable = true;
@@ -78,13 +95,13 @@ public sealed class SiteSettingsController : ControllerBase
             HstsMaxAgeDays = settings.HstsMaxAgeDays,
             MaxImageUploadSizeKb = settings.MaxImageUploadSizeKb,
             ChartBaseUrl = settings.ChartBaseUrl,
-            BaleBotToken = settings.BaleBotToken,
+            BaleBotToken = includeSecrets ? settings.BaleBotToken : null,
             BaleBotGroupId = settings.BaleBotGroupId,
             EnableTelegramChat = settings.EnableTelegramChat,
-            TelegramBotToken = settings.TelegramBotToken,
+            TelegramBotToken = includeSecrets ? settings.TelegramBotToken : null,
             TelegramGroupId = settings.TelegramGroupId,
             EnableEitaaChat = settings.EnableEitaaChat,
-            EitaaBotToken = settings.EitaaBotToken,
+            EitaaBotToken = includeSecrets ? settings.EitaaBotToken : null,
             EitaaGroupId = settings.EitaaGroupId,
             ChatWelcomeMessage = settings.ChatWelcomeMessage,
             ChatEnableAutoMessage = settings.ChatEnableAutoMessage,
@@ -98,11 +115,13 @@ public sealed class SiteSettingsController : ControllerBase
             ChatAiProvider = settings.ChatAiProvider,
             ChatAiApiUrl = settings.ChatAiApiUrl,
             ChatAiModel = settings.ChatAiModel,
-            ChatAiApiKey = settings.ChatAiApiKey,
+            ChatAiApiKey = includeSecrets ? settings.ChatAiApiKey : null,
             ChatAiSystemPrompt = settings.ChatAiSystemPrompt,
             RequireReviewApproval = settings.RequireReviewApproval,
             EnableProductReviews = settings.EnableProductReviews,
             EnableReviewMedia = settings.EnableReviewMedia,
+            EnableVerifiedBuyerBadge = settings.EnableVerifiedBuyerBadge,
+            EnableReviewGallery = settings.EnableReviewGallery,
             EnableProductQna = settings.EnableProductQna,
             EnableSpecsTable = settings.EnableSpecsTable,
             EnablePriceHistoryChart = settings.EnablePriceHistoryChart,
@@ -117,6 +136,21 @@ public sealed class SiteSettingsController : ControllerBase
             FreeShippingThreshold = settings.FreeShippingThreshold,
             EnableReturnRequests = settings.EnableReturnRequests,
             EnableReorder = settings.EnableReorder,
+            EnableQuickView = settings.EnableQuickView,
+            EnableCompare = settings.EnableCompare,
+            CompareMaxItems = settings.CompareMaxItems,
+            EnableMegaMenu = settings.EnableMegaMenu,
+            EnableBreadcrumb = settings.EnableBreadcrumb,
+            EnableHomeStats = settings.EnableHomeStats,
+            ShowOrderCountStat = settings.ShowOrderCountStat,
+            EnableHomeErrorSearch = settings.EnableHomeErrorSearch,
+            HomeErrorSearchMaxResults = settings.HomeErrorSearchMaxResults,
+            EnableStructuredAddress = settings.EnableStructuredAddress,
+            RequireProvinceCity = settings.RequireProvinceCity,
+            RequirePostalCode = settings.RequirePostalCode,
+            EnableCustomerOrderCancel = settings.EnableCustomerOrderCancel,
+            CustomerCancelWindowHours = settings.CustomerCancelWindowHours,
+            CustomerCancelRequireReason = settings.CustomerCancelRequireReason,
             EnableHomeBestSellers = settings.EnableHomeBestSellers,
             EnableHomeRestocked = settings.EnableHomeRestocked,
             ShowEnamadSeal = settings.ShowEnamadSeal,
@@ -277,6 +311,8 @@ public sealed class SiteSettingsController : ControllerBase
         settings.RequireReviewApproval = dto.RequireReviewApproval;
         settings.EnableProductReviews = dto.EnableProductReviews;
         settings.EnableReviewMedia = dto.EnableReviewMedia;
+        settings.EnableVerifiedBuyerBadge = dto.EnableVerifiedBuyerBadge;
+        settings.EnableReviewGallery = dto.EnableReviewGallery;
         settings.EnableProductQna = dto.EnableProductQna;
         settings.EnableSpecsTable = dto.EnableSpecsTable;
         settings.EnablePriceHistoryChart = dto.EnablePriceHistoryChart;
@@ -291,11 +327,27 @@ public sealed class SiteSettingsController : ControllerBase
         settings.FreeShippingThreshold = dto.FreeShippingThreshold;
         settings.EnableReturnRequests = dto.EnableReturnRequests;
         settings.EnableReorder = dto.EnableReorder;
+        settings.EnableQuickView = dto.EnableQuickView;
+        settings.EnableCompare = dto.EnableCompare;
+        settings.CompareMaxItems = dto.CompareMaxItems <= 0 ? 4 : Math.Clamp(dto.CompareMaxItems, 2, 6);
+        settings.EnableMegaMenu = dto.EnableMegaMenu;
+        settings.EnableBreadcrumb = dto.EnableBreadcrumb;
+        settings.EnableHomeStats = dto.EnableHomeStats;
+        settings.ShowOrderCountStat = dto.ShowOrderCountStat;
+        settings.EnableHomeErrorSearch = dto.EnableHomeErrorSearch;
+        settings.HomeErrorSearchMaxResults = dto.HomeErrorSearchMaxResults <= 0 ? 6 : Math.Clamp(dto.HomeErrorSearchMaxResults, 3, 10);
+        settings.EnableStructuredAddress = dto.EnableStructuredAddress;
+        settings.RequireProvinceCity = dto.RequireProvinceCity;
+        settings.RequirePostalCode = dto.RequirePostalCode;
+        settings.EnableCustomerOrderCancel = dto.EnableCustomerOrderCancel;
+        settings.CustomerCancelWindowHours = Math.Clamp(dto.CustomerCancelWindowHours, 0, 720);
+        settings.CustomerCancelRequireReason = dto.CustomerCancelRequireReason;
         settings.EnableHomeBestSellers = dto.EnableHomeBestSellers;
         settings.EnableHomeRestocked = dto.EnableHomeRestocked;
         settings.ShowEnamadSeal = dto.ShowEnamadSeal;
 
         await _db.SaveChangesAsync();
+        try { await _outputCache.EvictByTagAsync(SettingsCacheTag, CancellationToken.None); } catch { }
         return NoContent();
     }
 
@@ -316,9 +368,11 @@ public sealed class SiteSettingsController : ControllerBase
         AddIfMissing(settings, SiteHomeModuleKey.TechnicalGuide, 22);
         AddIfMissing(settings, SiteHomeModuleKey.LatestNews, 20);
         AddIfMissing(settings, SiteHomeModuleKey.LatestProducts, 30);
-        AddIfMissing(settings, SiteHomeModuleKey.LatestAcademy, 40);
+        AddIfMissing(settings, SiteHomeModuleKey.LatestAcademy, 44);
+        AddIfMissing(settings, SiteHomeModuleKey.AcademyHub, 40);
         AddIfMissing(settings, SiteHomeModuleKey.LatestCourses, 41);
         AddIfMissing(settings, SiteHomeModuleKey.LatestArticles, 42);
+        AddIfMissing(settings, SiteHomeModuleKey.TrustStrip, 47);
         AddIfMissing(settings, SiteHomeModuleKey.TeamMembers, 50);
         AddIfMissing(settings, SiteHomeModuleKey.Stories, 5);
         return unknown.Count > 0;

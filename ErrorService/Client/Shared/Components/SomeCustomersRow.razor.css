@@ -7,8 +7,12 @@
 }
 
 .customers-card__header {
-    text-align: center;
-    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 25px;
+    margin-bottom: 6px;
 }
 
 .customers-card__title {
@@ -27,49 +31,28 @@
     color: #f59e0b;
 }
 
-.customers-marquee {
-    position: relative;
-    overflow: hidden;
-    padding: 0;
-    --customers-marquee-duration: 60s;
-    direction: ltr;
-}
-
-.customers-marquee__track {
+.customers-track {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 14px;
-    width: max-content;
-    will-change: transform;
-    animation: customers-marquee-scroll var(--customers-marquee-duration) linear infinite;
+    overflow-x: auto;
+    padding: 18px 25px 10px;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline-start: 25px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
 }
 
-.customers-marquee__segment {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    flex: 0 0 auto;
-}
-
-@keyframes customers-marquee-scroll {
-    from { transform: translateX(-10%); }
-    to { transform: translateX(0); }
-}
-
-.customers-marquee:hover .customers-marquee__track {
-    animation-play-state: paused;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .customers-marquee__track {
-        animation: none;
-    }
+.customers-track::-webkit-scrollbar {
+    display: none;
 }
 
 .customer-item {
     text-decoration: none;
     color: inherit;
     flex: 0 0 auto;
+    scroll-snap-align: start;
 }
 
 .customer-item__card {
@@ -158,10 +141,25 @@
     text-overflow: ellipsis;
 }
 
+@media (min-width: 768px) {
+    .customers-track {
+        scroll-snap-type: none;
+    }
+}
+
 @media (max-width: 768px) {
     .customers-card {
         padding: 20px 0;
         margin: 1.5rem 0;
+    }
+
+    .customers-card__header {
+        padding: 0 16px;
+    }
+
+    .customers-track {
+        padding: 18px 16px 10px;
+        scroll-padding-inline-start: 16px;
     }
 
     .customer-item__card {

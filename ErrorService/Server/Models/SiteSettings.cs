@@ -72,6 +72,8 @@ public sealed class SiteSettings
     // ===== تنظیمات فروشگاه (کلیدهای فعال/غیرفعال سازی امکانات) =====
     public bool EnableProductReviews { get; set; } = true;
     public bool EnableReviewMedia { get; set; }
+    public bool EnableVerifiedBuyerBadge { get; set; } = true;
+    public bool EnableReviewGallery { get; set; } = true;
     public bool EnableProductQna { get; set; }
     public bool EnableSpecsTable { get; set; } = true;
     public bool EnablePriceHistoryChart { get; set; }
@@ -87,6 +89,31 @@ public sealed class SiteSettings
     public decimal? FreeShippingThreshold { get; set; }
     public bool EnableReturnRequests { get; set; }
     public bool EnableReorder { get; set; }
+
+    // ===== کارت محصول: نمایش سریع و مقایسه =====
+    public bool EnableQuickView { get; set; } = true;
+    public bool EnableCompare { get; set; } = true;
+    public int CompareMaxItems { get; set; } = 4;
+
+    // ===== ناوبری و صفحه اصلی: مگامنو، بردکرامب، شمارنده‌ها =====
+    public bool EnableMegaMenu { get; set; } = true;
+    public bool EnableBreadcrumb { get; set; } = true;
+    public bool EnableHomeStats { get; set; } = true;
+    public bool ShowOrderCountStat { get; set; } = true;
+    public bool EnableHomeErrorSearch { get; set; } = true;
+    public int HomeErrorSearchMaxResults { get; set; } = 6;
+
+    // ===== تسویه‌حساب: آدرس ساختاریافته =====
+    public bool EnableStructuredAddress { get; set; } = true;
+    public bool RequireProvinceCity { get; set; }
+    public bool RequirePostalCode { get; set; }
+
+    // ===== لغو سفارش توسط مشتری =====
+    public bool EnableCustomerOrderCancel { get; set; } = true;
+    /// <summary>مهلت لغو از زمان ثبت سفارش (ساعت)؛ صفر = بدون محدودیت تا مهلت پرداخت.</summary>
+    public int CustomerCancelWindowHours { get; set; } = 24;
+    public bool CustomerCancelRequireReason { get; set; } = true;
+
     public bool EnableHomeBestSellers { get; set; } = true;
     public bool EnableHomeRestocked { get; set; } = true;
     public bool ShowEnamadSeal { get; set; } = true;

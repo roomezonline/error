@@ -130,7 +130,7 @@
                                                 @foreach (var img in r.Images.OrderBy(x => x.SortOrder))
                                                 {
                                                     <div class="gallery-item" @onclick:stopPropagation @onclick="() => OpenImage(img.Url, img.Title)">
-                                                        <img src="@img.Url" alt="@img.Title" />
+                                                        <img src="@ImageUrlHelper.Thumb(img.Url, 400)" loading="lazy" decoding="async" alt="@img.Title" />
                                                         <div class="img-overlay"><span class="oi oi-zoom-in"></span></div>
                                                     </div>
                                                 }
@@ -162,7 +162,7 @@
             </div>
             <div class="modal-body">
                 <div class="zoom-wrap">
-                    <img src="@selectedImageUrl" alt="@selectedImageTitle" class="zoom-image" />
+                    <img src="@selectedImageUrl" alt="@selectedImageTitle" class="zoom-image" decoding="async" />
                 </div>
             </div>
         </div>

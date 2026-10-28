@@ -52,7 +52,7 @@
                                     @if (!string.IsNullOrWhiteSpace(imagePreviewUrl))
                                     {
                                         <div class="position-relative d-inline-block">
-                                            <img src="@imagePreviewUrl" class="img-fluid rounded-4 border" style="max-height: 150px;" />
+                                            <img src="@imagePreviewUrl" class="img-fluid rounded-4 border" style="max-height: 150px;" decoding="async" />
                                             <button type="button" class="btn btn-sm btn-danger rounded-circle position-absolute top-0 start-0 m-n2 shadow-sm" @onclick="ClearSelectedImage" style="width:24px;height:24px;padding:0;line-height:1;">&times;</button>
                                         </div>
                                     }
@@ -204,7 +204,7 @@
                                 @if (!string.IsNullOrEmpty(selectedTicket.ImageUrl))
                                 {
                                     <a href="@selectedTicket.ImageUrl" target="_blank">
-                                        <img src="@selectedTicket.ImageUrl" class="img-fluid rounded-3 mt-3 border shadow-sm" style="max-height: 250px;" />
+                                        <img src="@selectedTicket.ImageUrl" class="img-fluid rounded-3 mt-3 border shadow-sm" style="max-height: 250px;" loading="lazy" decoding="async" />
                                     </a>
                                 }
                                 

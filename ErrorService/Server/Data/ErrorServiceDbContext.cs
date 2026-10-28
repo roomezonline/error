@@ -1,4 +1,5 @@
 using ErrorService.Server.Models;
+using ErrorService.Shared;
 using ErrorService.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -45,6 +46,7 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<AppUser> Users { get; set; }
     public DbSet<ErrorCode> ErrorCodes { get; set; }
     public DbSet<ErrorCodeDocument> ErrorCodeDocuments { get; set; }
+    public DbSet<ErrorCodeFaq> ErrorCodeFaqs { get; set; }
     public DbSet<ErrorCodeCatalogItem> ErrorCodeCatalogItems { get; set; }
     public DbSet<ConsultationTicket> ConsultationTickets { get; set; }
     public DbSet<TicketReply> TicketReplies { get; set; }
@@ -129,6 +131,8 @@ public sealed class ErrorServiceDbContext : DbContext
 
     public DbSet<BackupSettings> BackupSettings { get; set; }
     public DbSet<BackupHistory> BackupHistories { get; set; }
+
+    public DbSet<HostInfoSettings> HostInfoSettings { get; set; }
 
     public DbSet<Project> Projects { get; set; }
     public DbSet<ProjectImage> ProjectImages { get; set; }
@@ -1072,6 +1076,9 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasIndex(x => x.PhoneNumber);
             entity.HasIndex(x => x.TrackingNumber);
             entity.HasIndex(x => new { x.Status, x.CreatedAt });
+            // پاک‌سازی خودکار: یافتن سریع سفارش‌های منقضی‌شده
+            entity.HasIndex(x => new { x.Status, x.ExpiresAt });
+            entity.Property(x => x.Origin).HasDefaultValue(OrderOrigin.Customer);
             // جلوگیری از ثبت سفارش تکراری در اثر کلیک دوباره (فقط ردیف‌های دارای کلید)
             entity.HasIndex(x => x.IdempotencyKey).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
 
@@ -1100,6 +1107,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.PasswordPlain).HasMaxLength(100);
             entity.HasIndex(x => x.PhoneNumber).IsUnique();
             entity.HasIndex(x => x.IsDeleted);
+            entity.Property(x => x.CartRevision).HasDefaultValue(0L);
         });
 
         modelBuilder.Entity<ErrorCode>(entity =>
@@ -1109,6 +1117,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.DeviceType).IsRequired().HasMaxLength(100);
             entity.Property(x => x.Code).IsRequired().HasMaxLength(50);
             entity.Property(x => x.ImageUrl).HasMaxLength(500);
+            entity.Property(x => x.VideoUrl).HasMaxLength(500);
             entity.Property(x => x.Category).HasMaxLength(100);
             entity.HasIndex(x => new { x.Brand, x.DeviceType, x.Code }).IsUnique();
 
@@ -1116,6 +1125,19 @@ public sealed class ErrorServiceDbContext : DbContext
                 .WithOne()
                 .HasForeignKey(x => x.ErrorCodeId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(x => x.Faqs)
+                .WithOne()
+                .HasForeignKey(x => x.ErrorCodeId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ErrorCodeFaq>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Question).IsRequired().HasMaxLength(300);
+            entity.Property(x => x.Answer).IsRequired().HasMaxLength(2000);
+            entity.HasIndex(x => new { x.ErrorCodeId, x.SortOrder });
         });
 
         modelBuilder.Entity<ErrorCodeDocument>(entity =>
@@ -1387,6 +1409,11 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.SmtpPassword).HasMaxLength(500);
             entity.Property(x => x.SmtpFromName).HasMaxLength(200);
             entity.Property(x => x.SmtpFromEmail).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<HostInfoSettings>(entity =>
+        {
+            entity.HasKey(x => x.Id);
         });
 
         modelBuilder.Entity<BackupHistory>(entity =>

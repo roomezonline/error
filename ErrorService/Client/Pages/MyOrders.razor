@@ -47,6 +47,9 @@
                                 </div>
                                 <div class="d-flex align-items-center gap-2">
                                     <span class="badge fs-6 px-3 py-2 rounded-pill" style="@OrderDisplayHelper.SolidBadgeStyle(order)">@OrderDisplayHelper.Label(order)</span>
+                                    <a href="/my-orders/@order.Id" class="btn btn-outline-secondary rounded-pill btn-sm fw-bold">
+                                        جزئیات سفارش
+                                    </a>
                                 </div>
                             </div>
 
@@ -181,6 +184,7 @@
 
     private string GetStatusText(OrderStatus status) => status switch
     {
+        OrderStatus.Draft => "پیش‌فاکتور",
         OrderStatus.PendingPayment => "در انتظار پرداخت",
         OrderStatus.ReceiptUploaded => "در انتظار تایید",
         OrderStatus.Approved => "تایید شده",
@@ -192,6 +196,7 @@
 
     private string GetStatusBadgeClass(OrderStatus status) => status switch
     {
+        OrderStatus.Draft => "text-white",
         OrderStatus.PendingPayment => "bg-warning text-dark",
         OrderStatus.ReceiptUploaded => "bg-info text-white",
         OrderStatus.Approved => "bg-success text-white",

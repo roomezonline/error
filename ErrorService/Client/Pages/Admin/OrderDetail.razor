@@ -41,7 +41,7 @@ else
                     <span class="od-header-date">@PersianDate.ToJalaliDateTime(order.CreatedAt)</span>
                 </div>
                 <span class="od-status-badge @GetStatusBadgeClass(order.Status)">@GetStatusLabel(order.Status)</span>
-                <a class="od-back-btn" href="@InvoiceUrl" target="_blank" rel="noopener" title="چاپ فاکتور" style="text-decoration:none">
+                <a class="od-back-btn" href="@InvoiceUrl" target="_blank" rel="noopener" title="@(order.Status == OrderStatus.Draft ? "چاپ پیش‌فاکتور" : "چاپ فاکتور")" style="text-decoration:none">
                     <span class="oi oi-print"></span>
                 </a>
             </div>
@@ -83,6 +83,64 @@ else
                 <span class="od-summary-label">موبایل</span>
             </div>
         </div>
+
+        @if (order.Status is OrderStatus.Draft or OrderStatus.PendingPayment or OrderStatus.ReceiptUploaded)
+        {
+            <div class="od-admin-actions">
+                <div class="od-admin-actions-title">
+                    <span class="oi oi-briefcase"></span>
+                    اقدامات پرداخت و پیش‌فاکتور
+                </div>
+
+                @if (order.Status == OrderStatus.Draft)
+                {
+                    <div class="od-admin-hint">
+                        این سند پیش‌فاکتور است؛ موجودی رزرو نشده و تا زمان انتشار برای مشتری قابل پرداخت نیست.
+                    </div>
+                }
+                else if (order.ExpiresAt.HasValue)
+                {
+                    <div class="od-admin-hint">مهلت پرداخت: @PersianDate.ToJalaliDateTime(order.ExpiresAt.Value)</div>
+                }
+
+                <div class="od-admin-actions-grid">
+                    @if (order.Status == OrderStatus.Draft)
+                    {
+                        <button class="od-btn od-btn-primary" @onclick="EditDraft" disabled="@isSaving">
+                            <span class="oi oi-pencil"></span> ویرایش پیش‌فاکتور
+                        </button>
+                        <button class="od-btn od-btn-approve" @onclick="PublishDraft" disabled="@(isSaving || isPublishing)">
+                            @if (isPublishing) { <span class="od-btn-spinner"></span> }
+                            <span class="oi oi-check"></span> انتشار و فعال‌سازی پرداخت
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="od-btn od-btn-approve" @onclick="OpenMarkPaid" disabled="@isSaving">
+                            <span class="oi oi-credit-card"></span> ثبت پرداخت دستی
+                        </button>
+                        <button class="od-btn od-btn-primary" @onclick="CopyPaymentLink" disabled="@isSaving">
+                            <span class="oi oi-link-intact"></span> کپی لینک پرداخت
+                        </button>
+                        @if (!string.IsNullOrWhiteSpace(order.PaymentAuthority))
+                        {
+                            <button class="od-btn od-btn-secondary" @onclick="VerifyPayment" disabled="@(isSaving || isVerifying)">
+                                @if (isVerifying) { <span class="od-btn-spinner"></span> }
+                                <span class="oi oi-loop-circular"></span> استعلام پرداخت آنلاین
+                            </button>
+                        }
+                        <button class="od-btn od-btn-secondary" @onclick="OpenExtend" disabled="@isSaving">
+                            <span class="oi oi-clock"></span> تمدید مهلت پرداخت
+                        </button>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(order.PaymentAuthority))
+                {
+                    <div class="od-admin-hint ltr" style="word-break:break-all;direction:ltr;text-align:left;">Authority: @order.PaymentAuthority</div>
+                }
+            </div>
+        }
 
         @if (order.Status == OrderStatus.ReceiptUploaded)
         {
@@ -778,6 +836,80 @@ else
                IsDanger="true"
                OnResult="HandleDeleteReturnResult" />
 
+@if (showMarkPaidModal)
+{
+    <div class="od-modal-overlay" @onclick="() => showMarkPaidModal = false">
+        <div class="od-modal" @onclick:stopPropagation>
+            <div class="od-modal-header">
+                <h6 class="od-modal-title">ثبت پرداخت دستی</h6>
+                <button class="btn-close" @onclick="() => showMarkPaidModal = false"></button>
+            </div>
+            <div class="od-modal-body">
+                <div style="background:#eff6ff;border-radius:10px;padding:12px;margin-bottom:16px;">
+                    <div style="font-size:0.82rem;color:#64748b;">مبلغ قابل ثبت</div>
+                    <div style="font-size:1.1rem;font-weight:800;color:#1d4ed8;">@((order.TotalAmount - (order.DiscountAmount ?? 0)).ToString("N0")) تومان</div>
+                </div>
+                @if (order.Status == OrderStatus.Draft)
+                {
+                    <div class="od-admin-hint" style="margin-bottom:12px">
+                        با ثبت پرداخت، این پیش‌فاکتور به سفارش تأییدشده تبدیل می‌شود و موجودی/کوپن مصرف می‌شود.
+                    </div>
+                }
+                <div class="od-field">
+                    <label>روش پرداخت *</label>
+                    <select class="od-select" @bind="markPaid.PaymentMethod">
+                        <option value="cash">نقدی</option>
+                        <option value="card_to_card">کارت به کارت</option>
+                        <option value="pos">دستگاه کارتخوان</option>
+                        <option value="transfer">انتقال بانکی</option>
+                        <option value="other">سایر</option>
+                    </select>
+                </div>
+                <div class="od-field">
+                    <label>شماره پیگیری / مرجع</label>
+                    <input class="od-input ltr" @bind="markPaid.Reference" placeholder="اختیاری" />
+                </div>
+                <div class="od-field">
+                    <label>یادداشت</label>
+                    <input class="od-input" @bind="markPaid.Notes" placeholder="اختیاری" />
+                </div>
+                <div class="od-field-row">
+                    <button class="od-btn od-btn-primary" @onclick="SubmitMarkPaid" disabled="@isSaving">
+                        @if (isSaving) { <span class="od-btn-spinner"></span> }
+                        ثبت و تأیید پرداخت
+                    </button>
+                    <button class="od-btn od-btn-ghost" @onclick="() => showMarkPaidModal = false">انصراف</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showExtendModal)
+{
+    <div class="od-modal-overlay" @onclick="() => showExtendModal = false">
+        <div class="od-modal" @onclick:stopPropagation>
+            <div class="od-modal-header">
+                <h6 class="od-modal-title">تمدید مهلت پرداخت</h6>
+                <button class="btn-close" @onclick="() => showExtendModal = false"></button>
+            </div>
+            <div class="od-modal-body">
+                <div class="od-field">
+                    <label>مهلت جدید از الان (ساعت)</label>
+                    <input class="od-input ltr" type="number" min="1" max="168" @bind="extendHours" />
+                </div>
+                <div class="od-field-row">
+                    <button class="od-btn od-btn-primary" @onclick="SubmitExtend" disabled="@isSaving">
+                        @if (isSaving) { <span class="od-btn-spinner"></span> }
+                        تمدید مهلت
+                    </button>
+                    <button class="od-btn od-btn-ghost" @onclick="() => showExtendModal = false">انصراف</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
     .ltr { direction: ltr; text-align: left; }
 
@@ -849,6 +981,14 @@ else
     .od-badge-danger { background: #fca5a5; color: #991b1b; }
     .od-badge-muted { background: #cbd5e1; color: #475569; }
     .od-badge-done { background: #34d399; color: #fff; }
+    .od-badge-draft { background: #ddd6fe; color: #5b21b6; }
+
+    .od-admin-actions { background: linear-gradient(135deg, #f5f3ff, #eef2ff); border: 2px solid #c4b5fd; border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+    .od-admin-actions-title { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 0.95rem; color: #5b21b6; margin-bottom: 10px; }
+    .od-admin-actions-title .oi { color: #7c3aed; font-size: 1.05rem; }
+    .od-admin-hint { font-size: 0.78rem; color: #6d28d9; background: rgba(255,255,255,0.75); border-radius: 8px; padding: 7px 10px; margin-bottom: 10px; }
+    .od-admin-actions-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .od-admin-actions-grid .od-btn { flex: 1 1 180px; min-height: 42px; }
 
     .od-next-action {
         display: flex;
@@ -1537,6 +1677,13 @@ else
     private bool showDeleteReturnConfirm = false;
     private OrderReturnDto? returnToDelete;
 
+    private bool showMarkPaidModal = false;
+    private AdminOrderMarkPaidRequest markPaid = new();
+    private bool showExtendModal = false;
+    private int extendHours = 24;
+    private bool isPublishing = false;
+    private bool isVerifying = false;
+
     protected override async Task OnInitializedAsync()
     {
         await LoadOrder();
@@ -1624,7 +1771,7 @@ else
     }
 
     private bool CanShowStageChange() => order != null
-        && order.Status is not (OrderStatus.Rejected or OrderStatus.Cancelled or OrderStatus.PendingPayment);
+        && order.Status is not (OrderStatus.Rejected or OrderStatus.Cancelled or OrderStatus.PendingPayment or OrderStatus.Draft);
 
     private async Task UpdateStage()
     {
@@ -1880,8 +2027,163 @@ else
         catch (Exception ex) { ToastService.ShowError(ex.Message); }
     }
 
+    private void EditDraft()
+    {
+        if (order == null) return;
+        Nav.NavigateTo($"/admin/shop-assist?order={order.Id}");
+    }
+
+    private async Task PublishDraft()
+    {
+        if (order == null || isPublishing) return;
+        isPublishing = true;
+        try
+        {
+            var resp = await Http.PostAsync($"api/orders/admin/{order.Id}/publish", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("پیش‌فاکتور منتشر شد و آماده پرداخت است.");
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "انتشار پیش‌فاکتور ناموفق بود." : msg);
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isPublishing = false; }
+    }
+
+    private void OpenMarkPaid()
+    {
+        markPaid = new AdminOrderMarkPaidRequest { PaymentMethod = "cash" };
+        showMarkPaidModal = true;
+    }
+
+    private async Task SubmitMarkPaid()
+    {
+        if (order == null || isSaving) return;
+        isSaving = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"api/orders/admin/{order.Id}/mark-paid", markPaid);
+            if (resp.IsSuccessStatusCode)
+            {
+                showMarkPaidModal = false;
+                ToastService.ShowSuccess("پرداخت ثبت و سفارش تأیید شد.");
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "ثبت پرداخت ناموفق بود." : msg);
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private async Task VerifyPayment()
+    {
+        if (order == null || isVerifying) return;
+        isVerifying = true;
+        try
+        {
+            var resp = await Http.PostAsync($"api/orders/admin/{order.Id}/payment/verify", null);
+            var body = await resp.Content.ReadAsStringAsync();
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("پرداخت آنلاین تأیید شد.");
+                await LoadOrder();
+            }
+            else
+            {
+                ToastService.ShowError(ExtractMessage(body, "تأیید پرداخت ناموفق بود."));
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isVerifying = false; }
+    }
+
+    private async Task CopyPaymentLink()
+    {
+        if (order == null || isSaving) return;
+        isSaving = true;
+        try
+        {
+            var link = await Http.GetFromJsonAsync<AdminPaymentLinkDto>($"api/orders/admin/{order.Id}/payment-link");
+            if (link == null || string.IsNullOrWhiteSpace(link.Url))
+            {
+                ToastService.ShowError("لینک پرداخت در دسترس نیست.");
+                return;
+            }
+
+            var absolute = Nav.ToAbsoluteUri(link.Url).ToString();
+            try
+            {
+                await JS.InvokeVoidAsync("navigator.clipboard.writeText", absolute);
+                ToastService.ShowSuccess("لینک پرداخت کپی شد.");
+            }
+            catch
+            {
+                await JS.InvokeVoidAsync("prompt", "لینک پرداخت را کپی کنید:", absolute);
+            }
+        }
+        catch (Exception)
+        {
+            var resp = await Http.GetAsync($"api/orders/admin/{order.Id}/payment-link");
+            var msg = await resp.Content.ReadAsStringAsync();
+            ToastService.ShowError(ExtractMessage(msg, "لینک پرداخت در دسترس نیست."));
+        }
+        finally { isSaving = false; }
+    }
+
+    private void OpenExtend()
+    {
+        extendHours = 24;
+        showExtendModal = true;
+    }
+
+    private async Task SubmitExtend()
+    {
+        if (order == null || isSaving) return;
+        isSaving = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"api/orders/admin/{order.Id}/extend", new AdminOrderExtendRequest { Hours = extendHours });
+            if (resp.IsSuccessStatusCode)
+            {
+                showExtendModal = false;
+                ToastService.ShowSuccess("مهلت پرداخت تمدید شد.");
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "تمدید مهلت ناموفق بود." : msg);
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private static string ExtractMessage(string body, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return fallback;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("message", out var m) && !string.IsNullOrWhiteSpace(m.GetString()))
+                return m.GetString()!;
+        }
+        catch (System.Text.Json.JsonException) { }
+        return body;
+    }
+
     private string GetStatusLabel(OrderStatus s) => s switch
     {
+        OrderStatus.Draft => "پیش‌فاکتور",
         OrderStatus.PendingPayment => "در انتظار پرداخت",
         OrderStatus.ReceiptUploaded => "رسید آپلود شد",
         OrderStatus.Approved => "تایید شده",
@@ -1893,6 +2195,7 @@ else
 
     private string GetStatusClass(OrderStatus s) => s switch
     {
+        OrderStatus.Draft => "om-badge-draft",
         OrderStatus.PendingPayment => "bg-warning-subtle text-warning",
         OrderStatus.ReceiptUploaded => "bg-info-subtle text-info",
         OrderStatus.Approved => "bg-success-subtle text-success",
@@ -1904,6 +2207,7 @@ else
 
     private string GetStatusBadgeClass(OrderStatus s) => s switch
     {
+        OrderStatus.Draft => "od-badge-draft",
         OrderStatus.PendingPayment => "od-badge-warning",
         OrderStatus.ReceiptUploaded => "od-badge-info",
         OrderStatus.Approved => "od-badge-success",
@@ -1963,6 +2267,15 @@ else
         "return_refunded" => "واریز مرجوعی",
         "return_deleted" => "حذف مرجوعی",
         "deleted" => "حذف سفارش",
+        "draft_created" => "ایجاد پیش‌فاکتور",
+        "draft_updated" => "ویرایش پیش‌فاکتور",
+        "draft_published" => "انتشار پیش‌فاکتور",
+        "created_by_admin" => "ایجاد سفارش توسط مدیر",
+        "payment.recorded_by_admin" => "ثبت پرداخت دستی",
+        "payment.verified_by_admin" => "تأیید پرداخت آنلاین توسط مدیر",
+        "payment.duplicate_succeeded" => "پرداخت تکراری",
+        "payment.succeeded_after_cancel" => "پرداخت پس از لغو",
+        "expiry_extended" => "تمدید مهلت پرداخت",
         _ => e.EventType
     };
 
@@ -1978,6 +2291,11 @@ else
         "return_refunded" => "od-event-icon-green",
         "return_deleted" => "od-event-icon-red",
         "info_updated" => "od-event-icon-blue",
+        "draft_created" or "draft_updated" or "created_by_admin" => "od-event-icon-blue",
+        "draft_published" => "od-event-icon-green",
+        "payment.recorded_by_admin" or "payment.verified_by_admin" => "od-event-icon-green",
+        "payment.duplicate_succeeded" or "payment.succeeded_after_cancel" => "od-event-icon-amber",
+        "expiry_extended" => "od-event-icon-amber",
         _ => "od-event-icon-gray"
     };
 
@@ -1994,6 +2312,13 @@ else
         "return_created" => "oi-action-undo",
         "return_refunded" => "oi-credit-card",
         "return_deleted" => "oi-x",
+        "draft_created" or "draft_updated" => "oi-document",
+        "draft_published" => "oi-check",
+        "created_by_admin" => "oi-plus",
+        "payment.recorded_by_admin" => "oi-credit-card",
+        "payment.verified_by_admin" => "oi-loop-circular",
+        "payment.duplicate_succeeded" or "payment.succeeded_after_cancel" => "oi-warning",
+        "expiry_extended" => "oi-clock",
         _ => "oi-record"
     };
 
@@ -2040,6 +2365,7 @@ else
 
     private List<OrderStatus> GetValidTransitions() => order?.Status switch
     {
+        OrderStatus.Draft => new() { OrderStatus.Cancelled },
         OrderStatus.PendingPayment => new() { OrderStatus.ReceiptUploaded, OrderStatus.Approved, OrderStatus.Rejected, OrderStatus.Cancelled },
         OrderStatus.ReceiptUploaded => new() { OrderStatus.Approved, OrderStatus.Rejected, OrderStatus.Cancelled },
         OrderStatus.Approved => new() { OrderStatus.Completed, OrderStatus.Rejected, OrderStatus.Cancelled },

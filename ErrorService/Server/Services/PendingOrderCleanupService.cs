@@ -1,4 +1,5 @@
 using ErrorService.Server.Data;
+using ErrorService.Server.Models;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
@@ -55,16 +56,23 @@ public sealed class PendingOrderCleanupService : BackgroundService
 
                 var timeoutMinutes = PendingOrderTimeout.GetMinutes(
                     scope.ServiceProvider.GetRequiredService<IConfiguration>());
-                var cutoff = DateTimeOffset.UtcNow.AddMinutes(-timeoutMinutes);
+                var now = DateTimeOffset.UtcNow;
+                var cutoff = now.AddMinutes(-timeoutMinutes);
 
-                var expiredOrders = await db.Orders
-                    .Where(o => o.Status == OrderStatus.PendingPayment && o.CreatedAt < cutoff)
+                // سفارش‌های ادمین مهلت اختصاصی (ExpiresAt) دارند؛ سفارش‌های قدیمی
+                // بدون ExpiresAt با همان قاعدهٔ ۳۰ دقیقه از زمان ایجاد منقضی می‌شوند.
+                // پیش‌فاکتور (Draft) هرگز به‌صورت خودکار لغو نمی‌شود.
+                var expiredOrders = await db.Orders.AsNoTracking()
+                    .Where(o => o.Status == OrderStatus.PendingPayment
+                        && ((o.ExpiresAt != null && o.ExpiresAt < now)
+                            || (o.ExpiresAt == null && o.CreatedAt < cutoff)))
+                    .Select(o => new { o.Id, o.CouponId, o.StockDeducted })
                     .ToListAsync(stoppingToken);
 
                 _logger.LogInformation(
                     "Cleanup tick #{Seq}: cutoff={Cutoff} (timeout={Timeout}m), found {Count} expired order(s) [{Ids}]",
                     _tick, cutoff, timeoutMinutes, expiredOrders.Count,
-                    string.Join(",", expiredOrders.Select(o => $"{o.Id}(sd={o.StockDeducted},created={o.CreatedAt:O})")));
+                    string.Join(",", expiredOrders.Select(o => $"{o.Id}(sd={o.StockDeducted})")));
 
                 if (expiredOrders.Count > 0)
                 {
@@ -73,30 +81,56 @@ public sealed class PendingOrderCleanupService : BackgroundService
                         expiredOrders.Count,
                         string.Join(",", expiredOrders.Select(o => o.Id)));
 
-                    // یک تراکنش برای کل چرخه: برگرداندن موجودی و آزادسازی کوپن با
-                    // SQL مستقل انجام می‌شوند؛ بدون تراکنش، خطای بعدی باعث اجرای
-                    // دوبارهٔ آن‌ها در چرخهٔ بعدی می‌شد (کم/زیاد شدن اشتباه موجودی).
+                    // لغو و بازگرداندن موجودی باید در یک تراکنش باشد. علاوه بر آن،
+                    // تغییر وضعیت با UPDATE شرطی انجام می‌شود تا اگر در همین لحظه
+                    // پرداخت/ادمین سفارش را تغییر داده باشد، لغو خودکار آن را
+                    // بازنویسی نکند (منبع اصلی باگ «پرداخت شد ولی لغو ماند»).
                     await using var tx = await db.Database.BeginTransactionAsync(stoppingToken);
 
-                    var shouldRestoreFlags = new Dictionary<int, bool>();
-                    var restoredRowsById = new Dictionary<int, int>();
+                    var cancelledCount = 0;
                     var stockRestored = false;
 
-                    foreach (var order in expiredOrders)
+                    foreach (var candidate in expiredOrders)
                     {
-                        // موجودی‌ای که هنگام ثبت سفارش رزرو شده باید برگردد؛
-                        // وگرنه موجودی محصول به‌صورت دائم کم می‌ماند.
-                        var shouldRestore = order.StockDeducted;
-                        var restoredRows = 0;
-                        if (order.StockDeducted)
+                        // ابتدا سفارشی را claim می‌کنیم که موجودی رزرو کرده است.
+                        var claimedWithStock = await db.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE Orders
+SET Status = {(int)OrderStatus.Cancelled}, StockDeducted = 0, UpdatedAt = {now}
+WHERE Id = {candidate.Id}
+  AND Status = {(int)OrderStatus.PendingPayment}
+  AND ((ExpiresAt IS NOT NULL AND ExpiresAt < {now}) OR (ExpiresAt IS NULL AND CreatedAt < {cutoff}))
+  AND StockDeducted = 1", stoppingToken);
+
+                        var claimed = claimedWithStock > 0;
+                        if (!claimed)
                         {
-                            var items = await db.OrderItems
-                                .Where(i => i.OrderId == order.Id)
+                            // سفارش‌های قدیمی که موجودی‌شان قبلاً آزاد شده است.
+                            claimed = await db.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE Orders
+SET Status = {(int)OrderStatus.Cancelled}, UpdatedAt = {now}
+WHERE Id = {candidate.Id}
+  AND Status = {(int)OrderStatus.PendingPayment}
+  AND ((ExpiresAt IS NOT NULL AND ExpiresAt < {now}) OR (ExpiresAt IS NULL AND CreatedAt < {cutoff}))", stoppingToken) > 0;
+                        }
+
+                        if (!claimed)
+                        {
+                            _logger.LogInformation(
+                                "Cleanup skipped order {OrderId}: status changed concurrently (probably paid or edited)",
+                                candidate.Id);
+                            continue;
+                        }
+
+                        var restoredRows = 0;
+                        if (claimedWithStock > 0)
+                        {
+                            var items = await db.OrderItems.AsNoTracking()
+                                .Where(i => i.OrderId == candidate.Id)
                                 .ToListAsync(stoppingToken);
 
                             _logger.LogInformation(
-                                "Cleanup order {OrderId}: stockDeducted={SD}, items={Count} [{Products}]",
-                                order.Id, order.StockDeducted, items.Count,
+                                "Cleanup order {OrderId}: restoring {Count} item(s) [{Products}]",
+                                candidate.Id, items.Count,
                                 string.Join(",", items.Select(i => $"{i.ProductId}x{i.Quantity}")));
 
                             foreach (var item in items)
@@ -106,34 +140,37 @@ public sealed class PendingOrderCleanupService : BackgroundService
                                     stoppingToken);
                             }
 
-                            stockRestored = true;
-
-                            order.StockDeducted = false;
-                            _logger.LogInformation(
-                                "Cleanup order {OrderId}: restoredRows={Rows}, stockDeductedAfterSet={SD}",
-                                order.Id, restoredRows, order.StockDeducted);
-                        }
-                        else
-                        {
-                            _logger.LogInformation(
-                                "Cleanup order {OrderId}: stock already deducted=FALSE, skipping restore",
-                                order.Id);
+                            if (items.Count > 0)
+                                stockRestored = true;
                         }
 
-                        shouldRestoreFlags[order.Id] = shouldRestore;
-                        restoredRowsById[order.Id] = restoredRows;
-
-                        order.Status = OrderStatus.Cancelled;
-                        order.UpdatedAt = DateTimeOffset.UtcNow;
-
-                        if (order.CouponId.HasValue)
+                        if (candidate.CouponId.HasValue)
                         {
                             await db.Database.ExecuteSqlInterpolatedAsync(
-                                $"UPDATE Coupons SET CurrentUsageCount = CASE WHEN CurrentUsageCount > 0 THEN CurrentUsageCount - 1 ELSE 0 END WHERE Id = {order.CouponId.Value}",
+                                $"UPDATE Coupons SET CurrentUsageCount = CASE WHEN CurrentUsageCount > 0 THEN CurrentUsageCount - 1 ELSE 0 END WHERE Id = {candidate.CouponId.Value}",
                                 stoppingToken);
                         }
 
-                        await notifier.NotifyOrderAutoCancelledAsync(order);
+                        var claimedOrder = await db.Orders.AsNoTracking()
+                            .FirstOrDefaultAsync(o => o.Id == candidate.Id, stoppingToken);
+                        if (claimedOrder != null)
+                            await notifier.NotifyOrderAutoCancelledAsync(claimedOrder);
+
+                        db.OrderEvents.Add(new OrderEvent
+                        {
+                            OrderId = candidate.Id,
+                            EventType = "auto_cancelled",
+                            FromStatus = OrderStatus.PendingPayment,
+                            ToStatus = OrderStatus.Cancelled,
+                            Message = "لغو خودکار به دلیل عدم پرداخت در مهلت مقرر",
+                            CreatedBy = "system",
+                            CreatedAt = now
+                        });
+
+                        cancelledCount++;
+                        _logger.LogInformation(
+                            "Cleanup cancelled order {OrderId}: restoredStock={Restored}, rows={Rows}",
+                            candidate.Id, claimedWithStock > 0, restoredRows);
                     }
 
                     await db.SaveChangesAsync(stoppingToken);
@@ -144,16 +181,9 @@ public sealed class PendingOrderCleanupService : BackgroundService
                         try { await outputCache.EvictByTagAsync("products", CancellationToken.None); } catch { }
                     }
 
-                    foreach (var order in expiredOrders)
-                    {
-                        db.Entry(order).State = EntityState.Detached;
-                        var fresh = await db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == order.Id, stoppingToken);
-                        _logger.LogInformation(
-                            "Cleanup committed order {OrderId}: status={Status}, stockDeducted={SD} (wasRestore={WasRestore}, rows={Rows})",
-                            order.Id, fresh?.Status, fresh?.StockDeducted, shouldRestoreFlags.TryGetValue(order.Id, out var wf) ? wf : false, restoredRowsById.TryGetValue(order.Id, out var rr) ? rr : 0);
-                    }
-
-                    _logger.LogInformation("Cancelled {Count} expired pending orders", expiredOrders.Count);
+                    _logger.LogInformation(
+                        "Cancelled {Cancelled} of {Found} expired pending order(s)",
+                        cancelledCount, expiredOrders.Count);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

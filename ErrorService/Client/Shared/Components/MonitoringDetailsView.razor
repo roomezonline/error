@@ -1515,6 +1515,7 @@
                             <span class="md-log-badge md-log-badge--@log.ChangeType.ToLower()">@GetChangeTypeLabel(log.ChangeType)</span>
                             @{
                                 var (statusText, statusClass) = GetChangeStatus(log);
+                                var runtime = GetRuntimeInfo(log);
                             }
                             @if (!string.IsNullOrEmpty(statusClass))
                             {
@@ -1526,6 +1527,15 @@
                             else
                             {
                                 <span class="md-log-status">@statusText</span>
+                            }
+                            @if (runtime is { } rt)
+                            {
+                                <span class="md-log-runtime" title="@rt.title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="10" height="10" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>
+                                    </svg>
+                                    @rt.label
+                                </span>
                             }
                             <span class="md-log-time">@SwapDateTime(log.CreatedAtFa)</span>
                             <svg class="md-log-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
@@ -2799,7 +2809,7 @@
     .md-log-badge--element2 { background: rgba(14,165,233,0.08); color: #0284c7; }
     .md-log-status {
         display: inline-flex; align-items: center; gap: 5px;
-        flex: 1; min-width: 0;
+        flex: 0 0 auto; min-width: 0;
         font-size: 12px; font-weight: 700;
         padding: 2px 10px; border-radius: 20px;
         width: fit-content;
@@ -2828,8 +2838,18 @@
         background: #dc2626;
         box-shadow: 0 0 8px rgba(220,38,38,0.5);
     }
+    .md-log-runtime {
+        flex-shrink: 0;
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 2px 8px; border-radius: 20px;
+        font-size: 10px; font-weight: 700;
+        color: #0f766e; background: rgba(13,148,136,0.09);
+        white-space: nowrap;
+    }
+    .md-log-runtime svg { flex-shrink: 0; }
     .md-log-time {
         flex-shrink: 0;
+        margin-inline-start: auto;
         font-size: 10px; font-weight: 500; color: #94a3b8;
     }
     .md-log-chevron {
@@ -3656,12 +3676,17 @@
             font-size: 11px; padding: 2px 8px; flex: none;
             order: 3; width: auto;
         }
-        .md-log-time {
-            font-size: 9px;
+        .md-log-runtime {
+            font-size: 9px; padding: 2px 7px; gap: 3px;
             order: 4;
         }
-        .md-log-chevron {
+        .md-log-time {
+            font-size: 9px;
             order: 5;
+            margin-inline-start: 0;
+        }
+        .md-log-chevron {
+            order: 6;
         }
         .md-log-detail {
             padding: 10px;
@@ -4148,6 +4173,56 @@
     {
         "Priz" => "برق", "MotorState" => "موتور", "Element1" => "المنت ۱", "Element2" => "المنت ۲", _ => type
     };
+
+    /// <summary>
+    /// مدت کارکردِ ثبت‌شده روی رکورد توقف را از DataSnapshot می‌خواند؛
+    /// فقط رکوردهای خاموش‌شدن این مقدار را دارند.
+    /// </summary>
+    private static (string label, string title)? GetRuntimeInfo(ChangeLogItem log)
+    {
+        if (string.IsNullOrEmpty(log.DataSnapshot)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(log.DataSnapshot);
+            if (!doc.RootElement.TryGetProperty("RuntimeSeconds", out var el)) return null;
+            if (el.ValueKind != JsonValueKind.Number || !el.TryGetInt64(out var seconds) || seconds <= 0) return null;
+
+            var kind = log.ChangeType.Equals("Priz", StringComparison.OrdinalIgnoreCase) ? "روشن" : "کارکرد";
+            var label = $"{kind} {FormatRuntime(seconds)}";
+
+            var title = "مدت روشن‌بودن تا لحظه توقف";
+            if (doc.RootElement.TryGetProperty("RuntimeStartedAtFa", out var startEl)
+                && startEl.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(startEl.GetString()))
+            {
+                title = $"شروع {SwapDateTime(startEl.GetString()!)} — توقف {SwapDateTime(log.CreatedAtFa)}";
+            }
+
+            return (label, title);
+        }
+        catch { return null; }
+    }
+
+    private static string FormatRuntime(long seconds)
+    {
+        if (seconds < 60) return "کمتر از ۱ دقیقه";
+
+        var ts = TimeSpan.FromSeconds(seconds);
+        if (ts.TotalMinutes < 60) return $"{ToFa(ts.Minutes)} دقیقه";
+
+        if (ts.TotalDays < 1)
+            return ts.Minutes == 0
+                ? $"{ToFa(ts.Hours)} ساعت"
+                : $"{ToFa(ts.Hours)} ساعت و {ToFa(ts.Minutes)} دقیقه";
+
+        return ts.Hours == 0
+            ? $"{ToFa(ts.Days)} روز"
+            : $"{ToFa(ts.Days)} روز و {ToFa(ts.Hours)} ساعت";
+    }
+
+    private static string ToFa(int n) => n.ToString(CultureInfo.InvariantCulture)
+        .Replace('0', '۰').Replace('1', '۱').Replace('2', '۲').Replace('3', '۳').Replace('4', '۴')
+        .Replace('5', '۵').Replace('6', '۶').Replace('7', '۷').Replace('8', '۸').Replace('9', '۹');
 
     private static string SwapDateTime(string fa)
     {
@@ -4747,6 +4822,12 @@
                 AmbientTempAlarmEnabled = _ambientTempAlarmEnabled,
                 AmbientTempThreshold = _ambientTempThreshold
             });
+            if (!resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowError(await ReadApiMessageAsync(resp, "ذخیره تنظیمات انجام نشد."));
+                _showSettings = false;
+                return;
+            }
             _settingsMissing = false;
         }
         catch (Exception ex)
@@ -5407,8 +5488,7 @@
             }
             else
             {
-                var err = await resp.Content.ReadAsStringAsync();
-                Console.Error.WriteLine($"Command failed: {err}");
+                ToastService.ShowError(await ReadApiMessageAsync(resp, "اعتبار دستگاه به پایان رسیده است و کنترل آن امکان‌پذیر نیست."));
             }
         }
         catch (Exception ex)
@@ -5417,6 +5497,25 @@
         }
         _showPowerConfirm = false;
         _showPowerOffConfirm = false;
+    }
+
+    private static async Task<string> ReadApiMessageAsync(HttpResponseMessage resp, string fallback)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("message", out var message) &&
+                message.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                return message.GetString() ?? fallback;
+            }
+        }
+        catch
+        {
+        }
+
+        return fallback;
     }
 
     private void CancelEnd()

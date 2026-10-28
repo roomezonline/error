@@ -687,6 +687,7 @@ public class ProductsController : ControllerBase
 
     /// <summary>پرفروش‌ترین محصولات بر اساس سفارش‌های تایید/تکمیل شده.</summary>
     [HttpGet("bestsellers")]
+    [OutputCache(Duration = 120, VaryByQueryKeys = new[] { "*" }, Tags = new[] { ProductsController.CacheTag })]
     public async Task<ActionResult<List<ProductDto>>> GetBestSellers([FromQuery] int take = 8)
     {
         take = Math.Clamp(take, 1, 24);
@@ -717,6 +718,7 @@ public class ProductsController : ControllerBase
 
     /// <summary>محصولات تازه/تجدیدشده که هم‌اکنون موجود هستند.</summary>
     [HttpGet("restocked")]
+    [OutputCache(Duration = 120, VaryByQueryKeys = new[] { "*" }, Tags = new[] { ProductsController.CacheTag })]
     public async Task<ActionResult<List<ProductDto>>> GetRestocked([FromQuery] int take = 8)
     {
         take = Math.Clamp(take, 1, 24);
@@ -1103,7 +1105,7 @@ public class ProductsController : ControllerBase
             ProductId = id,
             Price = price,
             DiscountPrice = request?.DiscountPrice,
-            RecordedAt = request?.RecordedAt ?? product.CreatedAt
+            RecordedAt = request?.RecordedAt ?? DateTimeOffset.UtcNow
         });
         await _context.SaveChangesAsync();
         try { await _outputCache.EvictByTagAsync(CacheTag, CancellationToken.None); } catch { }
@@ -1191,6 +1193,43 @@ public class ProductsController : ControllerBase
         return Ok(product);
     }
 
+    [HttpGet("by-ids")]
+    [OutputCache(Duration = 120, VaryByQueryKeys = new[] { "ids" }, Tags = new[] { ProductsController.CacheTag })]
+    public async Task<ActionResult<IEnumerable<ProductDto>>> GetProductsByIds([FromQuery] string? ids)
+    {
+        var parsed = (ids ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => int.TryParse(x.Trim(), out var id) ? id : 0)
+            .Where(id => id > 0)
+            .Distinct()
+            .Take(12)
+            .ToList();
+
+        if (parsed.Count == 0)
+            return Ok(Array.Empty<ProductDto>());
+
+        var items = await _context.Products
+            .Where(p => parsed.Contains(p.Id) && !p.IsDraft)
+            .Select(p => new ProductDto
+            {
+                Id = p.Id,
+                Name = p.Name,
+                Slug = p.Slug,
+                Price = p.Price,
+                DiscountPrice = p.DiscountPrice,
+                DiscountStartDate = p.DiscountStartDate,
+                DiscountExpiryDate = p.DiscountExpiryDate,
+                MainImageUrl = p.MainImageUrl,
+                CategoryId = p.CategoryId,
+                CategoryName = p.Category.Name,
+                IsAvailable = p.IsAvailable,
+                StockQuantity = p.StockQuantity
+            })
+            .ToListAsync();
+
+        return Ok(items.OrderBy(p => parsed.IndexOf(p.Id)).ToList());
+    }
+
     [HttpGet("{id:int}")]
     [OutputCache(Duration = 300, Tags = new[] { ProductsController.CacheTag })]
     public async Task<ActionResult<ProductDto>> GetProduct(int id)
@@ -1244,11 +1283,27 @@ public class ProductsController : ControllerBase
         return duplicate ? "کد محصول (SKU) تکراری است؛ کد دیگری وارد کنید." : null;
     }
 
+    private static string? ValidateProductPricing(ProductUpsertRequest request)
+    {
+        if (request.Price <= 0)
+            return "قیمت محصول معتبر نیست";
+        if (request.StockQuantity < 0)
+            return "موجودی انبار نمی‌تواند منفی باشد";
+        if (request.DiscountPrice.HasValue
+            && (request.DiscountPrice.Value <= 0 || request.DiscountPrice.Value >= request.Price))
+            return "قیمت با تخفیف باید بزرگتر از صفر و کمتر از قیمت اصلی باشد";
+        if (request.DiscountStartDate.HasValue && request.DiscountExpiryDate.HasValue
+            && request.DiscountStartDate.Value > request.DiscountExpiryDate.Value)
+            return "تاریخ شروع تخفیف نمی‌تواند بعد از تاریخ پایان باشد";
+        return null;
+    }
+
     [Authorize(Policy = "perm:admin.products.manage")]
     [HttpPost]
     public async Task<ActionResult<ProductDto>> PostProduct(ProductUpsertRequest request)
     {
-        if (request.Price <= 0) return BadRequest("قیمت محصول معتبر نیست");
+        if (ValidateProductPricing(request) is { } pricingError)
+            return BadRequest(pricingError);
         var skuError = await ValidateSkuUniqueAsync(request.Sku, null);
         if (skuError != null)
             return BadRequest(skuError);
@@ -1305,7 +1360,8 @@ public class ProductsController : ControllerBase
     [HttpPut("{id:int}")]
     public async Task<IActionResult> PutProduct(int id, ProductUpsertRequest request)
     {
-        if (request.Price <= 0) return BadRequest("قیمت محصول معتبر نیست");
+        if (ValidateProductPricing(request) is { } pricingError)
+            return BadRequest(pricingError);
         var product = await _context.Products.FindAsync(id);
         if (product == null)
         {
@@ -1361,7 +1417,7 @@ public class ProductsController : ControllerBase
                 ProductId = product.Id,
                 Price = product.Price,
                 DiscountPrice = product.DiscountPrice,
-                RecordedAt = product.CreatedAt
+                RecordedAt = DateTimeOffset.UtcNow
             });
             await _context.SaveChangesAsync();
         }

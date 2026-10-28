@@ -42,3 +42,6 @@ build-errors.txt
 # OS
 .DS_Store
 Thumbs.db
+
+# Local agent scratch (lighthouse reports, previews)
+.qoder-tmp/

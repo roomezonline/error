@@ -18,7 +18,7 @@
         <button class="chat-fab @(UseOperatorImage ? "chat-fab--avatar" : "")" @onclick="ToggleOpen" title="پشتیبانی آنلاین">
             @if (UseOperatorImage)
             {
-                <img class="chat-fab-img" src="@_settings.ChatOperatorImageUrl" alt="پشتیبانی" @onerror="() => _fabImgFailed = true" />
+                <img class="chat-fab-img" src="@_settings.ChatOperatorImageUrl" alt="پشتیبانی" decoding="async" @onerror="() => _fabImgFailed = true" />
             }
             else
             {
@@ -44,7 +44,7 @@
                     <span class="chat-greet__avatar">
                         @if (UseOperatorImage)
                         {
-                            <img src="@_settings.ChatOperatorImageUrl" alt="" @onerror="() => _fabImgFailed = true" />
+                            <img src="@_settings.ChatOperatorImageUrl" alt="" loading="lazy" decoding="async" @onerror="() => _fabImgFailed = true" />
                         }
                         else
                         {
@@ -410,13 +410,15 @@
 @if (!string.IsNullOrEmpty(_lightboxUrl))
 {
     <div class="chat-lightbox-overlay" @onclick="CloseLightbox">
-        <img src="@_lightboxUrl" class="chat-lightbox-img" alt="تصویر" />
+        <img src="@_lightboxUrl" class="chat-lightbox-img" alt="تصویر" decoding="async" />
     </div>
 }
 
 <style>
     /* ── Root ── */
-    .chat-widget { position: fixed; bottom: 24px; left: 20px; z-index: 9999; direction: rtl; }
+    .chat-widget { position: fixed; bottom: 24px; right: 20px; left: auto; z-index: 9999; direction: rtl; }
+    /* هنگام باز بودن مودال/دراور (سبد، Quick View) دکمهٔ شناور کنار نمی‌آید */
+    body.es-modal-open .chat-widget { display: none; }
     .chat-fab { width: 64px; height: 64px; border-radius: 50%; border: none; cursor: pointer; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; color: #fff; background: radial-gradient(120% 120% at 22% 14%, rgba(255,255,255,.38) 0%, rgba(255,255,255,0) 42%), linear-gradient(135deg,#0d6efd 0%,#4361ee 55%,#7c3aed 100%); box-shadow: 0 6px 24px rgba(67,97,238,.5), 0 14px 44px rgba(13,110,253,.3), inset 0 1px 0 rgba(255,255,255,.4); animation: chat-fab-in .55s cubic-bezier(.34,1.56,.64,1); transition: transform .25s cubic-bezier(.34,1.56,.64,1), box-shadow .25s; }
     .chat-fab::before { content: ''; position: absolute; top: 5%; left: 13%; width: 46%; height: 30%; border-radius: 50%; background: rgba(255,255,255,.4); filter: blur(2.5px); transform: rotate(-14deg); pointer-events: none; z-index: 1; }
     .chat-fab::after { content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent); transform: skewX(-20deg); pointer-events: none; z-index: 1; animation: chat-shine 3.2s ease-in-out infinite; }
@@ -442,8 +444,8 @@
     @@keyframes chat-ring-spin { to { transform: rotate(360deg); } }
     @@keyframes chat-ring-pulse { 0%, 100% { opacity: .85; filter: blur(0); } 50% { opacity: 1; filter: blur(.5px); } }
     @@keyframes chat-avatar-glow { 0%, 100% { box-shadow: 0 6px 24px rgba(67,97,238,.5), 0 0 0 0 rgba(124,58,237,.45); } 50% { box-shadow: 0 8px 30px rgba(67,97,238,.65), 0 0 0 12px rgba(124,58,237,0); } }
-    .chat-greet { position: absolute; bottom: calc(100% + 14px); left: 0; width: 280px; max-width: calc(100vw - 40px); background: #fff; border: 1px solid #e8edf5; border-radius: 18px; box-shadow: 0 12px 40px rgba(15,23,42,.16), 0 4px 12px rgba(13,110,253,.12); padding: 14px 14px 12px; cursor: pointer; direction: rtl; z-index: 9998; animation: chat-greet-in .45s cubic-bezier(.34,1.56,.64,1); }
-    .chat-greet::after { content: ''; position: absolute; bottom: -7px; left: 26px; width: 14px; height: 14px; background: #fff; border-right: 1px solid #e8edf5; border-bottom: 1px solid #e8edf5; border-radius: 0 0 4px 0; transform: rotate(45deg); }
+    .chat-greet { position: absolute; bottom: calc(100% + 14px); right: 0; left: auto; width: 280px; max-width: calc(100vw - 40px); background: #fff; border: 1px solid #e8edf5; border-radius: 18px; box-shadow: 0 12px 40px rgba(15,23,42,.16), 0 4px 12px rgba(13,110,253,.12); padding: 14px 14px 12px; cursor: pointer; direction: rtl; z-index: 9998; animation: chat-greet-in .45s cubic-bezier(.34,1.56,.64,1); }
+    .chat-greet::after { content: ''; position: absolute; bottom: -7px; right: 26px; left: auto; width: 14px; height: 14px; background: #fff; border-left: 1px solid #e8edf5; border-bottom: 1px solid #e8edf5; border-radius: 0 0 0 4px; transform: rotate(45deg); }
     @@keyframes chat-greet-in { from { opacity: 0; transform: translateY(10px) scale(.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
     .chat-greet__close { position: absolute; top: 8px; left: 8px; border: none; background: #f1f5f9; color: #94a3b8; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: .62rem; transition: .15s; z-index: 1; }
     .chat-greet__close:hover { background: #e2e8f0; color: #475569; }
@@ -621,7 +623,7 @@
     /* ── Mobile ── */
     @@media (max-width: 480px) {
         .chat-widget { bottom: 0; left: 0; right: 0; }
-        .chat-fab { position: fixed; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); left: 12px; width: 56px; height: 56px; }
+        .chat-fab { position: fixed; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); right: 12px; left: auto; width: 56px; height: 56px; }
         .chat-greet { position: fixed; bottom: calc(148px + env(safe-area-inset-bottom, 0px)); left: 12px; right: 12px; width: auto; max-width: none; }
         .chat-panel { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; box-shadow: none; }
         .chat-body { padding-bottom: env(safe-area-inset-bottom, 8px); }

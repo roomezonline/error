@@ -36,8 +36,8 @@
             <div class="row g-5">
                 <div class="col-lg-8">
                     <div class="course-hero rounded-5 overflow-hidden shadow-sm mb-5 position-relative">
-                        <img src="@(string.IsNullOrEmpty(course.CoverImageUrl) ? "/images/placeholder-product.svg" : course.CoverImageUrl)" 
-                             class="img-fluid w-100" style="max-height: 400px; object-fit: cover;" alt="@course.Title" />
+                        <img src="@(string.IsNullOrEmpty(course.CoverImageUrl) ? "/images/placeholder-product.svg" : course.CoverImageUrl)"
+                             class="img-fluid w-100" style="max-height: 400px; object-fit: cover;" loading="lazy" decoding="async" alt="@course.Title" />
                         @if (course.IsPremium)
                         {
                             <div class="position-absolute top-0 end-0 m-4">

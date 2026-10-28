@@ -6,9 +6,9 @@
 @using System.Net.Http.Json
 @using ErrorService.Client.Services
 @using ErrorService.Client.Utils
-@inject HttpClient Http
-@inject ToastService ToastService
-@inject NavigationManager Nav
+@inject HttpClient Http
+@inject ToastService ToastService
+@inject NavigationManager Nav
 @inject IJSRuntime JS
 
 <PageTitle>سفارش‌ها | ارورسرویس</PageTitle>
@@ -31,16 +31,17 @@
     .om-kpi-receipt { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
     .om-kpi-ship { background: linear-gradient(135deg, #10b981, #059669); color: white; }
     .om-kpi-fail { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
-    .om-kpi-amount { background: linear-gradient(135deg, #06b6d4, #0891b2); color: white; }
-    .om-stage-pipe { display: flex; align-items: center; justify-content: center; justify-content: safe center; gap: 0; overflow-x: auto; padding: 6px 0 12px; -ms-overflow-style: none; scrollbar-width: none; }
-    .om-stage-pipe::-webkit-scrollbar { display: none; }
-    .om-stage-node { display: flex; flex-direction: column; align-items: center; gap: 4px; border: none; background: none; cursor: pointer; flex-shrink: 0; padding: 4px 6px; min-width: 72px; font-family: inherit; }
-    .om-stage-dot { width: 28px; height: 28px; border-radius: 50%; background: var(--sc); color: #fff; font-size: 0.7rem; font-weight: 800; display: grid; place-items: center; box-shadow: 0 2px 6px color-mix(in srgb, var(--sc) 35%, transparent); transition: transform 0.15s; }
-    .om-stage-node:active .om-stage-dot { transform: scale(0.92); }
-    .om-stage-node.active .om-stage-dot { background: #fff; color: var(--sc); border: 3px solid var(--sc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sc) 20%, transparent); }
-    .om-stage-node.active .om-stage-lbl { color: var(--sc); font-weight: 900; }
-    .om-stage-lbl { font-size: 0.6rem; color: #64748b; font-weight: 700; text-align: center; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; }
-    .om-stage-line { width: 14px; height: 2px; background: #e2e8f0; flex-shrink: 0; margin-bottom: 16px; }
+    .om-kpi-amount { background: linear-gradient(135deg, #06b6d4, #0891b2); color: white; }
+    .om-kpi-draft { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: white; }
+    .om-stage-pipe { display: flex; align-items: center; justify-content: center; justify-content: safe center; gap: 0; overflow-x: auto; padding: 6px 0 12px; -ms-overflow-style: none; scrollbar-width: none; }
+    .om-stage-pipe::-webkit-scrollbar { display: none; }
+    .om-stage-node { display: flex; flex-direction: column; align-items: center; gap: 4px; border: none; background: none; cursor: pointer; flex-shrink: 0; padding: 4px 6px; min-width: 72px; font-family: inherit; }
+    .om-stage-dot { width: 28px; height: 28px; border-radius: 50%; background: var(--sc); color: #fff; font-size: 0.7rem; font-weight: 800; display: grid; place-items: center; box-shadow: 0 2px 6px color-mix(in srgb, var(--sc) 35%, transparent); transition: transform 0.15s; }
+    .om-stage-node:active .om-stage-dot { transform: scale(0.92); }
+    .om-stage-node.active .om-stage-dot { background: #fff; color: var(--sc); border: 3px solid var(--sc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sc) 20%, transparent); }
+    .om-stage-node.active .om-stage-lbl { color: var(--sc); font-weight: 900; }
+    .om-stage-lbl { font-size: 0.6rem; color: #64748b; font-weight: 700; text-align: center; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; }
+    .om-stage-line { width: 14px; height: 2px; background: #e2e8f0; flex-shrink: 0; margin-bottom: 16px; }
     .om-search { background: #f1f5f9; border-radius: 14px; padding: 10px 14px; display: flex; align-items: center; gap: 8px; margin: 4px 0 12px; }
     .om-search input { flex: 1; border: none; background: transparent; outline: none; font-size: 0.85rem; }
     .om-search-icon { color: #94a3b8; font-size: 1rem; }
@@ -55,13 +56,14 @@
     .om-card:active { transform: scale(0.985); }
     .om-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     .om-card-order { font-weight: 800; color: #2563eb; font-size: 0.9rem; }
-    .om-card-badge { padding: 3px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 700; }
+    .om-card-badge { padding: 3px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 700; }
 .om-badge-pending { background: #fef3c7; color: #d97706; }
     .om-badge-receipt { background: #dbeafe; color: #2563eb; }
     .om-badge-approved { background: #d1fae5; color: #059669; }
     .om-badge-rejected { background: #fee2e2; color: #dc2626; }
     .om-badge-cancelled { background: #f1f5f9; color: #64748b; }
     .om-badge-completed { background: #059669; color: white; }
+    .om-badge-draft { background: #ede9fe; color: #6d28d9; }
     .om-card-ribbon-done { background: linear-gradient(135deg, #047857, #10b981); color: #fff; box-shadow: 0 2px 8px rgba(5,150,105,0.35); display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 4px 14px 4px 14px; font-size: 0.65rem; font-weight: 800; flex-shrink: 0; }
     .om-card-ribbon-done .oi { font-size: 0.7rem; }
     .om-card-stage { display: inline-flex; align-items: center; gap: 6px; max-width: 62%; min-width: 0; padding: 3px 10px; border: 1.5px dashed var(--sc, #94a3b8); color: var(--sc, #64748b); background: color-mix(in srgb, var(--sc, #94a3b8) 8%, #fff); border-radius: 999px; font-size: 0.65rem; font-weight: 800; flex-shrink: 1; direction: rtl; }
@@ -72,27 +74,27 @@
     .om-card-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
     .om-card-amount { font-weight: 800; font-size: 0.85rem; color: #1e293b; }
     .om-card-date { font-size: 0.7rem; color: #94a3b8; }
-    .om-card-shipment { display: inline-flex; align-items: center; gap: 4px; background: #f0fdf4; color: #059669; padding: 2px 8px; border-radius: 8px; font-size: 0.7rem; font-weight: 600; }
-    .om-card-action { background: #fffbeb; color: #d97706; padding: 6px 10px; border-radius: 8px; font-size: 0.7rem; font-weight: 600; margin-top: 8px; display: flex; align-items: center; gap: 4px; }
-    .om-card-items { margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
-    .om-items-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.78rem; color: #2563eb; font-weight: 600; border: none; background: none; padding: 4px 0; font-family: inherit; }
-    .om-items-toggle:hover { text-decoration: underline; }
-    .om-item-chip {
-        display: inline-flex; align-items: center;
-        padding: 3px 10px; border-radius: 8px;
-        background: linear-gradient(135deg, #eff6ff, #e0e7ff);
-        color: #1e40af; font-size: 0.75rem; font-weight: 700;
-        border: 1px solid #c7d2fe; max-width: 100%;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .om-items-list { margin-top: 6px; }
-    .om-item-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; background: #f8fafc; border-radius: 8px; margin-bottom: 4px; font-size: 0.78rem; }
-    .om-item-row:last-child { margin-bottom: 0; }
-    .om-item-name { font-weight: 600; color: #334155; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .om-item-qty { color: #94a3b8; margin-inline: 6px; white-space: nowrap; }
-    .om-item-price { font-weight: 700; color: #1e293b; white-space: nowrap; }
-    .om-item-ship { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; background: #f0fdf4; border-radius: 8px; font-size: 0.78rem; }
-    .om-item-ship-name { font-weight: 600; color: #059669; }
+    .om-card-shipment { display: inline-flex; align-items: center; gap: 4px; background: #f0fdf4; color: #059669; padding: 2px 8px; border-radius: 8px; font-size: 0.7rem; font-weight: 600; }
+    .om-card-action { background: #fffbeb; color: #d97706; padding: 6px 10px; border-radius: 8px; font-size: 0.7rem; font-weight: 600; margin-top: 8px; display: flex; align-items: center; gap: 4px; }
+    .om-card-items { margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
+    .om-items-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.78rem; color: #2563eb; font-weight: 600; border: none; background: none; padding: 4px 0; font-family: inherit; }
+    .om-items-toggle:hover { text-decoration: underline; }
+    .om-item-chip {
+        display: inline-flex; align-items: center;
+        padding: 3px 10px; border-radius: 8px;
+        background: linear-gradient(135deg, #eff6ff, #e0e7ff);
+        color: #1e40af; font-size: 0.75rem; font-weight: 700;
+        border: 1px solid #c7d2fe; max-width: 100%;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .om-items-list { margin-top: 6px; }
+    .om-item-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; background: #f8fafc; border-radius: 8px; margin-bottom: 4px; font-size: 0.78rem; }
+    .om-item-row:last-child { margin-bottom: 0; }
+    .om-item-name { font-weight: 600; color: #334155; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .om-item-qty { color: #94a3b8; margin-inline: 6px; white-space: nowrap; }
+    .om-item-price { font-weight: 700; color: #1e293b; white-space: nowrap; }
+    .om-item-ship { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; background: #f0fdf4; border-radius: 8px; font-size: 0.78rem; }
+    .om-item-ship-name { font-weight: 600; color: #059669; }
     .om-card-return { display: inline-flex; align-items: center; gap: 4px; background: #fef2f2; color: #dc2626; padding: 2px 8px; border-radius: 8px; font-size: 0.7rem; font-weight: 600; margin-top: 4px; }
     .om-status-border-0 { border-right-color: #e2e8f0; }
     .om-status-border-1 { border-right-color: #f59e0b; }
@@ -100,7 +102,7 @@
     .om-status-border-3 { border-right-color: #10b981; }
     .om-status-border-4 { border-right-color: #ef4444; }
     .om-status-border-5 { border-right-color: #6b7280; }
-    .om-status-border-6 { border-right-color: #059669; }
+    .om-status-border-6 { border-right-color: #8b5cf6; }
     .om-pagination { display: flex; justify-content: center; gap: 4px; padding: 16px 0; }
     .om-page-btn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid #e2e8f0; background: white; cursor: pointer; font-size: 0.8rem; font-weight: 600; display: grid; place-items: center; transition: all 0.15s; }
     .om-page-btn:hover { border-color: #2563eb; color: #2563eb; }
@@ -113,9 +115,9 @@
     .om-loading { text-align: center; padding: 60px 16px; }
     .om-spinner { width: 36px; height: 36px; border: 3px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: om-spin 0.8s linear infinite; margin: 0 auto 12px; }
     @@keyframes om-spin { to { transform: rotate(360deg); } }
-    .om-ltr { direction: ltr; text-align: left; }
-    .om-date-input { width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 0.8rem; background: white; outline: none; transition: border-color 0.2s; direction: ltr; text-align: center; font-family: inherit; }
-    .om-date-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+    .om-ltr { direction: ltr; text-align: left; }
+    .om-date-input { width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 0.8rem; background: white; outline: none; transition: border-color 0.2s; direction: ltr; text-align: center; font-family: inherit; }
+    .om-date-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
     .om-date-input::placeholder { color: #cbd5e1; direction: rtl; text-align: center; }
     .om-card .badge { padding: 3px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 700; }
     .om-card .badge.bg-warning-subtle { background: #fef3c7 !important; color: #d97706 !important; }
@@ -160,11 +162,11 @@
                 <div class="om-kpi-num">@summary.PendingActionCount</div>
                 <div class="om-kpi-lbl">نیازمند اقدام</div>
             </div>
-            <div class="om-kpi-card om-kpi-receipt" @onclick="async () => { statusFilter = OrderStatus.ReceiptUploaded; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
-                <div class="om-kpi-icon"><span class="oi oi-clipboard"></span></div>
-                <div class="om-kpi-num">@summary.PendingReceiptCount</div>
-                <div class="om-kpi-lbl">رسید منتظر بررسی</div>
-            </div>
+            <div class="om-kpi-card om-kpi-receipt" @onclick="async () => { statusFilter = OrderStatus.ReceiptUploaded; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
+                <div class="om-kpi-icon"><span class="oi oi-clipboard"></span></div>
+                <div class="om-kpi-num">@summary.PendingReceiptCount</div>
+                <div class="om-kpi-lbl">رسید منتظر بررسی</div>
+            </div>
             <div class="om-kpi-card om-kpi-ship" @onclick="async () => { statusFilter = OrderStatus.Approved; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
                 <div class="om-kpi-icon"><span class="oi oi-package"></span></div>
                 <div class="om-kpi-num">@summary.ReadyToShipCount</div>
@@ -180,78 +182,87 @@
                 <div class="om-kpi-num" style="font-size:1rem;">@summary.TodayAmount.ToString("N0")</div>
                 <div class="om-kpi-lbl">مبلغ امروز (تومان)</div>
             </div>
-        </div>
-    }
-
-    <div class="om-stage-pipe">
-        @foreach (var stage in OrderStageInfo.Flow)
-        {
-            var s = stage;
-            var count = summary != null && summary.StageCounts.TryGetValue((int)s, out var c) ? c : 0;
-            var active = stageFilter == s;
-            <button class="om-stage-node @(active ? "active" : "")"
-                    style="--sc: @OrderStageInfo.Color(s);"
-                    @onclick="() => FilterByStage(s)">
-                <span class="om-stage-dot">@(active ? "" : count)</span>
-                <span class="om-stage-lbl">
-                    @if (s is OrderStage.SentToUnit or OrderStage.Resolved)
-                    {
-                        <span class="oi oi-truck" style="margin-inline-end:2px;"></span>
-                    }
-                    @OrderStageInfo.Label(s)
-                </span>
-            </button>
-            @if (s != OrderStageInfo.Flow[^1])
-            {
-                <span class="om-stage-line"></span>
-            }
-        }
-    </div>
-
-    <div class="om-search">
-        <span class="om-search-icon oi oi-magnifying-glass"></span>
-        <input placeholder="شماره سفارش، نام، موبایل، کد رهگیری، شهر..." @bind="searchText" @bind:event="oninput" @onkeydown="HandleSearchKey" />
+            <div class="om-kpi-card om-kpi-draft" @onclick="async () => { statusFilter = OrderStatus.Draft; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
+                <div class="om-kpi-icon"><span class="oi oi-document"></span></div>
+                <div class="om-kpi-num">@summary.DraftCount</div>
+                <div class="om-kpi-lbl">پیش‌فاکتور</div>
+            </div>
+        </div>
+    }
+
+    <div class="om-stage-pipe">
+        @foreach (var stage in OrderStageInfo.Flow)
+        {
+            var s = stage;
+            var count = summary != null && summary.StageCounts.TryGetValue((int)s, out var c) ? c : 0;
+            var active = stageFilter == s;
+            <button class="om-stage-node @(active ? "active" : "")"
+                    style="--sc: @OrderStageInfo.Color(s);"
+                    @onclick="() => FilterByStage(s)">
+                <span class="om-stage-dot">@(active ? "" : count)</span>
+                <span class="om-stage-lbl">
+                    @if (s is OrderStage.SentToUnit or OrderStage.Resolved)
+                    {
+                        <span class="oi oi-truck" style="margin-inline-end:2px;"></span>
+                    }
+                    @OrderStageInfo.Label(s)
+                </span>
+            </button>
+            @if (s != OrderStageInfo.Flow[^1])
+            {
+                <span class="om-stage-line"></span>
+            }
+        }
     </div>
 
-    <div style="display:flex;gap:8px;margin-bottom:10px;">
-        <div style="flex:1;position:relative;">
-            <label style="font-size:0.65rem;color:#94a3b8;margin-bottom:2px;display:block;">از تاریخ</label>
-            <input class="om-date-input" data-jdp autocomplete="off" placeholder="از تاریخ" @bind="dateFrom" @bind:event="oninput" @bind:after="OnDateChanged" />
-        </div>
-        <div style="flex:1;position:relative;">
-            <label style="font-size:0.65rem;color:#94a3b8;margin-bottom:2px;display:block;">تا تاریخ</label>
-            <input class="om-date-input" data-jdp autocomplete="off" placeholder="تا تاریخ" @bind="dateTo" @bind:event="oninput" @bind:after="OnDateChanged" />
-        </div>
-    </div>
-
+    <div class="om-search">
+        <span class="om-search-icon oi oi-magnifying-glass"></span>
+        <input placeholder="شماره سفارش، نام، موبایل، کد رهگیری، شهر..." @bind="searchText" @bind:event="oninput" @onkeydown="HandleSearchKey" />
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <div style="flex:1;position:relative;">
+            <label style="font-size:0.65rem;color:#94a3b8;margin-bottom:2px;display:block;">از تاریخ</label>
+            <input class="om-date-input" data-jdp autocomplete="off" placeholder="از تاریخ" @bind="dateFrom" @bind:event="oninput" @bind:after="OnDateChanged" />
+        </div>
+        <div style="flex:1;position:relative;">
+            <label style="font-size:0.65rem;color:#94a3b8;margin-bottom:2px;display:block;">تا تاریخ</label>
+            <input class="om-date-input" data-jdp autocomplete="off" placeholder="تا تاریخ" @bind="dateTo" @bind:event="oninput" @bind:after="OnDateChanged" />
+        </div>
+    </div>
+
     <div class="om-filters">
-        <button class="om-chip @((statusFilter == null && stageFilter == null && specialFilter == null) ? "om-chip-active" : "om-chip-inactive")"
-                @onclick="ClearAllFilters">
-            همه
-        </button>
-        <button class="om-chip @(statusFilter == OrderStatus.PendingPayment ? "om-chip-active" : "om-chip-inactive")"
-                @onclick="async () => { statusFilter = OrderStatus.PendingPayment; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
-            در انتظار پرداخت
-        </button>
-        <button class="om-chip @(statusFilter == OrderStatus.ReceiptUploaded ? "om-chip-active" : "om-chip-inactive")"
-                @onclick="async () => { statusFilter = OrderStatus.ReceiptUploaded; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
-            رسید آپلود
-        </button>
-        <button class="om-chip @(statusFilter == OrderStatus.Approved ? "om-chip-active" : "om-chip-inactive")"
-                @onclick="async () => { statusFilter = OrderStatus.Approved; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
-            تایید شده
-        </button>
-        <button class="om-chip @(statusFilter == OrderStatus.Rejected ? "om-chip-active" : "om-chip-inactive")"
-                @onclick="async () => { statusFilter = OrderStatus.Rejected; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
+        <button class="om-chip @((statusFilter == null && stageFilter == null && specialFilter == null) ? "om-chip-active" : "om-chip-inactive")"
+                @onclick="ClearAllFilters">
+            همه
+        </button>
+        <button class="om-chip @(statusFilter == OrderStatus.PendingPayment ? "om-chip-active" : "om-chip-inactive")"
+                @onclick="async () => { statusFilter = OrderStatus.PendingPayment; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
+            در انتظار پرداخت
+        </button>
+        <button class="om-chip @(statusFilter == OrderStatus.ReceiptUploaded ? "om-chip-active" : "om-chip-inactive")"
+                @onclick="async () => { statusFilter = OrderStatus.ReceiptUploaded; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
+            رسید آپلود
+        </button>
+        <button class="om-chip @(statusFilter == OrderStatus.Approved ? "om-chip-active" : "om-chip-inactive")"
+                @onclick="async () => { statusFilter = OrderStatus.Approved; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
+            تایید شده
+        </button>
+        <button class="om-chip @(statusFilter == OrderStatus.Rejected ? "om-chip-active" : "om-chip-inactive")"
+                @onclick="async () => { statusFilter = OrderStatus.Rejected; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
             رد شده
         </button>
-        <button class="om-chip @(statusFilter == OrderStatus.Cancelled ? "om-chip-active" : "om-chip-inactive")"
-                @onclick="async () => { statusFilter = OrderStatus.Cancelled; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
-            لغو شده
-        </button>
-        <button class="om-chip @(statusFilter == OrderStatus.Completed ? "om-chip-active" : "om-chip-inactive")"
-                @onclick="async () => { statusFilter = OrderStatus.Completed; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
-            تکمیل شده
+        <button class="om-chip @(statusFilter == OrderStatus.Cancelled ? "om-chip-active" : "om-chip-inactive")"
+                @onclick="async () => { statusFilter = OrderStatus.Cancelled; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
+            لغو شده
+        </button>
+        <button class="om-chip @(statusFilter == OrderStatus.Draft ? "om-chip-active" : "om-chip-inactive")"
+                @onclick="async () => { statusFilter = OrderStatus.Draft; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
+            پیش‌فاکتور
+        </button>
+        <button class="om-chip @(statusFilter == OrderStatus.Completed ? "om-chip-active" : "om-chip-inactive")"
+                @onclick="async () => { statusFilter = OrderStatus.Completed; stageFilter = null; specialFilter = null; currentPage = 1; await LoadSummaryAndOrders(); }">
+            تکمیل شده
         </button>
     </div>
 
@@ -276,11 +287,11 @@
             <span class="om-results-text">صفحه @response.Page از @TotalPages</span>
         </div>
 
-        @foreach (var order in response.Items)
-        {
-            var isExpanded = expandedOrderIds.Contains(order.Id);
-            <div class="om-card om-status-border-@((int)order.Status)" @onclick="() => GoToDetail(order.Id)">
-                <div class="om-card-top">
+        @foreach (var order in response.Items)
+        {
+            var isExpanded = expandedOrderIds.Contains(order.Id);
+            <div class="om-card om-status-border-@((int)order.Status)" @onclick="() => GoToDetail(order.Id)">
+                <div class="om-card-top">
                     <span class="om-card-order">#@order.OrderNumber</span>
                     @if (order.Status == OrderStatus.Completed)
                     {
@@ -296,74 +307,74 @@
                     {
                         <span class="om-card-badge @GetStatusClass(order.Status)">@GetStatusLabel(order.Status)</span>
                     }
-                
-                </div>
-                <div class="om-card-customer">@order.FullName</div>
-                <div class="om-card-phone">@order.PhoneNumber</div>
-
-                <div class="om-card-items">
-                    @if (order.Items != null && order.Items.Count > 0)
-                    {
-                        <div class="om-item-row" style="background:transparent;padding:0 0 4px;">
-                            <span class="om-item-chip">@order.Items[0].ProductName</span>
-                            @if (order.Items.Count > 1)
-                            {
-                                <button class="om-items-toggle" @onclick="() => ToggleOrderItems(order.Id)" @onclick:stopPropagation="true">
-                                    @if (isExpanded)
-                                    {
-                                        <span>بستن</span>
-                                    }
-                                    else
-                                    {
-                                        <span>+@(order.Items.Count - 1) کالای دیگر</span>
-                                    }
-                                </button>
-                            }
-                        </div>
-                        @if (isExpanded && order.Items.Count > 1)
-                        {
-                            @foreach (var item in order.Items.Skip(1))
-                            {
-                                <div class="om-item-row">
-                                    <span class="om-item-name">@item.ProductName</span>
-                                    <span class="om-item-qty">@item.Quantity×</span>
-                                    <span class="om-item-price">@item.Price.ToString("N0")</span>
-                                </div>
-                            }
-                        }
-                    }
-                    @if (!string.IsNullOrEmpty(order.ShippingMethodName))
-                    {
-                        <div class="om-item-ship">
-                            <span class="om-item-ship-name">@order.ShippingMethodName</span>
-                            <span style="color:#64748b;font-size:0.72rem">@(order.ShippingIsFree ? "رایگان" : $"{order.ShippingCost.ToString("N0")} تومان")</span>
-                        </div>
-                    }
-                </div>
-
-                <div class="om-card-bottom">
-                    <span class="om-card-amount">@order.TotalAmount.ToString("N0") تومان</span>
-                    <span class="om-card-date">@PersianDate.ToJalaliDateTime(order.CreatedAt)</span>
-                    @if (order.ShipmentCount > 0)
-                    {
-                        <span class="om-card-shipment">
-                            <span class="oi oi-package"></span> @order.ShipmentCount مرسوله
-                        </span>
-                    }
-                </div>
-                @if (!string.IsNullOrEmpty(order.NextAction))
-                {
-                    <div class="om-card-action">
-                        <span class="oi oi-bell"></span> @order.NextAction
-                    </div>
-                }
-                @if (order.ReturnCount > 0)
-                {
-                    <div class="om-card-return">
-                        <span class="oi oi-action-undo"></span> @order.ReturnCount مرجوعی
-                    </div>
-                }
-            </div>
+                
+                </div>
+                <div class="om-card-customer">@order.FullName</div>
+                <div class="om-card-phone">@order.PhoneNumber</div>
+
+                <div class="om-card-items">
+                    @if (order.Items != null && order.Items.Count > 0)
+                    {
+                        <div class="om-item-row" style="background:transparent;padding:0 0 4px;">
+                            <span class="om-item-chip">@order.Items[0].ProductName</span>
+                            @if (order.Items.Count > 1)
+                            {
+                                <button class="om-items-toggle" @onclick="() => ToggleOrderItems(order.Id)" @onclick:stopPropagation="true">
+                                    @if (isExpanded)
+                                    {
+                                        <span>بستن</span>
+                                    }
+                                    else
+                                    {
+                                        <span>+@(order.Items.Count - 1) کالای دیگر</span>
+                                    }
+                                </button>
+                            }
+                        </div>
+                        @if (isExpanded && order.Items.Count > 1)
+                        {
+                            @foreach (var item in order.Items.Skip(1))
+                            {
+                                <div class="om-item-row">
+                                    <span class="om-item-name">@item.ProductName</span>
+                                    <span class="om-item-qty">@item.Quantity×</span>
+                                    <span class="om-item-price">@item.Price.ToString("N0")</span>
+                                </div>
+                            }
+                        }
+                    }
+                    @if (!string.IsNullOrEmpty(order.ShippingMethodName))
+                    {
+                        <div class="om-item-ship">
+                            <span class="om-item-ship-name">@order.ShippingMethodName</span>
+                            <span style="color:#64748b;font-size:0.72rem">@(order.ShippingIsFree ? "رایگان" : $"{order.ShippingCost.ToString("N0")} تومان")</span>
+                        </div>
+                    }
+                </div>
+
+                <div class="om-card-bottom">
+                    <span class="om-card-amount">@order.TotalAmount.ToString("N0") تومان</span>
+                    <span class="om-card-date">@PersianDate.ToJalaliDateTime(order.CreatedAt)</span>
+                    @if (order.ShipmentCount > 0)
+                    {
+                        <span class="om-card-shipment">
+                            <span class="oi oi-package"></span> @order.ShipmentCount مرسوله
+                        </span>
+                    }
+                </div>
+                @if (!string.IsNullOrEmpty(order.NextAction))
+                {
+                    <div class="om-card-action">
+                        <span class="oi oi-bell"></span> @order.NextAction
+                    </div>
+                }
+                @if (order.ReturnCount > 0)
+                {
+                    <div class="om-card-return">
+                        <span class="oi oi-action-undo"></span> @order.ReturnCount مرجوعی
+                    </div>
+                }
+            </div>
         }
 
         @if (TotalPages > 1)
@@ -388,22 +399,22 @@
     private OrderAdminListResponse? response;
     private OrderAdminSummaryDto? summary;
     private bool isLoading = true;
-    private string? searchText;
-    private OrderStatus? statusFilter;
-    private OrderStage? stageFilter;
-    private string? specialFilter;
-    private string dateFrom = string.Empty;
-    private string dateTo = string.Empty;
-    private int currentPage = 1;
-    private const int PageSize = 20;
-    private HashSet<int> expandedOrderIds = new();
-
-    private int TotalPages => response == null ? 1 : (int)Math.Ceiling((double)response.TotalCount / PageSize);
-
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadSummaryAndOrders();
-        try { await JS.InvokeVoidAsync("initJalali"); } catch { }
+    private string? searchText;
+    private OrderStatus? statusFilter;
+    private OrderStage? stageFilter;
+    private string? specialFilter;
+    private string dateFrom = string.Empty;
+    private string dateTo = string.Empty;
+    private int currentPage = 1;
+    private const int PageSize = 20;
+    private HashSet<int> expandedOrderIds = new();
+
+    private int TotalPages => response == null ? 1 : (int)Math.Ceiling((double)response.TotalCount / PageSize);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSummaryAndOrders();
+        try { await JS.InvokeVoidAsync("initJalali"); } catch { }
     }
 
     private async Task LoadSummaryAndOrders()
@@ -434,12 +445,12 @@
         if (!string.IsNullOrWhiteSpace(searchText))
             url += $"&search={Uri.EscapeDataString(searchText.Trim())}";
 
-        if (statusFilter.HasValue)
-            url += $"&status={statusFilter.Value}";
-
-        if (stageFilter.HasValue)
-            url += $"&stage={stageFilter.Value}";
-
+        if (statusFilter.HasValue)
+            url += $"&status={statusFilter.Value}";
+
+        if (stageFilter.HasValue)
+            url += $"&stage={stageFilter.Value}";
+
         if (!string.IsNullOrEmpty(specialFilter))
         {
             switch (specialFilter)
@@ -456,10 +467,10 @@
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(dateFrom) && PersianDate.TryParseJalaliDateTime(dateFrom, out var df))
-            url += $"&dateFrom={df:yyyy-MM-dd}";
-
-        if (!string.IsNullOrWhiteSpace(dateTo) && PersianDate.TryParseJalaliDateTime(dateTo, out var dt))
+        if (!string.IsNullOrWhiteSpace(dateFrom) && PersianDate.TryParseJalaliDateTime(dateFrom, out var df))
+            url += $"&dateFrom={df:yyyy-MM-dd}";
+
+        if (!string.IsNullOrWhiteSpace(dateTo) && PersianDate.TryParseJalaliDateTime(dateTo, out var dt))
             url += $"&dateTo={dt.AddDays(1):yyyy-MM-dd}";
 
         return await Http.GetFromJsonAsync<OrderAdminListResponse>(url);
@@ -471,16 +482,16 @@
         await LoadSummaryAndOrders();
     }
 
-    private async Task HandleSearchKey(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter")
-            await SearchOrders();
-    }
-
-    private async Task OnDateChanged()
-    {
-        currentPage = 1;
-        await LoadSummaryAndOrders();
+    private async Task HandleSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await SearchOrders();
+    }
+
+    private async Task OnDateChanged()
+    {
+        currentPage = 1;
+        await LoadSummaryAndOrders();
     }
 
     private async Task OnStatusFilterChanged(ChangeEventArgs e)
@@ -498,31 +509,31 @@
         await LoadSummaryAndOrders();
     }
 
-    private async Task FilterByNeedsAction()
-    {
-        specialFilter = "needsAction";
-        statusFilter = null;
-        stageFilter = null;
-        currentPage = 1;
-        await LoadSummaryAndOrders();
-    }
-
-    private async Task FilterByStage(OrderStage stage)
-    {
-        stageFilter = stageFilter == stage ? null : stage;
-        statusFilter = null;
-        specialFilter = null;
-        currentPage = 1;
-        await LoadSummaryAndOrders();
-    }
-
-    private async Task ClearAllFilters()
-    {
-        statusFilter = null;
-        stageFilter = null;
-        specialFilter = null;
-        currentPage = 1;
-        await LoadSummaryAndOrders();
+    private async Task FilterByNeedsAction()
+    {
+        specialFilter = "needsAction";
+        statusFilter = null;
+        stageFilter = null;
+        currentPage = 1;
+        await LoadSummaryAndOrders();
+    }
+
+    private async Task FilterByStage(OrderStage stage)
+    {
+        stageFilter = stageFilter == stage ? null : stage;
+        statusFilter = null;
+        specialFilter = null;
+        currentPage = 1;
+        await LoadSummaryAndOrders();
+    }
+
+    private async Task ClearAllFilters()
+    {
+        statusFilter = null;
+        stageFilter = null;
+        specialFilter = null;
+        currentPage = 1;
+        await LoadSummaryAndOrders();
     }
 
     private async Task GoToPage(int page)
@@ -532,18 +543,19 @@
         await LoadSummaryAndOrders();
     }
 
-    private void GoToDetail(int id)
-    {
-        Nav.NavigateTo($"/admin/orders/{id}");
-    }
-
-    private void ToggleOrderItems(int orderId)
-    {
-        if (!expandedOrderIds.Remove(orderId))
-            expandedOrderIds.Add(orderId);
+    private void GoToDetail(int id)
+    {
+        Nav.NavigateTo($"/admin/orders/{id}");
+    }
+
+    private void ToggleOrderItems(int orderId)
+    {
+        if (!expandedOrderIds.Remove(orderId))
+            expandedOrderIds.Add(orderId);
     }
     private string GetStatusLabel(OrderStatus status) => status switch
     {
+        OrderStatus.Draft => "پیش‌فاکتور",
         OrderStatus.PendingPayment => "در انتظار پرداخت",
         OrderStatus.ReceiptUploaded => "رسید آپلود شد",
         OrderStatus.Approved => "تایید شده",
@@ -555,6 +567,7 @@
 
     private string GetStatusClass(OrderStatus status) => status switch
     {
+        OrderStatus.Draft => "om-badge-draft",
         OrderStatus.PendingPayment => "bg-warning-subtle text-warning",
         OrderStatus.ReceiptUploaded => "bg-info-subtle text-info",
         OrderStatus.Approved => "bg-success-subtle text-success",
@@ -563,4 +576,4 @@
         OrderStatus.Completed => "bg-success text-white",
         _ => "bg-light"
     };
-}
+}

@@ -19,103 +19,6 @@
         <button type="button" class="global-search__backdrop" @onclick="Close" aria-label="بستن جستجو"></button>
     }
 
-<style>
-    .global-search {
-        position: relative;
-        width: 100%;
-    }
-    .global-search__input {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: rgba(255,255,255,0.92);
-        border-radius: 999px;
-        padding: 6px 10px;
-    }
-    .global-search__textbox {
-        border: 0;
-        background: transparent;
-        box-shadow: none;
-        padding: 0;
-        font-size: 0.9rem;
-    }
-    .global-search__textbox:focus {
-        outline: none;
-        box-shadow: none;
-    }
-    .global-search__clear {
-        border: 0;
-        background: transparent;
-        padding: 2px 6px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        color: #6b7280;
-    }
-    .global-search__panel {
-        position: absolute;
-        top: calc(100% + 8px);
-        right: 0;
-        left: 0;
-        background: #fff;
-        border-radius: 14px;
-        border: 1px solid rgba(0,0,0,0.08);
-        overflow: hidden;
-        z-index: 2000;
-    }
-    .global-search__backdrop {
-        position: fixed;
-        inset: 0;
-        background: transparent;
-        border: 0;
-        padding: 0;
-        margin: 0;
-        z-index: 1990;
-    }
-    .global-search__section {
-        padding: 10px;
-    }
-    .global-search__section + .global-search__section {
-        border-top: 1px solid rgba(0,0,0,0.06);
-    }
-    .global-search__section-title {
-        font-size: 0.75rem;
-        font-weight: 800;
-        color: #6b7280;
-        margin-bottom: 8px;
-    }
-    .global-search__item {
-        width: 100%;
-        text-align: right;
-        border: 0;
-        background: transparent;
-        padding: 8px 10px;
-        border-radius: 10px;
-    }
-    .global-search__item:hover {
-        background: rgba(13,110,253,0.06);
-    }
-    .global-search__item.is-selected {
-        background: rgba(13,110,253,0.12);
-        outline: 2px solid rgba(13,110,253,0.25);
-    }
-    .global-search__item-title {
-        font-size: 0.9rem;
-        font-weight: 700;
-        color: #111827;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .global-search__item-subtitle {
-        font-size: 0.78rem;
-        color: #6b7280;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        margin-top: 2px;
-    }
-</style>
 
     @if (isOpen)
     {
@@ -128,7 +31,7 @@
                 </div>
             }
             else if ((suggests == null || suggests.Count == 0) &&
-                     (results == null || (results.Products.Count == 0 && results.News.Count == 0)))
+                     (results == null || (results.Products.Count == 0 && results.News.Count == 0 && results.Articles.Count == 0)))
             {
                 <div class="p-3 text-muted small">نتیجه‌ای یافت نشد.</div>
             }
@@ -183,6 +86,23 @@
                         }
                     </div>
                 }
+
+                @if (searchResults.Articles.Count > 0)
+                {
+                    <div class="global-search__section">
+                        <div class="global-search__section-title">مقالات آموزشی</div>
+                        @foreach (var item in searchResults.Articles)
+                        {
+                            <button type="button" class="global-search__item @(IsSelected(item) ? "is-selected" : "")" @onclick="() => Go(item.Url)">
+                                <div class="global-search__item-title">@item.Title</div>
+                                @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                {
+                                    <div class="global-search__item-subtitle">@item.Subtitle</div>
+                                }
+                            </button>
+                        }
+                    </div>
+                }
             }
         </div>
     }
@@ -191,6 +111,7 @@
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
     [Inject] private NavigationManager Nav { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
 
     private string query = string.Empty;
     private bool isOpen;
@@ -200,6 +121,7 @@
 
     private CancellationTokenSource? cts;
     private int selectedIndex = -1;
+    private string? _lastTrackedQuery;
 
     protected override void OnInitialized()
     {
@@ -264,6 +186,12 @@
             results = resp ?? new SearchResponseDto();
             suggests = sug ?? new List<ProductSuggestDto>();
             selectedIndex = GetFlatResults().Count > 0 ? 0 : -1;
+
+            if (!string.Equals(_lastTrackedQuery, trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                _lastTrackedQuery = trimmed;
+                _ = TrackSearchAsync(trimmed, GetFlatResults().Count);
+            }
         }
         catch (OperationCanceledException) { }
         catch
@@ -276,6 +204,11 @@
             isLoading = false;
             isOpen = true;
         }
+    }
+
+    private async Task TrackSearchAsync(string term, int count)
+    {
+        try { await JS.InvokeVoidAsync("trackGaEvent", "search", new { search_term = term, results = count }); } catch { }
     }
 
     private void Go(string url)
@@ -341,6 +274,7 @@
                 }
             }
             if (results.News != null) flat.AddRange(results.News);
+            if (results.Articles != null) flat.AddRange(results.Articles);
         }
         return flat;
     }

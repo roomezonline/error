@@ -42,10 +42,15 @@ public sealed class SeoController : ControllerBase
         sb.AppendLine("Disallow: /my-orders");
         sb.AppendLine("Disallow: /wishlist");
         sb.AppendLine("Disallow: /cart");
+        sb.AppendLine("Disallow: /checkout");
+        sb.AppendLine("Disallow: /order-tracking");
+        sb.AppendLine("Disallow: /search");
+        sb.AppendLine("Disallow: /monitoring/");
         sb.AppendLine("Disallow: /payment/");
         sb.AppendLine("");
         sb.AppendLine($"Sitemap: {baseUrl}/sitemap.xml");
         sb.AppendLine($"Sitemap: {baseUrl}/image-sitemap.xml");
+        sb.AppendLine($"Sitemap: {baseUrl}/news-sitemap.xml");
 
         return PlainTextResult(sb.ToString(), "text/plain; charset=utf-8");
     }
@@ -60,7 +65,7 @@ public sealed class SeoController : ControllerBase
         var root = new XElement(ns + "urlset");
 
         // 1. Static Pages (no lastmod - no reliable change date available; omit rather than lie)
-        var staticPages = new[] { "/", "/products", "/academy", "/technical/error-codes", "/contact", "/about", "/faq", "/privacy", "/terms", "/news", "/technical/sensor-finder", "/technical/calculators", "/trust/portfolio", "/admission/repair", "/admission/expertise", "/technical/consultation", "/commitment" };
+        var staticPages = new[] { "/", "/products", "/academy", "/technical/error-codes", "/workshops", "/contact", "/about", "/faq", "/privacy", "/terms", "/news", "/technical/sensor-finder", "/technical/calculators", "/trust/portfolio", "/admission/repair", "/admission/expertise", "/technical/consultation", "/commitment" };
         foreach (var page in staticPages)
         {
             root.Add(CreateUrlElement(ns, baseUrl + page, null, "weekly", page is "/" or "/products" or "/academy" or "/technical/error-codes" ? 0.9 : 0.6));
@@ -123,6 +128,70 @@ public sealed class SeoController : ControllerBase
         foreach (var s in sensorRecords)
         {
             root.Add(CreateUrlElement(ns, $"{baseUrl}/technical/sensor-finder/{s.Id}", s.CreatedAt, "monthly", 0.6));
+        }
+
+        // 8) Workshops - all partner profiles (active and inactive), excluding soft-deleted
+        var workshops = await _db.Workshops.AsNoTracking()
+            .Where(w => !w.IsDeleted)
+            .Select(w => new { w.Id, w.CreatedAt })
+            .ToListAsync();
+        foreach (var w in workshops)
+        {
+            root.Add(CreateUrlElement(ns, $"{baseUrl}/workshops/{w.Id}", w.CreatedAt, "monthly", 0.6));
+        }
+
+        var doc = new XDocument(new XDeclaration("1.0", "utf-8", "yes"), root);
+        return XmlResult(doc);
+    }
+
+    [HttpGet("news-sitemap.xml")]
+    [HttpHead("news-sitemap.xml")]
+    public async Task<IActionResult> GetNewsSitemap()
+    {
+        var baseUrl = GetBaseUrl();
+        XNamespace ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
+        XNamespace newsNs = "http://www.google.com/schemas/sitemap-news/0.9";
+
+        var root = new XElement(ns + "urlset", new XAttribute(XNamespace.Xmlns + "news", newsNs));
+
+        // Google only accepts news entries from the last 48 hours, and it rejects
+        // an empty <urlset>. Fall back to the latest articles so the sitemap
+        // stays parseable while no fresh article has been published.
+        var since = DateTimeOffset.UtcNow.AddDays(-2);
+        var published = _db.News.AsNoTracking().Where(n => n.IsPublished);
+        var items = await published
+            .Where(n => n.CreatedAt >= since)
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(1000)
+            .Select(n => new { n.Id, n.Slug, n.Title, n.Tags, n.CreatedAt })
+            .ToListAsync();
+
+        if (items.Count == 0)
+        {
+            items = await published
+                .OrderByDescending(n => n.CreatedAt)
+                .Take(20)
+                .Select(n => new { n.Id, n.Slug, n.Title, n.Tags, n.CreatedAt })
+                .ToListAsync();
+        }
+
+        if (items.Count == 0)
+            return NotFound();
+
+        foreach (var n in items)
+        {
+            var loc = $"{baseUrl}/news/{EncodeSegment(n.Slug ?? n.Id.ToString())}";
+            var news = new XElement(newsNs + "news",
+                new XElement(newsNs + "publication",
+                    new XElement(newsNs + "name", "ارورسرویس"),
+                    new XElement(newsNs + "language", "fa")),
+                new XElement(newsNs + "publication_date", n.CreatedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)),
+                new XElement(newsNs + "title", n.Title));
+
+            if (!string.IsNullOrWhiteSpace(n.Tags))
+                news.Add(new XElement(newsNs + "keywords", n.Tags));
+
+            root.Add(new XElement(ns + "url", new XElement(ns + "loc", loc), news));
         }
 
         var doc = new XDocument(new XDeclaration("1.0", "utf-8", "yes"), root);
@@ -279,7 +348,7 @@ public sealed class SeoController : ControllerBase
 
         if (lastMod.HasValue)
         {
-            url.Add(new XElement(ns + "lastmod", lastMod.Value.ToString("yyyy-MM-dd")));
+            url.Add(new XElement(ns + "lastmod", lastMod.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         }
 
         url.Add(

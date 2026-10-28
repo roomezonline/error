@@ -35,7 +35,8 @@
                 <div class="col-md-6 col-lg-4">
                     <div class="card border-0 shadow-sm rounded-4 overflow-hidden h-100">
                         <div class="position-relative">
-                            <img src="@p.AfterImageUrl" class="card-img-top" style="height: 220px; object-fit: cover;" />
+                            <img src="@ImageUrlHelper.Thumb(p.AfterImageUrl, 400)" loading="lazy" decoding="async"
+                                 alt="نمونه تعمیر @p.Brand @p.DeviceType" class="card-img-top" style="height: 220px; object-fit: cover;" />
                             <div class="badge bg-success position-absolute top-0 end-0 m-3 rounded-pill">تعمیر شد</div>
                         </div>
                         <div class="card-body p-4">

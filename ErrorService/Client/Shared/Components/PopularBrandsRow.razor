@@ -19,8 +19,6 @@ else if (items.Count == 0)
 }
 else
 {
-    var durationSeconds = Math.Clamp(items.Count * 6, 30, 120);
-
     <div class="container my-4" dir="rtl">
         <div class="brands-card shadow-sm rounded-4">
             <div class="brands-card__header">
@@ -28,31 +26,25 @@ else
                     محبوب‌ترین برندها
                     <span class="brands-card__spark">✨</span>
                 </div>
+                <CarouselControls TrackId="home-brands-track" />
             </div>
 
-            <div class="brands-marquee" style="--brands-marquee-duration: @(durationSeconds)s" aria-label="محبوب‌ترین برندها">
-                <div class="brands-marquee__track" aria-hidden="true">
-                    @for (var i = 0; i < 10; i++)
-                    {
-                        <div class="brands-marquee__segment">
-                            @foreach (var it in items.OrderBy(x => x.SortOrder))
+            <div class="brands-track" id="home-brands-track" aria-label="محبوب‌ترین برندها" data-auto-scroll="22">
+                @foreach (var it in items.OrderBy(x => x.SortOrder))
+                {
+                    <a class="brand-item" href="@GetHref(it)" target="@GetTarget(it)" rel="@GetRel(it)">
+                        <div class="brand-item__inner">
+                            @if (!string.IsNullOrWhiteSpace(it.ImageUrl))
                             {
-                                <a class="brand-item" href="@GetHref(it)" target="@GetTarget(it)" rel="@GetRel(it)">
-                                    <div class="brand-item__inner">
-                                        @if (!string.IsNullOrWhiteSpace(it.ImageUrl))
-                                        {
-                                            <img class="brand-item__img" src="@it.ImageUrl" alt="@it.Title" loading="lazy" decoding="async" />
-                                        }
-                                        else
-                                        {
-                                            <div class="brand-item__fallback">@GetFallback(it.Title)</div>
-                                        }
-                                    </div>
-                                </a>
+                                <img class="brand-item__img" src="@ImageUrlHelper.Thumb(it.ImageUrl, 200)" alt="@it.Title" loading="lazy" decoding="async" />
+                            }
+                            else
+                            {
+                                <div class="brand-item__fallback">@GetFallback(it.Title)</div>
                             }
                         </div>
-                    }
-                </div>
+                    </a>
+                }
             </div>
         </div>
     </div>

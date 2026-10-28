@@ -18,34 +18,17 @@
         <p class="text-muted">عیب‌یابی سریع لوازم خانگی و بردهای الکترونیکی</p>
     </div>
 
-    @if (!hasSearched && featuredErrors.Any())
-    {
-        <section class="mb-4" aria-labelledby="popular-error-codes-title">
-            <div class="mb-3">
-                <h2 id="popular-error-codes-title" class="h4 fw-bold mb-1">کدهای خطای پرکاربرد</h2>
-                <p class="text-muted small mb-0">راهنمای سریع خطاهای ثبت‌شده برای برندها و دستگاه‌های مختلف</p>
-            </div>
-            <div class="row g-3">
-                @foreach (var error in featuredErrors)
-                {
-                    <div class="col-12 col-md-6 col-lg-4">
-                        <a href="@ErrorUrl(error)" class="featured-error-link d-flex align-items-center gap-3 p-3 rounded-4 text-decoration-none">
-                            <span class="featured-error-code">@error.Code</span>
-                            <span class="min-w-0">
-                                <strong class="d-block text-truncate">@error.Brand - @error.DeviceType</strong>
-                                <span class="small text-muted d-block text-truncate">@error.Description</span>
-                            </span>
-                        </a>
-                    </div>
-                }
-            </div>
-        </section>
-    }
-
     <div class="search-card p-4 rounded-4 shadow-sm mb-4">
+        <div class="search-card__head">
+            <div>
+                <h2 class="search-card__title">جستجوی کد خطا</h2>
+                <p class="search-card__hint">برند را انتخاب کنید؛ نوع دستگاه، دسته‌بندی و کد خطا جستجو را دقیق‌تر می‌کنند.</p>
+            </div>
+            <span class="search-card__icon oi oi-magnifying-glass" aria-hidden="true"></span>
+        </div>
         <div class="row g-3">
-            <div class="col-md-3">
-                <label class="form-label fw-bold">برند دستگاه</label>
+            <div class="col-md-6 col-xl-3">
+                <label class="form-label fw-bold search-label"><span class="oi oi-tag"></span> برند دستگاه</label>
                 <select class="form-select custom-input" value="@selectedBrand" @onchange="OnBrandChanged">
                     <option value="">همه برندها</option>
                     @foreach (var brand in brands)
@@ -58,8 +41,8 @@
                     <div class="small text-danger mt-2">انتخاب برند الزامی است.</div>
                 }
             </div>
-            <div class="col-md-3">
-                <label class="form-label fw-bold">نوع دستگاه</label>
+            <div class="col-md-6 col-xl-3">
+                <label class="form-label fw-bold search-label"><span class="oi oi-laptop"></span> نوع دستگاه</label>
                 <select class="form-select custom-input" value="@selectedDevice" @onchange="OnDeviceChanged" disabled="@(string.IsNullOrEmpty(selectedBrand))">
                     <option value="">@(string.IsNullOrEmpty(selectedBrand) ? "ابتدا برند را انتخاب کنید" : "همه دستگاه‌ها")</option>
                     @foreach (var device in devicesForBrand)
@@ -68,8 +51,8 @@
                     }
                 </select>
             </div>
-            <div class="col-md-3">
-                <label class="form-label fw-bold">دسته‌بندی</label>
+            <div class="col-md-6 col-xl-3">
+                <label class="form-label fw-bold search-label"><span class="oi oi-layers"></span> دسته‌بندی</label>
                 <select class="form-select custom-input" value="@selectedCategory" @onchange="OnCategoryChanged">
                     <option value="">همه دسته‌ها</option>
                     @foreach (var cat in categories)
@@ -78,11 +61,11 @@
                     }
                 </select>
             </div>
-            <div class="col-md-3">
-                <label class="form-label fw-bold">کد خطا</label>
+            <div class="col-md-6 col-xl-3">
+                <label class="form-label fw-bold search-label"><span class="oi oi-key"></span> کد خطا</label>
                 <div class="input-group">
                     <input type="text" class="form-control custom-input" placeholder="مثلاً: E01 یا F1" value="@searchCode" @oninput="OnSearchCodeInput" />
-                    <button class="btn btn-primary px-4" @onclick="SearchErrors">
+                    <button class="btn btn-primary px-4" @onclick="SearchErrors" aria-label="جستجو">
                         <span class="oi oi-magnifying-glass"></span>
                     </button>
                 </div>
@@ -120,6 +103,30 @@
         }
     </div>
 
+    @if (!hasSearched && featuredErrors.Any())
+    {
+        <section class="mb-4" aria-labelledby="popular-error-codes-title">
+            <div class="mb-3">
+                <h2 id="popular-error-codes-title" class="h4 fw-bold mb-1">کدهای خطای پرکاربرد</h2>
+                <p class="text-muted small mb-0">راهنمای سریع خطاهای ثبت‌شده برای برندها و دستگاه‌های مختلف</p>
+            </div>
+            <div class="row g-3">
+                @foreach (var error in featuredErrors)
+                {
+                    <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
+                        <a href="@ErrorUrl(error)" class="featured-error-link d-flex align-items-center gap-3 p-3 rounded-4 text-decoration-none">
+                            <span class="featured-error-code">@error.Code</span>
+                            <span class="min-w-0">
+                                <strong class="d-block text-truncate">@error.Brand - @error.DeviceType</strong>
+                                <span class="small text-muted d-block text-truncate">@error.Description</span>
+                            </span>
+                        </a>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
     @if (isLoading)
     {
         <div class="text-center py-5">
@@ -137,71 +144,75 @@
     }
     else if (filteredErrors.Any())
     {
-        @foreach (var catGroup in filteredErrors
-            .GroupBy(e => string.IsNullOrWhiteSpace(e.Category) ? "سایر" : e.Category.Trim(), StringComparer.OrdinalIgnoreCase)
-            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            <div class="mb-4">
-                <div class="d-flex align-items-center gap-2 mb-3">
-                    <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2 fw-bold">@catGroup.Key</span>
-                    <span class="text-muted small">@catGroup.Count() کد خطا</span>
-                </div>
-                <div class="row g-4">
-                    @foreach (var error in catGroup.OrderBy(e => e.Brand, StringComparer.OrdinalIgnoreCase).ThenBy(e => e.DeviceType, StringComparer.OrdinalIgnoreCase).ThenBy(e => e.Code, StringComparer.OrdinalIgnoreCase))
-                    {
-                        <div class="col-md-6 col-lg-4">
-                            <a href="@($"/technical/error-codes/{Uri.EscapeDataString(error.Brand.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(error.DeviceType.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(error.Code.Trim().ToLowerInvariant())}")" class="text-decoration-none">
-                            <div class="error-card h-100 p-4 rounded-4 shadow-sm border-0 position-relative overflow-hidden">
-                                <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
-                                    <div class="d-flex flex-wrap gap-2">
-                                        <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">@error.Brand</span>
-                                        <span class="badge bg-success-subtle text-success rounded-pill px-3 py-2">@error.DeviceType</span>
-                                    </div>
-                                    <div class="error-badge p-3 bg-primary text-white fw-black">
-                                        @error.Code
-                                    </div>
-                                </div>
-                                @if (!string.IsNullOrEmpty(error.ImageUrl))
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2 fw-bold">نتایج جستجو</span>
+            <span class="text-muted small">@filteredErrors.Count کد خطا</span>
+        </div>
+        <div class="row g-3">
+            @foreach (var error in filteredErrors
+                .OrderBy(e => string.IsNullOrWhiteSpace(e.Category) ? "سایر" : e.Category.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(e => e.Brand, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(e => e.DeviceType, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(e => e.Code, StringComparer.OrdinalIgnoreCase))
+            {
+                <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
+                    <a href="@($"/technical/error-codes/{Uri.EscapeDataString(error.Brand.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(error.DeviceType.Trim().ToLowerInvariant())}/{Uri.EscapeDataString(error.Code.Trim().ToLowerInvariant())}")" class="text-decoration-none">
+                    <div class="error-card h-100 p-3 rounded-4 shadow-sm border-0 position-relative overflow-hidden">
+                        <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                            <div class="d-flex flex-wrap gap-2">
+                                <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">@error.Brand</span>
+                                <span class="badge bg-success-subtle text-success rounded-pill px-3 py-2">@error.DeviceType</span>
+                                @if (!string.IsNullOrWhiteSpace(error.Category))
                                 {
-                                    <div class="error-image-wrapper mb-3">
-                                        <img src="@error.ImageUrl" alt="@error.Code" class="error-image" />
-                                    </div>
-                                }
-                                <h5 class="fw-bold mb-3">@error.Description</h5>
-                                <div class="solution-box p-3 rounded-3 bg-light mt-3">
-                                    <label class="fw-bold text-success d-block mb-1">راه حل پیشنهادی:</label>
-                                    <p class="small mb-0 text-dark">@error.Solution</p>
-                                </div>
-                                @if (!string.IsNullOrEmpty(error.TechnicalNotes))
-                                {
-                                    <div class="mt-3">
-                                        <label class="fw-bold text-muted small d-block">نکات فنی:</label>
-                                        <p class="small mb-0 text-muted italic">@error.TechnicalNotes</p>
-                                    </div>
-                                }
-
-                                @if (error.Documents != null && error.Documents.Any())
-                                {
-                                    <div class="docs-box mt-3 p-3 rounded-3">
-                                        <div class="fw-bold text-muted small mb-2">مستندات مرتبط:</div>
-                                        <div class="d-flex flex-wrap gap-2">
-                                            @foreach (var doc in error.Documents.OrderBy(d => d.SortOrder))
-                                            {
-                                                <a class="doc-chip" href="@doc.Url" target="_blank" rel="noopener noreferrer" title="@doc.Title">
-                                                    <span class="oi oi-document me-1"></span>
-                                                    @doc.Title
-                                                </a>
-                                            }
-                                        </div>
-                                    </div>
+                                    <span class="badge category-chip rounded-pill px-3 py-2">@error.Category</span>
                                 }
                             </div>
-                            </a>
+                            <div class="error-badge p-3 bg-primary text-white fw-black">
+                                @error.Code
+                            </div>
                         </div>
-                    }
+                        @if (!string.IsNullOrEmpty(error.ImageUrl))
+                        {
+                            <div class="error-image-wrapper mb-3">
+                                <img src="@(ImageUrlHelper.CanTransform(error.ImageUrl) ? ImageUrlHelper.Thumb(error.ImageUrl, 400) : error.ImageUrl)"
+                                     srcset="@ImageUrlHelper.SrcSet(error.ImageUrl)"
+                                     sizes="(max-width: 768px) 90vw, 400px"
+                                     loading="lazy" decoding="async" alt="@error.Code" class="error-image" />
+                            </div>
+                        }
+                        <h5 class="fw-bold mb-3">@error.Description</h5>
+                        <div class="solution-box p-3 rounded-3 bg-light mt-3">
+                            <label class="fw-bold text-success d-block mb-1">راه حل پیشنهادی:</label>
+                            <p class="small mb-0 text-dark">@error.Solution</p>
+                        </div>
+                        @if (!string.IsNullOrEmpty(error.TechnicalNotes))
+                        {
+                            <div class="mt-3">
+                                <label class="fw-bold text-muted small d-block">نکات فنی:</label>
+                                <p class="small mb-0 text-muted italic">@error.TechnicalNotes</p>
+                            </div>
+                        }
+
+                        @if (error.Documents != null && error.Documents.Any())
+                        {
+                            <div class="docs-box mt-3 p-3 rounded-3">
+                                <div class="fw-bold text-muted small mb-2">مستندات مرتبط:</div>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var doc in error.Documents.OrderBy(d => d.SortOrder))
+                                    {
+                                        <a class="doc-chip" href="@doc.Url" target="_blank" rel="noopener noreferrer" title="@doc.Title">
+                                            <span class="oi oi-document me-1"></span>
+                                            @doc.Title
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    </a>
                 </div>
-            </div>
-        }
+            }
+        </div>
     }
     else
     {
@@ -243,8 +254,68 @@
     .min-w-0 { min-width: 0; }
 
     .search-card {
-        background: var(--app-surface);
+        position: relative;
+        background:
+            radial-gradient(120% 150% at 0% 0%, rgba(37, 99, 235, .10), transparent 52%),
+            radial-gradient(110% 130% at 100% 0%, rgba(16, 185, 129, .08), transparent 55%),
+            var(--app-surface);
         border: 1px solid var(--app-border);
+        box-shadow: 0 18px 42px rgba(15, 23, 42, .07);
+    }
+    .search-card__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+    .search-card__title {
+        margin: 0 0 3px;
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: var(--app-text);
+    }
+    .search-card__hint {
+        margin: 0;
+        max-width: 640px;
+        font-size: .8rem;
+        line-height: 1.7;
+        color: var(--app-text-muted);
+    }
+    .search-card__icon {
+        display: grid;
+        place-items: center;
+        flex: 0 0 44px;
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        background: rgba(37, 99, 235, .11);
+        color: var(--app-primary);
+        font-size: 1.15rem;
+    }
+    .search-label {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 7px;
+        font-size: .82rem;
+        color: var(--app-text);
+    }
+    .search-label .oi {
+        color: var(--app-primary);
+        font-size: .95rem;
+        opacity: .9;
+    }
+    .search-card .custom-input {
+        min-height: 46px;
+        background: var(--app-surface);
+    }
+    .search-card .custom-input:disabled {
+        background: var(--app-bg);
+        opacity: .7;
+    }
+    .search-card .input-group > .btn {
+        min-height: 46px;
     }
     .custom-input {
         border-radius: 12px;
@@ -292,6 +363,11 @@
     }
     .bg-primary-subtle { background: rgba(37, 99, 235, 0.1); }
     .bg-success-subtle { background: rgba(16, 185, 129, 0.1); }
+    .category-chip {
+        background: var(--app-warning-bg, rgba(245, 158, 11, 0.12));
+        color: var(--app-text-secondary, #334155);
+        font-weight: 600;
+    }
     .solution-box {
         border-right: 4px solid #10b981;
         background: rgba(16, 185, 129, 0.05) !important;

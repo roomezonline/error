@@ -6,6 +6,8 @@ namespace ErrorService.Server.Services;
 
 public sealed class MonitoringAuthorizationService
 {
+    private static readonly TimeSpan ExpiryGrace = TimeSpan.FromHours(24);
+
     private readonly ErrorServiceDbContext _db;
 
     public MonitoringAuthorizationService(ErrorServiceDbContext db)
@@ -57,6 +59,53 @@ public sealed class MonitoringAuthorizationService
                         && a.WorkshopId == workshopId.Value
                         && a.StartAt <= now
                         && (a.EndAt == null || a.EndAt > now));
+    }
+
+    /// <summary>
+    /// کنترل/تنظیم دستگاه و دریافت داده زنده تا پایان اعتبار و ۲۴ ساعت مهلت مجاز است.
+    /// تاریخچه از این بررسی مستثنی است.
+    /// </summary>
+    public Task<bool> CanOperateDevice(ClaimsPrincipal user, string deviceCode) =>
+        HasUsableDeviceAccessAsync(user, deviceCode);
+
+    public Task<bool> CanAccessLiveData(ClaimsPrincipal user, string deviceCode) =>
+        HasUsableDeviceAccessAsync(user, deviceCode);
+
+    private async Task<bool> HasUsableDeviceAccessAsync(ClaimsPrincipal user, string deviceCode)
+    {
+        if (user.IsInRole("super_admin"))
+            return true;
+
+        var workshopId = TryGetWorkshopId(user);
+
+        // ادمین‌های بدون کارگاه با مجوز مشاهده مانیتورینگ، مانند قبل دسترسی دارند.
+        if (workshopId == null)
+            return user.HasClaim("perm", "admin.monitoring.view")
+                || user.HasClaim("perm", "admin.monitoring.details.view");
+
+        var device = await _db.MonitoringDevices
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.DeviceNumber == deviceCode);
+
+        if (device == null)
+            return false;
+
+        var now = DateTimeOffset.UtcNow;
+        var assignment = await _db.MonitoringDeviceAssignments
+            .AsNoTracking()
+            .Where(a => a.MonitoringDeviceId == device.Id
+                     && a.WorkshopId == workshopId.Value
+                     && a.StartAt <= now)
+            .OrderByDescending(a => a.StartAt)
+            .FirstOrDefaultAsync();
+
+        if (assignment == null)
+            return false;
+
+        if (assignment.EndAt == null)
+            return true;
+
+        return now <= assignment.EndAt.Value + ExpiryGrace;
     }
 
     public async Task<bool> CanAccessChangeLog(ClaimsPrincipal user, int changeLogId)

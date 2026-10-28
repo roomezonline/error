@@ -82,16 +82,19 @@
             <div class="form-group mb-2">
                 <label class="form-label">عنوان</label>
                 <InputText class="form-control" @bind-Value="model.Title" />
+                <div class="form-text small">برای سئو و متن جایگزین تصویر استفاده می‌شود.</div>
             </div>
 
             <div class="form-group mb-2">
-                <label class="form-label">زیرعنوان</label>
+                <label class="form-label">زیرعنوان (اختیاری)</label>
                 <InputText class="form-control" @bind-Value="model.Subtitle" />
+                <div class="form-text small">همراه عنوان در متن جایگزین تصویر استفاده می‌شود.</div>
             </div>
 
             <div class="form-group mb-2">
-                <label class="form-label">لینک (اختیاری)</label>
+                <label class="form-label">لینک مقصد (اختیاری)</label>
                 <InputText class="form-control" @bind-Value="model.LinkUrl" />
+                <div class="form-text small">اگر پر شود، دکمه «مشاهده» روی اسلاید نمایش داده می‌شود.</div>
             </div>
 
             <div class="row g-2 mb-2">
@@ -115,6 +118,7 @@
                 <div class="upload-guide mt-2">
                     <div class="upload-guide__title">راهنمای سایز عکس اسلایدر</div>
                     <div class="upload-guide__text">استاندارد: 2880×600 px</div>
+                    <div class="upload-guide__text">متن اسلاید را داخل تصویر قرار دهید؛ عنوان و زیرعنوان برای سئو و متن جایگزین تصویر استفاده می‌شوند.</div>
                 </div>
             </div>
 

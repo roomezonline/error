@@ -55,6 +55,40 @@
                                    UpdatedAt="_order.UpdatedAt" />
             </div>
 
+            @if (_order.Status == OrderStatus.Draft)
+            {
+                <div class="alert alert-warning mt-3 mb-0" role="alert">
+                    <b>پیش‌فاکتور:</b> این سند هنوز منتشر نشده و قابل پرداخت نیست. پس از تأیید فروشنده، امکان پرداخت برای شما فعال یا لینک پرداخت ارسال می‌شود.
+                </div>
+            }
+
+            @if (_order.Status == OrderStatus.PendingPayment)
+            {
+                <div class="mod-card mt-3" style="border:1px solid #f59e0b;">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                        <div>
+                            <div class="fw-bold mb-1">این سفارش در انتظار پرداخت است.</div>
+                            <div class="small text-muted">
+                                مبلغ قابل پرداخت:
+                                <span class="fw-bold text-danger">@PayableAmount.ToString("N0") تومان</span>
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <a class="btn btn-warning rounded-pill px-4 py-2 fw-bold" href="@PaymentUrl">
+                                <span class="oi oi-credit-card me-1"></span> پرداخت این سفارش
+                            </a>
+                            @if (CanCancel)
+                            {
+                                <button type="button" class="btn btn-outline-danger rounded-pill px-4 py-2 fw-bold"
+                                        @onclick="OpenCancelDialog" disabled="@_busy">
+                                    <span class="oi oi-x me-1"></span> لغو سفارش
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
             <div class="mod-card mt-3">
                 <div class="mod-card-title"><span class="oi oi-list-rich"></span> اقلام سفارش</div>
                 <div class="mod-order-items">
@@ -62,8 +96,8 @@
                     {
                         <a href="/products/@item.ProductId" target="_blank" rel="noopener" class="mod-order-item">
                             <div class="mod-item-img">
-                                <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-product.svg" : item.ImageUrl)"
-                                     alt="@item.ProductName" />
+                                <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-product.svg" : ImageUrlHelper.Thumb(item.ImageUrl, 200))"
+                                     loading="lazy" decoding="async" alt="@item.ProductName" />
                             </div>
                             <div class="mod-item-body">
                                 <div class="mod-item-name">@item.ProductName</div>
@@ -95,7 +129,7 @@
                     <div class="mod-card-title"><span class="oi oi-wrench"></span> عملیات</div>
                     <div class="d-flex flex-wrap gap-2">
                         <a class="btn btn-outline-secondary rounded-pill px-4" href="@InvoiceUrl" target="_blank" rel="noopener">
-                            <span class="oi oi-print me-1"></span> چاپ فاکتور
+                            <span class="oi oi-print me-1"></span> @(_order.Status == OrderStatus.Draft ? "چاپ پیش‌فاکتور" : "چاپ فاکتور")
                         </a>
                         @if (CanReorder)
                         {
@@ -134,6 +168,20 @@
                                 <div class="mod-info-value" dir="ltr">@_order.Email</div>
                             </div>
                         }
+                        @if (!string.IsNullOrWhiteSpace(_order.ProvinceName) || !string.IsNullOrWhiteSpace(_order.CityName))
+                        {
+                            <div class="mod-info-box">
+                                <div class="mod-info-label">استان / شهر</div>
+                                <div class="mod-info-value">@AddressRegionText</div>
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_order.PostalCode))
+                        {
+                            <div class="mod-info-box">
+                                <div class="mod-info-label">کد پستی</div>
+                                <div class="mod-info-value" dir="ltr">@_order.PostalCode</div>
+                            </div>
+                        }
                         @if (!string.IsNullOrWhiteSpace(_order.Address))
                         {
                             <div class="mod-info-box" style="grid-column:1/-1;">
@@ -168,7 +216,8 @@
                                 @foreach (var img in _order.ReceiptImageUrls)
                                 {
                                     <a href="@img" target="_blank" rel="noopener">
-                                        <img src="@img" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;" />
+                                        <img src="@ImageUrlHelper.Thumb(img, 200)" loading="lazy" decoding="async"
+                                             alt="رسید پرداخت" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;" />
                                     </a>
                                 }
                             </div>
@@ -239,7 +288,7 @@
                 </div>
             }
 
-            @if (_order.Shipments.Any())
+            @if (_order.Shipments?.Any() == true)
             {
                 <div class="mod-card mt-3">
                     <div class="mod-card-title"><span class="oi oi-cart"></span> مرسولات پستی</div>
@@ -275,7 +324,7 @@
                 </div>
             }
 
-            @if (_order.Events.Any())
+            @if (_order.Events?.Any() == true)
             {
                 <div class="mod-card mt-3">
                     <div class="mod-card-title"><span class="oi oi-clock"></span> رویدادها</div>
@@ -294,6 +343,36 @@
         }
     </div>
 </div>
+
+@if (_showCancel && _order != null)
+{
+    <div class="ret-overlay" @onclick="() => _showCancel = false">
+        <div class="ret-modal" @onclick:stopPropagation="true">
+            <h5 class="fw-bold mb-1">لغو سفارش</h5>
+            <div class="text-muted small mb-3" dir="ltr">@_order.OrderNumber</div>
+            <p class="small mb-2">
+                با لغو این سفارش، رزرو موجودی کالاها و کد تخفیف آزاد می‌شود. این کار قابل بازگشت نیست.
+                @if (_shop?.CustomerCancelRequireReason == true)
+                {
+                    <span>وارد کردن دلیل الزامی است.</span>
+                }
+            </p>
+            <textarea class="form-control rounded-3" rows="3" maxlength="500" @bind="_cancelReason"
+                      placeholder="@(_shop?.CustomerCancelRequireReason == true ? "دلیل لغو (الزامی)" : "دلیل لغو (اختیاری)")"></textarea>
+            @if (!string.IsNullOrEmpty(_cancelError))
+            {
+                <div class="text-danger small mt-2">@_cancelError</div>
+            }
+            <div class="d-flex gap-2 justify-content-end mt-3">
+                <button class="btn btn-light rounded-3 px-3" @onclick="() => _showCancel = false" disabled="@_busy">انصراف</button>
+                <button class="btn btn-danger rounded-3 px-4" @onclick="SubmitCancelAsync" disabled="@_busy">
+                    @if (_busy && _busyAction == "cancel") { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    لغو سفارش
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 @if (_showReturn && _order != null)
 {
@@ -435,14 +514,56 @@
     private bool _showReturn;
     private string _returnReason = "";
     private string _returnError = "";
+    private bool _showCancel;
+    private string _cancelReason = "";
+    private string _cancelError = "";
 
     private bool CanReorder => _shop != null && _shop.EnableReorder && _order != null && _order.Items.Any();
 
+    /// <summary>لغو فقط برای سفارش پرداخت‌نشده‌ای که پرداختش آغاز نشده و مرسوله ندارد.</summary>
+    private bool CanCancel => _shop != null && _shop.EnableCustomerOrderCancel && _order != null
+        && _order.Status == OrderStatus.PendingPayment
+        && !_order.PaymentDate.HasValue
+        && string.IsNullOrWhiteSpace(_order.PaymentReference)
+        && string.IsNullOrWhiteSpace(_order.PaymentAuthority)
+        && !_order.PaymentInitiatedAt.HasValue
+        && (_order.Shipments == null || _order.Shipments.Count == 0)
+        && WithinCancelWindow;
+
+    private bool WithinCancelWindow
+    {
+        get
+        {
+            if (_order == null || _shop == null) return false;
+            var hours = _shop.CustomerCancelWindowHours;
+            return hours <= 0 || _order.CreatedAt.AddHours(hours) >= DateTimeOffset.UtcNow;
+        }
+    }
+
+    private string AddressRegionText
+    {
+        get
+        {
+            if (_order == null) return "";
+            if (string.IsNullOrWhiteSpace(_order.ProvinceName)) return _order.CityName ?? "";
+            return string.IsNullOrWhiteSpace(_order.CityName)
+                ? _order.ProvinceName
+                : $"{_order.ProvinceName} - {_order.CityName}";
+        }
+    }
+
     private string InvoiceUrl => _order == null ? "#" : $"/api/orders/{_order.Id}/invoice?token={Uri.EscapeDataString(_order.AccessToken ?? "")}";
+
+    private string PaymentUrl => _order == null
+        ? "#"
+        : $"/payment/offline/{_order.Id}{(!string.IsNullOrWhiteSpace(_order.AccessToken) ? $"?token={Uri.EscapeDataString(_order.AccessToken)}" : "")}";
+
+    private decimal PayableAmount => _order == null ? 0 : _order.TotalAmount - (_order.DiscountAmount ?? 0);
 
     private bool CanReturn => _shop != null && _shop.EnableReturnRequests && _order != null
         && _order.Status != OrderStatus.Cancelled
         && _order.Status != OrderStatus.Rejected
+        && _order.Status != OrderStatus.Draft
         && _order.Status != OrderStatus.PendingPayment;
 
     protected override async Task OnInitializedAsync()
@@ -538,6 +659,53 @@
         }
     }
 
+    private void OpenCancelDialog()
+    {
+        _cancelError = "";
+        _showCancel = true;
+    }
+
+    private async Task SubmitCancelAsync()
+    {
+        if (_busy) return;
+        _cancelError = "";
+        var reason = (_cancelReason ?? "").Trim();
+        if (_shop?.CustomerCancelRequireReason == true && reason.Length < 3)
+        {
+            _cancelError = "برای لغو سفارش، دلیل را وارد کنید";
+            return;
+        }
+
+        _busy = true;
+        _busyAction = "cancel";
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"api/orders/{Id}/cancel",
+                new OrderCancelRequestDto { Reason = string.IsNullOrWhiteSpace(reason) ? null : reason });
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("سفارش لغو شد و موجودی کالاها آزاد شد");
+                _showCancel = false;
+                _cancelReason = "";
+                try { _order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/{Id}"); } catch { }
+            }
+            else
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                _cancelError = string.IsNullOrWhiteSpace(body) ? "لغو سفارش ممکن نشد" : body.Trim('"');
+            }
+        }
+        catch (Exception ex)
+        {
+            _cancelError = $"خطای سیستمی: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+            _busyAction = "";
+        }
+    }
+
     private void GoToProfile()
     {
         Nav.NavigateTo("/profile");
@@ -545,6 +713,7 @@
 
     private string GetStatusText(OrderStatus status) => status switch
     {
+        OrderStatus.Draft => "پیش‌فاکتور",
         OrderStatus.PendingPayment => "در انتظار پرداخت",
         OrderStatus.ReceiptUploaded => "در انتظار تایید",
         OrderStatus.Approved => "تایید شده",

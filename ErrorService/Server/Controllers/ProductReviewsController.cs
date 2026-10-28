@@ -48,6 +48,13 @@ public sealed class ProductReviewsController : ControllerBase
         return settings?.RequireReviewApproval ?? true;
     }
 
+    private int? GetCurrentUserId()
+    {
+        if (User.Identity?.IsAuthenticated != true) return null;
+        var raw = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        return int.TryParse(raw, out var id) ? id : null;
+    }
+
     private async Task<(bool ReviewsEnabled, bool MediaEnabled)> GetStoreTogglesAsync()
     {
         var settings = await _db.SiteSettings.FirstOrDefaultAsync();
@@ -93,9 +100,27 @@ public sealed class ProductReviewsController : ControllerBase
     public async Task<ActionResult<ProductReviewSummaryDto>> GetReviews(int productId)
     {
         var (_, mediaEnabled) = await GetStoreTogglesAsync();
-        var reviews = await _db.ProductReviews
+        var rows = await _db.ProductReviews
+            .AsNoTracking()
             .Where(x => x.ProductId == productId && x.IsApproved)
             .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.Id,
+                x.ProductId,
+                x.ParentId,
+                x.FullName,
+                x.Email,
+                x.UserId,
+                x.Rating,
+                x.Content,
+                x.MediaUrl,
+                x.IsApproved,
+                x.CreatedAt
+            })
+            .ToListAsync();
+
+        var reviews = rows
             .Select(x => new ProductReviewDto
             {
                 Id = x.Id,
@@ -108,7 +133,9 @@ public sealed class ProductReviewsController : ControllerBase
                 IsApproved = x.IsApproved,
                 CreatedAtFa = x.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm")
             })
-            .ToListAsync();
+            .ToList();
+
+        await MarkVerifiedBuyersAsync(productId, rows.Select(x => (x.Id, x.UserId, x.Email)).ToList(), reviews);
 
         var avg = reviews.Any() ? Math.Round(reviews.Average(x => x.Rating), 1) : 0;
         var tree = BuildTree(reviews);
@@ -119,6 +146,64 @@ public sealed class ProductReviewsController : ControllerBase
             TotalCount = reviews.Count,
             Reviews = tree
         };
+    }
+
+    private async Task MarkVerifiedBuyersAsync(
+        int productId,
+        List<(int Id, int? UserId, string Email)> rows,
+        List<ProductReviewDto> reviews)
+    {
+        if (rows.Count == 0) return;
+
+        var userIds = rows.Where(r => r.UserId.HasValue)
+            .Select(r => r.UserId!.Value)
+            .Distinct()
+            .ToList();
+        var emails = rows.Where(r => !r.UserId.HasValue && !string.IsNullOrWhiteSpace(r.Email))
+            .Select(r => r.Email.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToList();
+
+        var verifiedUserIds = new HashSet<int>();
+        var verifiedEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (userIds.Count > 0)
+        {
+            var found = await _db.Orders
+                .AsNoTracking()
+                .Where(o => o.UserId != null
+                            && userIds.Contains(o.UserId.Value)
+                            && (o.Status == OrderStatus.Approved || o.Status == OrderStatus.Completed)
+                            && o.Items.Any(i => i.ProductId == productId))
+                .Select(o => o.UserId!.Value)
+                .Distinct()
+                .ToListAsync();
+            verifiedUserIds = found.ToHashSet();
+        }
+
+        if (emails.Count > 0)
+        {
+            var found = await _db.Orders
+                .AsNoTracking()
+                .Where(o => o.Email != null
+                            && emails.Contains(o.Email.ToLower())
+                            && (o.Status == OrderStatus.Approved || o.Status == OrderStatus.Completed)
+                            && o.Items.Any(i => i.ProductId == productId))
+                .Select(o => o.Email!.ToLower())
+                .Distinct()
+                .ToListAsync();
+            verifiedEmails = new HashSet<string>(found, StringComparer.OrdinalIgnoreCase);
+        }
+
+        var byId = reviews.ToDictionary(x => x.Id);
+        foreach (var row in rows)
+        {
+            var verified = (row.UserId.HasValue && verifiedUserIds.Contains(row.UserId.Value))
+                           || (!string.IsNullOrWhiteSpace(row.Email)
+                               && verifiedEmails.Contains(row.Email.Trim().ToLowerInvariant()));
+            if (verified && byId.TryGetValue(row.Id, out var dto))
+                dto.IsVerifiedBuyer = true;
+        }
     }
 
     [HttpPost]
@@ -148,6 +233,7 @@ public sealed class ProductReviewsController : ControllerBase
         var review = new ProductReview
         {
             ProductId = productId,
+            UserId = GetCurrentUserId(),
             FullName = request.FullName.Trim(),
             Email = request.Email.Trim().ToLowerInvariant(),
             Rating = request.Rating,

@@ -121,94 +121,6 @@ body {
     background: #f1f5f9;
 }
 
-.app-splash {
-    position: fixed;
-    inset: 0;
-    z-index: 2000;
-    background: radial-gradient(1000px 500px at 10% 10%, rgba(47, 178, 106, 0.18), transparent 55%),
-        radial-gradient(900px 500px at 90% 30%, rgba(255, 255, 255, 0.10), transparent 55%),
-        linear-gradient(135deg, #2f5b70, #163443);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 18px;
-    transition: opacity 220ms ease, transform 220ms ease;
-}
-
-.app-splash__card {
-    width: min(420px, 100%);
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: 18px;
-    padding: 18px 16px;
-    text-align: center;
-    backdrop-filter: blur(10px);
-}
-
-.app-splash__logo {
-    width: 74px;
-    height: 74px;
-    margin: 0 auto 10px;
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.12);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.app-splash__logo-img {
-    width: 44px;
-    height: 44px;
-}
-
-.app-splash__brand {
-    color: #ffffff;
-    font-weight: 800;
-    font-size: 1.65rem;
-    line-height: 1.2;
-}
-
-.app-splash__subtitle {
-    margin-top: 6px;
-    color: rgba(255, 255, 255, 0.86);
-    font-weight: 500;
-}
-
-.app-splash__loader {
-    margin-top: 14px;
-    display: inline-flex;
-    gap: 8px;
-}
-
-.app-splash__loader span {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.92);
-    animation: app-splash-bounce 900ms infinite ease-in-out;
-}
-
-.app-splash__loader span:nth-child(2) {
-    animation-delay: 120ms;
-    opacity: 0.9;
-}
-
-.app-splash__loader span:nth-child(3) {
-    animation-delay: 240ms;
-    opacity: 0.8;
-}
-
-@keyframes app-splash-bounce {
-    0%, 80%, 100% { transform: translateY(0); opacity: 0.55; }
-    40% { transform: translateY(-7px); opacity: 1; }
-}
-
-.app-splash--hide {
-    opacity: 0;
-    transform: scale(0.98);
-    pointer-events: none;
-}
-
 h1:focus {
     outline: none;
 }
@@ -306,3 +218,9 @@ a, .btn-link {
     }
 
 
+
+/* Horizontal drag-to-scroll affordance (mouse/pen) */
+.is-drag-scroll { cursor: grab; }
+.is-drag-scroll.is-dragging { cursor: grabbing; }
+.is-drag-scroll.is-dragging,
+.is-drag-scroll.is-dragging * { -webkit-user-select: none !important; user-select: none !important; }
