@@ -1,5 +1,6 @@
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
+using ErrorService.Server.Services;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -18,31 +19,29 @@ public sealed class ServiceVoicesController : ControllerBase
 {
     private const long MaxAudioBytes = 20_000_000;
 
-    private static readonly string[] AllowedExtensions =
-        { ".webm", ".ogg", ".oga", ".mp4", ".m4a", ".mp3", ".wav", ".aac" };
+    // فرمت واحد و قابل پخش روی ESP32-C3 فقط MP3 است.
+    private static readonly string[] AllowedExtensions = { ".mp3" };
 
     private static readonly Dictionary<string, string> ExtensionByMime = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["audio/webm"] = ".webm",
-        ["audio/ogg"] = ".ogg",
-        ["audio/opus"] = ".ogg",
-        ["audio/mp4"] = ".m4a",
-        ["audio/m4a"] = ".m4a",
-        ["audio/aac"] = ".aac",
         ["audio/mpeg"] = ".mp3",
         ["audio/mp3"] = ".mp3",
-        ["audio/wav"] = ".wav",
-        ["audio/x-wav"] = ".wav",
-        ["audio/wave"] = ".wav"
+        ["audio/mpeg3"] = ".mp3",
+        ["audio/x-mpeg-3"] = ".mp3"
     };
 
     private readonly ErrorServiceDbContext _db;
     private readonly IWebHostEnvironment _env;
+    private readonly DeviceVoiceEventService _voiceEvents;
 
-    public ServiceVoicesController(ErrorServiceDbContext db, IWebHostEnvironment env)
+    public ServiceVoicesController(
+        ErrorServiceDbContext db,
+        IWebHostEnvironment env,
+        DeviceVoiceEventService voiceEvents)
     {
         _db = db;
         _env = env;
+        _voiceEvents = voiceEvents;
     }
 
     private string WebRoot => _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
@@ -50,14 +49,23 @@ public sealed class ServiceVoicesController : ControllerBase
     private string VoicesRoot => Path.Combine(WebRoot, "uploads", "service-voices");
 
     [HttpGet]
-    public async Task<ActionResult<List<ServiceVoiceActionDto>>> List(CancellationToken ct)
+    public async Task<ActionResult<List<ServiceVoiceActionDto>>> List(
+        [FromQuery] int? deviceId, CancellationToken ct)
     {
-        var items = await _db.ServiceVoiceActions.AsNoTracking()
+        var query = _db.ServiceVoiceActions.AsNoTracking();
+
+        if (deviceId is > 0)
+            query = query.Where(x => x.MonitoringDeviceId == deviceId);
+
+        var items = await query
             .OrderBy(x => x.Priority)
             .ThenBy(x => x.Id)
             .Select(x => new ServiceVoiceActionDto
             {
                 Id = x.Id,
+                DeviceId = x.MonitoringDeviceId,
+                DeviceTitle = x.MonitoringDevice != null ? x.MonitoringDevice.Title : null,
+                DeviceNumber = x.MonitoringDevice != null ? x.MonitoringDevice.DeviceNumber : null,
                 Key = x.Key,
                 TitleFa = x.TitleFa,
                 IsActive = x.IsActive,
@@ -70,6 +78,64 @@ public sealed class ServiceVoicesController : ControllerBase
             .ToListAsync(ct);
 
         return Ok(items);
+    }
+
+    /// <summary>
+    /// دستگاه‌های فعالی که در حال حاضر به یک کارگاه متصل هستند؛ مبنای انتخاب دستگاه در فرم آواها.
+    /// </summary>
+    [HttpGet("devices")]
+    public async Task<ActionResult<List<ServiceVoiceDeviceDto>>> ListDevices(CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var assignments = await _db.MonitoringDeviceAssignments.AsNoTracking()
+            .Where(x => x.StartAt <= now && (x.EndAt == null || x.EndAt > now))
+            .Select(x => new
+            {
+                x.MonitoringDeviceId,
+                DeviceTitle = x.MonitoringDevice.Title,
+                x.MonitoringDevice.DeviceNumber,
+                x.MonitoringDevice.IsActive,
+                WorkshopTitle = x.Workshop.WorkshopName
+            })
+            .ToListAsync(ct);
+
+        var counts = await _db.ServiceVoiceActions.AsNoTracking()
+            .Where(x => x.MonitoringDeviceId != null)
+            .GroupBy(x => x.MonitoringDeviceId)
+            .Select(g => new { DeviceId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        var countByDevice = counts
+            .Where(x => x.DeviceId.HasValue)
+            .ToDictionary(x => x.DeviceId!.Value, x => x.Count);
+
+        var devices = assignments
+            .Where(x => x.IsActive)
+            .GroupBy(x => x.MonitoringDeviceId)
+            .Select(g =>
+            {
+                var first = g.First();
+                var workshops = g.Select(x => x.WorkshopTitle)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct()
+                    .ToList();
+
+                return new ServiceVoiceDeviceDto
+                {
+                    Id = g.Key,
+                    Title = first.DeviceTitle,
+                    DeviceNumber = first.DeviceNumber,
+                    WorkshopTitle = workshops.Count > 0 ? string.Join(" / ", workshops) : null,
+                    IsActive = true,
+                    ActionsCount = countByDevice.TryGetValue(g.Key, out var c) ? c : 0
+                };
+            })
+            .OrderBy(x => x.WorkshopTitle)
+            .ThenBy(x => x.Title)
+            .ToList();
+
+        return Ok(devices);
     }
 
     [HttpPost]
@@ -86,6 +152,16 @@ public sealed class ServiceVoicesController : ControllerBase
         if (title.Length > 120)
             title = title[..120];
 
+        if (req.MonitoringDeviceId <= 0)
+            return BadRequest("انتخاب دستگاه فعال کارگاه الزامی است.");
+
+        var device = await _db.MonitoringDevices.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == req.MonitoringDeviceId, ct);
+        if (device == null)
+            return BadRequest("دستگاه انتخابی یافت نشد.");
+        if (!device.IsActive)
+            return BadRequest("دستگاه انتخابی غیرفعال است.");
+
         ServiceVoiceAction? entity = null;
         if (req.Id > 0)
         {
@@ -94,10 +170,12 @@ public sealed class ServiceVoicesController : ControllerBase
                 return NotFound("اکشن یافت نشد.");
         }
 
+        // کلید اکشن فقط در محدودهٔ همان دستگاه باید یکتا باشد
         var keyTaken = await _db.ServiceVoiceActions
-            .AnyAsync(x => x.Key == key && (entity == null || x.Id != entity.Id), ct);
+            .AnyAsync(x => x.MonitoringDeviceId == req.MonitoringDeviceId &&
+                           x.Key == key && (entity == null || x.Id != entity.Id), ct);
         if (keyTaken)
-            return Conflict("کلید اکشن قبلاً استفاده شده است.");
+            return Conflict("این کلید برای همین دستگاه قبلاً استفاده شده است.");
 
         var now = DateTimeOffset.UtcNow;
         if (entity == null)
@@ -106,6 +184,7 @@ public sealed class ServiceVoicesController : ControllerBase
             _db.ServiceVoiceActions.Add(entity);
         }
 
+        entity.MonitoringDeviceId = req.MonitoringDeviceId;
         entity.Key = key;
         entity.TitleFa = title;
         entity.IsActive = req.IsActive;
@@ -114,13 +193,15 @@ public sealed class ServiceVoicesController : ControllerBase
         entity.UpdatedAt = now;
 
         await _db.SaveChangesAsync(ct);
-        return Ok(Map(entity));
+        return Ok(Map(entity, device));
     }
 
     [HttpPost("{id:int}/toggle")]
     public async Task<ActionResult<ServiceVoiceActionDto>> Toggle(int id, CancellationToken ct)
     {
-        var entity = await _db.ServiceVoiceActions.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await _db.ServiceVoiceActions
+            .Include(x => x.MonitoringDevice)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity == null)
             return NotFound("اکشن یافت نشد.");
 
@@ -140,21 +221,28 @@ public sealed class ServiceVoicesController : ControllerBase
         if (file.Length > MaxAudioBytes)
             return BadRequest("حجم فایل صوتی باید کمتر از ۲۰ مگابایت باشد.");
 
-        var entity = await _db.ServiceVoiceActions.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await _db.ServiceVoiceActions
+            .Include(x => x.MonitoringDevice)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity == null)
             return NotFound("اکشن یافت نشد.");
 
         var ext = ResolveExtension(file);
         if (ext == null)
-            return BadRequest("فرمت صدا مجاز نیست. فرمت‌های مجاز: webm, ogg, m4a, mp4, mp3, wav, aac");
+            return BadRequest("فقط فایل MP3 مجاز است. ضبط جدید در پنل به‌صورت خودکار به MP3 تبدیل می‌شود.");
+
+        if (!await IsMp3Async(file, ct))
+            return BadRequest("فایل ارسالی MP3 معتبر نیست. لطفاً دوباره ضبط کنید (تبدیل خودکار در پنل انجام می‌شود).");
 
         Directory.CreateDirectory(VoicesRoot);
         var fileName = $"{SanitizeForFile(entity.Key)}-{Guid.NewGuid():N}{ext}";
         var fullPath = Path.Combine(VoicesRoot, fileName);
 
-        await using (var stream = new FileStream(fullPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        await using (var source = file.OpenReadStream())
+        await using (var target = new FileStream(fullPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
-            await file.CopyToAsync(stream, ct);
+            if (source.CanSeek) source.Position = 0;
+            await source.CopyToAsync(target, ct);
         }
 
         DeleteAudioFile(entity.AudioUrl);
@@ -167,10 +255,47 @@ public sealed class ServiceVoicesController : ControllerBase
         return Ok(Map(entity));
     }
 
+    /// <summary>
+    /// ارسال رویداد آزمایشی به دستگاه؛ اگر دستگاه آنلاین باشد همان لحظه پخش می‌شود.
+    /// </summary>
+    [HttpPost("{id:int}/test")]
+    public async Task<ActionResult<ServiceVoiceTestResultDto>> Test(int id, CancellationToken ct)
+    {
+        var entity = await _db.ServiceVoiceActions
+            .Include(x => x.MonitoringDevice)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+
+        if (entity == null)
+            return NotFound("اکشن یافت نشد.");
+
+        if (entity.MonitoringDevice is not { IsActive: true })
+            return BadRequest("دستگاه این اکشن فعال نیست یا به کارگاه متصل نیست.");
+
+        if (!entity.IsActive)
+            return BadRequest("این اکشن غیرفعال است؛ برای پخش آزمایشی ابتدا آن را فعال کنید.");
+
+        if (string.IsNullOrWhiteSpace(entity.AudioUrl) ||
+            !entity.AudioUrl.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+            return BadRequest("برای این اکشن فایل MP3 ذخیره نشده است؛ ابتدا صدا را ضبط و ذخیره کنید.");
+
+        var now = DateTimeOffset.UtcNow;
+        var ev = _voiceEvents.AddTestEvent(_db, entity.MonitoringDevice, entity, now);
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new ServiceVoiceTestResultDto
+        {
+            Ok = true,
+            EventId = ev.Id,
+            Message = "درخواست پخش آزمایشی برای دستگاه ارسال شد."
+        });
+    }
+
     [HttpDelete("{id:int}/audio")]
     public async Task<ActionResult<ServiceVoiceActionDto>> DeleteAudio(int id, CancellationToken ct)
     {
-        var entity = await _db.ServiceVoiceActions.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await _db.ServiceVoiceActions
+            .Include(x => x.MonitoringDevice)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity == null)
             return NotFound("اکشن یافت نشد.");
 
@@ -195,18 +320,25 @@ public sealed class ServiceVoicesController : ControllerBase
         return NoContent();
     }
 
-    private static ServiceVoiceActionDto Map(ServiceVoiceAction x) => new()
+    private static ServiceVoiceActionDto Map(ServiceVoiceAction x, MonitoringDevice? device = null)
     {
-        Id = x.Id,
-        Key = x.Key,
-        TitleFa = x.TitleFa,
-        IsActive = x.IsActive,
-        RepeatCount = x.RepeatCount,
-        Priority = x.Priority,
-        AudioUrl = x.AudioUrl,
-        AudioSizeBytes = x.AudioSizeBytes,
-        UpdatedAt = x.UpdatedAt
-    };
+        var dev = x.MonitoringDevice ?? device;
+        return new ServiceVoiceActionDto
+        {
+            Id = x.Id,
+            DeviceId = x.MonitoringDeviceId ?? dev?.Id,
+            DeviceTitle = dev?.Title,
+            DeviceNumber = dev?.DeviceNumber,
+            Key = x.Key,
+            TitleFa = x.TitleFa,
+            IsActive = x.IsActive,
+            RepeatCount = x.RepeatCount,
+            Priority = x.Priority,
+            AudioUrl = x.AudioUrl,
+            AudioSizeBytes = x.AudioSizeBytes,
+            UpdatedAt = x.UpdatedAt
+        };
+    }
 
     private static string? NormalizeKey(string? raw)
     {
@@ -230,6 +362,22 @@ public sealed class ServiceVoicesController : ControllerBase
 
         var mime = (file.ContentType ?? string.Empty).Split(';')[0].Trim();
         return ExtensionByMime.TryGetValue(mime, out var mapped) ? mapped : null;
+    }
+
+    /// <summary>بررسی سبک هدر MP3: ID3 یا frame sync. جلوی فایل اشتباه با پسوند mp3 را می‌گیرد.</summary>
+    private static async Task<bool> IsMp3Async(IFormFile file, CancellationToken ct)
+    {
+        await using var stream = file.OpenReadStream();
+        var header = new byte[3];
+        var read = await stream.ReadAsync(header.AsMemory(0, header.Length), ct);
+        if (read < 2) return false;
+
+        // ID3v2
+        if (read >= 3 && header[0] == 0x49 && header[1] == 0x44 && header[2] == 0x33)
+            return true;
+
+        // MPEG audio frame sync (11 bits set)
+        return header[0] == 0xFF && (header[1] & 0xE0) == 0xE0;
     }
 
     private static string SanitizeForFile(string key)

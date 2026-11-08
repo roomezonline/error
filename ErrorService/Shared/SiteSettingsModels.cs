@@ -141,6 +141,7 @@ public sealed class SiteStatsDto
 {
     public int MonitoringCount { get; set; }
     public int ErrorCodesCount { get; set; }
+    public int SensorCount { get; set; }
     public int LearningCount { get; set; }
     public int CompletedServicesCount { get; set; }
 }

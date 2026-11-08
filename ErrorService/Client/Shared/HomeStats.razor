@@ -19,10 +19,10 @@
                     <span class="hs-value">@_errorCodes.ToString("N0")</span>
                     <span class="hs-label">کد خطای ثبت‌شده</span>
                 </div>
-                <div class="hs-card hs-card--learning" role="listitem">
-                    <span class="hs-icon hs-icon--book" aria-hidden="true"><span class="oi oi-book"></span></span>
-                    <span class="hs-value">@_learning.ToString("N0")</span>
-                    <span class="hs-label">آموزش و مقاله</span>
+                <div class="hs-card hs-card--sensors" role="listitem">
+                    <span class="hs-icon hs-icon--sensor" aria-hidden="true"><span class="oi oi-signal"></span></span>
+                    <span class="hs-value">@_sensors.ToString("N0")</span>
+                    <span class="hs-label">سنسور ثبت‌شده</span>
                 </div>
                 @if (_showServices)
                 {
@@ -43,7 +43,7 @@
     private bool _showServices;
     private int _monitoring;
     private int _errorCodes;
-    private int _learning;
+    private int _sensors;
     private int _services;
 
     protected override async Task OnInitializedAsync()
@@ -86,7 +86,7 @@
             var progress = 1 - Math.Pow(1 - (double)step / steps, 3);
             _monitoring = (int)Math.Round(stats.MonitoringCount * progress);
             _errorCodes = (int)Math.Round(stats.ErrorCodesCount * progress);
-            _learning = (int)Math.Round(stats.LearningCount * progress);
+            _sensors = (int)Math.Round(stats.SensorCount * progress);
             _services = (int)Math.Round(stats.CompletedServicesCount * progress);
 
             await InvokeAsync(StateHasChanged);
@@ -95,7 +95,7 @@
 
         _monitoring = stats.MonitoringCount;
         _errorCodes = stats.ErrorCodesCount;
-        _learning = stats.LearningCount;
+        _sensors = stats.SensorCount;
         _services = stats.CompletedServicesCount;
         await InvokeAsync(StateHasChanged);
     }

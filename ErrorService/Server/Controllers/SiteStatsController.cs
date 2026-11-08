@@ -17,7 +17,7 @@ public sealed class SiteStatsController : ControllerBase
     }
 
     [HttpGet]
-    [OutputCache(Duration = 600, Tags = new[] { "error-codes", "academy" })]
+    [OutputCache(Duration = 600, Tags = new[] { "error-codes", "academy", "sensors" })]
     public async Task<ActionResult<SiteStatsDto>> Get()
     {
         var completedServices = await _db.CustomerReceipts.AsNoTracking().CountAsync();
@@ -33,6 +33,7 @@ public sealed class SiteStatsController : ControllerBase
         var monitoring = Math.Max(monitoringRows, Math.Max(maxConnectionId, maxArchivedConnectionId));
 
         var errorCodes = await _db.ErrorCodes.AsNoTracking().CountAsync();
+        var sensors = await _db.SensorFinderRecords.AsNoTracking().CountAsync();
         var courses = await _db.TrainingCourses.AsNoTracking().CountAsync(c => c.IsPublished);
         var articles = await _db.TrainingArticles.AsNoTracking().CountAsync(a => a.IsPublished);
 
@@ -40,6 +41,7 @@ public sealed class SiteStatsController : ControllerBase
         {
             MonitoringCount = monitoring,
             ErrorCodesCount = errorCodes,
+            SensorCount = sensors,
             LearningCount = courses + articles,
             CompletedServicesCount = completedServices
         });

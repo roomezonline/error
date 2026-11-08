@@ -1,5 +1,6 @@
 @page "/admin/service-voices"
 @layout AdminLayout
+@implements IAsyncDisposable
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = "perm:admin.servicevoices.manage")]
 @using ErrorService.Shared
@@ -20,7 +21,7 @@
         <div class="sv-hero__text">
             <h3 class="admin-page-title m-0">آوای ارورسرویس</h3>
             <p class="text-muted small m-0">
-                برای هر اکشن (دیفراست، استارت موتور، وصل شدن برق و…) صدا ضبط کنید؛ تعداد تکرار و اولویت پخش را همین‌جا تعیین کنید.
+                اول دستگاه فعال کارگاه را انتخاب کنید؛ بعد برای همان دستگاه اکشن بسازید، صدا ضبط کنید و ذخیره کنید.
             </p>
         </div>
         <div class="sv-hero__actions">
@@ -28,17 +29,79 @@
                 <span class="sv-dot"></span>
                 @ActiveCount اکشن فعال
             </span>
-            <button type="button" class="btn btn-primary rounded-3 shadow-sm" @onclick="NewItemAsync">
+            <button type="button" class="btn btn-primary rounded-3 shadow-sm" @onclick="NewItemAsync"
+                    disabled="@(_selectedDeviceId is not > 0)">
                 <span class="oi oi-plus me-1"></span>
                 اکشن جدید
             </button>
         </div>
     </div>
 
+    <div class="sv-devicebar">
+        <div class="sv-devicebar__head">
+            <div class="sv-devicebar__title"><span class="oi oi-location"></span> دستگاه هدف</div>
+            <button type="button" class="sv-icon-btn" @onclick="ReloadDevicesAsync" disabled="@_loadingDevices"
+                    title="بازخوانی دستگاه‌ها" aria-label="بازخوانی دستگاه‌ها">
+                <span class="oi oi-reload"></span>
+            </button>
+        </div>
+
+        @if (_loadingDevices)
+        {
+            <div class="sv-devicebar__hint">
+                <span class="spinner-border spinner-border-sm me-2"></span>
+                در حال بارگذاری دستگاه‌های فعال…
+            </div>
+        }
+        else if (_devices.Count == 0)
+        {
+            <div class="sv-devicebar__empty">
+                هیچ دستگاه فعالی به کارگاهی متصل نیست. ابتدا در
+                <a href="/admin/monitoring-devices">مدیریت دستگاه‌ها</a>
+                دستگاه را فعال و به کارگاه متصل کنید.
+            </div>
+        }
+        else
+        {
+            <div class="sv-devicebar__row">
+                <select class="form-select sv-devicebar__select" @bind="_selectedDeviceId" @bind:after="OnDeviceChangedAsync">
+                    @foreach (var d in _devices)
+                    {
+                        <option value="@d.Id">@DeviceLabel(d)</option>
+                    }
+                </select>
+
+                @if (_selectedDevice is { } chipDevice)
+                {
+                    <div class="sv-devicebar__chips">
+                        <span class="sv-tag sv-tag--ok"><span class="oi oi-check"></span>فعال</span>
+                        <span class="sv-tag"><span class="oi oi-loop"></span>@chipDevice.ActionsCount اکشن</span>
+                        @if (!string.IsNullOrWhiteSpace(chipDevice.WorkshopTitle))
+                        {
+                            <span class="sv-tag"><span class="oi oi-map-marker"></span>@chipDevice.WorkshopTitle</span>
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (_selectedDevice is { } codeDevice)
+            {
+                <div class="sv-devicebar__code">
+                    <span class="sv-devicebar__code-label">کد دستگاه برای فرمور:</span>
+                    <code dir="ltr">@codeDevice.DeviceNumber</code>
+                    <span class="sv-devicebar__code-hint">
+                        همین مقدار را در <code>ava_config.h</code> به عنوان <code>DEVICE_CODE</code> بگذارید
+                        یا در پنل وای‌فای دستگاه وارد کنید.
+                    </span>
+                </div>
+            }
+        }
+    </div>
+
     <div class="sv-stats">
         <div class="sv-stat">
             <span class="sv-stat__num">@(_items?.Count ?? 0)</span>
-            <span class="sv-stat__label">کل اکشن‌ها</span>
+            <span class="sv-stat__label">اکشن‌های این دستگاه</span>
         </div>
         <div class="sv-stat">
             <span class="sv-stat__num">@ActiveCount</span>
@@ -54,8 +117,8 @@
         <section class="sv-panel">
             <header class="sv-panel__head">
                 <div>
-                    <div class="sv-panel__title"><span class="oi oi-list"></span> اکشن‌های تعریف‌شده</div>
-                    <div class="sv-hint">چیدمان بر اساس اولویت پخش</div>
+                    <div class="sv-panel__title"><span class="oi oi-list"></span> اکشن‌های @(_selectedDevice?.Title ?? "دستگاه")</div>
+                    <div class="sv-hint">@(_selectedDevice is null ? "ابتدا دستگاه هدف را انتخاب کنید" : "چیدمان بر اساس اولویت پخش")</div>
                 </div>
                 <button type="button" class="sv-icon-btn" @onclick="LoadAsync" title="بازخوانی" aria-label="بازخوانی">
                     <span class="oi oi-reload"></span>
@@ -69,11 +132,19 @@
                     در حال بارگذاری…
                 </div>
             }
+            else if (_selectedDeviceId is not > 0)
+            {
+                <div class="sv-empty">
+                    <div class="sv-empty__icon"><span class="oi oi-location"></span></div>
+                    <div class="fw-bold mb-1">دستگاهی انتخاب نشده است</div>
+                    <div class="small">از نوار «دستگاه هدف» یک دستگاه فعال کارگاه انتخاب کنید.</div>
+                </div>
+            }
             else if (!_items.Any())
             {
                 <div class="sv-empty">
                     <div class="sv-empty__icon"><span class="oi oi-audio"></span></div>
-                    <div class="fw-bold mb-1">هنوز اکشنی تعریف نشده است</div>
+                    <div class="fw-bold mb-1">برای این دستگاه هنوز اکشنی تعریف نشده است</div>
                     <div class="small">از دکمه «اکشن جدید» شروع کنید؛ مثلاً دیفراست یا استارت موتور.</div>
                 </div>
             }
@@ -92,6 +163,21 @@
                                     </div>
                                 </div>
                                 <div class="sv-item__tools">
+                                    @if (it.DeviceId is > 0 && !string.IsNullOrWhiteSpace(it.AudioUrl))
+                                    {
+                                        <button type="button" class="sv-icon-btn" title="پخش آزمایشی روی دستگاه"
+                                                aria-label="پخش آزمایشی روی دستگاه"
+                                                @onclick="() => TestAsync(it)" disabled="@(_testingId == it.Id)">
+                                            @if (_testingId == it.Id)
+                                            {
+                                                <span class="spinner-border spinner-border-sm"></span>
+                                            }
+                                            else
+                                            {
+                                                <span class="oi oi-audio"></span>
+                                            }
+                                        </button>
+                                    }
                                     <button type="button" class="sv-icon-btn" title="ویرایش" aria-label="ویرایش" @onclick="() => Edit(it)">
                                         <span class="oi oi-pencil"></span>
                                     </button>
@@ -109,6 +195,10 @@
                                     <span>@(it.IsActive ? "فعال" : "غیرفعال")</span>
                                 </button>
                                 <span class="sv-tag"><span class="oi oi-loop"></span>@it.RepeatCount بار</span>
+                                @if (ServiceVoiceEventKeys.TitleOf(it.Key) is { } eventTitle)
+                                {
+                                    <span class="sv-tag sv-tag--event"><span class="oi oi-bolt"></span>@eventTitle</span>
+                                }
                                 @if (!string.IsNullOrWhiteSpace(it.AudioUrl))
                                 {
                                     <span class="sv-tag sv-tag--ok"><span class="oi oi-audio"></span>@FormatSize(it.AudioSizeBytes)</span>
@@ -140,7 +230,16 @@
             <header class="sv-panel__head">
                 <div>
                     <div class="sv-panel__title">@(_editingId is null ? "تعریف اکشن جدید" : "ویرایش اکشن")</div>
-                    <div class="sv-hint">@(_editingId is null ? "کلید انگلیسی، نام فارسی و مشخصات پخش" : $"در حال ویرایش اکشن #{_editingId}")</div>
+                    <div class="sv-hint">
+                        @if (_selectedDevice is { } editorDevice)
+                        {
+                            <span>برای دستگاه <strong>@editorDevice.Title</strong> — کد <code dir="ltr">@editorDevice.DeviceNumber</code></span>
+                        }
+                        else
+                        {
+                            <span>ابتدا دستگاه هدف را انتخاب کنید</span>
+                        }
+                    </div>
                 </div>
                 @if (_editingId is not null)
                 {
@@ -154,11 +253,33 @@
             <EditForm Model="_model" OnValidSubmit="SaveAsync" class="sv-form">
                 <DataAnnotationsValidator />
 
+                @if (_selectedDeviceId is not > 0)
+                {
+                    <div class="sv-note">
+                        برای تعریف اکشن، ابتدا از نوار «دستگاه هدف» یک دستگاه فعال کارگاه انتخاب کنید.
+                    </div>
+                }
+
                 <div class="sv-field">
                     <label class="sv-label">کلید اکشن</label>
                     <InputText class="form-control" dir="ltr" @bind-Value="_model.Key" placeholder="defrost" />
                     <div class="sv-hint">حروف انگلیسی کوچک، عدد، خط تیره یا زیرخط — مثل <code dir="ltr">engine_start</code></div>
                     <ValidationMessage For="@(() => _model.Key)" class="text-danger small" />
+                </div>
+
+                <div class="sv-field">
+                    <label class="sv-label">اتصال به رویداد پایش</label>
+                    <select class="form-select" value="@EventKeySelectValue" @onchange="OnEventKeyChanged">
+                        <option value="">بدون اتصال — فقط پخش دستی</option>
+                        @foreach (var opt in ServiceVoiceEventKeys.Options)
+                        {
+                            <option value="@opt.Key">@opt.TitleFa — @opt.HintFa</option>
+                        }
+                    </select>
+                    <div class="sv-hint">
+                        با انتخاب رویداد، کلید و نام خودکار پر می‌شود. هنگام تغییر همان تجهیز در پایش،
+                        صدا بلافاصله روی دستگاه پخش می‌شود.
+                    </div>
                 </div>
 
                 <div class="sv-field">
@@ -240,6 +361,7 @@
                                     <span class="sv-tag sv-tag--ok"><span class="oi oi-check"></span>ضبط جدید — پیش از ذخیره تست کنید</span>
                                 </div>
                                 <audio controls src="@_pendingUrl" class="sv-audio" dir="ltr"></audio>
+                                <div class="sv-rec-caption">این صدا پیش از آپلود به MP3 (مونو، ۲۲ کیلوهرتز، ۶۴ کیلوبیت) تبدیل می‌شود تا روی دستگاه ESP32 روان و واضح پخش شود.</div>
                                 <div class="sv-take__actions">
                                     <button type="button" class="sv-btn sv-btn--ghost" @onclick="StartRecordingAsync" disabled="@_saving">
                                         <span class="oi oi-microphone"></span>
@@ -257,6 +379,12 @@
                             <div class="sv-take">
                                 <div class="sv-take__label">صدای ذخیره‌شده روی سرور</div>
                                 <audio controls preload="none" src="@_existingAudioUrl" class="sv-audio" dir="ltr"></audio>
+                                @if (!IsDevicePlayable(_existingAudioUrl))
+                                {
+                                    <div class="sv-rec-hint">
+                                        این فایل MP3 نیست و روی دستگاه پخش نمی‌شود. لطفاً دوباره ضبط کنید تا خودکار به MP3 تبدیل شود.
+                                    </div>
+                                }
                                 <div class="sv-take__actions">
                                     <button type="button" class="sv-btn sv-btn--ghost" @onclick="StartRecordingAsync" disabled="@_saving">
                                         <span class="oi oi-microphone"></span>
@@ -275,7 +403,7 @@
                 </div>
 
                 <div class="sv-form__actions">
-                    <button class="btn btn-primary rounded-3 flex-grow-1" type="submit" disabled="@(_saving || _isRecording)">
+                    <button class="btn btn-primary rounded-3 flex-grow-1" type="submit" disabled="@(_saving || _isRecording || _selectedDeviceId is not > 0)">
                         @if (_saving)
                         {
                             <span class="spinner-border spinner-border-sm me-2"></span>
@@ -315,6 +443,94 @@
         align-items: center;
         gap: .5rem;
         flex-wrap: wrap;
+    }
+
+    .sv-devicebar {
+        background: var(--app-surface);
+        border: 1px solid var(--app-border);
+        border-radius: 16px;
+        padding: .85rem 1rem;
+        margin-bottom: 1rem;
+        box-shadow: var(--app-shadow-sm, 0 2px 10px rgba(15, 23, 42, .04));
+    }
+
+    .sv-devicebar__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+        margin-bottom: .6rem;
+    }
+
+    .sv-devicebar__title {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        font-weight: 800;
+        font-size: .85rem;
+        color: var(--app-text);
+    }
+
+    .sv-devicebar__hint,
+    .sv-devicebar__empty {
+        font-size: .78rem;
+        line-height: 1.9;
+        color: var(--app-text-secondary);
+    }
+
+    .sv-devicebar__empty a {
+        font-weight: 700;
+    }
+
+    .sv-devicebar__row {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        flex-wrap: wrap;
+    }
+
+    .sv-devicebar__select {
+        flex: 1 1 320px;
+        min-width: 0;
+        max-width: 520px;
+        border-radius: 10px;
+        font-size: .85rem;
+    }
+
+    .sv-devicebar__chips {
+        display: flex;
+        align-items: center;
+        gap: .35rem;
+        flex-wrap: wrap;
+    }
+
+    .sv-devicebar__code {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        flex-wrap: wrap;
+        margin-top: .6rem;
+        padding-top: .6rem;
+        border-top: 1px dashed var(--app-border);
+        font-size: .75rem;
+        color: var(--app-text-muted);
+    }
+
+    .sv-devicebar__code code {
+        background: var(--app-bg);
+        border: 1px solid var(--app-border);
+        border-radius: 7px;
+        padding: .05rem .45rem;
+        font-weight: 700;
+        color: var(--app-text);
+    }
+
+    .sv-devicebar__code-hint {
+        line-height: 1.8;
+    }
+
+    .sv-devicebar__code-hint code {
+        padding: 0 .2rem;
     }
 
     .sv-pill {
@@ -559,6 +775,12 @@
 
     .sv-tag--off {
         color: var(--app-text-muted);
+    }
+
+    .sv-tag--event {
+        background: var(--app-primary-light);
+        color: var(--app-primary);
+        border-color: transparent;
     }
 
     .sv-toggle {
@@ -876,7 +1098,10 @@
     [Inject] private HttpClient Http { get; set; } = default!;
 
     private List<ServiceVoiceActionDto>? _items;
-    private ServiceVoiceActionUpsertRequest _model = NewModel(10);
+    private List<ServiceVoiceDeviceDto> _devices = new();
+    private int? _selectedDeviceId;
+    private bool _loadingDevices;
+    private ServiceVoiceActionUpsertRequest _model = NewModel(10, 0);
     private int? _editingId;
     private bool _saving;
     private bool _recorderSupported;
@@ -888,13 +1113,55 @@
 
     private ServiceVoiceActionDto? _itemToDelete;
     private bool _showDeleteConfirm;
+    private int? _testingId;
+
+    private ServiceVoiceDeviceDto? _selectedDevice =>
+        _devices.FirstOrDefault(x => x.Id == _selectedDeviceId);
 
     private int ActiveCount => _items?.Count(x => x.IsActive) ?? 0;
     private int WithAudioCount => _items?.Count(x => !string.IsNullOrWhiteSpace(x.AudioUrl)) ?? 0;
 
+    private static string DeviceLabel(ServiceVoiceDeviceDto d) =>
+        string.IsNullOrWhiteSpace(d.WorkshopTitle)
+            ? $"{d.Title} — {d.DeviceNumber}"
+            : $"{d.Title} — {d.DeviceNumber} ({d.WorkshopTitle})";
+
+    /// <summary>اگر کلید فعلی یکی از رویدادهای استاندارد باشد، همان در dropdown انتخاب می‌شود.</summary>
+    private string EventKeySelectValue =>
+        ServiceVoiceEventKeys.Options.Any(x => string.Equals(x.Key, _model.Key, StringComparison.OrdinalIgnoreCase))
+            ? _model.Key.ToLowerInvariant()
+            : string.Empty;
+
+    private void OnEventKeyChanged(ChangeEventArgs e)
+    {
+        var key = (e.Value?.ToString() ?? string.Empty).Trim().ToLowerInvariant();
+        var option = ServiceVoiceEventKeys.Options
+            .FirstOrDefault(x => string.Equals(x.Key, key, StringComparison.OrdinalIgnoreCase));
+
+        if (option == null)
+        {
+            // «بدون اتصال»: اگر کلید فعلی از رویدادهای استاندارد است پاک می‌شود؛
+            // کلید دستی سفارشی دست‌نخورده می‌ماند.
+            if (ServiceVoiceEventKeys.TitleOf(_model.Key) != null)
+            {
+                _model.Key = string.Empty;
+                _model.TitleFa = string.Empty;
+            }
+            return;
+        }
+
+        _model.Key = option.Key;
+        _model.TitleFa = option.TitleFa;
+    }
+
     protected override async Task OnInitializedAsync()
     {
-        await LoadAsync();
+        await LoadDevicesAsync(keepSelection: false);
+        if (_selectedDeviceId is > 0)
+            await LoadAsync();
+        else
+            _items = new();
+
         Reset();
     }
 
@@ -912,11 +1179,68 @@
         }
     }
 
-    private async Task LoadAsync()
+    private async Task LoadDevicesAsync(bool keepSelection = true)
     {
+        _loadingDevices = true;
+        var previous = keepSelection ? _selectedDeviceId : null;
         try
         {
-            _items = await Http.GetFromJsonAsync<List<ServiceVoiceActionDto>>("api/admin/service-voices") ?? new();
+            var list = await Http.GetFromJsonAsync<List<ServiceVoiceDeviceDto>>("api/admin/service-voices/devices")
+                       ?? new();
+
+            _devices = list;
+            _selectedDeviceId = list.Any(x => x.Id == previous)
+                ? previous
+                : list.FirstOrDefault()?.Id;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                                           || ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _devices = new();
+            _selectedDeviceId = null;
+            ToastService.ShowError("خطای دسترسی: این بخش فقط برای سوپر ادمین فعال است.");
+        }
+        catch
+        {
+            _devices = new();
+            _selectedDeviceId = null;
+            ToastService.ShowError("خطا در بارگذاری دستگاه‌های فعال");
+        }
+        finally
+        {
+            _loadingDevices = false;
+        }
+    }
+
+    private async Task ReloadDevicesAsync()
+    {
+        await LoadDevicesAsync();
+        if (_selectedDeviceId is > 0)
+            await LoadAsync();
+        else
+            _items = new();
+
+        Reset();
+    }
+
+    private async Task OnDeviceChangedAsync()
+    {
+        await LoadAsync();
+        Reset();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_selectedDeviceId is not > 0)
+        {
+            _items = new();
+            return;
+        }
+
+        try
+        {
+            _items = await Http.GetFromJsonAsync<List<ServiceVoiceActionDto>>(
+                         $"api/admin/service-voices?deviceId={_selectedDeviceId}") ?? new();
             _items = _items.OrderBy(x => x.Priority).ThenBy(x => x.Id).ToList();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized
@@ -934,6 +1258,12 @@
 
     private async Task NewItemAsync()
     {
+        if (_selectedDeviceId is not > 0)
+        {
+            ToastService.ShowWarning("ابتدا از نوار «دستگاه هدف» یک دستگاه فعال انتخاب کنید.");
+            return;
+        }
+
         Reset();
         await ScrollToEditorAsync();
     }
@@ -944,6 +1274,7 @@
         _model = new ServiceVoiceActionUpsertRequest
         {
             Id = it.Id,
+            MonitoringDeviceId = it.DeviceId ?? _selectedDeviceId ?? 0,
             Key = it.Key,
             TitleFa = it.TitleFa,
             IsActive = it.IsActive,
@@ -960,7 +1291,7 @@
     private void Reset()
     {
         _editingId = null;
-        _model = NewModel(NextPriority());
+        _model = NewModel(NextPriority(), _selectedDeviceId ?? 0);
         _existingAudioUrl = string.Empty;
         _pendingUrl = string.Empty;
         _recordSeconds = 0;
@@ -973,8 +1304,9 @@
         return Math.Min(1000, _items.Max(x => x.Priority) + 10);
     }
 
-    private static ServiceVoiceActionUpsertRequest NewModel(int priority) => new()
+    private static ServiceVoiceActionUpsertRequest NewModel(int priority, int deviceId) => new()
     {
+        MonitoringDeviceId = deviceId,
         Key = string.Empty,
         TitleFa = string.Empty,
         IsActive = true,
@@ -991,9 +1323,17 @@
     {
         if (_isRecording) return;
 
+        if (_selectedDeviceId is not > 0)
+        {
+            ToastService.ShowWarning("ابتدا از نوار «دستگاه هدف» یک دستگاه فعال انتخاب کنید.");
+            return;
+        }
+
         _saving = true;
         try
         {
+            _model.MonitoringDeviceId = _selectedDeviceId.Value;
+
             var resp = await Http.PostAsJsonAsync("api/admin/service-voices", _model);
             if (!resp.IsSuccessStatusCode)
             {
@@ -1029,6 +1369,7 @@
             _recordSeconds = 0;
             ToastService.ShowSuccess(uploaded ? "اکشن و صدا ذخیره شد" : "اکشن ذخیره شد");
 
+            await LoadDevicesAsync();
             await LoadAsync();
             var refreshed = _items?.FirstOrDefault(x => x.Id == saved.Id);
             if (refreshed != null)
@@ -1037,6 +1378,7 @@
                 _model = new ServiceVoiceActionUpsertRequest
                 {
                     Id = refreshed.Id,
+                    MonitoringDeviceId = refreshed.DeviceId ?? _selectedDeviceId ?? 0,
                     Key = refreshed.Key,
                     TitleFa = refreshed.TitleFa,
                     IsActive = refreshed.IsActive,
@@ -1073,6 +1415,34 @@
         catch
         {
             ToastService.ShowError("تغییر وضعیت انجام نشد");
+        }
+    }
+
+    private async Task TestAsync(ServiceVoiceActionDto it)
+    {
+        if (_testingId != null || _saving) return;
+
+        _testingId = it.Id;
+        try
+        {
+            var resp = await Http.PostAsync($"api/admin/service-voices/{it.Id}/test", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<ServiceVoiceTestResultDto>();
+                ToastService.ShowSuccess(result?.Message ?? "درخواست پخش آزمایشی برای دستگاه ارسال شد");
+            }
+            else
+            {
+                ToastService.ShowError(await ReadErrorAsync(resp, "ارسال پخش آزمایشی انجام نشد"));
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"ارسال پخش آزمایشی انجام نشد: {ex.Message}");
+        }
+        finally
+        {
+            _testingId = null;
         }
     }
 
@@ -1126,6 +1496,7 @@
             {
                 ToastService.ShowSuccess("اکشن حذف شد");
                 if (_editingId == item.Id) Reset();
+                await LoadDevicesAsync();
                 await LoadAsync();
             }
             else
@@ -1214,6 +1585,11 @@
 
     private static string FormatDuration(int seconds) =>
         TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(@"mm\:ss");
+
+    /// <summary>فقط MP3 روی دستگاه ESP32 قابل پخش است.</summary>
+    private static bool IsDevicePlayable(string? url) =>
+        !string.IsNullOrWhiteSpace(url) &&
+        url.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
 
     private static string FormatSize(long bytes)
     {

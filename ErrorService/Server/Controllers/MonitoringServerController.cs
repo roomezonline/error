@@ -21,14 +21,16 @@ public class MonitoringServerController : ControllerBase
     private readonly ILogger<MonitoringServerController> _logger;
     private readonly NotificationEventService _notificationEvents;
     private readonly MonitoringAuthorizationService _authz;
+    private readonly DeviceVoiceEventService _voiceEvents;
 
-    public MonitoringServerController(MonitoringCacheService cache, ErrorServiceDbContext db, ILogger<MonitoringServerController> logger, NotificationEventService notificationEvents, MonitoringAuthorizationService authz)
+    public MonitoringServerController(MonitoringCacheService cache, ErrorServiceDbContext db, ILogger<MonitoringServerController> logger, NotificationEventService notificationEvents, MonitoringAuthorizationService authz, DeviceVoiceEventService voiceEvents)
     {
         _cache = cache;
         _db = db;
         _logger = logger;
         _notificationEvents = notificationEvents;
         _authz = authz;
+        _voiceEvents = voiceEvents;
     }
 
     private ObjectResult CreditInactive() =>
@@ -573,6 +575,9 @@ public class MonitoringServerController : ControllerBase
                 TimestampFa = PersianDateHelper.ToPersianDateTimeString(DateTime.Now, true)
             };
             var oldData = _cache.Exchange(deviceCode, data);
+            if (oldData == null)
+                oldData = await TryLoadLastKnownStateAsync(deviceCode);
+
             await SaveChangeLogIfNeeded(deviceCode, data, oldData, monitoringId.Value, customerReceiptId, workshopId!.Value);
 
             // چارت با جزییات فقط برای دستگاه‌هایی که سوپر ادمین مجوز داده ثبت می‌شود.
@@ -757,25 +762,25 @@ public class MonitoringServerController : ControllerBase
 
             var changes = new List<(string type, string? oldVal, string? newVal, string desc)>();
 
-            if (oldData.Priz != newData.Priz)
+            if (NormalizeSwitch(oldData.Priz) != NormalizeSwitch(newData.Priz))
             {
                 var oldP = IsOn(oldData.Priz) ? "روشن" : "خاموش";
                 var newP = IsOn(newData.Priz) ? "روشن" : "خاموش";
                 changes.Add(("Priz", oldData.Priz, newData.Priz, $"برق اصلی {oldP} → {newP}"));
             }
-            if (oldData.MotorState != newData.MotorState)
+            if (NormalizeSwitch(oldData.MotorState) != NormalizeSwitch(newData.MotorState))
             {
                 var oldM = IsOn(oldData.MotorState) ? "روشن" : "خاموش";
                 var newM = IsOn(newData.MotorState) ? "روشن" : "خاموش";
                 changes.Add(("MotorState", oldData.MotorState, newData.MotorState, $"موتور {oldM} → {newM}"));
             }
-            if (oldData.Element1 != newData.Element1)
+            if (NormalizeSwitch(oldData.Element1) != NormalizeSwitch(newData.Element1))
             {
                 var oldE1 = IsOn(oldData.Element1) ? "روشن" : "خاموش";
                 var newE1 = IsOn(newData.Element1) ? "روشن" : "خاموش";
                 changes.Add(("Element1", oldData.Element1, newData.Element1, $"المنت ۱ {oldE1} → {newE1}"));
             }
-            if (oldData.Element2 != newData.Element2)
+            if (NormalizeSwitch(oldData.Element2) != NormalizeSwitch(newData.Element2))
             {
                 var oldE2 = IsOn(oldData.Element2) ? "روشن" : "خاموش";
                 var newE2 = IsOn(newData.Element2) ? "روشن" : "خاموش";
@@ -834,6 +839,22 @@ public class MonitoringServerController : ControllerBase
                     CreatedAt = now,
                     CreatedAtFa = nowFa
                 });
+            }
+
+            // پل رویداد صوتی: فقط اگر برای همین دستگاه اکشن فعالِ منطبق وجود داشته باشد
+            // یک رویداد آمادهٔ پخش ساخته می‌شود. cooldown داخلی از پخش تکراری در نوسان
+            // سریع تجهیز جلوگیری می‌کند.
+            var voiceDevice = await _db.MonitoringDevices.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.DeviceNumber == deviceCode);
+            if (voiceDevice is { IsActive: true })
+            {
+                await _voiceEvents.AddEventsAsync(
+                    _db,
+                    voiceDevice,
+                    changes.Select(c => (c.type, c.oldVal, c.newVal, c.desc)).ToList(),
+                    now,
+                    isTest: false,
+                    CancellationToken.None);
             }
 
             await _db.SaveChangesAsync();
@@ -924,6 +945,49 @@ public class MonitoringServerController : ControllerBase
     }
 
     private static bool IsOn(string? val) => MonitoringRuntimeResolver.IsOnValue(val);
+
+    /// <summary>مقایسهٔ وضعیت روشن/خاموش مستقل از شکل مقدار خام (1/true/on).</summary>
+    private static bool NormalizeSwitch(string? val) => IsOn(val);
+
+    /// <summary>
+    /// بعد از ری‌استارت سرور، کش حافظه خالی است و اولین تغییر از دست می‌رفت.
+    /// آخرین وضعیت ثبت‌شده در تغییرلاگ همان دستگاه خوانده می‌شود تا مقایسه درست انجام شود.
+    /// </summary>
+    private async Task<MonitoringDeviceData?> TryLoadLastKnownStateAsync(string deviceCode)
+    {
+        try
+        {
+            var snapshot = await _db.MonitoringDeviceChangeLogs.AsNoTracking()
+                .Where(x => x.DeviceCode == deviceCode)
+                .OrderByDescending(x => x.Id)
+                .Select(x => x.DataSnapshot)
+                .FirstOrDefaultAsync();
+
+            if (string.IsNullOrWhiteSpace(snapshot)) return null;
+
+            using var doc = JsonDocument.Parse(snapshot);
+            var root = doc.RootElement;
+
+            static string? Read(JsonElement el, string name) =>
+                el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String
+                    ? p.GetString()
+                    : p.ValueKind == JsonValueKind.Number ? p.GetRawText() : null;
+
+            return new MonitoringDeviceData
+            {
+                Code = deviceCode,
+                Priz = Read(root, "Priz") ?? string.Empty,
+                MotorState = Read(root, "MotorState") ?? string.Empty,
+                Element1 = Read(root, "Element1") ?? string.Empty,
+                Element2 = Read(root, "Element2") ?? string.Empty
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not seed last monitoring state for {Code}", deviceCode);
+            return null;
+        }
+    }
 
     private async Task SaveAlertAsync(string deviceCode, string typeAlarm, string? maxJaryan, string? had, int monitoringId, int? customerReceiptId)
     {

@@ -1931,6 +1931,64 @@ namespace ErrorService.Server.Data.Migrations
                     b.ToTable("DeviceTypes");
                 });
 
+            modelBuilder.Entity("ErrorService.Server.Models.DeviceVoiceEvent", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ActionKey")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DescriptionFa")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("DeviceCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsTest")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("MonitoringDeviceId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NewValue")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("OldValue")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("DeviceCode", "CreatedAt");
+
+                    b.HasIndex("MonitoringDeviceId", "Id");
+
+                    b.ToTable("DeviceVoiceEvents");
+                });
+
             modelBuilder.Entity("ErrorService.Server.Models.DigitalCommitment", b =>
                 {
                     b.Property<int>("Id")
@@ -4480,6 +4538,9 @@ namespace ErrorService.Server.Data.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
 
+                    b.Property<int?>("MonitoringDeviceId")
+                        .HasColumnType("int");
+
                     b.Property<int>("Priority")
                         .HasColumnType("int");
 
@@ -4496,10 +4557,11 @@ namespace ErrorService.Server.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Key")
-                        .IsUnique();
-
                     b.HasIndex("Priority");
+
+                    b.HasIndex("MonitoringDeviceId", "Key")
+                        .IsUnique()
+                        .HasFilter("[MonitoringDeviceId] IS NOT NULL");
 
                     b.ToTable("ServiceVoiceActions");
                 });
@@ -7044,6 +7106,17 @@ namespace ErrorService.Server.Data.Migrations
                     b.Navigation("DeviceType");
                 });
 
+            modelBuilder.Entity("ErrorService.Server.Models.DeviceVoiceEvent", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.MonitoringDevice", "MonitoringDevice")
+                        .WithMany()
+                        .HasForeignKey("MonitoringDeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MonitoringDevice");
+                });
+
             modelBuilder.Entity("ErrorService.Server.Models.DigitalCommitment", b =>
                 {
                     b.HasOne("ErrorService.Server.Models.WorkshopUser", "CreatedByUser")
@@ -7526,6 +7599,16 @@ namespace ErrorService.Server.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Device");
+                });
+
+            modelBuilder.Entity("ErrorService.Server.Models.ServiceVoiceAction", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.MonitoringDevice", "MonitoringDevice")
+                        .WithMany()
+                        .HasForeignKey("MonitoringDeviceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("MonitoringDevice");
                 });
 
             modelBuilder.Entity("ErrorService.Server.Models.SiteHomeModuleSetting", b =>

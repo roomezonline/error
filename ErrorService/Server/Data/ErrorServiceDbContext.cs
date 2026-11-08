@@ -150,6 +150,7 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<DailyVisitStat> DailyVisitStats { get; set; }
 
     public DbSet<ServiceVoiceAction> ServiceVoiceActions { get; set; }
+    public DbSet<DeviceVoiceEvent> DeviceVoiceEvents { get; set; }
     public DbSet<DailyPagePathStat> DailyPagePathStats { get; set; }
 
     public DbSet<Notification> Notifications { get; set; }
@@ -1764,8 +1765,36 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.Key).IsRequired().HasMaxLength(40);
             entity.Property(x => x.TitleFa).IsRequired().HasMaxLength(120);
             entity.Property(x => x.AudioUrl).HasMaxLength(500);
-            entity.HasIndex(x => x.Key).IsUnique();
+
+            // کلید اکشن فقط در محدودهٔ همان دستگاه یکتاست
+            entity.HasIndex(x => new { x.MonitoringDeviceId, x.Key }).IsUnique();
             entity.HasIndex(x => x.Priority);
+
+            entity.HasOne(x => x.MonitoringDevice)
+                .WithMany()
+                .HasForeignKey(x => x.MonitoringDeviceId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<DeviceVoiceEvent>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.DeviceCode).IsRequired().HasMaxLength(50);
+            entity.Property(x => x.ActionKey).IsRequired().HasMaxLength(40);
+            entity.Property(x => x.SourceType).IsRequired().HasMaxLength(50);
+            entity.Property(x => x.OldValue).HasMaxLength(50);
+            entity.Property(x => x.NewValue).HasMaxLength(50);
+            entity.Property(x => x.DescriptionFa).HasMaxLength(200);
+
+            // مهم‌ترین کوئری: رویدادهای یک دستگاه با Id بزرگ‌تر از cursor
+            entity.HasIndex(x => new { x.MonitoringDeviceId, x.Id });
+            entity.HasIndex(x => x.ExpiresAt);
+            entity.HasIndex(x => new { x.DeviceCode, x.CreatedAt });
+
+            entity.HasOne(x => x.MonitoringDevice)
+                .WithMany()
+                .HasForeignKey(x => x.MonitoringDeviceId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
