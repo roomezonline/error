@@ -16,6 +16,14 @@ public sealed class SmsSettings
     public int Id { get; set; }
     public bool IsActive { get; set; } = true;
     public bool OtpEnabled { get; set; } = true;
+    public bool OtpRegistrationEnabled { get; set; }
+    public bool OtpAdmissionRepairEnabled { get; set; } = true;
+    public bool OtpAdmissionExpertiseEnabled { get; set; } = true;
+    public bool OtpAdmissionTrackingEnabled { get; set; } = true;
+    public bool OtpPasswordResetEnabled { get; set; } = true;
+    public int OtpCodeTtlSeconds { get; set; } = 120;
+    public int OtpResendCooldownSeconds { get; set; } = 60;
+    public int OtpMaxAttempts { get; set; } = 5;
     public decimal TariffPerSms { get; set; } = 0;
     [MaxLength(500)] public string? ApiKey { get; set; }
     [MaxLength(50)] public string? SenderNumber { get; set; }

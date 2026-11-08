@@ -102,11 +102,25 @@
                 </label>
                 <label class="sa-field">
                     <span>استان</span>
-                    <input @bind="provinceName" />
+                    <select value="@(provinceId?.ToString() ?? "")" @onchange="OnProvinceChanged">
+                        <option value="">انتخاب استان</option>
+                        @foreach (var p in provinces)
+                        {
+                            <option value="@p.Id">@p.Name</option>
+                        }
+                    </select>
                 </label>
                 <label class="sa-field">
                     <span>شهر</span>
-                    <input @bind="cityName" />
+                    <select value="@(cityId?.ToString() ?? "")" @onchange="OnCityChanged" disabled="@(!provinceId.HasValue || isLoadingCities)">
+                        <option value="">
+                            @(isLoadingCities ? "در حال بارگذاری..." : provinceId.HasValue ? "انتخاب شهر" : "ابتدا استان را انتخاب کنید")
+                        </option>
+                        @foreach (var c in cities)
+                        {
+                            <option value="@c.Id">@c.Name</option>
+                        }
+                    </select>
                 </label>
                 <label class="sa-field sa-field-wide">
                     <span>آدرس *</span>
@@ -233,7 +247,7 @@
                 </label>
                 <label class="sa-field">
                     <span>تخفیف دستی (تومان)</span>
-                    <input class="ltr" type="number" min="0" @bind="manualDiscount" />
+                    <input class="ltr" type="text" inputmode="numeric" dir="ltr" value="@manualDiscountText" @oninput="OnManualDiscountInput" placeholder="اختیاری" />
                 </label>
                 <label class="sa-field">
                     <span>روش ارسال</span>
@@ -379,8 +393,14 @@
     private string? postalCode;
     private string? provinceName;
     private string? cityName;
+    private List<ProvinceDto> provinces = new();
+    private List<CityDto> cities = new();
+    private int? provinceId;
+    private int? cityId;
+    private bool isLoadingCities;
     private string? couponCode;
     private decimal? manualDiscount;
+    private string manualDiscountText = "";
     private int? shippingMethodId;
     private string? customerNotes;
     private string? adminNotes;
@@ -398,10 +418,60 @@
         }
         catch { }
 
+        try
+        {
+            provinces = await Http.GetFromJsonAsync<List<ProvinceDto>>("api/locations/provinces") ?? new();
+        }
+        catch { provinces = new(); }
+
         if (OrderQueryId.HasValue)
         {
             await LoadDraft(OrderQueryId.Value);
         }
+    }
+
+    private async Task OnProvinceChanged(ChangeEventArgs e)
+    {
+        provinceId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        provinceName = provinces.FirstOrDefault(p => p.Id == provinceId)?.Name;
+        cityId = null;
+        cityName = null;
+        cities = new();
+        if (provinceId.HasValue)
+            await LoadCitiesAsync(provinceId.Value);
+    }
+
+    private void OnCityChanged(ChangeEventArgs e)
+    {
+        cityId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        cityName = cities.FirstOrDefault(c => c.Id == cityId)?.Name;
+    }
+
+    private async Task LoadCitiesAsync(int id)
+    {
+        isLoadingCities = true;
+        try { cities = await Http.GetFromJsonAsync<List<CityDto>>($"api/locations/cities/{id}") ?? new(); }
+        catch { cities = new(); }
+        finally { isLoadingCities = false; }
+    }
+
+    private async Task SyncLocationFromOrderAsync()
+    {
+        if (!provinceId.HasValue && !string.IsNullOrWhiteSpace(provinceName))
+            provinceId = provinces.FirstOrDefault(p => p.Name == provinceName)?.Id;
+
+        if (!provinceId.HasValue) return;
+
+        await LoadCitiesAsync(provinceId.Value);
+        if (!cityId.HasValue && !string.IsNullOrWhiteSpace(cityName))
+            cityId = cities.FirstOrDefault(c => c.Name == cityName)?.Id;
+    }
+
+    private void OnManualDiscountInput(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        manualDiscount = MoneyFormat.Parse(raw);
+        manualDiscountText = MoneyFormat.Group(raw);
     }
 
     private async Task LoadDraft(int id)
@@ -428,10 +498,14 @@
             email = order.Email;
             address = order.Address ?? "";
             postalCode = order.PostalCode;
+            provinceId = order.ProvinceId;
             provinceName = order.ProvinceName;
+            cityId = order.CityId;
             cityName = order.CityName;
+            await SyncLocationFromOrderAsync();
             couponCode = order.CouponCode;
             manualDiscount = order.ManualDiscountAmount;
+            manualDiscountText = manualDiscount.HasValue ? manualDiscount.Value.ToString("N0") : "";
             shippingMethodId = order.ShippingMethodId;
             customerNotes = order.CustomerNotes;
             adminNotes = order.AdminNotes;
@@ -514,6 +588,11 @@
         email = null;
         address = "";
         postalCode = null;
+        provinceId = null;
+        cityId = null;
+        provinceName = null;
+        cityName = null;
+        cities = new();
     }
 
     private async Task LoadCart()
@@ -633,6 +712,15 @@
         {
             var payload = new AdminCartCheckoutRequest
             {
+                FullName = fullName,
+                PhoneNumber = phone,
+                Email = email,
+                Address = address,
+                ProvinceId = provinceId,
+                CityId = cityId,
+                ProvinceName = provinceName,
+                CityName = cityName,
+                PostalCode = postalCode,
                 CouponCode = couponCode,
                 ManualDiscountAmount = manualDiscount,
                 ShippingMethodId = shippingMethodId,
@@ -719,6 +807,8 @@
         PhoneNumber = phone,
         Email = email,
         Address = address,
+        ProvinceId = provinceId,
+        CityId = cityId,
         ProvinceName = provinceName,
         CityName = cityName,
         PostalCode = postalCode,

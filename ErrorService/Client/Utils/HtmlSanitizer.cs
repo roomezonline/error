@@ -22,6 +22,11 @@ public static class HtmlSanitizer
         "http", "https", "mailto", "tel", "data"
     };
 
+    internal static readonly HashSet<string> CalloutKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "info", "note", "warning", "danger", "success", "quote", "readmore"
+    };
+
     private static readonly Regex TagRegex = new(@"<(\/?)(\w[\w-]*)([^>]*?)>", RegexOptions.Compiled);
     private static readonly Regex AttrRegex = new(@"(\w[\w-]*)(?:\s*=\s*(?:""([^""]*)""|'([^']*)'|(\S+)))?", RegexOptions.Compiled);
     private static readonly Regex ScriptOrStyleBlockRegex = new(@"<\s*(style|script)\b[^>]*>.*?<\s*/\s*\1\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
@@ -69,6 +74,9 @@ public static class HtmlSanitizer
             if (!IsAttributeAllowed(tagName, name))
                 continue;
 
+            if (name == "data-callout" && !CalloutKinds.Contains(value.Trim()))
+                continue;
+
             if (result.Length > 0) result.Append(' ');
             if (string.IsNullOrEmpty(value))
                 result.Append(name);
@@ -111,6 +119,9 @@ public static class HtmlSanitizer
             "start" or "reversed" or "type" => tagName is "ol" or "li",
             "cite" => tagName is "blockquote" or "q",
             "datetime" => tagName is "time",
+            "data-callout" => tagName is "p" or "div" or "blockquote",
+            "data-cta" => tagName is "p" or "div",
+            "data-caption" => tagName is "p" or "div",
             _ => false
         };
     }

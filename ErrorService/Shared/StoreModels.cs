@@ -330,7 +330,28 @@ public class NewsDto
     public string? Tags { get; set; }
     public string? AuthorName { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    /// <summary>تاریخ نمایش/انتشار مؤثر: PublishAt یا در نبود آن CreatedAt.</summary>
+    public DateTimeOffset PublishedAt { get; set; }
     public bool IsPublished { get; set; } = true;
+
+    public ContentType ContentType { get; set; } = ContentType.News;
+    public ContentStatus Status { get; set; } = ContentStatus.Published;
+    public int? CategoryId { get; set; }
+    public string? CategoryTitle { get; set; }
+    public string? CategorySlug { get; set; }
+    public DateTimeOffset? PublishAt { get; set; }
+    public DateTimeOffset? ExpireAt { get; set; }
+    public bool IsFeatured { get; set; }
+    public DateTimeOffset? PinnedUntil { get; set; }
+    public int ViewCount { get; set; }
+    public bool CommentsEnabled { get; set; } = true;
+    public string? SeoTitle { get; set; }
+    public string? SeoDescription { get; set; }
+    public string? CanonicalUrl { get; set; }
+    public string? SourceName { get; set; }
+    public string? SourceUrl { get; set; }
+
     public double AverageRating { get; set; }
     public int CommentCount { get; set; }
 
@@ -341,11 +362,11 @@ public class NewsDto
 
 public class NewsUpsertRequest
 {
-    [Required(ErrorMessage = "عنوان خبر الزامی است")]
+    [Required(ErrorMessage = "عنوان محتوا الزامی است")]
     [MaxLength(200)]
     public string Title { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "متن خبر الزامی است")]
+    [Required(ErrorMessage = "متن محتوا الزامی است")]
     public string Content { get; set; } = string.Empty;
 
     [MaxLength(500)]
@@ -355,6 +376,18 @@ public class NewsUpsertRequest
     public string? Tags { get; set; }
     public string? AuthorName { get; set; }
     public bool IsPublished { get; set; } = true;
+
+    public ContentType ContentType { get; set; } = ContentType.News;
+    public int? CategoryId { get; set; }
+    public DateTimeOffset? PublishAt { get; set; }
+    public DateTimeOffset? ExpireAt { get; set; }
+    public bool IsFeatured { get; set; }
+    public DateTimeOffset? PinnedUntil { get; set; }
+    public string? SeoTitle { get; set; }
+    public string? SeoDescription { get; set; }
+    public string? CanonicalUrl { get; set; }
+    public string? SourceName { get; set; }
+    public string? SourceUrl { get; set; }
 
     public DateTimeOffset? CreatedAt { get; set; }
 }

@@ -1,4 +1,4 @@
-using ErrorService.Server.Infrastructure;
+﻿using ErrorService.Server.Infrastructure;
 using ErrorService.Server.Data;
 using ErrorService.Server.Data.Seed;
 using ErrorService.Server.Hubs;
@@ -8,12 +8,14 @@ using ErrorService.Server.Services.ChatAi;
 using ErrorService.Server.Services.Messenger;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 using System.IO.Compression;
+using System.Net;
 using StackExchange.Redis;
 using System.Text;
 using System.Threading.RateLimiting;
@@ -31,26 +33,34 @@ builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Infrastructure", LogLev
 builder.Services.AddControllersWithViews();
 builder.Services.AddRazorPages();
 
-builder.Services.AddResponseCompression(options =>
+// فشرده‌سازی پاسخ فقط در Production فعال است. در Development، Middleware
+// Browser Link ویژوال استودیو در HTML تزریق می‌کند و با Body فشرده‌شده
+// (Brotli) تداخل دارد؛ نتیجه ERR_CONTENT_DECODING_FAILED و صفحه سفید است.
+if (!builder.Environment.IsDevelopment())
 {
-    options.EnableForHttps = true;
-    // Brotli = نسبت فشرده‌سازی بالاتر برای موبایل؛ gzip برای کلاینت‌های قدیمی‌تر.
-    options.Providers.Add<BrotliCompressionProvider>();
-    options.Providers.Add<GzipCompressionProvider>();
-    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
-        new[] { "application/octet-stream", "application/xml", "text/xml", "application/wasm", "application/font-woff2", "font/woff2", "image/svg+xml", "application/manifest+json" });
-});
+    builder.Services.AddResponseCompression(options =>
+    {
+        options.EnableForHttps = true;
+        // Brotli = نسبت فشرده‌سازی بالاتر برای موبایل؛ gzip برای کلاینت‌های قدیمی‌تر.
+        options.Providers.Add<BrotliCompressionProvider>();
+        options.Providers.Add<GzipCompressionProvider>();
+        options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
+            new[] { "application/octet-stream", "application/xml", "text/xml", "application/wasm", "application/font-woff2", "font/woff2", "image/svg+xml", "application/manifest+json" });
+    });
 
-// سریع‌ترین سطح: کمترین تأخیر پاسخ، نه بیشترین نسبت فشرده‌سازی.
-builder.Services.Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
-builder.Services.Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+    // سریع‌ترین سطح: کمترین تأخیر پاسخ، نه بیشترین نسبت فشرده‌سازی.
+    builder.Services.Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+    builder.Services.Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+}
 
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<ISmsService, SmsService>();
+builder.Services.AddScoped<OtpService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<SystemEventService>();
 builder.Services.AddScoped<NotificationEventService>();
 builder.Services.AddScoped<StockAlertNotifier>();
+builder.Services.AddScoped<PriceDropNotifier>();
 builder.Services.AddScoped<AdminOrderService>();
 builder.Services.AddSingleton<MonitoringCacheService>();
 builder.Services.AddScoped<MonitoringAuthorizationService>();
@@ -220,8 +230,25 @@ builder.Services.AddScoped<IChatMessengerChannel, EitaaMessengerChannel>();
     builder.Services.AddScoped<BaleSafirService>();
 builder.Services.AddScoped<IChatAiService, FaqChatService>();
 builder.Services.AddScoped<IChatAiService, OpenAiCompatibleChatService>();
+builder.Services.AddScoped<OpenAiCompatibleChatService>();
 builder.Services.AddScoped<ChatAiCoordinator>();
 builder.Services.AddScoped<ChatAiResponder>();
+
+// استودیوی محتوا — تولید خودکار اخبار/آموزش از فیدهای مجاز با بازنویسی AI
+builder.Services.AddScoped<ErrorService.Server.Services.ContentStudio.FeedFetcher>();
+builder.Services.AddScoped<ErrorService.Server.Services.ContentStudio.ContentStudioService>();
+builder.Services.AddSingleton<ErrorService.Server.Services.ContentStudio.ContentStudioRunner>();
+builder.Services.AddHostedService<ErrorService.Server.Services.ContentStudio.ContentStudioBackgroundService>();
+builder.Services.AddHttpClient("ContentStudioFeed", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(25);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("ErrorServiceContentStudio/1.0 (+https://errorservice.ir)");
+    c.DefaultRequestHeaders.Accept.ParseAdd("application/rss+xml, application/atom+xml, application/xml, text/xml, text/html;q=0.8, */*;q=0.5");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AllowAutoRedirect = false,
+    AutomaticDecompression = DecompressionMethods.All
+});
 
 var jwtKey = builder.Configuration["Auth:JwtKey"];
 if (string.IsNullOrWhiteSpace(jwtKey))
@@ -282,7 +309,21 @@ builder.Services.AddDbContext<ErrorServiceDbContext>(options =>
 var sslSettingsHolder = new SslSettingsHolder();
 builder.Services.AddSingleton(sslSettingsHolder);
 
+// پشت IIS/پروکسی هم‌میزبان، IP واقعی کلاینت از هدرهای Forwarded خوانده می‌شود
+// تا rate limit و لاگ‌ها به IP پروکسی نسبت داده نشوند. فقط loopback پروکسی
+// قابل اعتماد است؛ منبع دلخواه هرگز Trust نمی‌شود.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownProxies.Clear();
+    options.KnownProxies.Add(IPAddress.Loopback);
+    options.KnownProxies.Add(IPAddress.IPv6Loopback);
+});
+
 var app = builder.Build();
+
+// باید پیش از هر Middleware وابسته به Scheme/IP اجرا شود.
+app.UseForwardedHeaders();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -399,7 +440,7 @@ app.Use(async (context, next) =>
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Unhandled exception. Method={Method} Path={Path} Query={QueryString}", context.Request.Method, context.Request.Path, context.Request.QueryString);
+        logger.LogError(ex, "Unhandled exception. Method={Method} Path={Path} Query={QueryString}", context.Request.Method, context.Request.Path, RedactQuery(context.Request.QueryString));
         // Return a proper error response instead of re-throwing
         context.Response.StatusCode = 500;
         context.Response.ContentType = "text/html; charset=utf-8";
@@ -410,7 +451,10 @@ app.Use(async (context, next) =>
 
 app.UseSystemEventTracker();
 
-app.UseResponseCompression();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseResponseCompression();
+}
 
 app.UseCors("AllowBlazor");
 
@@ -564,6 +608,16 @@ if (applyMigrationsOnStartup)
             logger.LogError(ex, "Failed to seed notification rules.");
         }
 
+        try
+        {
+            var contentLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("ContentSeeder");
+            await ContentSeeder.SeedAsync(db, contentLogger);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to seed content settings/tags.");
+        }
+
         // همیشه چک می‌کنیم، اگر جداول لوکیشن خالی بودند پر می‌کنیم (بدون وابستگی به کانفیگ خارجی برای اطمینان بیشتر)
         try
         {
@@ -706,7 +760,7 @@ static async Task<string> ResolveLegacyProductAsync(string query, IServiceProvid
         {
             var db = services.GetRequiredService<ErrorServiceDbContext>();
             var slug = await db.Products
-                .Where(p => p.Id == id && p.IsAvailable)
+                .Where(p => p.Id == id && p.IsAvailable && !p.IsDraft)
                 .Select(p => p.Slug)
                 .FirstOrDefaultAsync();
             if (!string.IsNullOrEmpty(slug)) return "/products/" + Uri.EscapeDataString(slug);
@@ -714,6 +768,25 @@ static async Task<string> ResolveLegacyProductAsync(string query, IServiceProvid
         catch { /* fall through to hub */ }
     }
     return "/products";
+}
+
+// ماسک‌کردن پارامترهای حساس در لاگ خطا؛ توکن/تلفن/ایمیل نباید در لاگ بماند.
+static string RedactQuery(QueryString query)
+{
+    if (query.Value is null) return string.Empty;
+
+    var sensitiveKeys = new[] { "token", "access_token", "authority", "phone", "mobile", "email", "key", "secret", "password" };
+    var parts = query.Value.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries);
+
+    for (var i = 0; i < parts.Length; i++)
+    {
+        var idx = parts[i].IndexOf('=');
+        var name = idx >= 0 ? parts[i][..idx] : parts[i];
+        if (sensitiveKeys.Any(k => name.Contains(k, StringComparison.OrdinalIgnoreCase)))
+            parts[i] = name + "=***";
+    }
+
+    return parts.Length == 0 ? string.Empty : "?" + string.Join('&', parts);
 }
 
 public sealed class SslSettingsHolder

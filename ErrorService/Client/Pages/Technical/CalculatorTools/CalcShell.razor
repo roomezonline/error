@@ -1,0 +1,67 @@
+@using ErrorService.Client.Services
+@inject IJSRuntime JS
+@inject ToastService Toast
+
+<article class="calc-card" id="@Id">
+    <header class="calc-card__head">
+        <span class="calc-card__icon"><span class="oi @Icon" aria-hidden="true"></span></span>
+        <div class="calc-card__titles">
+            <h2 class="calc-card__title">@Title</h2>
+            <p class="calc-card__sub">@Subtitle</p>
+            <div class="calc-card__chips">
+                @if (!string.IsNullOrWhiteSpace(Tag))
+                {
+                    <span class="calc-card__chip calc-card__chip--tag">
+                        <span class="oi oi-bolt" aria-hidden="true"></span>
+                        @Tag
+                    </span>
+                }
+                <span class="calc-card__chip">
+                    <span class="oi oi-loop-square" aria-hidden="true"></span>
+                    ذخیره خودکار مقادیر
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <div class="calc-card__body">
+        @ChildContent
+    </div>
+
+    <footer class="calc-card__foot">
+        <button type="button" class="calc-mini-btn" @onclick="CopyAsync" disabled="@string.IsNullOrWhiteSpace(CopyText)">
+            <span class="oi oi-clipboard" aria-hidden="true"></span>
+            کپی نتیجه
+        </button>
+        <button type="button" class="calc-mini-btn calc-mini-btn--ghost" @onclick="ResetAsync">
+            پاک کردن
+        </button>
+    </footer>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string Subtitle { get; set; } = "";
+    [Parameter] public string Icon { get; set; } = "oi-calculator";
+    [Parameter] public string? Tag { get; set; }
+    [Parameter] public string? CopyText { get; set; }
+    [Parameter] public EventCallback OnReset { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private async Task CopyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(CopyText)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("__copyToClipboard", CopyText);
+            Toast.ShowSuccess("نتیجه کپی شد");
+        }
+        catch
+        {
+            Toast.ShowError("کپی انجام نشد");
+        }
+    }
+
+    private Task ResetAsync() => OnReset.InvokeAsync();
+}

@@ -2,6 +2,13 @@ namespace ErrorService.Server.Services.ChatAi;
 
 public sealed record ChatAiTurn(string Role, string Content);
 
+/// <summary>کاربرد زنجیره AI؛ هر سرویس‌دهنده می‌تواند برای هر کدام فعال یا غیرفعال باشد.</summary>
+public enum AiUsageScope
+{
+    Chat,
+    ContentStudio
+}
+
 public interface IChatAiService
 {
     string Name { get; }

@@ -6,8 +6,6 @@
 @inject ErrorService.Client.Services.ToastService ToastService
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>درخواست کارشناسی آنلاین</PageTitle>
-
 <SeoHeader 
     Title="درخواست کارشناسی آنلاین لوازم خانگی | ارورسرویس"
     Description="ثبت درخواست کارشناسی و عیب‌یابی آنلاین لوازم خانگی. بررسی تخصصی و اعلام هزینه تعمیر"
@@ -33,6 +31,11 @@
                                 <h1 class="h3 fw-black m-0 text-gradient">درخواست کارشناسی هوشمند</h1>
                                 <p class="text-muted small m-0 fw-bold">عیب‌یابی تخصصی دستگاه شما توسط برترین متخصصین کشور</p>
                             </div>
+                        </div>
+                        <div class="text-center text-md-start mt-2">
+                            <a href="/admission/track" class="small fw-bold text-primary text-decoration-none">
+                                <span class="oi oi-magnifying-glass me-1"></span>قبلاً درخواست داده‌اید؟ وضعیت را پیگیری کنید
+                            </a>
                         </div>
                     </div>
 
@@ -358,7 +361,7 @@
                                     </div>
                                     <h5 class="fw-black mb-3">تایید نهایی اطلاعات</h5>
 
-                                    @if (settings?.OtpEnabled != false)
+                                    @if (OtpRequired)
                                     {
                                         <p class="text-muted small mb-4">یک کد تایید ۶ رقمی به شماره @request.CustomerMobile ارسال شد. لطفاً کد را وارد کنید.</p>
 
@@ -1160,6 +1163,8 @@
 
     private string[] otpDigits = new string[6];
     private int otpTimerSeconds = 120;
+    private bool OtpRequired => settings?.OtpExpertiseEnabled != false;
+    private int OtpTtlSeconds => settings?.OtpCodeTtlSeconds > 0 ? settings.OtpCodeTtlSeconds : 120;
     private System.Timers.Timer? otpTimer;
     private string otpStatusClass = "";
     private string otpStatusMessage = "";
@@ -1171,7 +1176,7 @@
     {
         otpTimer?.Stop();
         otpTimer?.Dispose();
-        otpTimerSeconds = 120;
+        otpTimerSeconds = OtpTtlSeconds;
         otpStatusClass = "";
         otpStatusMessage = "";
         isOtpVerified = false;
@@ -1204,7 +1209,7 @@
     {
         try
         {
-            var result = await Http.PostAsJsonAsync("api/online-admission/send-otp", new { mobile = request.CustomerMobile });
+            var result = await Http.PostAsJsonAsync("api/online-admission/send-otp", new { mobile = request.CustomerMobile, type = OnlineAdmissionTypes.Expertise });
             var data = await result.Content.ReadFromJsonAsync<OtpResultDto>();
             if (data?.Success == true)
             {
@@ -1258,7 +1263,7 @@
         {
             try
             {
-                var result = await Http.PostAsJsonAsync("api/online-admission/verify-otp", new { mobile = request.CustomerMobile, code = request.VerificationCode });
+                var result = await Http.PostAsJsonAsync("api/online-admission/verify-otp", new { mobile = request.CustomerMobile, code = request.VerificationCode, type = OnlineAdmissionTypes.Expertise });
                 var data = await result.Content.ReadFromJsonAsync<OtpResultDto>();
                 if (data?.Success == true)
                 {
@@ -1467,7 +1472,7 @@
 
         if (step < 5) {
             step++;
-            if (step == 5 && settings?.OtpEnabled != false) _ = ResendOtp();
+            if (step == 5 && OtpRequired) _ = ResendOtp();
             // Scroll to top of form after step change
             _ = ScrollToTopAsync();
         }
@@ -1536,7 +1541,7 @@
 
     private async Task SubmitFinal()
     {
-        if (settings?.OtpEnabled != false && string.IsNullOrEmpty(request.VerificationCode))
+        if (OtpRequired && string.IsNullOrEmpty(request.VerificationCode))
         {
             ToastService.ShowWarning("لطفاً کد تایید را وارد کنید");
             return;
@@ -1548,8 +1553,11 @@
             var resp = await Http.PostAsJsonAsync("api/online-admission/submit", request);
             if (resp.IsSuccessStatusCode)
             {
-                ToastService.ShowSuccess("درخواست شما با موفقیت ثبت شد. به زودی با شما تماس خواهیم گرفت.");
-                Nav.NavigateTo("/");
+                var created = await resp.Content.ReadFromJsonAsync<AdmissionCreatedDto>();
+                ToastService.ShowSuccess("درخواست شما با موفقیت ثبت شد. وضعیت آن را می‌توانید از همین صفحه پیگیری کنید.");
+                Nav.NavigateTo(created != null
+                    ? $"/admission/track?id={created.Id}&phone={request.CustomerMobile}"
+                    : "/admission/track");
             }
             else
             {

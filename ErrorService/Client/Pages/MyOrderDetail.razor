@@ -10,6 +10,10 @@
 @inject ErrorService.Client.Services.CartService CartService
 @inject ErrorService.Client.Services.ToastService ToastService
 
+<HeadContent>
+    <meta name="robots" content="noindex, nofollow" />
+</HeadContent>
+
 <PageTitle>جزئیات سفارش | ارورسرویس</PageTitle>
 
 <div class="mod-page py-5" dir="rtl">
@@ -509,6 +513,7 @@
     private OrderDto? _order;
     private bool _loading = true;
     private SiteSettingsDto? _shop;
+    private string? _trackingTemplate;
     private bool _busy;
     private string _busyAction = "";
     private bool _showReturn;
@@ -576,6 +581,12 @@
         try
         {
             _shop = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+        }
+        catch { }
+        try
+        {
+            var methods = await Http.GetFromJsonAsync<List<ShippingMethodDto>>("api/shippingmethods");
+            _trackingTemplate = methods?.FirstOrDefault(m => m.Id == _order?.ShippingMethodId)?.TrackingUrlTemplate;
         }
         catch { }
         _loading = false;
@@ -744,8 +755,11 @@
         _ => "bg-secondary-subtle"
     };
 
-    private static string GetTrackingUrl(string carrier, string trackingNumber)
+    private string GetTrackingUrl(string carrier, string trackingNumber)
     {
+        if (!string.IsNullOrWhiteSpace(_trackingTemplate))
+            return _trackingTemplate.Replace("{tracking}", Uri.EscapeDataString(trackingNumber));
+
         var c = carrier?.ToLowerInvariant() ?? "";
         if (c.Contains("پست") || c.Contains("post"))
             return $"https://tracking.post.ir/?id={trackingNumber}";

@@ -3,12 +3,14 @@ using System.Text.Json.Serialization;
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
 using ErrorService.Shared;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/chart")]
 public class ChartLegacyController : ControllerBase
 {

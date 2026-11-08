@@ -1,0 +1,245 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="motor-current" Title="جریان موتور"
+           Subtitle="جریان نامی و جریان راه‌اندازی موتور تک‌فاز و سه‌فاز را از روی توان، ولتاژ، ضریب توان و راندمان محاسبه می‌کند."
+           Icon="oi-pulse" Tag="برای تکنسین"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-seg" role="group" aria-label="نوع موتور">
+        <button type="button" class="calc-seg__btn @(phase == "single" ? "is-active" : "")"
+                @onclick='() => SetPhase("single")'>تک‌فاز</button>
+        <button type="button" class="calc-seg__btn @(phase == "three" ? "is-active" : "")"
+                @onclick='() => SetPhase("three")'>سه‌فاز</button>
+    </div>
+
+    <div class="calc-form">
+        <div class="calc-field">
+            <label class="calc-label" for="mc-p">توان موتور</label>
+            <input id="mc-p" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 1.5" @bind="power" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="mc-punit">واحد توان</label>
+            <select id="mc-punit" class="calc-select" @bind="powerUnit" @bind:after="PersistAsync">
+                <option value="kW">کیلووات (kW)</option>
+                <option value="HP">اسب بخار (HP)</option>
+                <option value="W">وات (W)</option>
+            </select>
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="mc-v">ولتاژ (V)</label>
+            <input id="mc-v" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   @bind="voltage" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="mc-pf">ضریب توان (cos φ)</label>
+            <input id="mc-pf" class="calc-input" type="number" inputmode="decimal" step="0.01" min="0.1" max="1" dir="ltr"
+                   @bind="powerFactor" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="mc-eff">راندمان (٪)</label>
+            <input id="mc-eff" class="calc-input" type="number" inputmode="decimal" step="1" min="1" max="100" dir="ltr"
+                   @bind="efficiency" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="mc-starter">نوع راه‌انداز</label>
+            <select id="mc-starter" class="calc-select" @bind="starter" @bind:after="PersistAsync">
+                @foreach (var s in Starters)
+                {
+                    <option value="@s.Key">@s.Name (×@CalcFormat.Num(s.Multiplier, "0.#"))</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">جریان نامی موتور</span>
+                    <span class="calc-result__value" dir="ltr">@Result.RatedCurrent</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">جریان تقریبی راه‌اندازی</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.StartCurrent</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">توان ظاهری</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.ApparentPower</span>
+                </div>
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">جریان کلید/کنتاکتور پیشنهادی</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.SuggestedBreaker</span>
+                </div>
+            </div>
+            <p class="calc-note mt-2 mb-0">
+                فرمول سه‌فاز: I = P ÷ (√۳ × V × cos φ × η) و تک‌فاز: I = P ÷ (V × cos φ × η).
+                ضریب راه‌اندازی برای انتخاب کلید و کنتاکتور، تخمینی است؛ برای تنظیم کلید حرارتی، جریان پلاک موتور مرجع اصلی است.
+            </p>
+        </div>
+    }
+
+    <details class="calc-details">
+        <summary>ضریب جریان راه‌اندازی راه‌اندازها</summary>
+        <div class="calc-details__body">
+            <table class="calc-table">
+                <thead>
+                    <tr><th>راه‌انداز</th><th>ضریب جریان راه‌اندازی</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in Starters)
+                    {
+                        <tr>
+                            <td>@s.Name</td>
+                            <td dir="ltr">×@CalcFormat.Num(s.Multiplier, "0.#")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </details>
+</CalcShell>
+
+@code {
+    private string phase = "single";
+    private double? power = 1.5;
+    private string powerUnit = "kW";
+    private double? voltage = 220;
+    private double? powerFactor = 0.85;
+    private double? efficiency = 85;
+    private string starter = "dol";
+
+    protected override string StorageKey => "motor-current";
+
+    private sealed record StarterOption(string Key, string Name, double Multiplier);
+
+    private static readonly StarterOption[] Starters =
+    {
+        new("dol", "راه‌اندازی مستقیم (DOL)", 6),
+        new("star-delta", "اتصال ستاره-مثلث", 2.5),
+        new("soft", "سافت استارتر", 3),
+        new("vfd", "اینورتر", 1.5)
+    };
+
+    private sealed class MotorCurrentResult
+    {
+        public string RatedCurrent { get; init; } = "—";
+        public string StartCurrent { get; init; } = "—";
+        public string ApparentPower { get; init; } = "—";
+        public string SuggestedBreaker { get; init; } = "—";
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private MotorCurrentResult Result => Compute();
+
+    private double? PowerWatts => powerUnit == "HP" ? power * 746 : powerUnit == "W" ? power : power * 1000;
+
+    private MotorCurrentResult Compute()
+    {
+        if (power == null || voltage == null || powerFactor == null || efficiency == null)
+            return new MotorCurrentResult { Hint = "توان، ولتاژ، ضریب توان و راندمان را وارد کنید." };
+
+        if (power <= 0 || voltage <= 0)
+            return new MotorCurrentResult { Error = "توان و ولتاژ باید بزرگ‌تر از صفر باشند." };
+
+        if (powerFactor is <= 0 or > 1)
+            return new MotorCurrentResult { Error = "ضریب توان باید بین ۰٫۱ تا ۱ باشد (مثلاً ۰٫۸۵)." };
+
+        if (efficiency is <= 0 or > 100)
+            return new MotorCurrentResult { Error = "راندمان باید بین ۱ تا ۱۰۰ درصد باشد." };
+
+        var watts = PowerWatts!.Value;
+        var cosPhi = powerFactor.Value;
+        var eff = efficiency.Value / 100.0;
+
+        var current = phase == "three"
+            ? watts / (Math.Sqrt(3) * voltage.Value * cosPhi * eff)
+            : watts / (voltage.Value * cosPhi * eff);
+
+        var starterOption = Starters.FirstOrDefault(s => s.Key == starter) ?? Starters[0];
+        var startCurrent = current * starterOption.Multiplier;
+        var apparentPower = phase == "three"
+            ? Math.Sqrt(3) * voltage.Value * current / 1000
+            : voltage.Value * current / 1000;
+
+        var breaker = NextBreaker(current * 1.25);
+
+        return new MotorCurrentResult
+        {
+            RatedCurrent = CalcFormat.Num(current, "0.##") + " A",
+            StartCurrent = CalcFormat.Num(startCurrent, "0.##") + " A",
+            ApparentPower = CalcFormat.Num(apparentPower, "0.##") + " kVA",
+            SuggestedBreaker = breaker + " آمپر",
+            CopyText = $"جریان موتور ({phase switch { "three" => "سه‌فاز", _ => "تک‌فاز" }}) — نامی {CalcFormat.Num(current, "0.##")}A | راه‌اندازی {CalcFormat.Num(startCurrent, "0.##")}A | توان ظاهری {CalcFormat.Num(apparentPower, "0.##")}kVA"
+        };
+    }
+
+    private static double NextBreaker(double amps)
+    {
+        var sizes = new[] { 6.0, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200 };
+        foreach (var size in sizes)
+        {
+            if (size >= amps) return size;
+        }
+
+        return sizes[^1] * Math.Ceiling(amps / sizes[^1]);
+    }
+
+    private async Task SetPhase(string newPhase)
+    {
+        phase = newPhase;
+        voltage = newPhase == "three" ? 380 : 220;
+        await PersistAsync();
+    }
+
+    private async Task ResetAsync()
+    {
+        phase = "single";
+        power = 1.5;
+        powerUnit = "kW";
+        voltage = 220;
+        powerFactor = 0.85;
+        efficiency = 85;
+        starter = "dol";
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(
+            new State(phase, power, powerUnit, voltage, powerFactor, efficiency, starter), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            phase = s.Phase is "single" or "three" ? s.Phase : "single";
+            power = s.Power;
+            powerUnit = s.PowerUnit is "kW" or "HP" or "W" ? s.PowerUnit : "kW";
+            voltage = s.Voltage;
+            powerFactor = s.PowerFactor;
+            efficiency = s.Efficiency;
+            starter = Starters.Any(x => x.Key == s.Starter) ? s.Starter : "dol";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(string Phase, double? Power, string PowerUnit, double? Voltage,
+        double? PowerFactor, double? Efficiency, string Starter);
+}

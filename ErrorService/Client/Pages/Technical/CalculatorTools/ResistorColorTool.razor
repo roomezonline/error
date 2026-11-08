@@ -1,0 +1,399 @@
+@inherits CalcComponentBase
+@using System.Globalization
+@using System.Text.RegularExpressions
+
+<CalcShell Id="resistor-color" Title="کد رنگ مقاومت"
+           Subtitle="مقدار مقاومت را از نوارهای رنگی بخوانید یا برای یک مقدار، ترکیب رنگ استاندارد را پیدا کنید."
+           Icon="oi-grid-three-up" Tag="پرکاربرد"
+           CopyText="@CopyText" OnReset="ResetAsync">
+    <div class="calc-seg" role="group" aria-label="تعداد نوارها">
+        <button type="button" class="calc-seg__btn @(bandCount == 4 ? "is-active" : "")" @onclick="() => SetBands(4)">۴ نواری</button>
+        <button type="button" class="calc-seg__btn @(bandCount == 5 ? "is-active" : "")" @onclick="() => SetBands(5)">۵ نواری</button>
+    </div>
+
+    <div class="resistor-preview" aria-hidden="true">
+        <div class="resistor-body">
+            @foreach (var hex in PreviewBands)
+            {
+                <span class="band" style="background-color:@hex"></span>
+            }
+        </div>
+    </div>
+
+    <div class="calc-form">
+        <div class="calc-field">
+            <label class="calc-label">نوار اول</label>
+            <select class="calc-select" @bind="d1" @bind:after="PersistAsync">
+                @foreach (var c in DigitColors)
+                {
+                    <option value="@c.Key">@c.Name (@c.Digit)</option>
+                }
+            </select>
+        </div>
+        <div class="calc-field">
+            <label class="calc-label">نوار دوم</label>
+            <select class="calc-select" @bind="d2" @bind:after="PersistAsync">
+                @foreach (var c in DigitColors)
+                {
+                    <option value="@c.Key">@c.Name (@c.Digit)</option>
+                }
+            </select>
+        </div>
+        @if (bandCount == 5)
+        {
+            <div class="calc-field">
+                <label class="calc-label">نوار سوم</label>
+                <select class="calc-select" @bind="d3" @bind:after="PersistAsync">
+                    @foreach (var c in DigitColors)
+                    {
+                        <option value="@c.Key">@c.Name (@c.Digit)</option>
+                    }
+                </select>
+            </div>
+        }
+        <div class="calc-field">
+            <label class="calc-label">ضریب (نوار @(bandCount == 4 ? "سوم" : "چهارم"))</label>
+            <select class="calc-select" @bind="mult" @bind:after="PersistAsync">
+                @foreach (var c in Colors)
+                {
+                    <option value="@c.Key">@c.Name (@MultiplierLabel(c))</option>
+                }
+            </select>
+        </div>
+        <div class="calc-field">
+            <label class="calc-label">تلرانس</label>
+            <select class="calc-select" @bind="tol" @bind:after="PersistAsync">
+                @foreach (var t in Tolerances)
+                {
+                    <option value="@t.Key">@t.Name (±@CalcFormat.Num(t.Percent, "0.#")%)</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="calc-result">
+        <div class="calc-result__grid">
+            <div class="calc-result__item">
+                <span class="calc-result__label">مقدار مقاومت</span>
+                <span class="calc-result__value" dir="ltr">@_valueParts.Value <small>@_valueParts.Unit</small></span>
+            </div>
+            <div class="calc-result__item">
+                <span class="calc-result__label">تلرانس</span>
+                <span class="calc-result__value" dir="ltr">±@CalcFormat.Num(_tolerancePercent, "0.#")%</span>
+            </div>
+            <div class="calc-result__item calc-result__item--wide">
+                <span class="calc-result__label">بازه مجاز</span>
+                <span class="calc-result__value calc-result__value--sm" dir="ltr">
+                    @CalcFormat.Resistance(_value * (1 - _tolerancePercent / 100)) – @CalcFormat.Resistance(_value * (1 + _tolerancePercent / 100))
+                </span>
+            </div>
+        </div>
+        <p class="calc-note mt-2 mb-0">
+            مقدار دقیق: <span dir="ltr">@CalcFormat.Num(_value, "0.####") Ω</span> — نوار تلرانس در تصویر، نوار آخر است.
+        </p>
+    </div>
+
+    <details class="calc-details">
+        <summary>برعکس: برای یک مقدار، رنگ مقاومت را پیدا کن</summary>
+        <div class="calc-details__body">
+            <div class="calc-form">
+                <div class="calc-field">
+                    <label class="calc-label" for="res-rev">مقدار مقاومت</label>
+                    <input id="res-rev" class="calc-input" type="text" inputmode="decimal" dir="ltr"
+                           placeholder="مثلاً 4700 یا 4.7k" @bind="reverseInput" @bind:event="oninput" @bind:after="PersistAsync" />
+                </div>
+                <div class="calc-field">
+                    <label class="calc-label">تلرانس</label>
+                    <select class="calc-select" @bind="reverseTol" @bind:after="PersistAsync">
+                        @foreach (var t in Tolerances)
+                        {
+                            <option value="@t.Key">@t.Name (±@CalcFormat.Num(t.Percent, "0.#")%)</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(reverseInput))
+            {
+                @if (Reverse.Error != null)
+                {
+                    <div class="calc-error"><span class="oi oi-warning me-1"></span> @Reverse.Error</div>
+                }
+                else
+                {
+                    <div class="calc-reverse">
+                        <div class="calc-reverse__value" dir="ltr">@Reverse.Standard</div>
+                        <div class="calc-reverse__bands">
+                            @foreach (var b in Reverse.Bands)
+                            {
+                                <span class="calc-color-chip">
+                                    <span class="calc-color-dot" style="background-color:@b.Hex"></span>
+                                    @b.Name
+                                </span>
+                            }
+                        </div>
+                        <p class="calc-note mb-0">نزدیک‌ترین مقدار استاندارد E24 انتخاب شده است.</p>
+                    </div>
+                }
+            }
+        </div>
+    </details>
+
+    <details class="calc-details">
+        <summary>جدول کد رنگ مقاومت</summary>
+        <div class="calc-details__body">
+            <div class="calc-color-table">
+                <table>
+                    <thead>
+                        <tr><th>رنگ</th><th>رقم</th><th>ضریب</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in Colors)
+                        {
+                            <tr>
+                                <td><span class="calc-color-dot" style="background-color:@c.Hex"></span> @c.Name</td>
+                                <td dir="ltr">@(c.Digit?.ToString() ?? "—")</td>
+                                <td dir="ltr">@MultiplierLabel(c)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
+</CalcShell>
+
+@code {
+    private int bandCount = 4;
+    private string d1 = "brown";
+    private string d2 = "black";
+    private string d3 = "black";
+    private string mult = "red";
+    private string tol = "gold";
+    private string reverseInput = "";
+    private string reverseTol = "red";
+
+    private string CopyText => BuildCopyText();
+
+    private ReverseResult Reverse => ComputeReverse();
+
+    protected override string StorageKey => "resistor-color";
+
+    private sealed record ResistorColor(string Key, string Name, int? Digit, double Multiplier, string Hex);
+    private sealed record ToleranceColor(string Key, string Name, double Percent, string Hex);
+
+    private static readonly ResistorColor[] Colors =
+    {
+        new("black", "مشکی", 0, 1, "#111827"),
+        new("brown", "قهوه‌ای", 1, 10, "#8B4513"),
+        new("red", "قرمز", 2, 100, "#DC2626"),
+        new("orange", "نارنجی", 3, 1_000, "#F97316"),
+        new("yellow", "زرد", 4, 10_000, "#FACC15"),
+        new("green", "سبز", 5, 100_000, "#16A34A"),
+        new("blue", "آبی", 6, 1_000_000, "#2563EB"),
+        new("violet", "بنفش", 7, 10_000_000, "#7C3AED"),
+        new("grey", "خاکستری", 8, 100_000_000, "#6B7280"),
+        new("white", "سفید", 9, 1_000_000_000, "#F8FAFC"),
+        new("gold", "طلایی", null, 0.1, "#D4AF37"),
+        new("silver", "نقره‌ای", null, 0.01, "#C0C0C0")
+    };
+
+    private static readonly ToleranceColor[] Tolerances =
+    {
+        new("brown", "قهوه‌ای", 1, "#8B4513"),
+        new("red", "قرمز", 2, "#DC2626"),
+        new("gold", "طلایی", 5, "#D4AF37"),
+        new("silver", "نقره‌ای", 10, "#C0C0C0")
+    };
+
+    private static IEnumerable<ResistorColor> DigitColors => Colors.Where(c => c.Digit != null);
+
+    private ResistorColor C1 => FindColor(d1);
+    private ResistorColor C2 => FindColor(d2);
+    private ResistorColor C3 => FindColor(d3);
+    private ResistorColor CM => FindColor(mult);
+    private ToleranceColor CT => Tolerances.FirstOrDefault(t => t.Key == tol) ?? Tolerances[0];
+
+    private static ResistorColor FindColor(string key)
+        => Colors.FirstOrDefault(c => c.Key == key) ?? Colors[0];
+
+    private static string MultiplierLabel(ResistorColor c)
+    {
+        var m = c.Multiplier;
+        if (m >= 1_000_000_000) return "×1G";
+        if (m >= 1_000_000) return "×1M";
+        if (m >= 1_000) return "×" + CalcFormat.Num(m / 1_000, "0.###") + "k";
+        if (m >= 1) return "×" + CalcFormat.Num(m, "0.###");
+        return "×" + CalcFormat.Num(m, "0.##");
+    }
+
+    private IEnumerable<string> PreviewBands
+    {
+        get
+        {
+            yield return C1.Hex;
+            yield return C2.Hex;
+            if (bandCount == 5) yield return C3.Hex;
+            yield return CM.Hex;
+            yield return CT.Hex;
+        }
+    }
+
+    private double _value => (bandCount == 4
+        ? (C1.Digit ?? 0) * 10 + (C2.Digit ?? 0)
+        : (C1.Digit ?? 0) * 100 + (C2.Digit ?? 0) * 10 + (C3.Digit ?? 0)) * CM.Multiplier;
+
+    private double _tolerancePercent => CT.Percent;
+
+    private (string Value, string Unit) _valueParts => CalcFormat.ResistanceParts(_value);
+
+    private sealed class ReverseResult
+    {
+        public string? Error { get; init; }
+        public string Standard { get; init; } = "";
+        public List<(string Name, string Hex)> Bands { get; init; } = new();
+    }
+
+    private void SetBands(int count)
+    {
+        bandCount = count;
+        StateHasChanged();
+        _ = PersistAsync();
+    }
+
+    private string BuildCopyText()
+    {
+        var bands = string.Join("، ", new[]
+        {
+            C1.Name, C2.Name,
+            bandCount == 5 ? C3.Name : null,
+            CM.Name, CT.Name
+        }.Where(x => x != null));
+
+        return $"مقاومت {_valueParts.Value} {_valueParts.Unit} ±{CalcFormat.Num(CT.Percent, "0.#")}% — رنگ‌ها: {bands}";
+    }
+
+    private ReverseResult ComputeReverse()
+    {
+        if (string.IsNullOrWhiteSpace(reverseInput)) return new ReverseResult();
+
+        var parsed = ParseResistance(reverseInput);
+        if (parsed == null || parsed <= 0)
+        {
+            return new ReverseResult
+            {
+                Error = "مقدار وارد شده معتبر نیست. نمونه‌های صحیح: 4700، 4.7k، 4k7، 2.2M"
+            };
+        }
+
+        if (parsed < 0.1 || parsed > 99_000_000_000)
+        {
+            return new ReverseResult { Error = "مقدار خارج از بازه مقاومت‌های استاندارد است." };
+        }
+
+        var standard = CalcFormat.NearestE24(parsed.Value);
+        var exp = (int)Math.Floor(Math.Log10(standard));
+        var mantissa = standard / Math.Pow(10, exp);
+        var digits = (int)Math.Round(mantissa * 10);
+        if (digits >= 100) { digits = 10; exp += 1; }
+
+        var first = digits / 10;
+        var second = digits % 10;
+        var mulExp = exp - 1;
+
+        var firstColor = Colors.FirstOrDefault(c => c.Digit == first) ?? Colors[1];
+        var secondColor = Colors.FirstOrDefault(c => c.Digit == second) ?? Colors[0];
+        var multiplierColor = MultiplierFromExponent(mulExp);
+        var toleranceColor = Tolerances.FirstOrDefault(t => t.Key == reverseTol) ?? Tolerances[0];
+
+        return new ReverseResult
+        {
+            Standard = CalcFormat.Resistance(standard) + " ±" + CalcFormat.Num(toleranceColor.Percent, "0.#") + "%",
+            Bands = new List<(string Name, string Hex)>
+            {
+                (firstColor.Name, firstColor.Hex),
+                (secondColor.Name, secondColor.Hex),
+                (multiplierColor.Name, multiplierColor.Hex),
+                (toleranceColor.Name, toleranceColor.Hex)
+            }
+        };
+    }
+
+    private static ResistorColor MultiplierFromExponent(int exponent)
+    {
+        var value = Math.Pow(10, exponent);
+        return Colors.FirstOrDefault(c => Math.Abs(c.Multiplier - value) < 1e-9) ?? Colors[0];
+    }
+
+    private static double? ParseResistance(string raw)
+    {
+        var text = ErrorService.Shared.SearchNormalizer.Normalize(raw)
+            .Replace("Ω", "")
+            .Replace("ohm", "", StringComparison.OrdinalIgnoreCase)
+            .Trim();
+
+        if (text.Length == 0) return null;
+
+        var multiplier = 1.0;
+        if (text.EndsWith("k", StringComparison.OrdinalIgnoreCase)) { multiplier = 1_000; text = text[..^1]; }
+        else if (text.EndsWith("m", StringComparison.OrdinalIgnoreCase) || text.EndsWith("M", StringComparison.Ordinal)) { multiplier = 1_000_000; text = text[..^1]; }
+
+        // 4k7 و 4R7: حرف وسط عدد به عنوان اعشار تفسیر می‌شود.
+        if (Regex.IsMatch(text, @"^\d+[kKrR]\d+$"))
+        {
+            var sep = text.First(ch => ch is 'k' or 'K' or 'r' or 'R');
+            if (sep is 'k' or 'K') multiplier = 1_000;
+            text = text.Replace("k", ".").Replace("K", ".").Replace("r", ".").Replace("R", ".");
+        }
+
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            return null;
+
+        return value * multiplier;
+    }
+
+    private async Task ResetAsync()
+    {
+        bandCount = 4;
+        d1 = "brown";
+        d2 = "black";
+        d3 = "black";
+        mult = "red";
+        tol = "gold";
+        reverseInput = "";
+        reverseTol = "red";
+        await PersistAsync();
+        StateHasChanged();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(
+            new State(bandCount, d1, d2, d3, mult, tol, reverseInput, reverseTol), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            bandCount = s.BandCount == 5 ? 5 : 4;
+            d1 = FindColor(s.D1).Key;
+            d2 = FindColor(s.D2).Key;
+            d3 = FindColor(s.D3).Key;
+            mult = FindColor(s.Mult).Key;
+            tol = Tolerances.Any(t => t.Key == s.Tol) ? s.Tol : "gold";
+            reverseInput = s.ReverseInput ?? "";
+            reverseTol = Tolerances.FirstOrDefault(t => t.Key == s.ReverseTol)?.Key ?? "red";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(
+        int BandCount, string D1, string D2, string D3, string Mult, string Tol,
+        string? ReverseInput, string? ReverseTol);
+}

@@ -134,10 +134,15 @@ public sealed class MonitoringArchiveController : ControllerBase
                 return Forbid();
         }
 
-        var records = await _db.MonitoringDataRecords
-            .Where(r => r.MonitoringId == archive.MonitoringReceiptConnectionId)
-            .ToListAsync();
-        _db.MonitoringDataRecords.RemoveRange(records);
+        // حذف دسته‌ای، هر دسته در تراکنش مستقل خودش.
+        // قبلاً همهٔ دسته‌ها داخل یک تراکنش واحد بودند و لاگ تراکنش دیتابیس
+        // (روی هاست ۱۰۰MB با recovery SIMPLE) برای آرشیوهای پررکورد پر می‌شد
+        // و خطای 9002 می‌داد. حالا بین دسته‌ها لاگ آزاد می‌شود و حذف هم
+        // در صورت قطع شدن، از همان‌جا قابل ادامه است.
+        while (await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE TOP (10000) FROM [MonitoringDataRecords] WHERE [MonitoringId] = {archive.MonitoringReceiptConnectionId}") > 0)
+        {
+        }
 
         _db.MonitoringDataArchives.Remove(archive);
 

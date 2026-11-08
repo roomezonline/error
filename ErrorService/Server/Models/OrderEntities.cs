@@ -285,6 +285,13 @@ public class ShippingMethod
     [MaxLength(50)]
     public string? EstimatedDays { get; set; }
 
+    /// <summary>
+    /// الگوی لینک رهگیری مرسوله؛ {tracking} با کد رهگیری جایگزین می‌شود.
+    /// خالی بودن یعنی استفاده از لینک پیش‌فرض شرکت حمل روی صفحه سفارش.
+    /// </summary>
+    [MaxLength(500)]
+    public string? TrackingUrlTemplate { get; set; }
+
     /// <summary>آستانه ارسال رایگان (تومان) — وقتی EnableFreeShipping روشن باشد.</summary>
     [Column(TypeName = "decimal(18,2)")]
     public decimal? FreeShippingThreshold { get; set; }

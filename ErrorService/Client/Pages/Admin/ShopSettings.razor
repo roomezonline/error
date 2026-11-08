@@ -20,7 +20,7 @@
             <h3 class="admin-page-title m-0">تنظیمات فروشگاه</h3>
             <p class="text-muted small mb-0 mt-1">هر قابلیت را جداگانه روشن یا خاموش کنید؛ امکانات خاموش به‌طور کامل در سایت نمایش داده نمی‌شوند.</p>
         </div>
-        <button class="btn btn-primary shadow-sm rounded-3 px-4" @onclick="SaveSettings" disabled="@isSaving">
+        <button class="btn btn-primary shadow-sm rounded-3 px-4" @onclick="SaveSettings" disabled="@(isSaving || settings == null)">
             @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
             ذخیره تغییرات
         </button>
@@ -28,10 +28,19 @@
 
     @if (settings == null)
     {
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary"></div>
-            <p class="text-muted mt-2">در حال بارگذاری تنظیمات فروشگاه...</p>
-        </div>
+        @if (_loadFailed)
+        {
+            <div class="alert alert-danger rounded-3" role="alert">
+                بارگذاری تنظیمات فروشگاه ناموفق بود. برای جلوگیری از بازنویسی داده‌های موجود، ذخیره غیرفعال شده است. صفحه را دوباره بارگذاری کنید.
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary"></div>
+                <p class="text-muted mt-2">در حال بارگذاری تنظیمات فروشگاه...</p>
+            </div>
+        }
     }
     else
     {
@@ -261,6 +270,51 @@
 
             <div class="col-lg-6">
                 <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h5 class="fw-bold mb-1 border-bottom pb-3">دفترچه آدرس و یادآوری‌ها</h5>
+                    <p class="small text-muted mb-4">امکانات کمکی مشتری برای خرید سریع‌تر و بازگشت دوباره به فروشگاه.</p>
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">ذخیرهٔ چند آدرس</h6>
+                            <p class="small text-muted mb-0">مشتری می‌تواند آدرس‌های خود را ذخیره کند و در تسویه‌حساب انتخاب کند.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnableSavedAddresses">
+                        </div>
+                    </div>
+
+                    @if (settings.EnableSavedAddresses)
+                    {
+                        <div class="mb-3 px-1">
+                            <label class="form-label small fw-bold">حداکثر تعداد آدرس هر مشتری</label>
+                            <input type="number" class="form-control" min="1" max="20" @bind="settings.MaxSavedAddresses" />
+                            <div class="form-text">بین ۱ تا ۲۰ آدرس.</div>
+                        </div>
+                    }
+
+                    <div class="setting-item d-flex justify-content-between align-items-center mb-3 p-3 bg-light rounded-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">اطلاع از کاهش قیمت</h6>
+                            <p class="small text-muted mb-0">دکمهٔ «اطلاع از کاهش قیمت» در صفحه محصول؛ با کاهش قیمت به مشتری اطلاع داده می‌شود.</p>
+                        </div>
+                        <div class="form-check form-switch fs-4 m-0">
+                            <input class="form-check-input" type="checkbox" @bind="settings.EnablePriceDropAlerts">
+                        </div>
+                    </div>
+
+                    @if (settings.EnablePriceDropAlerts)
+                    {
+                        <div class="px-1">
+                            <label class="form-label small fw-bold">حداقل درصد کاهش برای اطلاع‌رسانی</label>
+                            <input type="number" class="form-control" min="0" max="90" @bind="settings.PriceDropMinPercent" />
+                            <div class="form-text">صفر یعنی هر کاهشی اطلاع داده می‌شود؛ مثلاً ۵ یعنی فقط کاهش‌های ۵٪ و بیشتر.</div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
                     <h5 class="fw-bold mb-1 border-bottom pb-3">لغو سفارش توسط مشتری</h5>
                     <p class="small text-muted mb-4">مشتری فقط سفارش پرداخت‌نشده و قبل از شروع پرداخت آنلاین یا ارسال را می‌تواند لغو کند؛ موجودی و کوپن خودکار برمی‌گردد.</p>
 
@@ -354,6 +408,7 @@
 @code {
     private SiteSettingsDto? settings;
     private bool isSaving;
+    private bool _loadFailed;
     private string _thresholdText = string.Empty;
 
     private List<ToggleBinding> InteractionToggles = new();
@@ -371,7 +426,8 @@
 
         if (settings == null)
         {
-            settings = new SiteSettingsDto();
+            _loadFailed = true;
+            return;
         }
 
         _thresholdText = settings.FreeShippingThreshold.HasValue

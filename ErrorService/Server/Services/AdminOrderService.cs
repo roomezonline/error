@@ -166,6 +166,7 @@ public sealed class AdminOrderService
         {
             await EvictProductsCacheAsync();
             await _notifications.NotifyOrderCreatedByAdminAsync(order);
+            await _notifications.NotifyOrderPlacedForSuperAdminsAsync(order);
             await _db.SaveChangesAsync(ct);
         }
 
@@ -331,6 +332,7 @@ WHERE Id = {order.Id} AND Status = {(int)OrderStatus.Draft}", ct);
 
         await EvictProductsCacheAsync();
         await _notifications.NotifyOrderCreatedByAdminAsync(order);
+        await _notifications.NotifyOrderPlacedForSuperAdminsAsync(order);
         await _db.SaveChangesAsync(ct);
 
         return (true, null);
@@ -429,31 +431,36 @@ WHERE Id = {order.Id}
         }
 
         var note = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
-        if (!string.IsNullOrWhiteSpace(request.ReceiptUrl))
+        var newReceiptUrls = (request.ReceiptUrls ?? new List<string>())
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Select(u => u!.Trim())
+            .Where(u => u.StartsWith("/uploads/receipts/", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (newReceiptUrls.Count > 0)
         {
-            if (string.IsNullOrEmpty(order.ReceiptImageUrlsJson))
+            var urls = new List<string>();
+            try
             {
-                var urls = new List<string>();
-                if (!string.IsNullOrWhiteSpace(order.ReceiptImageUrl)) urls.Add(order.ReceiptImageUrl);
-                if (!urls.Contains(request.ReceiptUrl.Trim(), StringComparer.OrdinalIgnoreCase)
-                    && !string.Equals(order.ReceiptImageUrl, request.ReceiptUrl.Trim(), StringComparison.OrdinalIgnoreCase))
-                {
-                    urls.Add(request.ReceiptUrl.Trim());
-                }
-                order.ReceiptImageUrlsJson = System.Text.Json.JsonSerializer.Serialize(urls);
+                if (!string.IsNullOrEmpty(order.ReceiptImageUrlsJson))
+                    urls = System.Text.Json.JsonSerializer.Deserialize<List<string>>(order.ReceiptImageUrlsJson) ?? new();
             }
-            else
+            catch (System.Text.Json.JsonException) { }
+            if (urls.Count == 0 && !string.IsNullOrWhiteSpace(order.ReceiptImageUrl))
+                urls.Add(order.ReceiptImageUrl);
+
+            const int maxReceipts = 3;
+            foreach (var url in newReceiptUrls)
             {
-                try
-                {
-                    var urls = System.Text.Json.JsonSerializer.Deserialize<List<string>>(order.ReceiptImageUrlsJson) ?? new();
-                    if (!urls.Contains(request.ReceiptUrl.Trim(), StringComparer.OrdinalIgnoreCase))
-                    {
-                        urls.Add(request.ReceiptUrl.Trim());
-                        order.ReceiptImageUrlsJson = System.Text.Json.JsonSerializer.Serialize(urls);
-                    }
-                }
-                catch (System.Text.Json.JsonException) { }
+                if (urls.Count >= maxReceipts) break;
+                if (!urls.Contains(url, StringComparer.OrdinalIgnoreCase)) urls.Add(url);
+            }
+
+            if (urls.Count > 0)
+            {
+                order.ReceiptImageUrlsJson = System.Text.Json.JsonSerializer.Serialize(urls);
+                order.ReceiptImageUrl = urls[^1];
             }
         }
 

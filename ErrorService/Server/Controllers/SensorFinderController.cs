@@ -1,4 +1,5 @@
 using ErrorService.Server.Data;
+using ErrorService.Server.Infrastructure;
 using ErrorService.Server.Models;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
@@ -12,6 +13,7 @@ namespace ErrorService.Server.Controllers;
 public sealed class SensorFinderController : ControllerBase
 {
     private const int MaxImagesPerRecord = 5;
+    private const int RandomRecentPoolSize = 60;
 
     private readonly ErrorServiceDbContext _db;
     private readonly IWebHostEnvironment _env;
@@ -102,6 +104,33 @@ public sealed class SensorFinderController : ControllerBase
         return await _db.SensorFinderRecords.CountAsync();
     }
 
+    // No output cache: reshuffles on every load. Picks randomly from the latest
+    // records and always includes the newest one so manual inserts show up immediately.
+    [HttpGet("records/random")]
+    public async Task<ActionResult<IEnumerable<object>>> GetRandomRecords([FromQuery] int take = 3)
+    {
+        take = Math.Clamp(take, 1, 50);
+        var pool = await _db.SensorFinderRecords
+            .AsNoTracking()
+            .OrderByDescending(x => x.Id)
+            .Take(RandomRecentPoolSize)
+            .Select(x => new
+            {
+                x.Id,
+                DeviceName = x.Device.Name,
+                x.SensorName,
+                x.SensorType,
+                x.SizeText,
+                ImageUrl = x.Images.OrderBy(i => i.SortOrder).Select(i => i.Url).FirstOrDefault()
+            })
+            .ToListAsync();
+
+        return pool.Take(1)
+            .Concat(pool.Skip(1).OrderBy(_ => Random.Shared.Next()).Take(Math.Max(take - 1, 0)))
+            .OrderBy(_ => Random.Shared.Next())
+            .ToList();
+    }
+
     [HttpGet("records/{id:int}")]
     [OutputCache(Duration = 3600)]
     public async Task<ActionResult<SensorFinderRecordDto>> GetRecordById(int id)
@@ -181,6 +210,7 @@ public sealed class SensorFinderController : ControllerBase
         var entity = new SensorFinderDevice { Name = name };
         _db.SensorFinderDevices.Add(entity);
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
 
         return Ok(new SensorFinderDeviceDto { Id = entity.Id, Name = entity.Name });
     }
@@ -200,6 +230,7 @@ public sealed class SensorFinderController : ControllerBase
 
         entity.Name = name;
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 
@@ -221,6 +252,7 @@ public sealed class SensorFinderController : ControllerBase
 
         _db.SensorFinderDevices.Remove(entity);
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 
@@ -277,6 +309,7 @@ public sealed class SensorFinderController : ControllerBase
 
         _db.SensorFinderRecords.Add(entity);
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
 
         var dto = await _db.SensorFinderRecords
             .AsNoTracking()
@@ -313,11 +346,13 @@ public sealed class SensorFinderController : ControllerBase
         entity.SensorType = request.SensorType?.Trim();
         entity.SizeText = request.SizeText?.Trim();
         entity.Notes = request.Notes?.Trim();
+        entity.UpdatedAt = DateTime.Now;
 
         if (string.IsNullOrWhiteSpace(entity.SensorName))
             return BadRequest("نام سنسور الزامی است");
 
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 
@@ -333,6 +368,7 @@ public sealed class SensorFinderController : ControllerBase
 
         _db.SensorFinderRecords.Remove(entity);
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
     }
 
@@ -379,6 +415,7 @@ public sealed class SensorFinderController : ControllerBase
 
         _db.SensorFinderImages.Add(img);
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
 
         return Ok(new SensorFinderImageDto { Id = img.Id, Url = img.Url, Title = img.Title, SortOrder = img.SortOrder });
     }
@@ -392,6 +429,7 @@ public sealed class SensorFinderController : ControllerBase
 
         _db.SensorFinderImages.Remove(entity);
         await _db.SaveChangesAsync();
+        SeoFallbackMiddleware.InvalidateHtmlCache();
 
         // best-effort delete file
         try

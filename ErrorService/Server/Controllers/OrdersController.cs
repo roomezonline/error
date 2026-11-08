@@ -27,6 +27,7 @@ public sealed class OrdersController : ControllerBase
     private readonly StockAlertNotifier _stockAlerts;
     private readonly IOutputCacheStore _outputCache;
     private readonly AdminOrderService _adminOrders;
+    private readonly ILogger<OrdersController> _logger;
 
     private static readonly HashSet<(OrderStatus, OrderStatus)> AllowedTransitions = new()
     {
@@ -43,7 +44,7 @@ public sealed class OrdersController : ControllerBase
         (OrderStatus.Approved, OrderStatus.Cancelled),
     };
 
-    public OrdersController(ErrorServiceDbContext db, IWebHostEnvironment env, IConfiguration config, IAuthorizationService authorizationService, IPaymentGatewayFactory paymentGatewayFactory, NotificationEventService notificationEvents, StockAlertNotifier stockAlerts, IOutputCacheStore outputCache, AdminOrderService adminOrders)
+    public OrdersController(ErrorServiceDbContext db, IWebHostEnvironment env, IConfiguration config, IAuthorizationService authorizationService, IPaymentGatewayFactory paymentGatewayFactory, NotificationEventService notificationEvents, StockAlertNotifier stockAlerts, IOutputCacheStore outputCache, AdminOrderService adminOrders, ILogger<OrdersController> logger)
     {
         _db = db;
         _env = env;
@@ -54,6 +55,7 @@ public sealed class OrdersController : ControllerBase
         _stockAlerts = stockAlerts;
         _outputCache = outputCache;
         _adminOrders = adminOrders;
+        _logger = logger;
     }
 
     private async Task<List<OrderItem>> LoadOrderItemsAsync(int orderId)
@@ -721,6 +723,7 @@ public sealed class OrdersController : ControllerBase
         await EvictProductsCacheAsync();
 
         await _notificationEvents.NotifyOrderCreatedAsync(order);
+        await _notificationEvents.NotifyOrderPlacedForSuperAdminsAsync(order);
         await _db.SaveChangesAsync();
 
         return Ok(new OrderDto
@@ -2116,6 +2119,53 @@ public sealed class OrdersController : ControllerBase
         return Ok(await BuildAdminOrderDtoAsync(id));
     }
 
+    /// <summary>آپلود تصاویر رسید پرداخت دستی توسط مدیر (حداکثر ۳ تصویر).</summary>
+    [Authorize(Policy = "perm:admin.orders.payment.manage")]
+    [HttpPost("admin/{id:int}/receipt")]
+    [RequestSizeLimit(15_000_000)]
+    public async Task<ActionResult<List<string>>> UploadAdminOrderReceipt(int id, [FromForm] List<IFormFile> files, CancellationToken ct)
+    {
+        if (!await _db.Orders.AnyAsync(o => o.Id == id, ct))
+            return NotFound();
+
+        if (files == null || files.Count == 0)
+            return BadRequest("فایل رسید ارسال نشده است.");
+
+        const int maxTotal = 3;
+        if (files.Count > maxTotal)
+            return BadRequest($"حداکثر {maxTotal} تصویر رسید مجاز است.");
+
+        var uploadsFolder = Path.Combine(_env.WebRootPath, "uploads", "receipts");
+        if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
+
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp" };
+        var savedUrls = new List<string>();
+
+        foreach (var file in files)
+        {
+            if (file == null || file.Length == 0) continue;
+
+            var safeExt = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (!allowed.Contains(safeExt))
+                return BadRequest("فرمت فایل مجاز نیست. فقط تصاویر jpg, jpeg, png, webp");
+
+            var fileName = $"{id}_admin_{Guid.NewGuid():N}{safeExt}";
+            var filePath = Path.Combine(uploadsFolder, fileName);
+
+            await using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream, ct);
+            }
+
+            savedUrls.Add($"/uploads/receipts/{fileName}");
+        }
+
+        if (savedUrls.Count == 0)
+            return BadRequest("هیچ فایل معتبری ارسال نشده است.");
+
+        return Ok(savedUrls);
+    }
+
     /// <summary>تأیید دستی پرداخت آنلاین با همان Authority ثبت‌شده (برای callbackهای گم‌شده).</summary>
     [Authorize(Policy = "perm:admin.orders.payment.manage")]
     [HttpPost("admin/{id:int}/payment/verify")]
@@ -3186,6 +3236,18 @@ WHERE Id = {order.Id}
         if (string.Equals(providerKey, "virtual", StringComparison.OrdinalIgnoreCase)
             && string.IsNullOrWhiteSpace(payload.Authority))
             return Content(PaymentResultHtml(false, "شناسه پرداخت (Authority) ارسال نشده است.", order), "text/html; charset=utf-8");
+
+        // مرجع بازگشتی باید همان مرجعی باشد که هنگام شروع پرداخت برای این سفارش
+        // ثبت شده است؛ در غیر این صورت ممکن است تراکنش معتبرِ سفارش دیگری
+        // (با مبلغ برابر) به این سفارش نسبت داده شود.
+        if (!string.IsNullOrWhiteSpace(order.PaymentAuthority)
+            && !string.Equals(order.PaymentAuthority, payload.Authority, StringComparison.Ordinal))
+        {
+            _logger.LogWarning(
+                "Payment callback authority mismatch. OrderId={OrderId}, expected={Expected}, received={Received}",
+                order.Id, order.PaymentAuthority, payload.Authority);
+            return Content(PaymentResultHtml(false, "شناسه تراکنش با این سفارش مطابقت ندارد.", order), "text/html; charset=utf-8");
+        }
 
         var result = await gateway.VerifyCallbackAsync(payload, ct);
 

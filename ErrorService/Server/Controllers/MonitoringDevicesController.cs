@@ -13,10 +13,12 @@ namespace ErrorService.Server.Controllers;
 public sealed class MonitoringDevicesController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
+    private readonly MonitoringCacheService _cache;
 
-    public MonitoringDevicesController(ErrorServiceDbContext db)
+    public MonitoringDevicesController(ErrorServiceDbContext db, MonitoringCacheService cache)
     {
         _db = db;
+        _cache = cache;
     }
 
     [Authorize(Policy = "perm:admin.monitoring.devices.manage")]
@@ -59,12 +61,24 @@ public sealed class MonitoringDevicesController : ControllerBase
             var lastTime = hasData ? (DateTimeOffset?)new DateTimeOffset(DateTime.SpecifyKind(lastTs, DateTimeKind.Utc), TimeSpan.Zero) : null;
             var isOnline = hasData && (now - lastTs) < onlineThreshold;
 
+            // برای دستگاه‌هایی که ثبت رکورد جزیی خاموش است، وضعیت آنلاین از کش زنده خوانده می‌شود.
+            if (!x.DetailedChartEnabled)
+            {
+                var cached = _cache.Get(x.DeviceNumber);
+                if (cached != null && cached.Timestamp > DateTime.MinValue)
+                {
+                    lastTime = new DateTimeOffset(DateTime.SpecifyKind(cached.Timestamp, DateTimeKind.Utc), TimeSpan.Zero);
+                    isOnline = (DateTime.UtcNow - cached.Timestamp) < onlineThreshold;
+                }
+            }
+
             return new MonitoringDeviceDto
             {
                 Id = x.Id,
                 Title = x.Title,
                 DeviceNumber = x.DeviceNumber,
                 IsActive = x.IsActive,
+                DetailedChartEnabled = x.DetailedChartEnabled,
                 IsOnline = isOnline,
                 LastDataTime = lastTime,
                 LastDataTimeFa = lastTime.HasValue ? PersianDateHelper.ToPersianDateTimeString(lastTime.Value, includeTime: true, includeSeconds: false) : null,
@@ -131,11 +145,14 @@ public sealed class MonitoringDevicesController : ControllerBase
         if (await _db.MonitoringDevices.AnyAsync(x => x.DeviceNumber == trimmedDeviceNumber))
             return BadRequest("کد دستگاه تکراری است و قبلاً ثبت شده است");
 
+        var isSuperAdmin = User.IsInRole("super_admin");
+
         var entity = new MonitoringDevice
         {
             Title = req.Title.Trim(),
             DeviceNumber = trimmedDeviceNumber,
             IsActive = req.IsActive,
+            DetailedChartEnabled = isSuperAdmin && req.DetailedChartEnabled,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
@@ -149,6 +166,7 @@ public sealed class MonitoringDevicesController : ControllerBase
             Title = entity.Title,
             DeviceNumber = entity.DeviceNumber,
             IsActive = entity.IsActive,
+            DetailedChartEnabled = entity.DetailedChartEnabled,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt
         });
@@ -174,6 +192,9 @@ public sealed class MonitoringDevicesController : ControllerBase
         entity.Title = req.Title.Trim();
         entity.DeviceNumber = trimmedDeviceNumber;
         entity.IsActive = req.IsActive;
+        // تغییر مجوز چارت با جزییات فقط در اختیار سوپر ادمین است.
+        if (User.IsInRole("super_admin"))
+            entity.DetailedChartEnabled = req.DetailedChartEnabled;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
 
         if (!req.IsActive)
@@ -193,6 +214,7 @@ public sealed class MonitoringDevicesController : ControllerBase
             Title = entity.Title,
             DeviceNumber = entity.DeviceNumber,
             IsActive = entity.IsActive,
+            DetailedChartEnabled = entity.DetailedChartEnabled,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt
         });
@@ -290,6 +312,16 @@ public sealed class MonitoringDevicesController : ControllerBase
             var hasData = lastDataDict.TryGetValue(x.MonitoringDevice.DeviceNumber, out var lastTs);
             var lastTime = hasData ? (DateTimeOffset?)new DateTimeOffset(DateTime.SpecifyKind(lastTs, DateTimeKind.Utc), TimeSpan.Zero) : null;
             var isOnline = hasData && (now - lastTs) < onlineThreshold;
+
+            if (!x.MonitoringDevice.DetailedChartEnabled)
+            {
+                var cached = _cache.Get(x.MonitoringDevice.DeviceNumber);
+                if (cached != null && cached.Timestamp > DateTime.MinValue)
+                {
+                    lastTime = new DateTimeOffset(DateTime.SpecifyKind(cached.Timestamp, DateTimeKind.Utc), TimeSpan.Zero);
+                    isOnline = (DateTime.UtcNow - cached.Timestamp) < onlineThreshold;
+                }
+            }
 
             return new MonitoringDeviceAssignmentDto
             {

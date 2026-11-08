@@ -247,8 +247,20 @@ public sealed class ChatAiProviderPayload
     public string Kind { get; set; } = "custom";
     public bool Enabled { get; set; } = true;
     public int Priority { get; set; }
+    public bool UseForChat { get; set; } = true;
+    public bool UseForContentStudio { get; set; } = true;
     public List<ChatAiKeyPayload>? Keys { get; set; }
     public List<ChatAiModelPayload>? Models { get; set; }
+    public List<ChatAiProxyPayload>? Proxies { get; set; }
+}
+
+public sealed class ChatAiProxyPayload
+{
+    public int Id { get; set; }
+    public string Url { get; set; } = string.Empty;
+    public string? Label { get; set; }
+    public bool Enabled { get; set; } = true;
+    public int Priority { get; set; }
 }
 
 public sealed class ChatAiKeyPayload
@@ -267,4 +279,13 @@ public sealed class ChatAiModelPayload
     public string? Label { get; set; }
     public bool Enabled { get; set; } = true;
     public int Priority { get; set; }
+}
+
+/// <summary>پیکربندی قدیمی تک‌کلیدی؛ فقط در صفحه تنظیمات هوش مصنوعی مدیریت می‌شود.</summary>
+public sealed class AiLegacyPayload
+{
+    public string? Provider { get; set; }
+    public string? ApiUrl { get; set; }
+    public string? ApiKey { get; set; }
+    public string? Model { get; set; }
 }

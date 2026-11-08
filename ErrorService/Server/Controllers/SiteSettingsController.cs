@@ -1,4 +1,4 @@
-using ErrorService.Server.Data;
+﻿using ErrorService.Server.Data;
 using ErrorService.Server.Models;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
@@ -136,6 +136,11 @@ public sealed class SiteSettingsController : ControllerBase
             FreeShippingThreshold = settings.FreeShippingThreshold,
             EnableReturnRequests = settings.EnableReturnRequests,
             EnableReorder = settings.EnableReorder,
+            EnableSavedAddresses = settings.EnableSavedAddresses,
+            MaxSavedAddresses = settings.MaxSavedAddresses,
+            EnablePriceDropAlerts = settings.EnablePriceDropAlerts,
+            PriceDropMinPercent = settings.PriceDropMinPercent,
+            EnableProductFeed = settings.EnableProductFeed,
             EnableQuickView = settings.EnableQuickView,
             EnableCompare = settings.EnableCompare,
             CompareMaxItems = settings.CompareMaxItems,
@@ -154,6 +159,7 @@ public sealed class SiteSettingsController : ControllerBase
             EnableHomeBestSellers = settings.EnableHomeBestSellers,
             EnableHomeRestocked = settings.EnableHomeRestocked,
             ShowEnamadSeal = settings.ShowEnamadSeal,
+            CalculatorsDisabled = settings.CalculatorsDisabled,
             HomeModules = homeModulesAvailable
                 ? settings.HomeModules
                     .OrderBy(x => x.SortOrder)
@@ -327,6 +333,11 @@ public sealed class SiteSettingsController : ControllerBase
         settings.FreeShippingThreshold = dto.FreeShippingThreshold;
         settings.EnableReturnRequests = dto.EnableReturnRequests;
         settings.EnableReorder = dto.EnableReorder;
+        settings.EnableSavedAddresses = dto.EnableSavedAddresses;
+        settings.MaxSavedAddresses = Math.Clamp(dto.MaxSavedAddresses <= 0 ? 5 : dto.MaxSavedAddresses, 1, 20);
+        settings.EnablePriceDropAlerts = dto.EnablePriceDropAlerts;
+        settings.PriceDropMinPercent = Math.Clamp(dto.PriceDropMinPercent, 0, 90);
+        settings.EnableProductFeed = dto.EnableProductFeed;
         settings.EnableQuickView = dto.EnableQuickView;
         settings.EnableCompare = dto.EnableCompare;
         settings.CompareMaxItems = dto.CompareMaxItems <= 0 ? 4 : Math.Clamp(dto.CompareMaxItems, 2, 6);
@@ -345,10 +356,19 @@ public sealed class SiteSettingsController : ControllerBase
         settings.EnableHomeBestSellers = dto.EnableHomeBestSellers;
         settings.EnableHomeRestocked = dto.EnableHomeRestocked;
         settings.ShowEnamadSeal = dto.ShowEnamadSeal;
+        settings.CalculatorsDisabled = NormalizeCalculatorKeys(dto.CalculatorsDisabled);
 
         await _db.SaveChangesAsync();
         try { await _outputCache.EvictByTagAsync(SettingsCacheTag, CancellationToken.None); } catch { }
+        // تیتر/توضیح صفحه اصلی و تصویر OG از همین تنظیمات خوانده می‌شوند.
+        ErrorService.Server.Infrastructure.SeoFallbackMiddleware.InvalidateHtmlCache();
         return NoContent();
+    }
+
+    private static string? NormalizeCalculatorKeys(string? csv)
+    {
+        var disabled = CalculatorCatalog.ParseDisabled(csv);
+        return disabled.Count == 0 ? null : string.Join(",", disabled);
     }
 
     private static bool EnsureHomeModules(SiteSettings settings)

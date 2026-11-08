@@ -1,0 +1,40 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using ErrorService.Client.Services
+@inject AuthenticationStateProvider AuthProvider
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+@if (_showForbidden)
+{
+    <StatusPage Type="403" Title="دسترسی غیرمجاز"
+                Message="شما اجازه دسترسی به این بخش را ندارید. در صورت نیاز با مدیر سیستم تماس بگیرید." />
+}
+
+@code {
+    private bool _showForbidden;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthProvider.GetAuthenticationStateAsync();
+
+        // کاربر واقعاً وارد شده اما مجوز این صفحه را ندارد → ۴۰۳
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            _showForbidden = true;
+            return;
+        }
+
+        // کاربر وارد نشده (یا توکنش منقضی شده) → صفحه ورود
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        var path = "/" + relative.Split('?', '#')[0].TrimStart('/');
+        if (path.StartsWith("/auth/login", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var expired = await Auth.HasExpiredSessionAsync();
+        if (expired)
+            await Auth.LogoutAsync();
+
+        var query = expired ? "?expired=1&returnUrl=" : "?returnUrl=";
+        Nav.NavigateTo($"/auth/login{query}{Uri.EscapeDataString(relative)}");
+    }
+}

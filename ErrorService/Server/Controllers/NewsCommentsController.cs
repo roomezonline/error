@@ -56,11 +56,12 @@ public sealed class NewsCommentsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> PostComment(int newsId, [FromBody] CommentRequest request)
     {
-        var newsTitle = await _db.News
+        var news = await _db.News
             .Where(x => x.Id == newsId)
-            .Select(x => x.Title)
+            .Select(x => new { x.Title, x.Slug })
             .FirstOrDefaultAsync();
-        if (newsTitle == null) return NotFound("خبر یافت نشد");
+        if (news == null) return NotFound("خبر یافت نشد");
+        var newsTitle = news.Title;
 
         if (request.Rating.HasValue && (request.Rating.Value < 1 || request.Rating.Value > 5))
             return BadRequest("امتیاز باید بین ۱ تا ۵ باشد");
@@ -85,20 +86,32 @@ public sealed class NewsCommentsController : ControllerBase
         _db.NewsComments.Add(comment);
         await _db.SaveChangesAsync();
 
-        if (!comment.IsApproved)
+        var isAdminSubmitter = User.Identity?.IsAuthenticated == true
+            && (User.IsInRole("super_admin")
+                || User.HasClaim("perm", "admin.news.comments.manage")
+                || User.HasClaim("perm", "admin.settings.manage"));
+
+        if (!isAdminSubmitter)
         {
+            var status = comment.IsApproved ? "منتشر شد" : "در انتظار تأیید";
+            var pagePath = SeoUrl.News(newsId,
+                string.IsNullOrWhiteSpace(news.Slug) ? null : Uri.EscapeDataString(news.Slug));
             await _notificationEvents.NotifyAsync(
                 eventType: "news.comment_created",
                 values: new Dictionary<string, string?>
                 {
                     ["UserName"] = comment.FullName,
-                    ["NewsTitle"] = newsTitle
+                    ["NewsTitle"] = newsTitle,
+                    ["Content"] = NotificationEventService.CleanContent(comment.Content),
+                    ["Status"] = status,
+                    ["PagePath"] = pagePath
                 },
                 idempotencyKey: $"news.comment:{comment.Id}",
                 fallbackSeverity: NotificationSeverity.Info,
-                fallbackTitle: "نظر جدید مقاله ثبت شد",
-                fallbackBody: $"{comment.FullName} برای «{newsTitle}» نظر ثبت کرده است.",
-                fallbackUrl: "/admin/comments");
+                fallbackTitle: "نظر جدید برای خبر",
+                fallbackBody: $"خبر: {newsTitle}\n{comment.FullName}:\n{NotificationEventService.CleanContent(comment.Content)}",
+                fallbackUrl: pagePath,
+                superAdminsOnly: true);
             await _db.SaveChangesAsync();
         }
 

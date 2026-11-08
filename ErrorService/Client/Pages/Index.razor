@@ -6,9 +6,9 @@
 @inject ErrorService.Client.Services.SiteSettingsService SettingsService
 
 <SeoHeader 
-    Title="@(settings?.SeoTitle ?? "ارورسرویس | فروشگاه لوازم الکترونیک، ابزار دقیق و تعمیر تخصصی لوازم خانگی و بردها")" 
-    Description="@(settings?.SeoDescription ?? "ارورسرویس، فروشگاه تخصصی لوازم الکترونیکی، قطعات الکترونیک، تجهیزات ابزار دقیق و ابزارآلات صنعتی. تعمیر تخصصی لوازم خانگی و بردهای الکترونیکی با ضمانت اصالت و ارسال سریع.")"
-    Keywords="@settings?.SeoKeywords"
+    Title="@(string.IsNullOrWhiteSpace(settings?.SeoTitle) ? "ارورسرویس | تعمیر و سرویس لوازم خانگی، کد خطا و قطعات یدکی" : settings!.SeoTitle!)" 
+    Description="@(string.IsNullOrWhiteSpace(settings?.SeoDescription) ? "ارورسرویس، مرجع تخصصی کدهای خطای لوازم خانگی، آموزش تعمیرات، قطعات یدکی و سرویس در منزل. بانک جامع ارور ماشین لباسشویی، یخچال، ظرفشویی و ماکروفر." : settings!.SeoDescription!)"
+    Keywords="@(string.IsNullOrWhiteSpace(settings?.SeoKeywords) ? "کد خطای لوازم خانگی, تعمیر لوازم خانگی, قطعات یدکی, سرویس لوازم خانگی, ارور ماشین لباسشویی, ارور یخچال, تعمیرات لوازم خانگی" : settings!.SeoKeywords!)"
     OgImage="@(settings?.DefaultOgImage ?? "/images/og-default.jpg")"
     JsonLd="@orgJsonLd" />
 
@@ -103,21 +103,29 @@ else
                 {
     <div class="container home-news-block" dir="rtl">
         <div class="row g-4">
-            <div class="col-lg-8">
-                <div class="home-head">
-                    <h2 class="home-head__title">آخرین اخبار</h2>
-                    <div class="home-head__actions">
-                        <a href="/news" class="home-more">مشاهده همه <span class="oi oi-arrow-left" aria-hidden="true"></span></a>
+            @if (HomeCardCount > 0)
+            {
+                <div class="@(HomeListCount > 0 ? "col-lg-8" : "col-12") d-flex flex-column">
+                    <div class="home-head">
+                        <h2 class="home-head__title">@HomeTitle</h2>
+                        <div class="home-head__actions">
+                            <a href="/news" class="home-more">مشاهده همه <span class="oi oi-arrow-left" aria-hidden="true"></span></a>
+                        </div>
+                    </div>
+                    <NewsCardView Count="HomeCardCount" Types="@HomeTypesCsv" />
+                </div>
+            }
+            @if (HomeListCount > 0)
+            {
+                <div class="@(HomeCardCount > 0 ? "col-lg-4" : "col-12")">
+                    <div class="h-100 d-flex flex-column">
+                        <div class="home-head">
+                            <h2 class="home-head__title">عناوین</h2>
+                        </div>
+                        <NewsListView Count="HomeListCount" Types="@HomeTypesCsv" />
                     </div>
                 </div>
-                <NewsCardView Count="3" />
-            </div>
-            <div class="col-lg-4">
-                <div class="h-100">
-                    <h2 class="home-head__title mb-3">عناوین خبرها</h2>
-                    <NewsListView Count="4" />
-                </div>
-            </div>
+            }
         </div>
     </div>
                 }
@@ -229,9 +237,9 @@ else
             </summary>
             <div class="home-seo-intro__body">
                 <div class="home-seo-intro__text">
-                    <p>ارورسرویس برای عیب‌یابی و تعمیر لوازم خانگی طراحی شده است. در این سایت می‌توانید کدهای خطای یخچال، ماشین لباسشویی، ظرفشویی و دیگر دستگاه‌ها را پیدا کنید. توضیحات هر کد با زبان ساده ارائه می‌شود. راهنمای بررسی اولیه نیز به شما کمک می‌کند مشکل دستگاه را بهتر بشناسید.</p>
-                    <p>اگر به تعمیرکار نیاز دارید، درخواست تعمیر خود را آنلاین ثبت کنید. اطلاعات درخواست برای بررسی کارشناس ارسال می‌شود. روند پیگیری برای شما شفاف است. هدف ما کاهش زمان عیب‌یابی و ارائه خدمات مطمئن در محل است.</p>
-                    <p class="home-seo-intro__last">در فروشگاه ارورسرویس، قطعات یدکی و تجهیزات فنی با توضیحات کاربردی عرضه می‌شوند. بخش آکادمی نیز آموزش‌های تعمیرات و نکات فنی را ارائه می‌کند. برای شروع می‌توانید از <a class="home-seo-intro__chip" href="/technical/error-codes">بانک کدهای خطا</a>، <a class="home-seo-intro__chip" href="/products">فروشگاه</a> یا <a class="home-seo-intro__chip" href="/admission/repair">ثبت درخواست تعمیر</a> استفاده کنید.</p>
+                    <p><strong>ارورسرویس</strong> برای عیب‌یابی و تعمیر لوازم خانگی طراحی شده است. در این سایت می‌توانید <strong>کدهای خطای یخچال، ماشین لباسشویی، ظرفشویی</strong> و دیگر دستگاه‌ها را پیدا کنید. توضیحات هر کد با زبان ساده ارائه می‌شود. راهنمای <strong>بررسی اولیه</strong> نیز به شما کمک می‌کند مشکل دستگاه را بهتر بشناسید.</p>
+                    <p>اگر به تعمیرکار نیاز دارید، <strong>درخواست تعمیر خود را آنلاین</strong> ثبت کنید. اطلاعات درخواست برای بررسی کارشناس ارسال می‌شود. روند پیگیری برای شما شفاف است. هدف ما <strong>کاهش زمان عیب‌یابی</strong> و ارائه خدمات مطمئن در محل است.</p>
+                    <p class="home-seo-intro__last">در فروشگاه ارورسرویس، <strong>قطعات یدکی و تجهیزات فنی</strong> با توضیحات کاربردی عرضه می‌شوند. بخش آکادمی نیز <strong>آموزش‌های تعمیرات</strong> و نکات فنی را ارائه می‌کند. برای شروع می‌توانید از <a class="home-seo-intro__chip" href="/technical/error-codes">بانک کدهای خطا</a>، <a class="home-seo-intro__chip" href="/products">فروشگاه</a> یا <a class="home-seo-intro__chip" href="/admission/repair">ثبت درخواست تعمیر</a> استفاده کنید.</p>
                 </div>
             </div>
         </details>
@@ -251,9 +259,17 @@ else
     private SiteHomeModuleKey? firstProductModuleKey;
     private List<CategoryDto>? categories;
     private SiteSettingsDto? settings;
+    private ContentSettingsDto? contentSettings;
     private List<SiteHomeModuleDto> orderedModules = new();
     private string? orgJsonLd;
     private bool isInitialLoading = true;
+
+    private int HomeCardCount => contentSettings?.HomeCardCount ?? 3;
+    private int HomeListCount => contentSettings?.HomeListCount ?? 5;
+    private string HomeTitle => string.IsNullOrWhiteSpace(contentSettings?.HomeTitle) ? "آخرین اخبار" : contentSettings!.HomeTitle;
+    private string HomeTypesCsv => string.Join(",",
+        (contentSettings ?? new ContentSettingsDto()).HomeContentTypes().Select(t => t.ToString()));
+    private bool HomeBlockHasItems => HomeCardCount > 0 || HomeListCount > 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -342,20 +358,27 @@ else
             var showCategories = modules.Any(m => m.Key == SiteHomeModuleKey.HomeCategories && m.IsEnabled);
             var showNews = modules.Any(m => m.Key == SiteHomeModuleKey.LatestNews && m.IsEnabled);
 
-            // These requests are independent. Running them together shortens the
-            // secondary loading path without changing data or ordering.
+            var settingsTask = Http.GetFromJsonAsync<ContentSettingsDto>("api/content/settings");
             var categoriesTask = showCategories
                 ? Http.GetFromJsonAsync<List<CategoryDto>>("api/categories")
                 : Task.FromResult<List<CategoryDto>?>(null);
-            var newsTask = showNews
-                ? Http.GetFromJsonAsync<List<NewsDto>>("api/news?onlyPublished=true&skip=0&take=1")
-                : Task.FromResult<List<NewsDto>?>(null);
 
-            await Task.WhenAll(categoriesTask, newsTask);
+            await Task.WhenAll(settingsTask, categoriesTask);
 
+            contentSettings = await settingsTask ?? new ContentSettingsDto();
             categories = await categoriesTask;
-            var news = await newsTask;
-            hasPublishedNews = showNews && news is { Count: > 0 };
+
+            if (showNews && HomeBlockHasItems)
+            {
+                var url = $"api/news?onlyPublished=true&skip=0&take=1&types={Uri.EscapeDataString(HomeTypesCsv)}";
+                var news = await Http.GetFromJsonAsync<List<NewsDto>>(url);
+                hasPublishedNews = news is { Count: > 0 };
+            }
+            else
+            {
+                hasPublishedNews = false;
+            }
+
             await InvokeAsync(StateHasChanged);
         }
         catch

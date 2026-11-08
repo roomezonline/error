@@ -1,0 +1,205 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="led-resistor" Title="مقاومت LED"
+           Subtitle="مقاومت سری، توان و نزدیک‌ترین مقدار استاندارد را برای روشن کردن LED محاسبه می‌کند."
+           Icon="oi-lightbulb" Tag="پرکاربرد"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-form">
+        <div class="calc-field">
+            <label class="calc-label" for="led-vs">ولتاژ تغذیه (V)</label>
+            <input id="led-vs" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 12" @bind="supply" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="led-vf">ولتاژ LED (V)</label>
+            <input id="led-vf" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 2" @bind="forwardVoltage" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field calc-field--full">
+            <label class="calc-label">رنگ LED (ولتاژ نامی)</label>
+            <select class="calc-select" @bind="preset" @bind:after="ApplyPreset">
+                @foreach (var p in Presets)
+                {
+                    <option value="@p.Key">@p.Name — @CalcFormat.Num(p.Voltage, "0.#") ولت</option>
+                }
+            </select>
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="led-i">جریان LED (mA)</label>
+            <input id="led-i" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 20" @bind="currentMa" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="led-count">تعداد LED سری</label>
+            <input id="led-count" class="calc-input" type="number" inputmode="numeric" min="1" step="1" dir="ltr"
+                   @bind="ledCount" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">مقاومت لازم</span>
+                    <span class="calc-result__value" dir="ltr">@Result.ResistanceValue <small>@Result.ResistanceUnit</small></span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">مقدار استاندارد پیشنهادی</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.StandardValue</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">توان مقاومت</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.PowerValue</span>
+                </div>
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">قدرت مقاومت پیشنهادی</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Rating</span>
+                </div>
+            </div>
+            <p class="calc-note mt-2 mb-0">
+                برای پایداری و دما، مقاومتی با توان حداقل دو برابر توان محاسبه‌شده انتخاب شده است.
+            </p>
+        </div>
+    }
+</CalcShell>
+
+@code {
+    private double? supply = 12;
+    private double? forwardVoltage = 2;
+    private double? currentMa = 20;
+    private int ledCount = 1;
+    private string preset = "red";
+
+    protected override string StorageKey => "led-resistor";
+
+    private sealed record LedPreset(string Key, string Name, double Voltage);
+
+    private static readonly LedPreset[] Presets =
+    {
+        new("ir", "مادون قرمز", 1.2),
+        new("red", "قرمز", 2.0),
+        new("yellow", "زرد / کهربایی", 2.1),
+        new("green", "سبز", 2.2),
+        new("blue", "آبی", 3.2),
+        new("white", "سفید", 3.2),
+        new("uv", "بنفش (UV)", 3.4)
+    };
+
+    private sealed class LedResult
+    {
+        public string ResistanceValue { get; init; } = "—";
+        public string ResistanceUnit { get; init; } = "Ω";
+        public string StandardValue { get; init; } = "—";
+        public string PowerValue { get; init; } = "—";
+        public string Rating { get; init; } = "—";
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private LedResult Result => Compute();
+
+    private LedResult Compute()
+    {
+        var vs = supply;
+        var vf = forwardVoltage;
+        var ma = currentMa;
+
+        if (vs == null || vf == null || ma == null)
+            return new LedResult { Hint = "ولتاژ تغذیه، ولتاژ LED و جریان را وارد کنید." };
+
+        if (vs <= 0 || vf <= 0 || ma <= 0)
+            return new LedResult { Error = "همه مقادیر باید بزرگ‌تر از صفر باشند." };
+
+        var count = Math.Max(1, ledCount);
+        var totalVf = vf.Value * count;
+        if (totalVf >= vs.Value)
+            return new LedResult
+            {
+                Error = $"ولتاژ تغذیه ({CalcFormat.Num(vs.Value)}V) باید بیشتر از مجموع ولتاژ LEDها ({CalcFormat.Num(totalVf)}V) باشد."
+            };
+
+        var amps = ma.Value / 1000.0;
+        var resistance = (vs.Value - totalVf) / amps;
+        var power = (vs.Value - totalVf) * amps;
+
+        var standard = CalcFormat.NextE24(resistance);
+        var standardPower = amps * amps * standard;
+        var rating = PickRating(standardPower);
+
+        var rp = CalcFormat.ResistanceParts(resistance);
+
+        return new LedResult
+        {
+            ResistanceValue = rp.Value,
+            ResistanceUnit = rp.Unit,
+            StandardValue = CalcFormat.Resistance(standard),
+            PowerValue = CalcFormat.Power(power),
+            Rating = rating,
+            CopyText = $"مقاومت LED — R={rp.Value} {rp.Unit} (استاندارد {CalcFormat.Resistance(standard)}) | توان {CalcFormat.Power(power)} | مقاومت {rating}"
+        };
+    }
+
+    private static string PickRating(double watts)
+    {
+        var needed = watts * 2;
+        if (needed <= 0.125) return "۰٫۱۲۵ وات";
+        if (needed <= 0.25) return "۰٫۲۵ وات";
+        if (needed <= 0.5) return "۰٫۵ وات";
+        if (needed <= 1) return "۱ وات";
+        if (needed <= 2) return "۲ وات";
+        return "۵ وات یا بیشتر";
+    }
+
+    private async Task ApplyPreset()
+    {
+        var p = Presets.FirstOrDefault(x => x.Key == preset);
+        if (p != null) forwardVoltage = p.Voltage;
+        await PersistAsync();
+    }
+
+    private async Task ResetAsync()
+    {
+        supply = 12;
+        forwardVoltage = 2;
+        currentMa = 20;
+        ledCount = 1;
+        preset = "red";
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(
+            new State(supply, forwardVoltage, currentMa, ledCount, preset), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            supply = s.Supply;
+            forwardVoltage = s.ForwardVoltage;
+            currentMa = s.CurrentMa;
+            ledCount = s.LedCount is > 0 and < 100 ? s.LedCount : 1;
+            preset = Presets.Any(p => p.Key == s.Preset) ? s.Preset : "red";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(double? Supply, double? ForwardVoltage, double? CurrentMa, int LedCount, string Preset);
+}

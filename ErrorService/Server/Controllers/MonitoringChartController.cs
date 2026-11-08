@@ -5,12 +5,14 @@ using ErrorService.Server.Models;
 using ErrorService.Server.Services;
 using ErrorService.Shared;
 using ErrorService.Shared.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/monitoring/chart")]
 public class MonitoringChartController : ControllerBase
 {
@@ -30,6 +32,19 @@ public class MonitoringChartController : ControllerBase
     {
         if (monitoringId <= 0) return BadRequest("Invalid monitoringId");
         hours = Math.Clamp(hours, 1, 24);
+
+        var connection = await _db.MonitoringReceiptConnections
+            .AsNoTracking()
+            .Include(x => x.MonitoringDevice)
+            .FirstOrDefaultAsync(x => x.Id == monitoringId);
+        if (connection?.MonitoringDevice?.DetailedChartEnabled != true)
+        {
+            return Ok(new MonitoringChartSegmentsResponse
+            {
+                MonitoringId = monitoringId,
+                SegmentHours = hours
+            });
+        }
 
         var query = _db.MonitoringDataRecords
             .AsNoTracking()
@@ -228,6 +243,13 @@ public class MonitoringChartController : ControllerBase
     {
         if (monitoringId <= 0)
             return BadRequest("Invalid monitoringId");
+
+        var connection = await _db.MonitoringReceiptConnections
+            .AsNoTracking()
+            .Include(x => x.MonitoringDevice)
+            .FirstOrDefaultAsync(x => x.Id == monitoringId);
+        if (connection?.MonitoringDevice?.DetailedChartEnabled != true)
+            return Ok(new MonitoringDetailedChartResponse());
 
         var query = _db.MonitoringDataRecords
             .Where(x => x.MonitoringId == monitoringId);
@@ -498,6 +520,16 @@ public class MonitoringChartController : ControllerBase
 
         bool isPoweredOn = _monitoringCache.Get(deviceCode)?.Priz?.Trim().ToLower() == "on";
 
+        // دستگاه‌های بدون مجوز چارت با جزییات رکوردی ثبت نمی‌کنند؛
+        // وضعیت آنلاین آن‌ها از کش زنده خوانده می‌شود.
+        var detailedChartEnabled = connection?.MonitoringDevice?.DetailedChartEnabled == true;
+        if (!detailedChartEnabled && !string.IsNullOrEmpty(deviceCode))
+        {
+            var cached = _monitoringCache.Get(deviceCode);
+            if (cached != null && cached.Timestamp > DateTime.MinValue)
+                isOnline = (DateTime.UtcNow - cached.Timestamp).TotalMinutes < 2.0;
+        }
+
         // Initialize grace period if connection is active and assignment has expired
         if (connection != null && isActive && connection.GracePeriodEndAt == null)
         {
@@ -543,7 +575,8 @@ public class MonitoringChartController : ControllerBase
             createdAtFa,
             createdAt,
             gracePeriodEndAt,
-            monitoringDurationHours
+            monitoringDurationHours,
+            detailedChartEnabled
         });
     }
 
@@ -827,6 +860,9 @@ public class MonitoringChartController : ControllerBase
             .Include(x => x.CustomerReceipt).ThenInclude(x => x.DeviceBrand)
             .Include(x => x.MonitoringDevice)
             .FirstOrDefaultAsync(x => x.Id == monitoringId);
+
+        if (connection?.MonitoringDevice?.DetailedChartEnabled != true)
+            return Ok(new MonitoringChartResponse());
 
         var query = _db.MonitoringDataRecords
             .Where(x => x.MonitoringId == monitoringId);

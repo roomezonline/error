@@ -13,6 +13,18 @@ public static class OnlineAdmissionStatuses
     public const string Deleted = "deleted";
 
     public static readonly string[] All = { Pending, Verified, Processing, Done, Canceled, Rejected, Deleted };
+
+    public static string Label(string? status) => status switch
+    {
+        Pending => "در انتظار بررسی",
+        Verified => "تایید شده",
+        Processing => "در حال انجام",
+        Done => "تکمیل شده",
+        Canceled => "لغو شده",
+        Rejected => "رد شده",
+        Deleted => "حذف شده",
+        _ => status ?? ""
+    };
 }
 
 public static class OnlineAdmissionTypes
@@ -100,6 +112,8 @@ public sealed class SendOtpRequest
     [Required(ErrorMessage = "شماره موبایل الزامی است")]
     [RegularExpression(@"^09\d{9}$", ErrorMessage = "شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود")]
     public string Mobile { get; set; } = string.Empty;
+
+    public string? Type { get; set; }
 }
 
 public sealed class VerifyOtpRequest
@@ -111,6 +125,42 @@ public sealed class VerifyOtpRequest
     [Required(ErrorMessage = "کد تایید الزامی است")]
     [StringLength(6, MinimumLength = 6, ErrorMessage = "کد تایید باید ۶ رقم باشد")]
     public string Code { get; set; } = string.Empty;
+
+    public string? Type { get; set; }
+}
+
+public sealed class AdmissionCreatedDto
+{
+    public int Id { get; set; }
+}
+
+/// <summary>درخواست پیگیری عمومی پذیرش؛ با شماره موبایل و شناسه اختیاری.</summary>
+public sealed class AdmissionTrackRequest
+{
+    [Required(ErrorMessage = "شماره موبایل الزامی است")]
+    [RegularExpression(@"^09\d{9}$", ErrorMessage = "شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود")]
+    public string Mobile { get; set; } = string.Empty;
+
+    public int? Id { get; set; }
+
+    public string? VerificationCode { get; set; }
+}
+
+public sealed class AdmissionTrackingDto
+{
+    public int Id { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string TypeTitle { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string StatusTitle { get; set; } = string.Empty;
+    public string CustomerFullName { get; set; } = string.Empty;
+    public string? AdminNote { get; set; }
+    public string? AssignedWorkshopName { get; set; }
+    public long? ExpertiseAmount { get; set; }
+    public string? DeviceTypeName { get; set; }
+    public string? DeviceBrandName { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
 }
 
 public sealed class OtpResultDto
@@ -125,7 +175,12 @@ public sealed class AdmissionExpertiseSettingsDto
     public long Amount { get; set; }
     public string? HtmlDescription { get; set; }
     public bool IsEnabled { get; set; }
+    /// <summary>کلید اصلی کد تایید؛ برای سازگاری با صفحه‌های قدیمی نگه داشته شده است.</summary>
     public bool OtpEnabled { get; set; }
+    public bool OtpRepairEnabled { get; set; }
+    public bool OtpExpertiseEnabled { get; set; }
+    public bool OtpTrackingEnabled { get; set; }
+    public int OtpCodeTtlSeconds { get; set; } = 120;
     public List<AdmissionBankAccountDto> BankAccounts { get; set; } = new();
 }
 

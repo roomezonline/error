@@ -1,46 +1,61 @@
-@page "/news/{Id:int}"
+﻿@page "/news/{Id:int}"
 @page "/news/{Slug}"
+@page "/tips/{Id:int}"
+@page "/tips/{Slug}"
+@page "/announcements/{Id:int}"
+@page "/announcements/{Slug}"
 @using ErrorService.Shared
 @using System.Net.Http.Json
 @using ErrorService.Client.Utils
 @using ErrorService.Client.Services
 @using System.Text.Json
 
-<PageTitle>ارورسرویس - @(news?.Title ?? "جزییات خبر")</PageTitle>
+<div class="news-details-page nd-page" dir="rtl">
+    @if (ShowReadingProgress)
+    {
+        <div class="nd-progress" aria-hidden="true"><span id="nd-progress-bar"></span></div>
+    }
 
-<div class="news-details-page py-5 bg-white" dir="rtl">
-    <div class="container">
+    <div class="container nd-container">
         @if (isLoading)
         {
-            <div class="text-center py-5">
-                <div class="spinner-border text-primary" role="status"></div>
-                <p class="mt-3 text-muted">در حال دریافت محتوای خبر...</p>
+            <div class="nd-loading">
+                <div class="nd-skeleton nd-skeleton--title"></div>
+                <div class="nd-skeleton nd-skeleton--meta"></div>
+                <div class="nd-skeleton nd-skeleton--hero"></div>
+                <div class="nd-skeleton nd-skeleton--line"></div>
+                <div class="nd-skeleton nd-skeleton--line"></div>
+                <div class="nd-skeleton nd-skeleton--line nd-skeleton--short"></div>
+                <p class="text-center text-muted small mt-3 mb-0">در حال دریافت محتوا...</p>
             </div>
         }
         else if (news == null)
         {
-            <SeoHeader Title="خبر یافت نشد | ارور سرویس" Description="متاسفانه خبر مورد نظر شما یافت نشد." />
+            <SeoHeader Title="محتوا یافت نشد | ارورسرویس" Description="متاسفانه محتوای مورد نظر شما یافت نشد." />
             <div class="alert alert-warning text-center py-5 rounded-4 shadow-sm">
-                <h3 class="fw-bold">خبر مورد نظر یافت نشد!</h3>
-                <a href="/news" class="btn btn-primary mt-3 rounded-pill px-4">بازگشت به لیست اخبار</a>
+                <h3 class="fw-bold">@TypeLabel مورد نظر یافت نشد!</h3>
+                <a href="@ContentTypeCatalog.Route(_type)" class="btn btn-primary mt-3 rounded-pill px-4">بازگشت به فهرست @TypePlural</a>
             </div>
         }
         else
         {
+            var newsTags = string.IsNullOrEmpty(news.Tags)
+                ? Array.Empty<string>()
+                : news.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             <SeoHeader 
-                Title="@($"{news.Title} | ارور سرویس")" 
-                Description="@(string.IsNullOrEmpty(news.Summary) ? $"مشاهده جزئیات خبر: {news.Title}" : (news.Summary.Length > 160 ? news.Summary.Substring(0, 157) + "..." : news.Summary))"
+                Title="@SeoTitles.News(news.Title)" 
+                Description="@SeoDescriptions.News(news.Summary, news.Title)"
                 OgType="article"
                 OgImage="@(news.ImageUrl ?? "/images/og-default.jpg")"
-                CanonicalUrl="@($"https://errorservice.ir{SeoUrl.News(news.Id, news.Slug)}")"
+                CanonicalUrl="@($"https://errorservice.ir{ContentDetailUrl(news.Id, news.Slug)}")"
                 JsonLd="@newsJsonLd" />
 
-            <div class="news-details-page min-vh-100" dir="rtl">
-                <div class="news-header-sticky d-lg-none shadow-sm">
+            <div class="news-details-page d-lg-none">
+                <div class="news-header-sticky shadow-sm">
                     <div class="container d-flex align-items-center justify-content-between h-100 px-2">
                         @if (news.PreviousNews != null)
                         {
-                            <a href="@SeoUrl.News(news.PreviousNews.Id, news.PreviousNews.Slug)" class="nav-btn-mobile" title="خبر قبلی">
+                            <a href="@ContentDetailUrl(news.PreviousNews.Id, news.PreviousNews.Slug)" class="nav-btn-mobile" title="@($"{TypeLabel} قبلی")">
                                 <div class="nav-btn-mobile__img">
                                     @if (!string.IsNullOrEmpty(news.PreviousNews.ImageUrl))
                                     {
@@ -56,7 +71,7 @@
                         }
                         else
                         {
-                            <a href="/news" class="nav-btn-mobile" title="لیست اخبار">
+                            <a href="@ContentTypeCatalog.Route(_type)" class="nav-btn-mobile" title="@($"فهرست {TypePlural}")">
                                 <span class="oi oi-grid-three-up nav-btn-mobile__icon ms-0"></span>
                             </a>
                         }
@@ -65,7 +80,7 @@
 
                         @if (news.NextNews != null)
                         {
-                            <a href="@SeoUrl.News(news.NextNews.Id, news.NextNews.Slug)" class="nav-btn-mobile" title="خبر بعدی">
+                            <a href="@ContentDetailUrl(news.NextNews.Id, news.NextNews.Slug)" class="nav-btn-mobile" title="@($"{TypeLabel} بعدی")">
                                 <span class="oi oi-chevron-left nav-btn-mobile__icon"></span>
                                 <div class="nav-btn-mobile__img">
                                     @if (!string.IsNullOrEmpty(news.NextNews.ImageUrl))
@@ -87,240 +102,303 @@
                         }
                     </div>
                 </div>
+            </div>
 
-                <div class="container py-3 py-lg-5">
-                    <nav aria-label="breadcrumb" class="d-none d-lg-block mb-4">
-                        <ol class="breadcrumb bg-transparent p-0 mb-0">
-                            <li class="breadcrumb-item"><a href="/" class="text-decoration-none text-muted">خانه</a></li>
-                            <li class="breadcrumb-item"><a href="/news" class="text-decoration-none text-muted">اخبار</a></li>
-                            <li class="breadcrumb-item active text-dark fw-bold text-truncate" style="max-width: 300px;">@news.Title</li>
-                        </ol>
-                    </nav>
+            <div class="nd-main">
+                <nav aria-label="breadcrumb" class="d-none d-lg-block nd-breadcrumb">
+                    <ol class="breadcrumb bg-transparent p-0 mb-0">
+                        <li class="breadcrumb-item"><a href="/" class="text-decoration-none">خانه</a></li>
+                        <li class="breadcrumb-item"><a href="@ContentTypeCatalog.Route(_type)" class="text-decoration-none">@TypePlural</a></li>
+                        @if (!string.IsNullOrWhiteSpace(news.CategoryTitle))
+                        {
+                            <li class="breadcrumb-item"><a href="@ContentTypeCatalog.CategoryRoute(_type, news.CategorySlug ?? news.CategoryId?.ToString() ?? "")" class="text-decoration-none">@news.CategoryTitle</a></li>
+                        }
+                        <li class="breadcrumb-item active text-truncate" style="max-width: 320px;">@news.Title</li>
+                    </ol>
+                </nav>
 
-                    <div class="row justify-content-center g-4">
-                        <div class="col-lg-8">
-                            <article class="news-article-modern shadow-lg-hover">
-                                <div class="article-meta-top mb-4">
-                                    <h1 class="article-title fw-black mb-4">@news.Title</h1>
-                                    
-                                    <div class="author-info-bar py-3 border-top border-bottom">
-                                        <div class="row g-3 align-items-center">
-                                            <div class="col-auto">
-                                                <div class="author-avatar bg-primary-subtle">
-                                                    <span class="oi oi-person text-primary"></span>
-                                                </div>
-                                            </div>
-                                            <div class="col">
-                                                <div class="author-name fw-bold">@(string.IsNullOrWhiteSpace(news.AuthorName) ? "تحریریه ارور سرویس" : news.AuthorName)</div>
-                                                <div class="publish-date text-muted x-small">
-                                                    @PersianDate.ToLongPersianDate(news.CreatedAt)
-                                                    <span class="mx-1">â€¢</span>
-                                                    @PersianDate.ToTime(news.CreatedAt)
-                                                    <span class="mx-1 d-none d-md-inline">â€¢</span>
-                                                    <span class="d-none d-md-inline"><span class="oi oi-timer me-1"></span> زمان مطالعه: @EstimateReadTime(news.Content) دقیقه</span>
-                                                </div>
-                                            </div>
-                                            <div class="col-auto d-none d-md-block">
-                                                <div class="d-flex gap-2">
-                                                    <button class="btn-action-sm" @onclick="CopyLink" title="کپی لینک"><span class="oi oi-link-intact"></span></button>
-                                                    <button class="btn-action-sm text-primary" title="تلگرام"><span class="oi oi-paper-plane"></span></button>
-                                                </div>
-                                            </div>
+                <div class="row justify-content-center g-4">
+                    <div class="col-12 col-lg-8">
+                        <article class="nd-article">
+                            <header class="nd-head">
+                                @if (newsTags.Length > 0)
+                                {
+                                    <a class="nd-kicker" href="@ContentTypeCatalog.TagRoute(_type, newsTags[0])">#@newsTags[0]</a>
+                                }
+                                <h1 class="nd-title">@news.Title</h1>
+                                <div class="nd-meta">
+                                    <div class="nd-author">
+                                        <div class="nd-author__avatar"><span class="oi oi-person"></span></div>
+                                        <div class="nd-author__txt">
+                                            <span class="nd-author__name">@AuthorName</span>
+                                            <span class="nd-author__date">
+                                                @PersianDate.ToLongPersianDate(news.PublishedAt)
+                                                <span class="nd-dot">•</span>
+                                                @PersianDate.ToTime(news.PublishedAt)
+                                            </span>
                                         </div>
+                                    </div>
+                                    <div class="nd-meta__actions">
+                                        @if (ShowViewCount && news.ViewCount > 0)
+                                        {
+                                            <span class="nd-readtime"><span class="oi oi-eye"></span>@news.ViewCount.ToString("N0")</span>
+                                        }
+                                        @if (ShowReadingTime)
+                                        {
+                                            <span class="nd-readtime"><span class="oi oi-clock"></span>@ReadMinutes دقیقه مطالعه</span>
+                                        }
+                                        <button class="nd-icon-btn" @onclick="CopyLink" title="کپی لینک" aria-label="کپی لینک">
+                                            <span class="oi oi-link-intact"></span>
+                                        </button>
+                                        <button class="nd-icon-btn nd-icon-btn--solid" @onclick="OpenShareModal" title="اشتراک‌گذاری" aria-label="اشتراک‌گذاری">
+                                            <span class="oi oi-share"></span>
+                                        </button>
                                     </div>
                                 </div>
+                            </header>
 
-                                @if (!string.IsNullOrEmpty(news.ImageUrl))
-                                {
-                                    <div class="article-featured-image mb-5">
-                                        <img src="@news.ImageUrl" loading="lazy" class="w-100 h-100 object-fit-cover" alt="@news.Title" />
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div class="article-featured-image mb-5 news-placeholder-details">
-                                        <div class="news-placeholder-icon-lg">
-                                            <span class="oi oi-image"></span>
-                                        </div>
-                                        <div class="news-placeholder-text-lg fw-bold">تصویری برای این خبر ثبت نشده است</div>
-                                    </div>
-                                }
-
-                                @if (!string.IsNullOrEmpty(news.Summary))
-                                {
-                                    <div class="article-summary-box mb-5">
-                                        <div class="summary-icon"><span class="oi oi-info"></span></div>
-                                        <div class="summary-text lead">@news.Summary</div>
-                                    </div>
-                                }
-
-                                <div class="article-content-card mb-5">
-                                    <div class="article-content-body">
-                                        @((MarkupString)HtmlSanitizer.Sanitize(news.Content ?? ""))
-                                    </div>
-                                </div>
-
-                                @if (!string.IsNullOrEmpty(news.Tags))
-                                {
-                                    <div class="news-tags-bottom mb-5 pt-4 border-top">
-                                        <div class="d-flex flex-wrap gap-2 align-items-center">
-                                            <span class="text-muted small fw-bold me-2"><span class="oi oi-tags me-1"></span> برچسب‌ها:</span>
-                                            @foreach (var tag in news.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                                            {
-                                                <span class="badge-tag">#@tag</span>
-                                            }
-                                        </div>
-                                    </div>
-                                }
-
-                                <div class="article-footer-modern py-4 border-top">
-                                    <div class="row align-items-center justify-content-between g-3">
-                                        <div class="col-md-auto">
-                                            <div class="d-flex align-items-center gap-3">
-                                                <span class="fw-bold small text-muted">اشتراک‌گذاری:</span>
-                                                <div class="d-flex gap-2">
-                                                    <button class="btn-share-modern link" @onclick="CopyLink" title="کپی لینک">
-                                                        <span class="oi oi-link-intact"></span>
-                                                    </button>
-                                                    <button class="btn-share-modern tg" @onclick="OpenShareModal" title="تلگرام">
-                                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/></svg>
-                                                    </button>
-                                                    <button class="btn-share-modern wa" @onclick="OpenShareModal" title="واتس‌اپ">
-                                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2zm.01 1.67c2.2 0 4.26.86 5.82 2.42a8.183 8.183 0 012.41 5.82c0 4.54-3.7 8.23-8.24 8.23-1.57 0-3.09-.45-4.39-1.29l-.32-.2-3.27.86.88-3.18-.23-.37a8.221 8.221 0 01-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23h.01zm-3.11 4.63c-.17 0-.45.07-.69.37-.23.3-.88.86-.88 2.1s.9 2.43 1.02 2.6c.12.17 1.76 2.68 4.25 3.75.59.26 1.05.41 1.41.52.6.19 1.14.16 1.57.08.48-.09 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.07-.07-.23-.12-.48-.23-.25-.12-1.47-.73-1.69-.82-.23-.09-.39-.12-.56.12-.17.25-.64.81-.78.97-.14.17-.29.19-.53.07-.26-.12-1.06-.39-2.02-1.28-.74-.66-1.24-1.47-1.39-1.72-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.35-.77-1.84-.2-.48-.4-.41-.56-.41h-.41z"/></svg>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-auto text-end">
-                                            <a href="/news" class="btn-return-news">
-                                                <span>لیست اخبار</span>
-                                                <span class="oi oi-arrow-left"></span>
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
-                            </article>
-
-                            @if (relatedNews != null && relatedNews.Any())
+                            @if (!string.IsNullOrEmpty(news.ImageUrl))
                             {
-                                <div class="related-section-modern mt-5">
-                                    <div class="section-head mb-4 d-flex align-items-center justify-content-between">
-                                        <h4 class="fw-black m-0 d-flex align-items-center gap-2">
-                                            <span class="head-line"></span>
-                                            اخبار مرتبط
-                                        </h4>
-                                        <a href="/news" class="text-primary fw-bold small text-decoration-none">مشاهده همه</a>
-                                    </div>
-                                    <div class="related-horizontal-scroll">
-                                        <div class="row g-3 flex-nowrap flex-md-wrap overflow-auto pb-3">
-                                            @foreach (var item in relatedNews)
-                                            {
-                                                <div class="col-9 col-md-4">
-                                                    <a href="@SeoUrl.News(item.Id, item.Slug)" class="text-decoration-none">
-                                                        <div class="related-card-modern h-100">
-                                                            <div class="card-img-wrap ratio ratio-16x9">
-                                                                <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/news-placeholder.svg" : item.ImageUrl)" loading="lazy" decoding="async" class="object-fit-cover" alt="@item.Title" />
-                                                            </div>
-                                                            <div class="card-body p-3">
-                                                                <h6 class="card-title fw-bold text-dark mb-2">@item.Title</h6>
-                                                                <div class="card-date text-muted x-small">@PersianDate.ToLongPersianDate(item.CreatedAt)</div>
-                                                            </div>
-                                                        </div>
-                                                    </a>
-                                                </div>
-                                            }
-                                        </div>
+                                <figure class="nd-hero">
+                                    <img src="@news.ImageUrl" loading="eager" decoding="async" fetchpriority="high" alt="@news.Title" />
+                                </figure>
+                            }
+                            else
+                            {
+                                <div class="nd-hero nd-hero--empty">
+                                    <span class="oi oi-image"></span>
+                                    <span>تصویری برای این @TypeLabel ثبت نشده است</span>
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(news.Summary))
+                            {
+                                <div class="nd-summary">
+                                    <span class="nd-summary__label">خلاصه</span>
+                                    <p class="nd-summary__text">@news.Summary</p>
+                                </div>
+                            }
+
+                            <div class="nd-body article-content-body">
+                                @((MarkupString)HtmlSanitizer.Sanitize(news.Content ?? ""))
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(news.SourceName))
+                            {
+                                <div class="nd-source small text-muted mb-3">
+                                    منبع:
+                                    @if (!string.IsNullOrWhiteSpace(news.SourceUrl))
+                                    {
+                                        <a href="@news.SourceUrl" target="_blank" rel="nofollow noopener noreferrer">@news.SourceName</a>
+                                    }
+                                    else
+                                    {
+                                        <span>@news.SourceName</span>
+                                    }
+                                </div>
+                            }
+
+                            @if (newsTags.Length > 0)
+                            {
+                                <div class="nd-tags">
+                                    <span class="nd-tags__label"><span class="oi oi-tags"></span> برچسب‌ها</span>
+                                    <div class="nd-tags__list">
+                                        @foreach (var tag in newsTags)
+                                        {
+                                            <a class="badge-tag text-decoration-none" href="@ContentTypeCatalog.TagRoute(_type, tag)">#@tag</a>
+                                        }
                                     </div>
                                 </div>
                             }
-                        </div>
 
-                        <div class="col-lg-4 d-none d-lg-block">
-                            <div class="news-sidebar">
-                                <div class="sidebar-card mb-3">
-                                    <div class="sidebar-card__title">امکانات</div>
-                                    <div class="d-grid gap-2">
-                                        <button class="btn btn-outline-primary rounded-3" @onclick="CopyLink">
-                                            <span class="oi oi-link-intact me-2"></span>
-                                            کپی لینک
-                                        </button>
-                                        <a class="btn btn-outline-secondary rounded-3" href="/news" role="button">
-                                            <span class="oi oi-grid-three-up me-2"></span>
-                                            لیست اخبار
-                                        </a>
-                                        <button class="btn btn-outline-dark rounded-3" @onclick="() => Nav.NavigateTo(Nav.Uri, true)">
-                                            <span class="oi oi-reload me-2"></span>
-                                            رفرش
-                                        </button>
+                            <div class="nd-share">
+                                <span class="nd-share__title">این @TypeLabel را برای دیگران بفرستید</span>
+                                <div class="nd-share__btns">
+                                    <button class="nd-share__btn nd-share__btn--copy" @onclick="CopyLink" title="کپی لینک">
+                                        <span class="oi oi-link-intact"></span>
+                                    </button>
+                                    <button class="nd-share__btn nd-share__btn--tg" @onclick="OpenShareModal" title="تلگرام">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/></svg>
+                                    </button>
+                                    <button class="nd-share__btn nd-share__btn--wa" @onclick="OpenShareModal" title="واتس‌اپ">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2zm.01 1.67c2.2 0 4.26.86 5.82 2.42a8.183 8.183 0 012.41 5.82c0 4.54-3.7 8.23-8.24 8.23-1.57 0-3.09-.45-4.39-1.29l-.32-.2-3.27.86.88-3.18-.23-.37a8.221 8.221 0 01-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23h.01zm-3.11 4.63c-.17 0-.45.07-.69.37-.23.3-.88.86-.88 2.1s.9 2.43 1.02 2.6c.12.17 1.76 2.68 4.25 3.75.59.26 1.05.41 1.41.52.6.19 1.14.16 1.57.08.48-.09 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.07-.07-.23-.12-.48-.23-.25-.12-1.47-.73-1.69-.82-.23-.09-.39-.12-.56.12-.17.25-.64.81-.78.97-.14.17-.29.19-.53.07-.26-.12-1.06-.39-2.02-1.28-.74-.66-1.24-1.47-1.39-1.72-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.35-.77-1.84-.2-.48-.4-.41-.56-.41h-.41z"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            @if (ShowAuthorBox)
+                            {
+                                <div class="nd-authorbox">
+                                    <div class="nd-authorbox__avatar"><span class="oi oi-person"></span></div>
+                                    <div class="nd-authorbox__body">
+                                        <div class="nd-authorbox__name">@AuthorName</div>
+                                        <div class="nd-authorbox__role">تحریریه ارور سرویس · @TypeLabel</div>
+                                        <p class="nd-authorbox__bio mb-0">
+                                            این @TypeLabel توسط تیم محتوای ارور سرویس تهیه و بررسی شده است.
+                                            آخرین به‌روزرسانی: @PersianDate.ToLongPersianDate(news.UpdatedAt)
+                                        </p>
                                     </div>
                                 </div>
+                            }
 
-                                <div class="sidebar-card mb-3">
-                                    <div class="sidebar-card__title">اطلاعات خبر</div>
-                                    <div class="sidebar-info">
-                                        <div class="sidebar-info__row">
-                                            <span class="text-muted">نویسنده</span>
-                                            <span class="fw-bold">@(string.IsNullOrWhiteSpace(news.AuthorName) ? "تحریریه" : news.AuthorName)</span>
-                                        </div>
-                                        <div class="sidebar-info__row">
-                                            <span class="text-muted">زمان مطالعه</span>
-                                            <span class="fw-bold">@EstimateReadTime(news.Content) دقیقه</span>
-                                        </div>
-                                        <div class="sidebar-info__row">
-                                            <span class="text-muted">تاریخ</span>
-                                            <span class="fw-bold">@PersianDate.ToLongPersianDate(news.CreatedAt)</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                @if (news.PreviousNews != null || news.NextNews != null)
+                            <div class="nd-pager">
+                                @if (news.NextNews != null)
                                 {
-                                    <div class="sidebar-card mb-3">
-                                        <div class="sidebar-card__title">ناوبری</div>
-                                        <div class="d-grid gap-2">
-                                            @if (news.NextNews != null)
-                                            {
-                                                <a class="btn btn-light rounded-3 text-start" href="@SeoUrl.News(news.NextNews.Id, news.NextNews.Slug)">
-                                                    <div class="small text-muted">خبر بعدی</div>
-                                                    <div class="fw-bold text-truncate">@news.NextNews.Title</div>
-                                                </a>
-                                            }
-                                            @if (news.PreviousNews != null)
-                                            {
-                                                <a class="btn btn-light rounded-3 text-start" href="@SeoUrl.News(news.PreviousNews.Id, news.PreviousNews.Slug)">
-                                                    <div class="small text-muted">خبر قبلی</div>
-                                                    <div class="fw-bold text-truncate">@news.PreviousNews.Title</div>
-                                                </a>
-                                            }
-                                        </div>
-                                    </div>
+                                    <a class="nd-pager__card" href="@ContentDetailUrl(news.NextNews.Id, news.NextNews.Slug)">
+                                        <span class="nd-pager__label"><span class="oi oi-arrow-left"></span> @($"{TypeLabel} بعدی")</span>
+                                        <span class="nd-pager__title">@news.NextNews.Title</span>
+                                    </a>
                                 }
-
-                                @if (!string.IsNullOrEmpty(news.Tags))
+                                @if (news.PreviousNews != null)
                                 {
-                                    <div class="sidebar-card">
-                                        <div class="sidebar-card__title">برچسب‌ها</div>
-                                        <div class="d-flex flex-wrap gap-2">
-                                            @foreach (var tag in news.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                                            {
-                                                <a class="badge-tag text-decoration-none" href="/news?tag=@tag">#@tag</a>
-                                            }
-                                        </div>
-                                    </div>
+                                    <a class="nd-pager__card" href="@ContentDetailUrl(news.PreviousNews.Id, news.PreviousNews.Slug)">
+                                        <span class="nd-pager__label"><span class="oi oi-arrow-right"></span> @($"{TypeLabel} قبلی")</span>
+                                        <span class="nd-pager__title">@news.PreviousNews.Title</span>
+                                    </a>
+                                }
+                                @if (news.NextNews == null && news.PreviousNews == null)
+                                {
+                                    <a class="nd-pager__card nd-pager__card--back" href="@ContentTypeCatalog.Route(_type)">
+                                        <span class="nd-pager__label"><span class="oi oi-grid-three-up"></span> فهرست</span>
+                                        <span class="nd-pager__title">بازگشت به فهرست @TypePlural</span>
+                                    </a>
                                 }
                             </div>
-                        </div>
+                        </article>
+
+                        @if (ShowRelatedContent && relatedNews != null && relatedNews.Any())
+                        {
+                            <section class="nd-related">
+                                <div class="nd-related__head">
+                                    <h4 class="m-0">@TypePlural مرتبط</h4>
+                                    <a href="@ContentTypeCatalog.Route(_type)">مشاهده همه</a>
+                                </div>
+                                <div class="nd-related__grid">
+                                    @foreach (var item in relatedNews)
+                                    {
+                                        <a class="nd-related-card" href="@ContentDetailUrl(item.Id, item.Slug)">
+                                            <span class="nd-related-card__img">
+                                                <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/news-placeholder.svg" : item.ImageUrl)" loading="lazy" decoding="async" alt="@item.Title" />
+                                            </span>
+                                            <span class="nd-related-card__body">
+                                                <span class="nd-related-card__title">@item.Title</span>
+                                                <span class="nd-related-card__date">@PersianDate.ToLongPersianDate(item.PublishedAt)</span>
+                                            </span>
+                                        </a>
+                                    }
+                                </div>
+                            </section>
+                        }
+                    </div>
+
+                    <div class="col-lg-4 d-none d-lg-block">
+                        <aside class="news-sidebar nd-sidebar">
+                            @if (ShowTableOfContents)
+                            {
+                                <div class="sidebar-card nd-toc-card mb-3" id="nd-toc-card" hidden>
+                                    <div class="sidebar-card__title">فهرست مطالب</div>
+                                    <nav class="nd-toc" id="nd-toc" aria-label="فهرست مطالب"></nav>
+                                </div>
+                            }
+
+                            <div class="sidebar-card mb-3">
+                                <div class="sidebar-card__title">درباره این @TypeLabel</div>
+                                <div class="sidebar-info">
+                                    <div class="sidebar-info__row">
+                                        <span class="text-muted">نویسنده</span>
+                                        <span class="fw-bold">@AuthorName</span>
+                                    </div>
+                                    @if (ShowReadingTime)
+                                    {
+                                        <div class="sidebar-info__row">
+                                            <span class="text-muted">زمان مطالعه</span>
+                                            <span class="fw-bold">@ReadMinutes دقیقه</span>
+                                        </div>
+                                    }
+                                    <div class="sidebar-info__row">
+                                        <span class="text-muted">تاریخ انتشار</span>
+                                        <span class="fw-bold">@PersianDate.ToLongPersianDate(news.PublishedAt)</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="sidebar-card mb-3">
+                                <div class="sidebar-card__title">امکانات</div>
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-outline-primary rounded-3" @onclick="CopyLink">
+                                        <span class="oi oi-link-intact me-2"></span>
+                                        کپی لینک
+                                    </button>
+                                    <a class="btn btn-outline-secondary rounded-3" href="@ContentTypeCatalog.Route(_type)" role="button">
+                                        <span class="oi oi-grid-three-up me-2"></span>
+                                        فهرست @TypePlural
+                                    </a>
+                                </div>
+                            </div>
+
+                            @if (news.PreviousNews != null || news.NextNews != null)
+                            {
+                                <div class="sidebar-card mb-3">
+                                    <div class="sidebar-card__title">ناوبری</div>
+                                    <div class="d-grid gap-2">
+                                        @if (news.NextNews != null)
+                                        {
+                                            <a class="btn btn-light rounded-3 text-start" href="@ContentDetailUrl(news.NextNews.Id, news.NextNews.Slug)">
+                                                <div class="small text-muted">@($"{TypeLabel} بعدی")</div>
+                                                <div class="fw-bold text-truncate">@news.NextNews.Title</div>
+                                            </a>
+                                        }
+                                        @if (news.PreviousNews != null)
+                                        {
+                                            <a class="btn btn-light rounded-3 text-start" href="@ContentDetailUrl(news.PreviousNews.Id, news.PreviousNews.Slug)">
+                                                <div class="small text-muted">@($"{TypeLabel} قبلی")</div>
+                                                <div class="fw-bold text-truncate">@news.PreviousNews.Title</div>
+                                            </a>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            @if (newsTags.Length > 0)
+                            {
+                                <div class="sidebar-card">
+                                    <div class="sidebar-card__title">برچسب‌ها</div>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @foreach (var tag in newsTags)
+                                        {
+                                            <a class="badge-tag text-decoration-none" href="@ContentTypeCatalog.TagRoute(_type, tag)">#@tag</a>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </aside>
                     </div>
                 </div>
+            </div>
+
+            <div class="nd-mobile-bar d-lg-none">
+                <a href="@ContentTypeCatalog.Route(_type)" class="nd-mobile-bar__item">
+                    <span class="oi oi-grid-three-up"></span>
+                    <span>@TypePlural</span>
+                </a>
+                <button class="nd-mobile-bar__item" @onclick="CopyLink" type="button">
+                    <span class="oi oi-link-intact"></span>
+                    <span>کپی لینک</span>
+                </button>
+                <button class="nd-mobile-bar__item nd-mobile-bar__item--primary" @onclick="OpenShareModal" type="button">
+                    <span class="oi oi-share"></span>
+                    <span>اشتراک‌گذاری</span>
+                </button>
             </div>
         }
     </div>
 </div>
 
+
 <ShareModal Visible="_showShareModal"
     OnClose="CloseShareModal"
-    HeaderTitle="اشتراک‌گذاری خبر"
-    LinkLabel="خبر"
+    HeaderTitle="@($"اشتراک‌گذاری {TypeLabel}")"
+    LinkLabel="@TypeLabel"
     ImageUrl="@news?.ImageUrl"
     PreviewTitle="@(news?.Title ?? "")"
     PreviewDescription="@(news?.Summary ?? "")"
@@ -328,9 +406,9 @@
     GetShareText="@(() => GetShareText())"
     GetShareTelegramText="@(() => GetShareTextForTelegram())" />
 
-@if (news != null)
+@if (news != null && news.CommentsEnabled)
 {
-    <div class="container mt-4 pb-5">
+    <div class="container nd-comments mt-4 pb-5">
         <CommentSection HeaderTitle="نظرات کاربران"
                         ShowRating="true"
                         SubmitEndpoint="@($"api/news/{news?.Id ?? 0}/comments")"
@@ -346,30 +424,77 @@
     [Parameter] public int? Id { get; set; }
     [Parameter] public string? Slug { get; set; }
     [Inject] private HttpClient Http { get; set; } = default!;
-    
+
+    private ContentType _type = ContentType.News;
     private NewsDto? news;
     private List<NewsDto>? relatedNews;
+    private ContentSettingsDto _settings = new();
     private bool isLoading = true;
     private string? newsJsonLd;
     private bool _showShareModal;
 
+    private string ContentDetailUrl(int id, string? slug)
+        => ContentTypeCatalog.DetailRoute(_type, id, slug);
+
+    private string TypePlural => ContentTypeCatalog.PluralLabel(_type);
+    private string TypeLabel => ContentTypeCatalog.Label(_type);
+    private string AuthorName => string.IsNullOrWhiteSpace(news?.AuthorName)
+        ? (string.IsNullOrWhiteSpace(_settings.DefaultAuthorName) ? "تحریریه ارور سرویس" : _settings.DefaultAuthorName)
+        : news!.AuthorName!;
+    private int ReadMinutes => EstimateReadTime(news?.Content);
+
+    private bool ShowReadingProgress => _settings.ShowReadingProgress;
+    private bool ShowReadingTime => _settings.ShowReadingTime;
+    private bool ShowViewCount => _settings.ShowViewCount;
+    private bool ShowTableOfContents => _settings.ShowTableOfContents;
+    private bool ShowAuthorBox => _settings.ShowAuthorBox;
+    private bool ShowRelatedContent => _settings.ShowRelatedContent;
+
+    private bool _progressAttached;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_progressAttached || isLoading || news == null) return;
+        _progressAttached = true;
+        if (ShowReadingProgress)
+        {
+            try { await JS.InvokeVoidAsync("initNewsReadingProgress"); } catch { }
+        }
+        if (ShowTableOfContents)
+        {
+            try { await JS.InvokeVoidAsync("initNewsToc", ".nd-body", "#nd-toc", "#nd-toc-card"); } catch { }
+        }
+        try { await JS.InvokeVoidAsync("initNewsLightbox", ".nd-body"); } catch { }
+        try { await JS.InvokeVoidAsync("initSmartReadMore", ".nd-body"); } catch { }
+    }
+
     protected override async Task OnParametersSetAsync()
     {
+        _progressAttached = false;
         isLoading = true;
+
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        var segment = relative.Split('/', '?')[0].Trim().ToLowerInvariant();
+        _type = ContentTypeCatalog.FromSlug(segment);
+
         try
         {
+            try { _settings = await Http.GetFromJsonAsync<ContentSettingsDto>("api/content/settings") ?? new(); }
+            catch { _settings = new ContentSettingsDto(); }
+
             NewsDto? loaded = null;
 
             if (!string.IsNullOrEmpty(Slug))
             {
-                loaded = await Http.GetFromJsonAsync<NewsDto>($"api/news/slug/{Uri.EscapeDataString(Slug)}");
+                loaded = await Http.GetFromJsonAsync<NewsDto>(
+                    $"api/news/slug/{Uri.EscapeDataString(Slug)}?type={_type}");
             }
             else if (Id.HasValue)
             {
-                loaded = await Http.GetFromJsonAsync<NewsDto>($"api/news/{Id}");
+                loaded = await Http.GetFromJsonAsync<NewsDto>($"api/news/{Id}?type={_type}");
                 if (loaded != null && !string.IsNullOrEmpty(loaded.Slug))
                 {
-                    Nav.NavigateTo(SeoUrl.News(loaded.Id, loaded.Slug), replace: true);
+                    Nav.NavigateTo(ContentTypeCatalog.DetailRoute(loaded.ContentType, loaded.Id, loaded.Slug), replace: true);
                     return;
                 }
             }
@@ -378,7 +503,13 @@
             if (news != null)
             {
                 newsJsonLd = BuildNewsJsonLd(news);
-                relatedNews = await Http.GetFromJsonAsync<List<NewsDto>>($"api/news/{news.Id}/related");
+                try { await Http.PostAsync($"api/news/{news.Id}/view", null); } catch { }
+                if (ShowRelatedContent)
+                {
+                    var relatedLimit = Math.Clamp(_settings.RelatedCount, 0, 12);
+                    if (relatedLimit > 0)
+                        relatedNews = await Http.GetFromJsonAsync<List<NewsDto>>($"api/news/{news.Id}/related");
+                }
             }
         }
         catch { news = null; }
@@ -391,7 +522,7 @@
         {
             var url = Nav.Uri;
             await JS.InvokeVoidAsync("__copyToClipboard", url);
-            ToastService.ShowSuccess("لینک خبر کپی شد");
+            ToastService.ShowSuccess($"لینک {TypeLabel} کپی شد");
         }
         catch
         {
@@ -470,13 +601,13 @@
         var newsSchema = new Dictionary<string, object?>
         {
             ["@context"] = "https://schema.org",
-            ["@type"] = "NewsArticle",
+            ["@type"] = ContentTypeCatalog.ArticleSchemaType(news.ContentType),
             ["headline"] = news.Title,
             ["description"] = (news.Summary ?? news.Title ?? "").Length > 500 ? (news.Summary ?? news.Title ?? "").Substring(0, 497) + "..." : (news.Summary ?? news.Title ?? ""),
             ["image"] = string.IsNullOrEmpty(news.ImageUrl) ? Array.Empty<string>() : new[] { news.ImageUrl },
-            ["datePublished"] = news.CreatedAt.ToString("yyyy-MM-ddTHH:mm:sszzz"),
-            ["dateModified"] = news.CreatedAt.ToString("yyyy-MM-ddTHH:mm:sszzz"),
-            ["url"] = $"{baseUrl}{SeoUrl.News(news.Id, news.Slug)}",
+            ["datePublished"] = news.PublishedAt.ToString("yyyy-MM-ddTHH:mm:sszzz"),
+            ["dateModified"] = news.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:sszzz"),
+            ["url"] = $"{baseUrl}{ContentDetailUrl(news.Id, news.Slug)}",
             ["author"] = new Dictionary<string, object?>
             {
                 ["@type"] = "Organization",
@@ -496,7 +627,7 @@
             ["mainEntityOfPage"] = new Dictionary<string, object?>
             {
                 ["@type"] = "WebPage",
-                ["@id"] = $"{baseUrl}{SeoUrl.News(news.Id, news.Slug)}"
+                ["@id"] = $"{baseUrl}{ContentDetailUrl(news.Id, news.Slug)}"
             }
         };
 
@@ -512,7 +643,7 @@
             ["itemListElement"] = new List<object>
             {
                 new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 1, ["name"] = "خانه", ["item"] = baseUrl },
-                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 2, ["name"] = "اخبار", ["item"] = $"{baseUrl}/news" },
+                new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 2, ["name"] = TypePlural, ["item"] = $"{baseUrl}{ContentTypeCatalog.Route(_type)}" },
                 new Dictionary<string, object?> { ["@type"] = "ListItem", ["position"] = 3, ["name"] = news.Title }
             }
         };

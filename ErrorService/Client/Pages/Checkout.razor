@@ -14,7 +14,7 @@
     <meta name="robots" content="noindex, nofollow" />
 </HeadContent>
 
-<PageTitle>ثبت سفارش - ارورسرویس</PageTitle>
+<PageTitle>تسویه حساب | ارورسرویس</PageTitle>
 
 <div class="checkout-page" dir="rtl">
     <div class="container py-4">
@@ -57,6 +57,60 @@
                         <EditForm EditContext="editContext">
                             <DataAnnotationsValidator />
                             <div class="row g-3">
+                                @if (_showAddressBook)
+                                {
+                                    <div class="col-12">
+                                        <div class="field-group">
+                                            <div class="ab-head">
+                                                <span class="field-label mb-0">انتخاب آدرس تحویل</span>
+                                                @if (_selectedSavedAddressId != null)
+                                                {
+                                                    <button type="button" class="ab-head__btn" @onclick="SelectNewAddressAsync">
+                                                        <span class="oi oi-plus"></span>
+                                                        آدرس جدید
+                                                    </button>
+                                                }
+                                            </div>
+                                            <div class="ab-list">
+                                                @foreach (var a in _savedAddresses)
+                                                {
+                                                    <button type="button"
+                                                            class="ab-card @(_selectedSavedAddressId == a.Id ? "ab-card--on" : "")"
+                                                            aria-pressed="@(_selectedSavedAddressId == a.Id)"
+                                                            @onclick="() => SelectSavedAddressAsync(a.Id)">
+                                                        <span class="ab-card__radio"><span class="oi oi-check"></span></span>
+                                                        <span class="ab-card__body">
+                                                            <span class="ab-card__title">
+                                                                <strong>@(string.IsNullOrWhiteSpace(a.Title) ? a.FullName : a.Title)</strong>
+                                                                @if (a.IsDefault)
+                                                                {
+                                                                    <span class="ab-badge">پیش‌فرض</span>
+                                                                }
+                                                            </span>
+                                                            <span class="ab-card__line">@a.FullName — <span dir="ltr">@a.PhoneNumber</span></span>
+                                                            <span class="ab-card__addr">@AddressLineOf(a)</span>
+                                                        </span>
+                                                    </button>
+                                                }
+                                                @if (_selectedSavedAddressId == null && _canAddAddress)
+                                                {
+                                                    <div class="ab-card ab-card--on ab-card--new">
+                                                        <span class="ab-card__radio"><span class="oi oi-check"></span></span>
+                                                        <span class="ab-card__body">
+                                                            <strong class="ab-card__title">آدرس جدید</strong>
+                                                            <span class="ab-card__addr">اطلاعات آدرس جدید را در فیلدهای زیر وارد کنید.</span>
+                                                        </span>
+                                                    </div>
+                                                }
+                                            </div>
+                                            <div class="field-hint">آدرس پیش‌فرض خودکار انتخاب شده است؛ با انتخاب هر آدرس، فیلدهای زیر پر می‌شوند و قابل ویرایش‌اند.</div>
+                                            @if (_selectedSavedAddressId == null && !_canAddAddress)
+                                            {
+                                                <div class="field-hint">حداکثر @_maxSavedAddresses آدرس ذخیره شده است؛ این آدرس فقط برای همین سفارش ثبت می‌شود. برای ذخیرهٔ آدرس جدید، یکی از آدرس‌ها را در «آدرس‌های من» حذف کنید.</div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
                                 <div class="col-12">
                                     <div class="field-group">
                                         <label class="field-label">نام و نام خانوادگی</label>
@@ -118,6 +172,22 @@
                                         <ValidationMessage For="@(() => request.Address)" class="field-error" />
                                     </div>
                                 </div>
+                                @if (_canSaveNewAddress)
+                                {
+                                    <div class="col-12">
+                                        <div class="ab-save">
+                                            <div class="field-group mb-0">
+                                                <label class="field-label">عنوان آدرس <span class="optional">(اختیاری)</span></label>
+                                                <input class="field-input" @bind="_newAddressTitle" maxlength="100" placeholder="خانه، محل کار..." />
+                                            </div>
+                                            <button type="button" class="ab-save-btn" @onclick="SaveNewAddressAsync" disabled="@_savingAddress">
+                                                <span class="oi oi-map-marker"></span>
+                                                @(_savingAddress ? "در حال ذخیره..." : "ذخیره در دفترچه آدرس")
+                                            </button>
+                                        </div>
+                                        <div class="field-hint">این آدرس ذخیره می‌شود و دفعهٔ بعد در همین صفحه برای انتخاب نمایش داده می‌شود.</div>
+                                    </div>
+                                }
                                 <div class="col-12">
                                     <div class="field-group">
                                         <label class="field-label">روش ارسال</label>
@@ -449,6 +519,45 @@
     .field-label .optional { font-weight: 500; color: #cbd5e1; }
     .field-label .req { color: #dc2626; }
     .field-hint { font-size: 0.72rem; color: #94a3b8; margin-top: 4px; }
+    .ab-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .ab-head__btn {
+        border: 0; background: transparent; color: var(--shop-primary, #4f46e5);
+        font-size: 0.78rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; padding: 0;
+    }
+    .ab-list { display: grid; gap: 8px; }
+    .ab-card {
+        display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: right;
+        background: var(--shop-surface, #fff); border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 14px; padding: 10px 12px; color: inherit; cursor: pointer;
+        transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .ab-card:hover { border-color: #a5b4fc; }
+    .ab-card--on { border-color: var(--shop-primary, #4f46e5); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.10); }
+    .ab-card--new { border-style: dashed; cursor: default; }
+    .ab-card__radio {
+        width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px; border-radius: 50%;
+        border: 1.5px solid #cbd5e1; display: grid; place-items: center; font-size: 0.6rem; color: #fff;
+    }
+    .ab-card--on .ab-card__radio { background: var(--shop-primary, #4f46e5); border-color: var(--shop-primary, #4f46e5); }
+    .ab-card__radio .oi { opacity: 0; transition: opacity 0.15s; }
+    .ab-card--on .ab-card__radio .oi { opacity: 1; }
+    .ab-card__body { display: grid; gap: 2px; min-width: 0; }
+    .ab-card__title { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+    .ab-badge { background: var(--shop-primary, #4f46e5); color: #fff; font-size: 0.65rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
+    .ab-card__line { font-size: 0.76rem; color: #64748b; }
+    .ab-card__addr {
+        font-size: 0.75rem; color: #94a3b8; line-height: 1.6;
+        overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    }
+    .ab-save { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+    .ab-save .field-group { flex: 1 1 200px; }
+    .ab-save-btn {
+        display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+        border: 1px solid #c7d2fe; background: #eef2ff; color: #3730a3;
+        border-radius: 12px; padding: 11px 16px; font-size: 0.82rem; font-weight: 700;
+    }
+    .ab-save-btn:hover { background: #e0e7ff; }
+    .ab-save-btn:disabled { opacity: 0.6; cursor: default; }
     select.field-input { cursor: pointer; padding-inline-end: 34px; }
     select.field-input:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
     .field-input {
@@ -671,6 +780,17 @@
     private bool RequireProvinceCity => _shop?.RequireProvinceCity == true;
     private bool RequirePostalCode => _shop?.RequirePostalCode == true;
 
+    private List<CustomerAddressDto> _savedAddresses = new();
+    private int? _selectedSavedAddressId;
+    private string _newAddressTitle = "";
+    private bool _savingAddress;
+    private bool _authenticated;
+    private bool _addressBookEnabled => _authenticated && _shop?.EnableSavedAddresses == true;
+    private int _maxSavedAddresses => Math.Clamp(_shop?.MaxSavedAddresses ?? 5, 1, 20);
+    private bool _canAddAddress => _addressBookEnabled && _savedAddresses.Count < _maxSavedAddresses;
+    private bool _showAddressBook => _addressBookEnabled && _savedAddresses.Count > 0;
+    private bool _canSaveNewAddress => _canAddAddress && _selectedSavedAddressId == null;
+
     private string AddressRegionText
     {
         get
@@ -730,6 +850,7 @@
             request.Email = me.Email;
             request.Address = me.Address;
             if (!string.IsNullOrWhiteSpace(me.PostalCode)) request.PostalCode = me.PostalCode;
+            _authenticated = true;
             await InvokeAsync(StateHasChanged);
         }
         catch { }
@@ -737,13 +858,20 @@
         if (StructuredAddressEnabled)
             await LoadProvincesAsync();
 
+        if (_authenticated && _shop?.EnableSavedAddresses == true)
+            await LoadSavedAddressesAsync();
+
         try
         {
             _gateways = await Http.GetFromJsonAsync<List<PaymentGatewayListItemDto>>("api/payment/gateways") ?? new();
         }
         catch { _gateways = new(); }
 
-        await RestoreDraftAsync();
+        var draftRestored = await RestoreDraftAsync();
+
+        // آدرس ذخیره‌شده فقط وقتی اعمال می‌شود که فرم خالی باشد تا پیش‌نویس کاربر پاک نشود.
+        if (_authenticated && _shop?.EnableSavedAddresses == true)
+            await ApplyPreferredSavedAddressAsync(draftRestored);
     }
 
     // ─────────── بازیابی و ذخیرهٔ پیش‌نویس تکمیل سفارش ───────────
@@ -767,12 +895,12 @@
     });
 
     /// <summary>فرمی کاربر وسط کار رها کرده بود را برمی‌گرداند و همان بخش را برجسته می‌کند.</summary>
-    private async Task RestoreDraftAsync()
+    private async Task<bool> RestoreDraftAsync()
     {
         try
         {
             var draft = await Recovery.LoadDraftAsync();
-            if (draft == null) return;
+            if (draft == null) return false;
 
             if (!string.IsNullOrWhiteSpace(draft.IdempotencyKey))
                 _idempotencyKey = draft.IdempotencyKey;
@@ -785,7 +913,7 @@
                 || draft.ShippingMethodId.HasValue
                 || draft.GatewayId.HasValue
                 || !string.IsNullOrWhiteSpace(draft.CouponCode);
-            if (!hasContent) return;
+            if (!hasContent) return false;
 
             if (!string.IsNullOrWhiteSpace(draft.FullName)) request.FullName = draft.FullName;
             if (!string.IsNullOrWhiteSpace(draft.PhoneNumber)) request.PhoneNumber = draft.PhoneNumber;
@@ -818,8 +946,9 @@
             await InvokeAsync(StateHasChanged);
             await HighlightResumeStepAsync();
             ToastService.ShowInfo("اطلاعات قبلی شما بازیابی شد؛ از همان‌جا ادامه دهید");
+            return true;
         }
-        catch { }
+        catch { return false; }
     }
 
     /// <summary>اولین مرحلهٔ ناتمام تسویه را اسکرول کرده و چند ثانیه برجسته می‌کند.</summary>
@@ -848,6 +977,130 @@
         _selectedShippingMethodId = id;
         request.ShippingMethodId = id;
         _ = SaveDraftAsync();
+    }
+
+    // ─────────── دفترچه آدرس مشتری ───────────
+    private async Task LoadSavedAddressesAsync()
+    {
+        try { _savedAddresses = await Http.GetFromJsonAsync<List<CustomerAddressDto>>("api/addresses") ?? new(); }
+        catch { _savedAddresses = new(); }
+    }
+
+    /// <summary>اگر پیش‌نویس بازیابی نشده باشد، آدرس پیش‌فرض را در فرم می‌نشاند.</summary>
+    private async Task ApplyPreferredSavedAddressAsync(bool draftRestored)
+    {
+        if (_savedAddresses.Count == 0 || _selectedSavedAddressId != null) return;
+
+        if (draftRestored)
+        {
+            var match = _savedAddresses.FirstOrDefault(a =>
+                string.Equals(a.Address?.Trim(), request.Address?.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (match != null) _selectedSavedAddressId = match.Id;
+            return;
+        }
+
+        var preferred = _savedAddresses.FirstOrDefault(a => a.IsDefault) ?? _savedAddresses[0];
+        _selectedSavedAddressId = preferred.Id;
+        await ApplySavedAddressAsync(preferred);
+    }
+
+    private async Task SelectSavedAddressAsync(int id)
+    {
+        var address = _savedAddresses.FirstOrDefault(a => a.Id == id);
+        if (address == null) return;
+
+        _selectedSavedAddressId = id;
+        _newAddressTitle = "";
+        await ApplySavedAddressAsync(address);
+    }
+
+    /// <summary>حالت «آدرس جدید»: فقط بخش آدرس پاک می‌شود و مشخصات گیرنده حفظ می‌ماند.</summary>
+    private async Task SelectNewAddressAsync()
+    {
+        _selectedSavedAddressId = null;
+        _newAddressTitle = "";
+        request.Address = "";
+        request.PostalCode = "";
+        request.ProvinceId = null;
+        request.CityId = null;
+        request.ProvinceName = null;
+        request.CityName = null;
+        _cities = new();
+        await SaveDraftAsync();
+    }
+
+    private static string AddressLineOf(CustomerAddressDto a)
+    {
+        var region = string.Join(" ", new[] { a.ProvinceName, a.CityName }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        return string.IsNullOrWhiteSpace(region) ? a.Address : $"{region} — {a.Address}";
+    }
+
+    private async Task ApplySavedAddressAsync(CustomerAddressDto address)
+    {
+        request.FullName = address.FullName;
+        request.PhoneNumber = address.PhoneNumber;
+        request.Email = address.Email;
+        request.Address = address.Address;
+        request.PostalCode = address.PostalCode;
+        request.ProvinceId = address.ProvinceId;
+        request.CityId = address.CityId;
+        request.ProvinceName = address.ProvinceName;
+        request.CityName = address.CityName;
+
+        if (StructuredAddressEnabled && address.ProvinceId.HasValue)
+        {
+            await LoadCitiesAsync(address.ProvinceId.Value);
+            if (address.CityId.HasValue && _cities.Any(c => c.Id == address.CityId.Value))
+                request.CityId = address.CityId;
+        }
+
+        await SaveDraftAsync();
+    }
+
+    private async Task SaveNewAddressAsync()
+    {
+        if (_savingAddress || !_canSaveNewAddress) return;
+        if (!ValidateReceiver(out var error)) { ToastService.ShowError(error); return; }
+
+        _savingAddress = true;
+        try
+        {
+            var payload = new CustomerAddressUpsertRequest
+            {
+                Title = string.IsNullOrWhiteSpace(_newAddressTitle) ? null : _newAddressTitle.Trim(),
+                FullName = request.FullName,
+                PhoneNumber = request.PhoneNumber,
+                Email = request.Email,
+                Address = request.Address ?? string.Empty,
+                PostalCode = request.PostalCode,
+                ProvinceId = request.ProvinceId,
+                CityId = request.CityId,
+                ProvinceName = _provinces.FirstOrDefault(p => p.Id == request.ProvinceId)?.Name,
+                CityName = _cities.FirstOrDefault(c => c.Id == request.CityId)?.Name,
+                IsDefault = _savedAddresses.Count == 0
+            };
+
+            var response = await Http.PostAsJsonAsync("api/addresses", payload);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = (await response.Content.ReadAsStringAsync()).Trim().Trim('"');
+                ToastService.ShowError(string.IsNullOrWhiteSpace(body) ? "ذخیرهٔ آدرس انجام نشد." : body);
+                return;
+            }
+
+            var list = await response.Content.ReadFromJsonAsync<List<CustomerAddressDto>>();
+            if (list != null) _savedAddresses = list;
+            _selectedSavedAddressId = _savedAddresses.OrderByDescending(a => a.Id).FirstOrDefault()?.Id;
+            _newAddressTitle = "";
+            ToastService.ShowSuccess("آدرس در دفترچه آدرس ذخیره شد.");
+            await SaveDraftAsync();
+        }
+        catch { ToastService.ShowError("خطای ارتباط با سرور"); }
+        finally
+        {
+            _savingAddress = false;
+            StateHasChanged();
+        }
     }
 
     // ─────────── آدرس ساختاریافته (استان/شهر/کد پستی) ───────────
@@ -934,32 +1187,33 @@
         _ = SaveDraftAsync();
     }
 
-    private async Task HandleSubmit()
+    /// <summary>اعتبارسنجی مشترک فرم گیرنده برای ثبت سفارش و ذخیرهٔ آدرس جدید.</summary>
+    private bool ValidateReceiver(out string error)
     {
-        if (isProcessing) return;
-        if (string.IsNullOrWhiteSpace(request.FullName)) { ToastService.ShowError("نام و نام خانوادگی را وارد کنید"); return; }
-        if (request.FullName.Length < 3) { ToastService.ShowError("نام وارد شده بیش از حد کوتاه است"); return; }
-        if (string.IsNullOrWhiteSpace(request.PhoneNumber)) { ToastService.ShowError("شماره موبایل را وارد کنید"); return; }
-        if (!System.Text.RegularExpressions.Regex.IsMatch(request.PhoneNumber, @"^09\d{9}$")) { ToastService.ShowError("فرمت شماره موبایل صحیح نیست"); return; }
-        if (string.IsNullOrWhiteSpace(request.Address)) { ToastService.ShowError("آدرس پستی را وارد کنید"); return; }
-        if (request.Address.Length < 10) { ToastService.ShowError("آدرس بسیار کوتاه است"); return; }
+        error = "";
+        if (string.IsNullOrWhiteSpace(request.FullName)) { error = "نام و نام خانوادگی را وارد کنید"; return false; }
+        if (request.FullName.Length < 3) { error = "نام وارد شده بیش از حد کوتاه است"; return false; }
+        if (string.IsNullOrWhiteSpace(request.PhoneNumber)) { error = "شماره موبایل را وارد کنید"; return false; }
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.PhoneNumber, @"^09\d{9}$")) { error = "فرمت شماره موبایل صحیح نیست"; return false; }
+        if (string.IsNullOrWhiteSpace(request.Address)) { error = "آدرس پستی را وارد کنید"; return false; }
+        if (request.Address.Length < 10) { error = "آدرس بسیار کوتاه است"; return false; }
 
         if (StructuredAddressEnabled)
         {
-            if (RequireProvinceCity && !request.ProvinceId.HasValue) { ToastService.ShowError("استان را انتخاب کنید"); return; }
-            if (RequireProvinceCity && !request.CityId.HasValue) { ToastService.ShowError("شهر را انتخاب کنید"); return; }
-            if (request.ProvinceId.HasValue && !request.CityId.HasValue) { ToastService.ShowError("شهر را انتخاب کنید"); return; }
+            if (RequireProvinceCity && !request.ProvinceId.HasValue) { error = "استان را انتخاب کنید"; return false; }
+            if (RequireProvinceCity && !request.CityId.HasValue) { error = "شهر را انتخاب کنید"; return false; }
+            if (request.ProvinceId.HasValue && !request.CityId.HasValue) { error = "شهر را انتخاب کنید"; return false; }
 
             request.PostalCode = OrderAddressHelper.NormalizePostalCode(request.PostalCode);
             if (RequirePostalCode && !OrderAddressHelper.IsValidPostalCode(request.PostalCode))
             {
-                ToastService.ShowError("کد پستی ۱۰ رقمی را کامل وارد کنید");
-                return;
+                error = "کد پستی ۱۰ رقمی را کامل وارد کنید";
+                return false;
             }
             if (!string.IsNullOrEmpty(request.PostalCode) && !OrderAddressHelper.IsValidPostalCode(request.PostalCode))
             {
-                ToastService.ShowError("کد پستی باید ۱۰ رقم باشد");
-                return;
+                error = "کد پستی باید ۱۰ رقم باشد";
+                return false;
             }
         }
         else
@@ -968,6 +1222,14 @@
             request.CityId = null;
             request.PostalCode = null;
         }
+
+        return true;
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (isProcessing) return;
+        if (!ValidateReceiver(out var error)) { ToastService.ShowError(error); return; }
 
         isProcessing = true;
         try

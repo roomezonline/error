@@ -50,6 +50,7 @@ namespace ErrorService.Server.Controllers
             }
         }
 
+        [Authorize(Policy = "perm:admin.footer.manage")]
         [HttpPost]
         public async Task<IActionResult> SaveFooter(SaveFooterSettingsRequest request)
         {

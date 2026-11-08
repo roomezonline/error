@@ -5,263 +5,396 @@
 @using ErrorService.Shared
 @using System.Net.Http.Json
 @inject HttpClient Http
+@inject IJSRuntime JS
 @inject ErrorService.Client.Services.ToastService ToastService
 
 <PageTitle>تنظیمات | ارورسرویس</PageTitle>
 
-<div class="admin-container" dir="rtl">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3 class="admin-page-title m-0">تنظیمات ظاهر سایت</h3>
-        <button class="btn btn-primary shadow-sm rounded-3 px-4" @onclick="SaveSettings" disabled="@isSaving">
+<div class="admin-container adm-set" dir="rtl">
+    <header class="adm-set__top">
+        <div class="adm-set__top-text">
+            <span class="adm-set__eyebrow"><span class="oi oi-cog" aria-hidden="true"></span> پنل مدیریت</span>
+            <h3 class="adm-set__title">تنظیمات سایت</h3>
+            <p class="adm-set__lead">چیدمان صفحه اصلی، فروشگاه، چت، سئو و ابزارهای فنی را از همین صفحه مدیریت کنید.</p>
+        </div>
+        <button class="btn btn-primary adm-set__save-btn" @onclick="SaveSettings" disabled="@isSaving">
             @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+            <span class="oi oi-check me-1" aria-hidden="true"></span>
             ذخیره تغییرات
         </button>
-    </div>
+    </header>
 
     @if (settings == null)
     {
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary"></div>
-            <p class="text-muted mt-2">در حال بارگذاری تنظیمات...</p>
+        <div class="adm-set__loading">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p>در حال بارگذاری تنظیمات...</p>
         </div>
     }
     else
     {
-        <div class="row g-4">
-            <div class="col-md-6">
-                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
-                    <h5 class="fw-bold mb-3 border-bottom pb-3">نمایش ماژول‌های صفحه اصلی</h5>
+        <div class="adm-set__layout">
+            <nav class="adm-set__nav" aria-label="دسته‌بندی تنظیمات">
+                <span class="adm-set__nav-title">دسته‌بندی‌ها</span>
+                @foreach (var navItem in Sections)
+                {
+                    <button type="button"
+                            class="adm-set__nav-link @(activeSection == navItem.Key ? "is-active" : "")"
+                            aria-current="@(activeSection == navItem.Key ? "true" : null)"
+                            @onclick="() => SelectSection(navItem.Key)">
+                        <span class="oi @navItem.Icon" aria-hidden="true"></span>
+                        <span>@navItem.Title</span>
+                    </button>
+                }
+                <div class="adm-set__nav-foot">تغییرات با «ذخیره» اعمال می‌شود</div>
+            </nav>
 
-                    <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
-                        <p class="small text-muted mb-0">با ▲ ▼ ترتیب را تغییر دهید. «چیدمان پیشنهادی» فقط ترتیب بخش‌ها را بازمی‌چیند و هیچ بخشی را خاموش نمی‌کند.</p>
-                        <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" @onclick="ApplyRecommendedLayout">
-                            <span class="oi oi-loop-circular me-1"></span> چیدمان پیشنهادی
+            <div class="adm-set__main">
+                <section class="@CardClass("home")" id="set-home" aria-labelledby="set-home-title">
+                    <header class="adm-set__card-head">
+                        <span class="adm-set__card-icon"><span class="oi oi-grid-two-up" aria-hidden="true"></span></span>
+                        <div class="adm-set__card-titles">
+                            <h4 id="set-home-title">چیدمان صفحه اصلی</h4>
+                            <p>ترتیب و نمایش یا حذف بخش‌های صفحه اول سایت</p>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary adm-set__head-action" @onclick="ApplyRecommendedLayout">
+                            <span class="oi oi-loop-circular me-1" aria-hidden="true"></span> چیدمان پیشنهادی
                         </button>
-                    </div>
+                    </header>
+                    <div class="adm-set__card-body">
+                        <p class="adm-set__note">
+                            با ▲ ▼ ترتیب را تغییر دهید. «چیدمان پیشنهادی» فقط ترتیب بخش‌ها را بازمی‌چیند و هیچ بخشی را خاموش نمی‌کند.
+                        </p>
 
-                    @foreach (var module in settings.HomeModules
-                        .Where(m => Enum.IsDefined(typeof(SiteHomeModuleKey), m.Key))
-                        .OrderBy(x => x.SortOrder))
-                    {
-                        <div class="setting-item d-flex justify-content-between align-items-center mb-4 p-3 bg-light rounded-3">
-                            <div>
-                                <h6 class="fw-bold mb-1">@GetModuleTitle(module.Key)</h6>
-                                <p class="small text-muted mb-0">@GetModuleDescription(module.Key)</p>
-                            </div>
-                            <div class="d-flex align-items-center gap-2">
-                                <div class="d-flex flex-column gap-1">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary px-2" title="بالا" @onclick="(() => MoveModule(module.Key, -1))">▲</button>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary px-2" title="پایین" @onclick="(() => MoveModule(module.Key, 1))">▼</button>
-                                </div>
-                                <div class="form-check form-switch fs-4 m-0">
-                                    <input class="form-check-input" type="checkbox" @bind="module.IsEnabled">
-                                </div>
-                            </div>
-                        </div>
-                    }
-
-                    <div class="setting-item d-flex justify-content-between align-items-center mt-4 p-3 bg-light rounded-3">
-                        <div>
-                            <h6 class="fw-bold mb-1">خرید بدون لاگین</h6>
-                            <p class="small text-muted mb-0">در صورت فعال بودن، کاربران بدون ورود هم می‌توانند ثبت سفارش کنند.</p>
-                        </div>
-                        <div class="form-check form-switch fs-4">
-                            <input class="form-check-input" type="checkbox" @bind="settings.AllowGuestCheckout">
-                        </div>
-                    </div>
-                    <div class="setting-item d-flex justify-content-between align-items-center mt-2 p-3 bg-light rounded-3">
-                        <div>
-                            <h6 class="fw-bold mb-1">فعال بودن چت آنلاین</h6>
-                            <p class="small text-muted mb-0">در صورت غیرفعال بودن، ویجت و آیکون چت در سایت نمایش داده نمی‌شود.</p>
-                        </div>
-                        <div class="form-check form-switch fs-4">
-                            <input class="form-check-input" type="checkbox" @bind="settings.EnableOnlineChat">
-                        </div>
-                    </div>
-                    <div class="setting-item d-flex justify-content-between align-items-center mt-2 p-3 bg-light rounded-3">
-                        <div>
-                            <h6 class="fw-bold mb-1">چت آنلاین برای مهمان‌ها</h6>
-                            <p class="small text-muted mb-0">در صورت غیرفعال بودن، فقط کاربران لاگین‌شده می‌توانند چت کنند.</p>
-                        </div>
-                        <div class="form-check form-switch fs-4">
-                            <input class="form-check-input" type="checkbox" @bind="settings.AllowGuestChat">
-                        </div>
-                    </div>
-                    <div class="mt-4 border-top pt-4">
-                        <label class="form-label fw-bold">تصویر اپراتور چت (اختیاری)</label>
-                        <div class="form-text mb-2">در صورت ثبت، به‌جای آیکون پیش‌فرض چت از این تصویر (مثلاً عکس اپراتور پشتیبانی) استفاده می‌شود. حداکثر ۵۱۲ کیلوبایت.</div>
-                        <div class="d-flex align-items-center gap-3 flex-wrap">
-                            <label class="btn btn-outline-primary rounded-pill px-3 py-2 fw-bold @(isUploadingOperator ? "disabled" : "")" style="cursor:pointer;">
-                                @if (isUploadingOperator)
-                                {
-                                    <span class="spinner-border spinner-border-sm me-1"></span>
-                                }
-                                else
-                                {
-                                    <span class="oi oi-cloud-upload me-1"></span>
-                                }
-                                انتخاب تصویر اپراتور
-                                <InputFile OnChange="OnOperatorImageSelected" accept="image/*" class="d-none" disabled="@isUploadingOperator" />
-                            </label>
-                            @if (!string.IsNullOrWhiteSpace(settings.ChatOperatorImageUrl))
+                        <div class="adm-set__modules">
+                            @foreach (var module in settings.HomeModules
+                                .Where(m => Enum.IsDefined(typeof(SiteHomeModuleKey), m.Key))
+                                .OrderBy(x => x.SortOrder))
                             {
-                                <div class="d-flex align-items-center gap-3">
-                                    <div style="width:56px;height:56px;border-radius:50%;overflow:hidden;border:2px solid #0d6efd;flex-shrink:0;">
-                                        <img src="@settings.ChatOperatorImageUrl" style="width:100%;height:100%;object-fit:cover;" alt="اپراتور" />
+                                <div class="adm-set__module @(module.IsEnabled ? "" : "is-off")">
+                                    <div class="adm-set__module-arrows">
+                                        <button type="button" class="adm-set__arrow" title="بالا" aria-label="بالا"
+                                                @onclick="(() => MoveModule(module.Key, -1))">
+                                            <span class="oi oi-chevron-top" aria-hidden="true"></span>
+                                        </button>
+                                        <button type="button" class="adm-set__arrow" title="پایین" aria-label="پایین"
+                                                @onclick="(() => MoveModule(module.Key, 1))">
+                                            <span class="oi oi-chevron-bottom" aria-hidden="true"></span>
+                                        </button>
                                     </div>
-                                    <button type="button" class="btn btn-sm btn-outline-danger rounded-pill" @onclick="() => settings.ChatOperatorImageUrl = null">حذف تصویر</button>
+                                    <div class="adm-set__row-text">
+                                        <span class="adm-set__row-title">@GetModuleTitle(module.Key)</span>
+                                        <span class="adm-set__row-hint">@GetModuleDescription(module.Key)</span>
+                                    </div>
+                                    <div class="form-check form-switch adm-set__switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" @bind="module.IsEnabled"
+                                               aria-label="فعال بودن @GetModuleTitle(module.Key)" />
+                                    </div>
                                 </div>
                             }
                         </div>
-                        <div class="mt-2">
-                            <input type="text" class="form-control custom-input" @bind="settings.ChatOperatorImageUrl" placeholder="یا آدرس تصویر را دستی وارد کنید: /uploads/..." />
-                        </div>
                     </div>
-                    <div class="setting-item d-flex justify-content-between align-items-center mt-3 p-3 bg-light rounded-3">
-                        <div>
-                            <h6 class="fw-bold mb-1">پیام خوش‌آمد روی آیکون چت</h6>
-                            <p class="small text-muted mb-0">در اولین بازدید کاربر از سایت (یک بار در هر مرورگر)، بالای آیکون چت یک کارت خوش‌آمدگویی با صدا نمایش داده می‌شود.</p>
-                        </div>
-                        <div class="form-check form-switch fs-4">
-                            <input class="form-check-input" type="checkbox" @bind="settings.ChatGreetingEnabled">
-                        </div>
-                    </div>
-                    @if (settings.ChatGreetingEnabled)
-                    {
-                        <div class="mt-3">
-                            <label class="form-label fw-bold">متن خوش‌آمدگویی</label>
-                            <input type="text" class="form-control custom-input" @bind="settings.ChatGreetingText" placeholder="به ارورسرویس خوش آمدید، چطور می‌توانم کمکتان کنم؟" />
-                            <div class="form-text">در صورت خالی بودن، متن پیش‌فرض نمایش داده می‌شود.</div>
-                        </div>
-                    }
-                </div>
-            </div>
+                </section>
 
-            <div class="col-md-6">
-                <div class="card border-0 shadow-sm rounded-4 p-4 h-100 bg-primary text-white">
-                    <div class="d-flex flex-column h-100 justify-content-center align-items-center text-center">
-                        <div class="display-1 mb-4 opacity-50"><span class="oi oi-cog"></span></div>
-                        <h4 class="fw-bold mb-3">کنترل کامل محتوا</h4>
-                        <p class="opacity-75">با استفاده از این بخش می‌توانید هر زمان که نیاز بود، بخش‌های مختلف صفحه اصلی سایت را فعال یا غیرفعال کنید تا ظاهر سایت را بر اساس نیاز خود شخصی‌سازی کنید.</p>
-                    </div>
-                </div>
-            </div>
+                <section class="@CardClass("shop")" id="set-shop" aria-labelledby="set-shop-title">
+                    <header class="adm-set__card-head">
+                        <span class="adm-set__card-icon"><span class="oi oi-cart" aria-hidden="true"></span></span>
+                        <div class="adm-set__card-titles">
+                            <h4 id="set-shop-title">فروشگاه و چت</h4>
+                            <p>خرید مهمان، ویجت چت و پیام خوش‌آمدگویی</p>
+                        </div>
+                    </header>
+                    <div class="adm-set__card-body">
+                        <div class="adm-set__row">
+                            <div class="adm-set__row-text">
+                                <span class="adm-set__row-title">خرید بدون لاگین</span>
+                                <span class="adm-set__row-hint">در صورت فعال بودن، کاربران بدون ورود هم می‌توانند ثبت سفارش کنند.</span>
+                            </div>
+                            <div class="form-check form-switch adm-set__switch">
+                                <input class="form-check-input" type="checkbox" role="switch" @bind="settings.AllowGuestCheckout" aria-label="خرید بدون لاگین" />
+                            </div>
+                        </div>
 
-            <div class="col-md-6">
-                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
-                    <h5 class="fw-bold mb-4 border-bottom pb-3">تنظیمات آپلود تصویر</h5>
-                    <div class="row g-3">
-                        <div class="col-12">
-                            <label class="form-label fw-bold">حداکثر حجم مجاز تصاویر (کیلوبایت)</label>
+                        <div class="adm-set__row">
+                            <div class="adm-set__row-text">
+                                <span class="adm-set__row-title">فعال بودن چت آنلاین</span>
+                                <span class="adm-set__row-hint">در صورت غیرفعال بودن، ویجت و آیکون چت در سایت نمایش داده نمی‌شود.</span>
+                            </div>
+                            <div class="form-check form-switch adm-set__switch">
+                                <input class="form-check-input" type="checkbox" role="switch" @bind="settings.EnableOnlineChat" aria-label="فعال بودن چت آنلاین" />
+                            </div>
+                        </div>
+
+                        <div class="adm-set__row">
+                            <div class="adm-set__row-text">
+                                <span class="adm-set__row-title">چت آنلاین برای مهمان‌ها</span>
+                                <span class="adm-set__row-hint">در صورت غیرفعال بودن، فقط کاربران لاگین‌شده می‌توانند چت کنند.</span>
+                            </div>
+                            <div class="form-check form-switch adm-set__switch">
+                                <input class="form-check-input" type="checkbox" role="switch" @bind="settings.AllowGuestChat" aria-label="چت آنلاین برای مهمان‌ها" />
+                            </div>
+                        </div>
+
+                        <div class="adm-set__row">
+                            <div class="adm-set__row-text">
+                                <span class="adm-set__row-title">پیام خوش‌آمد روی آیکون چت</span>
+                                <span class="adm-set__row-hint">در اولین بازدید کاربر از سایت (یک بار در هر مرورگر)، بالای آیکون چت یک کارت خوش‌آمدگویی با صدا نمایش داده می‌شود.</span>
+                            </div>
+                            <div class="form-check form-switch adm-set__switch">
+                                <input class="form-check-input" type="checkbox" role="switch" @bind="settings.ChatGreetingEnabled" aria-label="پیام خوش‌آمد روی آیکون چت" />
+                            </div>
+                        </div>
+
+                        @if (settings.ChatGreetingEnabled)
+                        {
+                            <div class="adm-set__field">
+                                <label class="adm-set__label" for="chat-greeting-text">متن خوش‌آمدگویی</label>
+                                <input id="chat-greeting-text" type="text" class="form-control" @bind="settings.ChatGreetingText"
+                                       placeholder="به ارورسرویس خوش آمدید، چطور می‌توانم کمکتان کنم؟" />
+                                <div class="adm-set__field-hint">در صورت خالی بودن، متن پیش‌فرض نمایش داده می‌شود.</div>
+                            </div>
+                        }
+
+                        <div class="adm-set__field">
+                            <label class="adm-set__label">تصویر اپراتور چت (اختیاری)</label>
+                            <div class="adm-set__field-hint">
+                                در صورت ثبت، به‌جای آیکون پیش‌فرض چت از این تصویر (مثلاً عکس اپراتور پشتیبانی) استفاده می‌شود. حداکثر ۵۱۲ کیلوبایت.
+                            </div>
+                            <div class="adm-set__operator">
+                                <label class="adm-set__upload @(isUploadingOperator ? "is-busy" : "")">
+                                    @if (isUploadingOperator)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                    }
+                                    else
+                                    {
+                                        <span class="oi oi-cloud-upload me-1" aria-hidden="true"></span>
+                                    }
+                                    انتخاب تصویر اپراتور
+                                    <InputFile OnChange="OnOperatorImageSelected" accept="image/*" class="d-none" disabled="@isUploadingOperator" />
+                                </label>
+                                @if (!string.IsNullOrWhiteSpace(settings.ChatOperatorImageUrl))
+                                {
+                                    <div class="adm-set__operator-preview">
+                                        <img src="@settings.ChatOperatorImageUrl" alt="تصویر اپراتور چت" />
+                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => settings.ChatOperatorImageUrl = null">
+                                            حذف تصویر
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                            <input type="text" class="form-control adm-set__operator-url" @bind="settings.ChatOperatorImageUrl"
+                                   placeholder="یا آدرس تصویر را دستی وارد کنید: /uploads/..." dir="ltr" />
+                        </div>
+                    </div>
+                </section>
+
+                <section class="@CardClass("seo")" id="set-seo" aria-labelledby="set-seo-title">
+                    <header class="adm-set__card-head">
+                        <span class="adm-set__card-icon"><span class="oi oi-magnifying-glass" aria-hidden="true"></span></span>
+                        <div class="adm-set__card-titles">
+                            <h4 id="set-seo-title">سئو و اشتراک‌گذاری</h4>
+                            <p>عنوان و توضیح متا، گوگل آنالیتیکس، تصویر اشتراک‌گذاری و فید محصولات</p>
+                        </div>
+                    </header>
+                    <div class="adm-set__card-body">
+                        <div class="adm-set__grid">
+                            <div class="adm-set__field">
+                                <label class="adm-set__label" for="seo-title">عنوان پیش‌فرض سایت (SEO Title)</label>
+                                <input id="seo-title" type="text" class="form-control" @bind="settings.SeoTitle"
+                                       placeholder="مثلاً: ارور سرویس | مرجع کدهای خطا" />
+                            </div>
+                            <div class="adm-set__field">
+                                <label class="adm-set__label" for="seo-keywords">کلمات کلیدی (جدا شده با کاما)</label>
+                                <input id="seo-keywords" type="text" class="form-control" @bind="settings.SeoKeywords"
+                                       placeholder="تعمیرات، کد خطا، قطعات یدکی" />
+                            </div>
+                            <div class="adm-set__field adm-set__field--wide">
+                                <label class="adm-set__label" for="seo-description">توضیحات متای پیش‌فرض (Meta Description)</label>
+                                <textarea id="seo-description" class="form-control" @bind="settings.SeoDescription" rows="3"></textarea>
+                            </div>
+                            <div class="adm-set__field">
+                                <label class="adm-set__label" for="seo-ga">شناسه Google Analytics (G-XXXXXXX)</label>
+                                <input id="seo-ga" type="text" class="form-control" @bind="settings.GoogleAnalyticsTag" dir="ltr" />
+                            </div>
+                            <div class="adm-set__field">
+                                <label class="adm-set__label" for="seo-og">تصویر پیش‌فرض اشتراک‌گذاری (OG Image URL)</label>
+                                <input id="seo-og" type="text" class="form-control" @bind="settings.DefaultOgImage" dir="ltr" />
+                            </div>
+                            <div class="adm-set__field">
+                                <label class="adm-set__label" for="seo-chart">آدرس پایه چارت (Chart Base URL)</label>
+                                <input id="seo-chart" type="text" class="form-control" @bind="settings.ChartBaseUrl"
+                                       placeholder="مثلاً: https://errorservice.ir/chart" dir="ltr" />
+                                <div class="adm-set__field-hint">این آدرس برای لینک‌دهی به صفحات chart.aspx و chart1.aspx استفاده می‌شود.</div>
+                            </div>
+                            <div class="adm-set__field adm-set__field--wide">
+                                <div class="adm-set__row adm-set__row--flat">
+                                    <div class="adm-set__row-text">
+                                        <span class="adm-set__row-title">فید محصولات برای گوگل (Merchant Center)</span>
+                                        <span class="adm-set__row-hint">
+                                            آدرس فید: <span dir="ltr">/feed/google.xml</span> — با غیرفعال کردن، این آدرس خطای ۴۰۴ برمی‌گرداند.
+                                        </span>
+                                    </div>
+                                    <div class="form-check form-switch adm-set__switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" @bind="settings.EnableProductFeed" aria-label="فید محصولات برای گوگل" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="@CardClass("security")" id="set-security" aria-labelledby="set-security-title">
+                    <header class="adm-set__card-head">
+                        <span class="adm-set__card-icon"><span class="oi oi-shield" aria-hidden="true"></span></span>
+                        <div class="adm-set__card-titles">
+                            <h4 id="set-security-title">امنیت و اعتماد</h4>
+                            <p>HTTPS، حالت تعمیر و نگهداری و نمایش نماد اعتماد</p>
+                        </div>
+                    </header>
+                    <div class="adm-set__card-body">
+                        <div class="adm-set__row adm-set__row--warn">
+                            <div class="adm-set__row-text">
+                                <span class="adm-set__row-title">اجبار به HTTPS (SSL)</span>
+                                <span class="adm-set__row-hint">
+                                    در صورت فعال بودن، درخواست‌های HTTP به HTTPS هدایت می‌شوند و هدر امنیتی HSTS ارسال می‌گردد.
+                                    در صورت غیرفعال بودن، سایت فقط روی HTTP کار می‌کند.
+                                </span>
+                            </div>
+                            <div class="form-check form-switch adm-set__switch">
+                                <input class="form-check-input" type="checkbox" role="switch" @bind="settings.EnableSsl" aria-label="اجبار به HTTPS" />
+                            </div>
+                        </div>
+
+                        <div class="adm-set__row adm-set__row--danger">
+                            <div class="adm-set__row-text">
+                                <span class="adm-set__row-title">وضعیت تعمیر و نگهداری (Maintenance Mode)</span>
+                                <span class="adm-set__row-hint">با فعال‌سازی این بخش، سایت برای کاربران عادی غیرقابل دسترس شده و پیام بروزرسانی نمایش داده می‌شود.</span>
+                            </div>
+                            <div class="form-check form-switch adm-set__switch">
+                                <input class="form-check-input" type="checkbox" role="switch" @bind="settings.IsMaintenanceMode" aria-label="وضعیت تعمیر و نگهداری" />
+                            </div>
+                        </div>
+
+                        <div class="adm-set__row adm-set__row--info">
+                            <div class="adm-set__row-text">
+                                <span class="adm-set__row-title">نمایش نماد اعتماد (اینماد) در فوتر</span>
+                                <span class="adm-set__row-hint">مهر و لوگوی نماد اعتماد الکترونیک در کنار لوگوی سایت، در بخش اعتمادِ فوتر سایت نمایش داده می‌شود. با خاموش کردن این کلید کاملاً از سایت حذف می‌گردد.</span>
+                            </div>
+                            <div class="form-check form-switch adm-set__switch">
+                                <input class="form-check-input" type="checkbox" role="switch" @bind="settings.ShowEnamadSeal" aria-label="نمایش نماد اعتماد" />
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="@CardClass("media")" id="set-media" aria-labelledby="set-media-title">
+                    <header class="adm-set__card-head">
+                        <span class="adm-set__card-icon"><span class="oi oi-image" aria-hidden="true"></span></span>
+                        <div class="adm-set__card-titles">
+                            <h4 id="set-media-title">رسانه و آپلود</h4>
+                            <p>محدودیت حجم تصاویر در سراسر پنل</p>
+                        </div>
+                    </header>
+                    <div class="adm-set__card-body">
+                        <div class="adm-set__field adm-set__field--narrow">
+                            <label class="adm-set__label" for="max-upload">حداکثر حجم مجاز تصاویر (کیلوبایت)</label>
                             <div class="input-group">
-                                <input type="number" class="form-control custom-input" @bind="settings.MaxImageUploadSizeKb" min="10" max="5000" />
-                                <span class="input-group-text">KB</span>
+                                <span class="input-group-text" style="border-radius:0 9px 9px 0">KB</span>
+                                <input id="max-upload" type="number" class="form-control" style="border-radius:9px 0 0 9px;margin-left:0;margin-right:-1px;text-align:right" @bind="settings.MaxImageUploadSizeKb" min="10" max="5000" inputmode="numeric" dir="ltr" />
                             </div>
-                            <div class="form-text">تصاویر بزرگ‌تر از این مقدار هنگام آپلود به صورت خودکار فشرده می‌شوند. (پیش‌فرض: 200 KB)</div>
+                            <div class="adm-set__field-hint">تصاویر بزرگ‌تر از این مقدار هنگام آپلود به صورت خودکار فشرده می‌شوند. (پیش‌فرض: 200 KB)</div>
                         </div>
                     </div>
-                </div>
-            </div>
+                </section>
 
-            <div class="col-md-6">
-                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
-                    <h5 class="fw-bold mb-4 border-bottom pb-3">سایر تنظیمات</h5>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">عنوان پیش‌فرض سایت (SEO Title)</label>
-                            <input type="text" class="form-control custom-input" @bind="settings.SeoTitle" placeholder="مثلاً: ارور سرویس | مرجع کدهای خطا" />
+                <section class="@CardClass("calc")" id="set-calc" aria-labelledby="set-calc-title">
+                    <header class="adm-set__card-head">
+                        <span class="adm-set__card-icon"><span class="oi oi-calculator" aria-hidden="true"></span></span>
+                        <div class="adm-set__card-titles">
+                            <h4 id="set-calc-title">ابزارهای صفحه محاسبات فنی</h4>
+                            <p>روشن یا خاموش کردن هر ابزار در <span dir="ltr">/technical/calculators</span></p>
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">کلمات کلیدی (جدا شده با کاما)</label>
-                            <input type="text" class="form-control custom-input" @bind="settings.SeoKeywords" placeholder="تعمیرات، کد خطا، قطعات یدکی" />
+                        <button type="button" class="btn btn-sm btn-outline-secondary adm-set__head-action" @onclick="EnableAllCalculators">
+                            <span class="oi oi-check me-1" aria-hidden="true"></span> فعال کردن همه
+                        </button>
+                    </header>
+                    <div class="adm-set__card-body">
+                        <div class="adm-set__calc-toolbar">
+                            <span class="adm-set__chip">
+                                <span class="oi oi-check" aria-hidden="true"></span>
+                                @EnabledCalculatorCount از @CalculatorCatalog.Tools.Count ابزار فعال است
+                            </span>
+                            <span class="adm-set__note mb-0">
+                                ابزارهای خاموش از صفحه و فهرست جستجو حذف می‌شوند؛ بقیه بدون تغییر کار می‌کنند.
+                            </span>
                         </div>
-                        <div class="col-12">
-                            <label class="form-label fw-bold">توضیحات متای پیش‌فرض (Meta Description)</label>
-                            <textarea class="form-control custom-input" @bind="settings.SeoDescription" rows="3"></textarea>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">شناسه Google Analytics (G-XXXXXXX)</label>
-                            <input type="text" class="form-control custom-input" @bind="settings.GoogleAnalyticsTag" />
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">تصویر پیش‌فرض اشتراک‌گذاری (OG Image URL)</label>
-                            <input type="text" class="form-control custom-input" @bind="settings.DefaultOgImage" />
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">آدرس پایه چارت (Chart Base URL)</label>
-                            <input type="text" class="form-control custom-input" @bind="settings.ChartBaseUrl" placeholder="مثلاً: https://errorservice.ir/chart" />
-                            <div class="form-text">این آدرس برای لینک‌دهی به صفحات chart.aspx و chart1.aspx استفاده می‌شود.</div>
-                        </div>
-                        <div class="col-12 mt-3">
-                            <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-warning-subtle rounded-3 border border-warning-subtle">
-                                <div>
-                                    <h6 class="fw-bold mb-1 text-warning">اجبار به HTTPS (SSL)</h6>
-                                    <p class="small text-warning opacity-75 mb-0">
-                                        در صورت فعال بودن، درخواست‌های HTTP به HTTPS هدایت می‌شوند و هدر امنیتی HSTS ارسال می‌گردد.
-                                        در صورت غیرفعال بودن، سایت فقط روی HTTP کار می‌کند.
-                                    </p>
+
+                        <div class="adm-set__calc-grid">
+                            @foreach (var category in CalculatorCatalog.Categories)
+                            {
+                                <div class="adm-set__calc-group">
+                                    <div class="adm-set__calc-group-head">
+                                        <span class="oi @category.Icon" aria-hidden="true"></span>
+                                        <span>@category.Title</span>
+                                    </div>
+                                    @foreach (var tool in CalculatorCatalog.InCategory(category.Key))
+                                    {
+                                        var enabled = !calcDisabled.Contains(tool.Key);
+                                        <label class="adm-set__calc-item @(enabled ? "" : "is-off")">
+                                            <span class="adm-set__row-title">@tool.Title</span>
+                                            <span class="form-check form-switch adm-set__switch">
+                                                <input class="form-check-input" type="checkbox" role="switch"
+                                                       checked="@enabled"
+                                                       @onchange="e => ToggleCalculator(tool.Key, e)" />
+                                            </span>
+                                        </label>
+                                    }
                                 </div>
-                                <div class="form-check form-switch fs-4">
-                                    <input class="form-check-input" type="checkbox" @bind="settings.EnableSsl">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-12 mt-3">
-                            <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-danger-subtle rounded-3 border border-danger-subtle">
-                                <div>
-                                    <h6 class="fw-bold mb-1 text-danger">وضعیت تعمیر و نگهداری (Maintenance Mode)</h6>
-                                    <p class="small text-danger opacity-75 mb-0">با فعال‌سازی این بخش، سایت برای کاربران عادی غیرقابل دسترس شده و پیام بروزرسانی نمایش داده می‌شود.</p>
-                                </div>
-                                <div class="form-check form-switch fs-4">
-                                    <input class="form-check-input" type="checkbox" @bind="settings.IsMaintenanceMode">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-12 mt-3">
-                            <div class="setting-item d-flex justify-content-between align-items-center p-3 bg-info-subtle rounded-3 border border-info-subtle">
-                                <div>
-                                    <h6 class="fw-bold mb-1 text-info">نمایش نماد اعتماد (اینماد) در فوتر</h6>
-                                    <p class="small text-info opacity-75 mb-0">مهر و لوگوی نماد اعتماد الکترونیک در کنار لوگوی سایت، در بخش اعتمادِ فوتر سایت نمایش داده می‌شود. با خاموش کردن این کلید کاملاً از سایت حذف می‌گردد.</p>
-                                </div>
-                                <div class="form-check form-switch fs-4">
-                                    <input class="form-check-input" type="checkbox" @bind="settings.ShowEnamadSeal">
-                                </div>
-                            </div>
+                            }
                         </div>
                     </div>
+                </section>
+
+                <div class="adm-set__savebar">
+                    <span class="adm-set__savebar-text">تغییرات فقط پس از زدن «ذخیره تغییرات» روی سایت اعمال می‌شود.</span>
+                    <button class="btn btn-primary px-4" @onclick="SaveSettings" disabled="@isSaving">
+                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        ذخیره تغییرات
+                    </button>
                 </div>
             </div>
-        </div>
-
-        <div class="text-center mt-4">
-            <button class="btn btn-primary shadow-sm rounded-3 px-5 py-2" @onclick="SaveSettings" disabled="@isSaving">
-                @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
-                ذخیره تغییرات
-            </button>
         </div>
     }
 </div>
-
-<style>
-    .setting-item {
-        transition: all 0.2s ease;
-        border: 1px solid transparent;
-    }
-    .setting-item:hover {
-        background: #fff !important;
-        border-color: rgba(37, 99, 235, 0.1);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-    }
-    .form-check-input:checked {
-        background-color: #2563eb;
-        border-color: #2563eb;
-    }
-</style>
 
 @code {
     private SiteSettingsDto? settings;
     private bool isSaving = false;
     private bool isUploadingOperator = false;
+    private string activeSection = "home";
+    private readonly HashSet<string> calcDisabled = new(StringComparer.OrdinalIgnoreCase);
+
+    private int EnabledCalculatorCount => CalculatorCatalog.Tools.Count(t => !calcDisabled.Contains(t.Key));
+
+    private string CardClass(string key) => activeSection == key ? "adm-set__card" : "adm-set__card is-hidden";
+
+    private async Task SelectSection(string key)
+    {
+        if (activeSection == key) return;
+        activeSection = key;
+        await JS.InvokeVoidAsync("scrollTo", new { top = 0, behavior = "smooth" });
+    }
+
+    private static readonly (string Key, string Title, string Icon)[] Sections =
+    {
+        ("home", "چیدمان صفحه اصلی", "oi-grid-two-up"),
+        ("shop", "فروشگاه و چت", "oi-cart"),
+        ("seo", "سئو و اشتراک‌گذاری", "oi-magnifying-glass"),
+        ("security", "امنیت و اعتماد", "oi-shield"),
+        ("media", "رسانه و آپلود", "oi-image"),
+        ("calc", "ابزارهای محاسبات", "oi-calculator")
+    };
 
     private async Task OnOperatorImageSelected(InputFileChangeEventArgs e)
     {
@@ -310,6 +443,10 @@
     {
         settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings/admin");
 
+        calcDisabled.Clear();
+        foreach (var key in CalculatorCatalog.ParseDisabled(settings?.CalculatorsDisabled))
+            calcDisabled.Add(key);
+
         if (settings != null && (settings.HomeModules == null || settings.HomeModules.Count == 0))
         {
             settings.HomeModules = new List<SiteHomeModuleDto>
@@ -334,6 +471,7 @@
         isSaving = true;
         try
         {
+            settings.CalculatorsDisabled = calcDisabled.Count == 0 ? null : string.Join(",", calcDisabled);
             var resp = await Http.PutAsJsonAsync("api/sitesettings", settings);
             if (resp.IsSuccessStatusCode)
             {
@@ -354,6 +492,15 @@
             isSaving = false;
         }
     }
+
+    private void ToggleCalculator(string key, ChangeEventArgs e)
+    {
+        var enabled = e.Value is bool enabledValue && enabledValue;
+        if (enabled) calcDisabled.Remove(key);
+        else calcDisabled.Add(key);
+    }
+
+    private void EnableAllCalculators() => calcDisabled.Clear();
 
     // ترتیب پیشنهادی: کد خطا نزدیک جستجو، محصولات قبل از محتوای آموزشی،
     // برندها و مشتریان در انتها به‌عنوان نوار اعتماد.
@@ -443,7 +590,7 @@
     {
         return key switch
         {
-            SiteHomeModuleKey.SpecialOffers => "نمایش ردیف محصولات تخفیف‌دار و تایمردار",
+            SiteHomeModuleKey.SpecialOffers => "نمایش ردیف محصولات تخفیف‌دار و تایمر‌دار",
             SiteHomeModuleKey.LatestNews => "نمایش بخش خبرها و اطلاعیه‌های جدید",
             SiteHomeModuleKey.LatestProducts => "جدیدترین محصولات (با روشن بودن پرفروش‌ها/تازه‌ها در ویترین تب‌دار ادغام می‌شود)",
             SiteHomeModuleKey.LatestAcademy => "نمایش جدیدترین مقالات و دوره‌های آموزشی (یکجا)",

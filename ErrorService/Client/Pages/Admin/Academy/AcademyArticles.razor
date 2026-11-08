@@ -54,6 +54,17 @@
                             <InputTextArea @bind-Value="model.Summary" class="form-control rounded-3" rows="3" placeholder="توضیح کوتاهی درباره این آموزش..." />
                             <ValidationMessage For="@(() => model.Summary)" class="text-danger small" />
                         </div>
+                        <div class="mb-0">
+                            <label class="form-label fw-bold">دسته‌بندی</label>
+                            <input class="form-control rounded-3" list="academyCategoryOptions" @bind="model.Category" placeholder="مثلاً برد و الکترونیک" />
+                            <datalist id="academyCategoryOptions">
+                                @foreach (var category in AcademyCatalog.SuggestedCategories)
+                                {
+                                    <option value="@category"></option>
+                                }
+                            </datalist>
+                            <div class="form-text">این دسته در فیلترهای صفحه آکادمی نمایش داده می‌شود.</div>
+                        </div>
                     </div>
                     <div class="col-md-4">
                         <div class="mb-4">
@@ -90,6 +101,10 @@
                                 <InputCheckbox @bind-Value="model.IsPremium" class="form-check-input" id="isPremium" />
                                 <label class="form-check-label fw-bold" for="isPremium">فقط برای کاربران ویژه</label>
                             </div>
+                            <div class="form-check form-switch mt-2">
+                                <InputCheckbox @bind-Value="model.IsFeatured" class="form-check-input" id="isFeatured" />
+                                <label class="form-check-label fw-bold" for="isFeatured">نمایش در بخش «منتخب آکادمی»</label>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -112,6 +127,7 @@
                     <tr>
                         <th class="ps-4" style="width: 100px;">کاور</th>
                         <th>عنوان آموزش</th>
+                        <th>دسته</th>
                         <th>تاریخ ایجاد</th>
                         <th>وضعیت</th>
                         <th><span class="oi oi-eye"></span> بازدید</th>
@@ -121,11 +137,11 @@
                 <tbody>
                     @if (articles == null)
                     {
-                        <tr><td colspan="6" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
+                        <tr><td colspan="7" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
                     }
                     else if (!articles.Any())
                     {
-                        <tr><td colspan="6" class="text-center py-5 text-muted">هیچ آموزش تک‌قسمتی یافت نشد.</td></tr>
+                        <tr><td colspan="7" class="text-center py-5 text-muted">هیچ آموزش تک‌قسمتی یافت نشد.</td></tr>
                     }
                     else
                     {
@@ -151,6 +167,16 @@
                                     @if (article.IsPremium)
                                     {
                                         <span class="badge bg-warning text-dark small">ویژه</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrWhiteSpace(article.Category))
+                                    {
+                                        <span class="badge bg-primary-subtle text-primary rounded-pill px-3">@article.Category</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
                                     }
                                 </td>
                                 <td><span class="text-muted small">@article.CreatedAt.ToString("yyyy/MM/dd")</span></td>
@@ -186,6 +212,7 @@
     .object-fit-cover { object-fit: cover; }
     .bg-success-subtle { background-color: #d1e7dd; }
     .bg-warning-subtle { background-color: #fff3cd; }
+    .bg-primary-subtle { background-color: #cfe2ff; }
 </style>
 
 @code {
@@ -219,7 +246,9 @@
             Summary = article.Summary,
             CoverImageUrl = article.CoverImageUrl,
             IsPublished = article.IsPublished,
-            IsPremium = article.IsPremium
+            IsPremium = article.IsPremium,
+            Category = article.Category,
+            IsFeatured = article.IsFeatured
         };
         showEditor = true;
     }

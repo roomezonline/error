@@ -21,7 +21,7 @@ public class JwtAuthStateProvider : AuthenticationStateProvider
 
         // 1. Check for public auth token
         var authToken = await _auth.GetTokenAsync();
-        if (!string.IsNullOrWhiteSpace(authToken))
+        if (!string.IsNullOrWhiteSpace(authToken) && !JwtParser.IsExpired(authToken))
         {
             var authIdentity = JwtParser.ParseClaimsFromJwt(authToken);
             claims.AddRange(authIdentity.Claims);
@@ -29,7 +29,7 @@ public class JwtAuthStateProvider : AuthenticationStateProvider
 
         // 2. Check for workshop token
         var workshopToken = await _auth.GetWorkshopTokenAsync();
-        if (!string.IsNullOrWhiteSpace(workshopToken))
+        if (!string.IsNullOrWhiteSpace(workshopToken) && !JwtParser.IsExpired(workshopToken))
         {
             var workshopIdentity = JwtParser.ParseClaimsFromJwt(workshopToken);
             // Merge claims, avoiding duplicates if necessary (though they usually differ by type)
@@ -54,6 +54,35 @@ public class JwtAuthStateProvider : AuthenticationStateProvider
 
 internal static class JwtParser
 {
+    /// <summary>توکن را منقضی می‌داند اگر زمان فعلی از exp گذشته باشد (با ۳۰ ثانیه حاشیه).</summary>
+    public static bool IsExpired(string jwt, TimeSpan? skew = null)
+        => TryGetExpiry(jwt, out var exp) && exp <= DateTimeOffset.UtcNow.Add(skew ?? TimeSpan.FromSeconds(30));
+
+    public static bool TryGetExpiry(string jwt, out DateTimeOffset expiry)
+    {
+        expiry = default;
+        if (string.IsNullOrWhiteSpace(jwt)) return false;
+
+        var parts = jwt.Split('.');
+        if (parts.Length < 2) return false;
+
+        try
+        {
+            var jsonBytes = ParseBase64WithoutPadding(parts[1]);
+            using var doc = JsonDocument.Parse(jsonBytes);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return false;
+            if (!doc.RootElement.TryGetProperty("exp", out var exp) || exp.ValueKind != JsonValueKind.Number)
+                return false;
+
+            expiry = DateTimeOffset.FromUnixTimeSeconds(exp.GetInt64());
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static ClaimsIdentity ParseClaimsFromJwt(string jwt)
     {
         // NOTE: This does not validate signature; API validates. This is only for UI state.

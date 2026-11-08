@@ -1,0 +1,260 @@
+@inherits CalcComponentBase
+@using System.Text.RegularExpressions
+@using ErrorService.Shared
+
+<CalcShell Id="capacitor-code" Title="کد خازن"
+           Subtitle="کد سه‌رقمی خازن (مثل 104 یا 473) را به پیکوفاراد، نانوفاراد و میکروفاراد تبدیل می‌کند."
+           Icon="oi-layers"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-form">
+        <div class="calc-field calc-field--full">
+            <label class="calc-label" for="cap-code">کد روی بدنه خازن</label>
+            <input id="cap-code" class="calc-input" type="text" inputmode="text" dir="ltr"
+                   placeholder="مثلاً 104 یا 473K" @bind="codeInput" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">ظرفیت خازن</span>
+                    <span class="calc-result__value" dir="ltr">@Result.MainValue</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">بر حسب نانوفاراد</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.NanoFarad</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">بر حسب میکروفاراد</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.MicroFarad</span>
+                </div>
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">تلرانس</span>
+                    <span class="calc-result__value calc-result__value--sm">@Result.Tolerance</span>
+                </div>
+            </div>
+            <p class="calc-note mt-2 mb-0">
+                روش خواندن: دو رقم اول مقدار و رقم آخر تعداد صفر است؛ نتیجه بر حسب پیکوفاراد است. مثلاً 104 یعنی ۱۰ و چهار صفر → ۱۰۰٬۰۰۰ پیکوفاراد = ۱۰۰ نانوفاراد = ۰٫۱ میکروفاراد.
+            </p>
+        </div>
+    }
+
+    <details class="calc-details">
+        <summary>برعکس: برای یک ظرفیت، کد خازن را پیدا کن</summary>
+        <div class="calc-details__body">
+            <div class="calc-form">
+                <div class="calc-field">
+                    <label class="calc-label" for="cap-value">ظرفیت</label>
+                    <input id="cap-value" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                           @bind="reverseValue" @bind:event="oninput" @bind:after="PersistAsync" />
+                </div>
+                <div class="calc-field">
+                    <label class="calc-label" for="cap-unit">واحد</label>
+                    <select id="cap-unit" class="calc-select" @bind="reverseUnit" @bind:after="PersistAsync">
+                        <option value="pF">پیکوفاراد (pF)</option>
+                        <option value="nF">نانوفاراد (nF)</option>
+                        <option value="µF">میکروفاراد (µF)</option>
+                    </select>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(Reverse.Error))
+            {
+                <div class="calc-error"><span class="oi oi-warning me-1"></span> @Reverse.Error</div>
+            }
+            else if (!string.IsNullOrEmpty(Reverse.Result))
+            {
+                <div class="calc-result">
+                    <div class="calc-result__grid">
+                        <div class="calc-result__item calc-result__item--wide">
+                            <span class="calc-result__label">کد پیشنهادی</span>
+                            <span class="calc-result__value" dir="ltr">@Reverse.Result</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </details>
+
+    <details class="calc-details">
+        <summary>جدول کدهای پرکاربرد خازن</summary>
+        <div class="calc-details__body">
+            <table class="calc-table">
+                <thead>
+                    <tr><th>کد</th><th>پیکوفاراد</th><th>نانوفاراد</th><th>میکروفاراد</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in CommonCodes)
+                    {
+                        <tr>
+                            <td dir="ltr">@row.Code</td>
+                            <td dir="ltr">@CalcFormat.Num(row.PicoFarad, "0")</td>
+                            <td dir="ltr">@CalcFormat.Num(row.PicoFarad / 1000, "0.###")</td>
+                            <td dir="ltr">@CalcFormat.Num(row.PicoFarad / 1_000_000, "0.######")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </details>
+</CalcShell>
+
+@code {
+    private string codeInput = "104";
+    private double? reverseValue = 0.1;
+    private string reverseUnit = "µF";
+
+    protected override string StorageKey => "capacitor-code";
+
+    private sealed record CodeRow(string Code, double PicoFarad);
+
+    private static readonly CodeRow[] CommonCodes =
+    {
+        new("101", 100), new("102", 1_000), new("103", 10_000), new("104", 100_000),
+        new("152", 1_500), new("222", 2_200), new("223", 22_000), new("224", 220_000),
+        new("332", 3_300), new("333", 33_000), new("334", 330_000), new("472", 4_700),
+        new("473", 47_000), new("474", 470_000), new("105", 1_000_000)
+    };
+
+    private static readonly Dictionary<string, double> ToleranceLetters = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["F"] = 1,
+        ["G"] = 2,
+        ["J"] = 5,
+        ["K"] = 10,
+        ["M"] = 20
+    };
+
+    private sealed class CapResult
+    {
+        public string MainValue { get; init; } = "—";
+        public string NanoFarad { get; init; } = "—";
+        public string MicroFarad { get; init; } = "—";
+        public string Tolerance { get; init; } = "—";
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private CapResult Result => Decode();
+
+    private CapResult Decode()
+    {
+        var raw = SearchNormalizer.Normalize(codeInput).Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(raw))
+            return new CapResult { Hint = "کد روی بدنه خازن را وارد کنید؛ مثلاً 104." };
+
+        var match = Regex.Match(raw, @"^(\d{2,3})([A-Z]?)$");
+        if (!match.Success)
+            return new CapResult { Error = "کد باید دو یا سه رقم باشد (مثل 22 یا 104). حرف تلرانس مثل J یا K هم مجاز است." };
+
+        var digits = match.Groups[1].Value;
+        var letter = match.Groups[2].Value;
+
+        var baseValue = int.Parse(digits[..2]);
+        var exponent = digits.Length == 3 ? digits[2] - '0' : 0;
+        var picoFarad = baseValue * Math.Pow(10, exponent);
+        var farad = picoFarad * 1e-12;
+
+        var best = CalcFormat.CapacitanceParts(farad);
+        string tolerance;
+        if (string.IsNullOrEmpty(letter))
+        {
+            tolerance = "روی بدنه نوشته نشده";
+        }
+        else if (ToleranceLetters.TryGetValue(letter, out var percent))
+        {
+            tolerance = "±" + CalcFormat.Num(percent, "0.#") + "٪ (" + letter + ")";
+        }
+        else
+        {
+            tolerance = "حرف نامعتبر: " + letter;
+        }
+
+        return new CapResult
+        {
+            MainValue = $"{best.Value} {best.Unit}",
+            NanoFarad = CalcFormat.Num(picoFarad / 1000, "0.###") + " nF",
+            MicroFarad = CalcFormat.Num(picoFarad / 1_000_000, "0.######") + " µF",
+            Tolerance = tolerance,
+            CopyText = $"کد خازن {raw} — {best.Value} {best.Unit} ({CalcFormat.Num(picoFarad, "0")} pF)"
+        };
+    }
+
+    private sealed class ReverseResult
+    {
+        public string? Result { get; init; }
+        public string? Error { get; init; }
+    }
+
+    private ReverseResult Reverse => ComputeReverse();
+
+    private ReverseResult ComputeReverse()
+    {
+        if (reverseValue == null || string.IsNullOrWhiteSpace(reverseUnit))
+            return new ReverseResult();
+
+        if (reverseValue <= 0)
+            return new ReverseResult { Error = "ظرفیت باید بزرگ‌تر از صفر باشد." };
+
+        var picoFarad = reverseValue.Value * (reverseUnit == "pF" ? 1 : reverseUnit == "nF" ? 1_000 : 1_000_000);
+        if (picoFarad < 10)
+            return new ReverseResult { Error = "برای مقادیر زیر ۱۰ پیکوفاراد، کد سه‌رقمی استاندارد وجود ندارد." };
+
+        var exponent = (int)Math.Floor(Math.Log10(picoFarad)) - 1;
+        var mantissa = Math.Round(picoFarad / Math.Pow(10, exponent));
+
+        if (mantissa >= 100)
+        {
+            mantissa /= 10;
+            exponent += 1;
+        }
+
+        if (exponent < 0)
+            return new ReverseResult { Error = "این مقدار با کد سه‌رقمی قابل نمایش نیست." };
+
+        var code = mantissa.ToString("0") + exponent.ToString("0");
+        return new ReverseResult { Result = code };
+    }
+
+    private async Task ResetAsync()
+    {
+        codeInput = "104";
+        reverseValue = 0.1;
+        reverseUnit = "µF";
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(new State(codeInput, reverseValue, reverseUnit), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            codeInput = s.Code ?? "104";
+            reverseValue = s.ReverseValue;
+            reverseUnit = s.ReverseUnit is "pF" or "nF" or "µF" ? s.ReverseUnit : "µF";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(string? Code, double? ReverseValue, string ReverseUnit);
+}

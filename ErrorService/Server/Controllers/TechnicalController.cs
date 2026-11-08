@@ -16,6 +16,7 @@ public class TechnicalController : ControllerBase
 {
     private const string ErrorCodeCacheTag = "error-codes";
     private const string ErrorCodesPerm = "perm:admin.technical.errorcodes.manage";
+    private const int RandomRecentPoolSize = 60;
 
     private readonly ErrorServiceDbContext _context;
     private readonly IWebHostEnvironment _env;
@@ -401,6 +402,24 @@ public class TechnicalController : ControllerBase
             .ToListAsync();
     }
 
+    // No output cache: reshuffles on every load. Picks randomly from the latest
+    // records and always includes the newest one so manual inserts show up immediately.
+    [HttpGet("error-codes/random")]
+    public async Task<ActionResult<IEnumerable<object>>> GetRandomErrorCodes([FromQuery] int take = 3)
+    {
+        take = Math.Clamp(take, 1, 100);
+        var pool = await _context.ErrorCodes
+            .OrderByDescending(e => e.Id)
+            .Take(RandomRecentPoolSize)
+            .Select(e => new { e.Brand, e.DeviceType, e.Code, e.Description, e.Solution })
+            .ToListAsync();
+
+        return pool.Take(1)
+            .Concat(pool.Skip(1).OrderBy(_ => Random.Shared.Next()).Take(Math.Max(take - 1, 0)))
+            .OrderBy(_ => Random.Shared.Next())
+            .ToList();
+    }
+
     [HttpGet("error-codes/count")]
     [OutputCache(Duration = 600, Tags = new[] { ErrorCodeCacheTag })]
     public async Task<ActionResult<int>> GetErrorCodeCount()
@@ -707,7 +726,23 @@ public class TechnicalController : ControllerBase
 
         if (!string.IsNullOrEmpty(userEmail))
         {
-            query = query.Where(t => t.UserEmail == userEmail);
+            // جست‌وجو با ایمیل فقط برای مدیر مشاوره؛ قبلاً هر کسی می‌توانست
+            // تیکت‌های هر ایمیل را بخواند. ضمناً UserEmail ستون دیتابیس نیست
+            // و باید از طریق کاربر پیدا شود.
+            var canView = User.IsInRole("super_admin")
+                || User.HasClaim("perm", "admin.consultation.view")
+                || User.HasClaim("perm", "admin.consultation.manage");
+            if (!canView) return Forbid();
+
+            var targetUserId = await _context.Users.AsNoTracking()
+                .Where(u => u.Email == userEmail)
+                .Select(u => (int?)u.Id)
+                .FirstOrDefaultAsync();
+
+            if (targetUserId == null)
+                return Ok(Array.Empty<ConsultationTicket>());
+
+            query = query.Where(t => t.UserId == targetUserId.Value);
         }
         else
         {
@@ -813,6 +848,10 @@ public class TechnicalController : ControllerBase
     [HttpPost("tickets")]
     public async Task<ActionResult<ConsultationTicket>> PostTicket(ConsultationTicket ticket)
     {
+        // جلوگیری از overposting: شناسه و پاسخ‌های سمت کلاینت پذیرفته نمی‌شوند.
+        ticket.Id = 0;
+        ticket.Replies = new();
+
         var userIdStr = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (!string.IsNullOrWhiteSpace(userIdStr) && int.TryParse(userIdStr, out var userId))
             ticket.UserId = userId;
@@ -824,6 +863,33 @@ public class TechnicalController : ControllerBase
         ticket.Status = TicketStatus.Pending;
         _context.ConsultationTickets.Add(ticket);
         await _context.SaveChangesAsync();
+
+        var userName = "کاربر مهمان";
+        if (ticket.UserId.HasValue)
+        {
+            userName = await _context.Users
+                .Where(u => u.Id == ticket.UserId.Value)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync() ?? "کاربر";
+        }
+
+        await _notificationEvents.NotifyAsync(
+            eventType: "ticket.created_admin",
+            values: new Dictionary<string, string?>
+            {
+                ["UserName"] = userName,
+                ["TicketTitle"] = ticket.Title,
+                ["Content"] = NotificationEventService.CleanContent(ticket.Description),
+                ["TicketId"] = ticket.Id.ToString()
+            },
+            idempotencyKey: $"ticket.created_admin:{ticket.Id}",
+            fallbackSeverity: NotificationSeverity.Info,
+            fallbackTitle: "تیکت مشاوره جدید",
+            fallbackBody: $"{userName} تیکت «{ticket.Title}» را ثبت کرد:\n{NotificationEventService.CleanContent(ticket.Description)}",
+            fallbackUrl: "/admin/technical/consultation",
+            superAdminsOnly: true);
+
+        await _context.SaveChangesAsync();
         return Ok(ticket);
     }
 
@@ -833,8 +899,14 @@ public class TechnicalController : ControllerBase
         var ticket = await _context.ConsultationTickets.FindAsync(id);
         if (ticket == null) return NotFound();
 
-        // If user is replying (not admin), ensure they own the ticket.
-        if (!reply.IsAdmin)
+        // نقش ادمین فقط از توکن معتبر استخراج می‌شود؛ فیلد IsAdmin در بدنه
+        // درخواست قابل جعل بود و به هر کاربری اجازه ثبت «پاسخ ادمین» می‌داد.
+        var isAdmin = User.Identity?.IsAuthenticated == true
+            && (User.IsInRole("super_admin")
+                || User.HasClaim("perm", "admin.consultation.manage"));
+
+        int? replyingUserId = null;
+        if (!isAdmin)
         {
             var userIdStr = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrWhiteSpace(userIdStr) || !int.TryParse(userIdStr, out var userId))
@@ -842,25 +914,28 @@ public class TechnicalController : ControllerBase
 
             if (ticket.UserId.HasValue && ticket.UserId.Value != userId)
                 return Forbid();
-            
+
+            replyingUserId = userId;
             ticket.IsAdminRead = false;
             ticket.IsUserRead = true;
         }
-        else 
+        else
         {
             ticket.IsAdminRead = true;
             ticket.IsUserRead = false;
         }
 
-        reply.RepliedAt = DateTime.Now;
+        reply.Id = 0;
         reply.ConsultationTicketId = ticket.Id;
+        reply.IsAdmin = isAdmin;
+        reply.RepliedAt = DateTime.Now;
         ticket.Replies.Add(reply);
         ticket.LastMessageAt = DateTime.Now;
-        
-        if (reply.IsAdmin)
+
+        if (isAdmin)
             ticket.Status = TicketStatus.InProgress;
 
-        if (reply.IsAdmin && ticket.UserId.HasValue)
+        if (isAdmin && ticket.UserId.HasValue)
         {
             await _notificationEvents.NotifyAsync(
                 eventType: "ticket.replied",
@@ -877,10 +952,37 @@ public class TechnicalController : ControllerBase
                 appUserId: ticket.UserId);
         }
 
+        if (!isAdmin)
+        {
+            var userName = replyingUserId.HasValue
+                ? await _context.Users
+                    .Where(u => u.Id == replyingUserId.Value)
+                    .Select(u => u.FullName)
+                    .FirstOrDefaultAsync() ?? "کاربر"
+                : "کاربر";
+
+            await _notificationEvents.NotifyAsync(
+                eventType: "ticket.user_replied",
+                values: new Dictionary<string, string?>
+                {
+                    ["UserName"] = userName,
+                    ["TicketTitle"] = ticket.Title,
+                    ["Content"] = NotificationEventService.CleanContent(reply.Message),
+                    ["TicketId"] = ticket.Id.ToString()
+                },
+                idempotencyKey: $"ticket.user_replied:{ticket.Id}:{reply.RepliedAt:yyyyMMddHHmmssfff}",
+                fallbackSeverity: NotificationSeverity.Info,
+                fallbackTitle: "پیام جدید در تیکت مشاوره",
+                fallbackBody: $"{userName} در تیکت «{ticket.Title}» نوشت:\n{NotificationEventService.CleanContent(reply.Message)}",
+                fallbackUrl: "/admin/technical/consultation",
+                superAdminsOnly: true);
+        }
+
         await _context.SaveChangesAsync();
         return Ok(reply);
     }
 
+    [Authorize(Policy = "perm:admin.consultation.manage")]
     [HttpPost("tickets/{id}/read-admin")]
     public async Task<IActionResult> MarkAsReadAdmin(int id)
     {

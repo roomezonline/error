@@ -1,223 +1,695 @@
 @page "/about"
 @using ErrorService.Shared
 @using ErrorService.Shared.Models
+@using ErrorService.Client.Helpers
 @using System.Net.Http.Json
+@using System.Text.Json
 @inject HttpClient Http
+@inject NavigationManager Nav
 
-<SeoHeader 
-    Title="درباره ارورسرویس | فروشگاه و تعمیرات تخصصی لوازم الکترونیک و لوازم خانگی"
-    Description="ارورسرویس با بیش از ۱۰ سال تجربه در فروش لوازم الکترونیکی، قطعات و تجهیزات ابزار دقیق و تعمیر تخصصی لوازم خانگی و بردهای الکترونیکی"
-    Keywords="درباره ارورسرویس, تعمیر لوازم خانگی, تعمیر بردهای الکترونیک, لوازم الکترونیک, ابزار دقیق"
+<SeoHeader
+    Title="@_seoTitle"
+    Description="@_seoDescription"
+    Keywords="@_seoKeywords"
     OgType="website"
-    JsonLd="@_aboutJsonLd" />
+    OgImage="@_content?.HeroImageUrl"
+    JsonLd="@_jsonLd" />
 
-<div class="about-page">
-    <div class="about-hero py-5 text-center text-white" style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);">
-        <div class="container">
-            <h1 class="fw-black display-5 mb-3">درباره ارورسرویس</h1>
-            <p class="fs-5 opacity-90 max-w-700 mx-auto">مرجع تخصصی کدهای خطا، تعمیرات و آموزش لوازم خانگی با تیمی از متخصصین مجرب</p>
-        </div>
-    </div>
-
-    <div class="container py-5">
-        <div class="row g-4 mb-5">
-            <div class="col-md-3 col-6">
-                <div class="stat-card p-4 rounded-4 shadow-sm bg-white text-center">
-                    <div class="stat-number fw-black text-primary display-5">۱۰+</div>
-                    <div class="stat-label text-muted small">سال تجربه</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6">
-                <div class="stat-card p-4 rounded-4 shadow-sm bg-white text-center">
-                    <div class="stat-number fw-black text-success display-5">۵۰۰۰+</div>
-                    <div class="stat-label text-muted small">تعمیرات موفق</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6">
-                <div class="stat-card p-4 rounded-4 shadow-sm bg-white text-center">
-                    <div class="stat-number fw-black text-warning display-5">۲۰+</div>
-                    <div class="stat-label text-muted small">کارشناس فنی</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6">
-                <div class="stat-card p-4 rounded-4 shadow-sm bg-white text-center">
-                    <div class="stat-number fw-black text-info display-5">۱۰۰%</div>
-                    <div class="stat-label text-muted small">رضایت مشتریان</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row g-5 mb-5 align-items-center">
-            <div class="col-lg-6">
-                <div class="about-story p-4 p-md-5 rounded-4 shadow-sm bg-white">
-                    <h2 class="fw-black mb-3">داستان ما</h2>
-                    <p class="text-muted lh-lg">ارورسرویس در سال ۱۳۹۴ با هدف ایجاد یک مرجع کامل و تخصصی برای کدهای خطای لوازم خانگی شروع به کار کرد. آنچه با یک وبلاگ ساده آغاز شد، امروز به بزرگترین بانک اطلاعاتی کدهای خطا و مرکز تخصصی تعمیرات لوازم خانگی در کشور تبدیل شده است.</p>
-                    <p class="text-muted lh-lg">ما با گرد هم آوردن تیمی از متخصصین مجرب تعمیرات لوازم خانگی، علاوه بر ارائه خدمات تعمیر و سرویس در منزل، بستری برای آموزش و انتقال تجربیات فراهم کرده‌ایم. امروز افتخار داریم که به هزاران مشتری در سراسر کشور خدمات رسانی می‌کنیم.</p>
-                </div>
-            </div>
-            <div class="col-lg-6">
-                <div class="about-mission-grid">
-                    <div class="mission-card p-4 rounded-4 shadow-sm bg-white mb-3">
-                        <div class="d-flex align-items-start gap-3">
-                            <div class="mission-icon bg-primary-subtle text-primary rounded-3 p-3 fs-4"><span class="oi oi-target"></span></div>
-                            <div>
-                                <h5 class="fw-bold mb-1">رسالت ما</h5>
-                                <p class="text-muted small mb-0">ارائه خدمات تخصصی تعمیرات با بالاترین کیفیت و کمترین هزینه</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mission-card p-4 rounded-4 shadow-sm bg-white mb-3">
-                        <div class="d-flex align-items-start gap-3">
-                            <div class="mission-icon bg-success-subtle text-success rounded-3 p-3 fs-4"><span class="oi oi-eye"></span></div>
-                            <div>
-                                <h5 class="fw-bold mb-1">چشم‌انداز</h5>
-                                <p class="text-muted small mb-0">اولین و بزرگترین مرجع تخصصی تعمیرات لوازم خانگی در کشور</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mission-card p-4 rounded-4 shadow-sm bg-white">
-                        <div class="d-flex align-items-start gap-3">
-                            <div class="mission-icon bg-warning-subtle text-warning rounded-3 p-3 fs-4"><span class="oi oi-star"></span></div>
-                            <div>
-                                <h5 class="fw-bold mb-1">ارزش‌ها</h5>
-                                <p class="text-muted small mb-0">صداقت، تخصص، سرعت و احترام به مشتری</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        @if (teamMembers != null && teamMembers.Count > 0)
+<div class="about-page" dir="rtl">
+    <div class="container about-wrap">
+        @if (_loading)
         {
-            <div class="about-team mb-5">
-                <div class="text-center mb-4">
-                    <h2 class="fw-black">تیم ما</h2>
-                    <p class="text-muted">متخصصین مجرب ارورسرویس</p>
+            <div class="abp-loading">
+                <div class="abp-skeleton abp-skeleton--hero"></div>
+                <div class="abp-skeleton-row">
+                    <div class="abp-skeleton"></div>
+                    <div class="abp-skeleton"></div>
+                    <div class="abp-skeleton"></div>
                 </div>
-                <div class="row g-4 justify-content-center">
-                    @foreach (var member in teamMembers)
+            </div>
+        }
+        else if (_content == null)
+        {
+            <section class="abp-hero">
+                <div class="abp-hero__text">
+                    <h1 class="abp-title">درباره ارورسرویس</h1>
+                    <p class="abp-sub">محتوای این صفحه در حال حاضر در دسترس نیست. لطفاً کمی بعد دوباره تلاش کنید.</p>
+                    <div class="abp-hero__actions">
+                        <a href="/" class="abp-btn abp-btn--primary">بازگشت به صفحه اصلی</a>
+                    </div>
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="abp-hero @(string.IsNullOrWhiteSpace(_content.HeroImageUrl) ? "" : "abp-hero--split")">
+                <div class="abp-hero__text">
+                    @if (!string.IsNullOrWhiteSpace(_content.HeroBadge))
                     {
-                        <div class="col-md-4 col-lg-3 col-6">
-                            <div class="team-card p-4 rounded-4 shadow-sm bg-white text-center">
-                                <div class="team-photo mx-auto mb-3 rounded-circle overflow-hidden" style="width: 100px; height: 100px; background: #f1f5f9;">
-                                    @if (!string.IsNullOrEmpty(member.PhotoUrl))
+                        <span class="abp-badge">
+                            <span class="oi oi-info" aria-hidden="true"></span>
+                            @_content.HeroBadge
+                        </span>
+                    }
+                    <h1 class="abp-title">@_content.HeroTitle</h1>
+                    @if (!string.IsNullOrWhiteSpace(_content.HeroSubtitle))
+                    {
+                        <p class="abp-sub">@_content.HeroSubtitle</p>
+                    }
+                    <div class="abp-hero__actions">
+                        <a href="/products" class="abp-btn abp-btn--primary">
+                            فروشگاه قطعات
+                            <span class="oi oi-arrow-left" aria-hidden="true"></span>
+                        </a>
+                        <a href="/contact" class="abp-btn">تماس با ما</a>
+                    </div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_content.HeroImageUrl))
+                {
+                    <div class="abp-hero__media">
+                        <img src="@ImageUrlHelper.Thumb(_content.HeroImageUrl, 800)"
+                             alt="@_content.HeroTitle"
+                             loading="eager" decoding="async" />
+                    </div>
+                }
+            </section>
+
+            @if (StatsItems.Count > 0)
+            {
+                <section class="abp-stats" aria-label="آمار ارورسرویس">
+                    @foreach (var stat in StatsItems)
+                    {
+                        <div class="abp-stat">
+                            <span class="abp-stat__icon oi oi-@stat.Icon" aria-hidden="true"></span>
+                            <span class="abp-stat__num">@stat.Value</span>
+                            <span class="abp-stat__label">@stat.Label</span>
+                        </div>
+                    }
+                </section>
+            }
+
+            <section class="abp-grid">
+                <article class="abp-card abp-story">
+                    <h2 class="abp-h2">@_content.StoryTitle</h2>
+                    @foreach (var paragraph in Paragraphs(_content.StoryText))
+                    {
+                        <p class="abp-p">@paragraph</p>
+                    }
+                </article>
+
+                <div class="abp-mvv">
+                    @if (!string.IsNullOrWhiteSpace(_content.MissionTitle))
+                    {
+                        <div class="abp-mvv__card">
+                            <span class="abp-mvv__icon oi oi-target" aria-hidden="true"></span>
+                            <div>
+                                <h3 class="abp-mvv__title">@_content.MissionTitle</h3>
+                                <p class="abp-mvv__text">@_content.MissionText</p>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_content.VisionTitle))
+                    {
+                        <div class="abp-mvv__card">
+                            <span class="abp-mvv__icon oi oi-eye" aria-hidden="true"></span>
+                            <div>
+                                <h3 class="abp-mvv__title">@_content.VisionTitle</h3>
+                                <p class="abp-mvv__text">@_content.VisionText</p>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_content.ValuesTitle))
+                    {
+                        <div class="abp-mvv__card">
+                            <span class="abp-mvv__icon oi oi-star" aria-hidden="true"></span>
+                            <div>
+                                <h3 class="abp-mvv__title">@_content.ValuesTitle</h3>
+                                <p class="abp-mvv__text">@_content.ValuesText</p>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+
+            @if (_content.Features.Count > 0)
+            {
+                <section class="abp-section">
+                    <div class="abp-section__head">
+                        <h2 class="abp-h2">@_content.FeaturesTitle</h2>
+                        @if (!string.IsNullOrWhiteSpace(_content.FeaturesSubtitle))
+                        {
+                            <p class="abp-section__desc">@_content.FeaturesSubtitle</p>
+                        }
+                    </div>
+                    <div class="abp-features">
+                        @foreach (var feature in _content.Features)
+                        {
+                            <div class="abp-feature">
+                                <span class="abp-feature__icon oi oi-@feature.Icon" aria-hidden="true"></span>
+                                <h3 class="abp-feature__title">@feature.Title</h3>
+                                <p class="abp-feature__text">@feature.Description</p>
+                            </div>
+                        }
+                    </div>
+                </section>
+            }
+
+            @if (_content.ShowTeam && _teamMembers.Count > 0)
+            {
+                <section class="abp-section">
+                    <div class="abp-section__head">
+                        <h2 class="abp-h2">تیم ما</h2>
+                        <p class="abp-section__desc">افرادی که پشت ارورسرویس هستند</p>
+                    </div>
+                    <div class="abp-team">
+                        @foreach (var member in _teamMembers)
+                        {
+                            <div class="abp-team__card">
+                                <div class="abp-team__avatar">
+                                    @if (!string.IsNullOrWhiteSpace(member.PhotoUrl))
                                     {
-                                        <img src="@member.PhotoUrl" alt="@member.FullName" class="w-100 h-100 object-fit-cover" loading="lazy" />
+                                        <img src="@ImageUrlHelper.Thumb(member.PhotoUrl, 200)"
+                                             alt="@member.FullName" loading="lazy" decoding="async" />
                                     }
                                     else
                                     {
-                                        <div class="w-100 h-100 d-flex align-items-center justify-content-center text-muted fs-1">
-                                            <span class="oi oi-person"></span>
-                                        </div>
+                                        <span class="oi oi-person" aria-hidden="true"></span>
                                     }
                                 </div>
-                                <h6 class="fw-bold mb-1">@member.FullName</h6>
-                                @if (!string.IsNullOrEmpty(member.Role))
+                                <strong class="abp-team__name">@member.FullName</strong>
+                                @if (!string.IsNullOrWhiteSpace(member.Role))
                                 {
-                                    <span class="badge bg-primary-subtle text-primary rounded-pill">@member.Role</span>
+                                    <span class="abp-team__role">@member.Role</span>
                                 }
-                                @if (!string.IsNullOrEmpty(member.Bio))
+                                @if (!string.IsNullOrWhiteSpace(member.Bio))
                                 {
-                                    <p class="text-muted small mt-2 mb-0">@member.Bio</p>
+                                    <p class="abp-team__bio">@member.Bio</p>
                                 }
                             </div>
-                        </div>
-                    }
-                </div>
-            </div>
-        }
-        else if (_loadingTeam)
-        {
-            <div class="text-center py-5">
-                <div class="spinner-border text-primary" role="status"></div>
-            </div>
-        }
+                        }
+                    </div>
+                </section>
+            }
 
-        @if (testimonials != null && testimonials.Count > 0)
-        {
-            <div class="about-testimonials mb-5">
-                <div class="text-center mb-4">
-                    <h2 class="fw-black">نظرات مشتریان</h2>
-                    <p class="text-muted">آنچه مشتریان درباره ما می‌گویند</p>
-                </div>
-                <div class="row g-4 justify-content-center">
-                    @foreach (var t in testimonials)
-                    {
-                        <div class="col-md-6 col-lg-4">
-                            <div class="testimonial-card p-4 rounded-4 shadow-sm bg-white h-100">
-                                <div class="d-flex gap-1 mb-2 text-warning">
-                                    @for (int i = 0; i < t.Rating; i++)
+            @if (_content.ShowTestimonials && _testimonials.Count > 0)
+            {
+                <section class="abp-section">
+                    <div class="abp-section__head">
+                        <h2 class="abp-h2">نظرات مشتریان</h2>
+                        <p class="abp-section__desc">آنچه مشتریان درباره ما می‌گویند</p>
+                    </div>
+                    <div class="abp-testimonials">
+                        @foreach (var t in _testimonials)
+                        {
+                            <figure class="abp-quote">
+                                <div class="abp-quote__stars" aria-label="@t.Rating از ۵">
+                                    @for (var i = 0; i < 5; i++)
                                     {
-                                        <span>★</span>
-                                    }
-                                    @for (int i = t.Rating; i < 5; i++)
-                                    {
-                                        <span class="text-muted opacity-25">★</span>
+                                        <span class="@(i < t.Rating ? "is-on" : "")" aria-hidden="true">★</span>
                                     }
                                 </div>
-                                <p class="text-muted small lh-lg mb-3">"@t.Content"</p>
-                                <div class="d-flex align-items-center gap-2 pt-2 border-top">
-                                    <div class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width:40px;height:40px;">
-                                        <span class="fw-bold small">@t.CustomerName[..1]</span>
-                                    </div>
-                                    <div>
-                                        <div class="fw-bold small">@t.CustomerName</div>
-                                        @if (!string.IsNullOrEmpty(t.CustomerRole))
+                                <blockquote class="abp-quote__text">@t.Content</blockquote>
+                                <figcaption class="abp-quote__author">
+                                    <span class="abp-quote__initial">@InitialOf(t.CustomerName)</span>
+                                    <span>
+                                        <strong>@t.CustomerName</strong>
+                                        @if (!string.IsNullOrWhiteSpace(t.CustomerRole))
                                         {
-                                            <div class="text-muted x-small">@t.CustomerRole</div>
+                                            <small>@t.CustomerRole</small>
                                         }
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                                    </span>
+                                </figcaption>
+                            </figure>
+                        }
+                    </div>
+                </section>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_content.CtaTitle))
+            {
+                <section class="abp-cta">
+                    <div class="abp-cta__body">
+                        <h2 class="abp-cta__title">@_content.CtaTitle</h2>
+                        @if (!string.IsNullOrWhiteSpace(_content.CtaText))
+                        {
+                            <p class="abp-cta__text">@_content.CtaText</p>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_content.CtaButtonText))
+                    {
+                        <a class="abp-btn abp-btn--primary" href="@_content.CtaButtonUrl">@_content.CtaButtonText</a>
                     }
-                </div>
-            </div>
+                </section>
+            }
         }
     </div>
 </div>
 
 <style>
-    .max-w-700 { max-width: 700px; }
-    .stat-card { transition: transform 0.2s; }
-    .stat-card:hover { transform: translateY(-4px); }
-    .stat-number { font-size: 2.5rem; line-height: 1; }
-    .mission-icon { width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .team-card { transition: transform 0.2s, box-shadow 0.2s; }
-    .team-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.08) !important; }
-    .object-fit-cover { object-fit: cover; }
-    .about-story { border: 1px solid rgba(0,0,0,0.05); }
-
-    @@media (max-width: 576px) {
-        .stat-number { font-size: 1.8rem; }
-        .about-hero h1 { font-size: 1.8rem; }
+    .about-page {
+        background: var(--shop-bg, #f8fafc);
+        min-height: 60vh;
+        padding: 26px 0 56px;
+        color: var(--shop-text, #0f172a);
     }
+
+    .about-wrap { max-width: 1080px; }
+
+    .abp-loading { display: grid; gap: 16px; }
+    .abp-skeleton-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .abp-skeleton {
+        height: 120px; border-radius: 18px;
+        background: linear-gradient(90deg, rgba(148, 163, 184, .12), rgba(148, 163, 184, .22), rgba(148, 163, 184, .12));
+        background-size: 200% 100%;
+        animation: abShimmer 1.4s linear infinite;
+    }
+    .abp-skeleton--hero { height: 230px; border-radius: 22px; }
+    @@keyframes abShimmer { to { background-position: -200% 0; } }
+
+    /* ─────────── هدر ─────────── */
+    .abp-hero {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 24px;
+        align-items: center;
+        padding: clamp(22px, 4vw, 38px);
+        border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 22px;
+        background:
+            radial-gradient(120% 130% at 100% 0%, rgba(37, 99, 235, .10), transparent 55%),
+            radial-gradient(90% 120% at 0% 100%, rgba(14, 165, 233, .08), transparent 60%),
+            var(--shop-surface, #fff);
+        overflow: hidden;
+    }
+    .abp-hero--split { grid-template-columns: 1.15fr .85fr; }
+
+    .abp-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 12px; border-radius: 999px;
+        background: rgba(37, 99, 235, .09);
+        color: #1d4ed8;
+        font-size: .74rem; font-weight: 700;
+        margin-bottom: 14px;
+    }
+    .abp-badge .oi { font-size: .8rem; }
+
+    .abp-title {
+        font-size: clamp(1.45rem, 3.2vw, 2.05rem);
+        line-height: 1.7;
+        font-weight: 800;
+        margin: 0 0 10px;
+        letter-spacing: -.2px;
+    }
+
+    .abp-sub {
+        font-size: .9rem;
+        line-height: 2;
+        color: #64748b;
+        margin: 0 0 22px;
+        max-width: 620px;
+    }
+
+    .abp-hero__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+    .abp-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 10px 18px; border-radius: 12px;
+        border: 1px solid var(--shop-border, #e2e8f0);
+        background: var(--shop-surface, #fff);
+        color: var(--shop-text, #1e293b);
+        font-size: .84rem; font-weight: 700;
+        text-decoration: none;
+        transition: background .15s, border-color .15s, transform .15s;
+    }
+    .abp-btn:hover { border-color: #a5b4fc; color: var(--shop-text, #1e293b); }
+    .abp-btn:active { transform: translateY(1px); }
+    .abp-btn--primary {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        border-color: transparent;
+        color: #fff;
+        box-shadow: 0 8px 18px rgba(37, 99, 235, .22);
+    }
+    .abp-btn--primary:hover { color: #fff; box-shadow: 0 10px 22px rgba(37, 99, 235, .3); }
+    .abp-btn--primary .oi { font-size: .75rem; }
+
+    .abp-hero__media {
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid var(--shop-border, #e2e8f0);
+        aspect-ratio: 4 / 3;
+        background: rgba(148, 163, 184, .08);
+    }
+    .abp-hero__media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    /* ─────────── آمار ─────────── */
+    .abp-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+    }
+    .abp-stat {
+        display: grid;
+        justify-items: center;
+        gap: 2px;
+        padding: 16px 10px;
+        border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 16px;
+        background: var(--shop-surface, #fff);
+        text-align: center;
+    }
+    .abp-stat__icon { color: #2563eb; font-size: .9rem; opacity: .8; }
+    .abp-stat__num { font-size: 1.35rem; font-weight: 800; line-height: 1.4; }
+    .abp-stat__label { font-size: .72rem; color: #64748b; }
+
+    /* ─────────── داستان و رسالت ─────────── */
+    .abp-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 14px;
+        margin-top: 26px;
+    }
+
+    .abp-card {
+        border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 20px;
+        background: var(--shop-surface, #fff);
+        padding: 22px;
+    }
+
+    .abp-h2 { font-size: 1.12rem; font-weight: 800; margin: 0 0 14px; }
+
+    .abp-story .abp-p {
+        font-size: .87rem;
+        line-height: 2.05;
+        color: #475569;
+        margin: 0 0 12px;
+        white-space: pre-line;
+    }
+    .abp-story .abp-p:last-child { margin-bottom: 0; }
+
+    .abp-mvv { display: grid; gap: 10px; }
+    .abp-mvv__card {
+        display: flex; align-items: flex-start; gap: 12px;
+        padding: 15px 16px;
+        border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 16px;
+        background: var(--shop-surface, #fff);
+    }
+    .abp-mvv__icon {
+        width: 38px; height: 38px; flex-shrink: 0;
+        display: grid; place-items: center;
+        border-radius: 11px;
+        background: rgba(37, 99, 235, .08);
+        color: #2563eb;
+        font-size: 1rem;
+    }
+    .abp-mvv__title { font-size: .87rem; font-weight: 800; margin: 0 0 3px; }
+    .abp-mvv__text { font-size: .79rem; line-height: 1.85; color: #64748b; margin: 0; }
+
+    /* ─────────── بخش‌ها ─────────── */
+    .abp-section { margin-top: 34px; }
+    .abp-section__head { margin-bottom: 14px; }
+    .abp-section__head .abp-h2 { margin-bottom: 4px; }
+    .abp-section__desc { font-size: .79rem; color: #64748b; margin: 0; }
+
+    .abp-features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+    }
+    .abp-feature {
+        border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 18px;
+        background: var(--shop-surface, #fff);
+        padding: 18px;
+        transition: border-color .18s, transform .18s;
+    }
+    .abp-feature:hover { border-color: #a5b4fc; transform: translateY(-2px); }
+    .abp-feature__icon {
+        width: 42px; height: 42px;
+        display: grid; place-items: center;
+        border-radius: 12px;
+        background: rgba(37, 99, 235, .08);
+        color: #2563eb;
+        font-size: 1.05rem;
+        margin-bottom: 12px;
+    }
+    .abp-feature__title { font-size: .9rem; font-weight: 800; margin: 0 0 6px; }
+    .abp-feature__text { font-size: .79rem; line-height: 1.9; color: #64748b; margin: 0; }
+
+    /* ─────────── تیم ─────────── */
+    .abp-team {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+    }
+    .abp-team__card {
+        display: grid;
+        justify-items: center;
+        text-align: center;
+        gap: 4px;
+        padding: 20px 14px;
+        border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 18px;
+        background: var(--shop-surface, #fff);
+    }
+    .abp-team__avatar {
+        width: 76px; height: 76px;
+        border-radius: 50%;
+        overflow: hidden;
+        display: grid; place-items: center;
+        background: rgba(148, 163, 184, .16);
+        color: #94a3b8;
+        font-size: 1.5rem;
+        margin-bottom: 8px;
+    }
+    .abp-team__avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .abp-team__name { font-size: .86rem; }
+    .abp-team__role { font-size: .72rem; color: #2563eb; font-weight: 700; }
+    .abp-team__bio { font-size: .75rem; color: #64748b; line-height: 1.8; margin: 4px 0 0; }
+
+    /* ─────────── نظرات ─────────── */
+    .abp-testimonials {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 12px;
+    }
+    .abp-quote {
+        margin: 0;
+        padding: 18px;
+        border: 1px solid var(--shop-border, #e2e8f0);
+        border-radius: 18px;
+        background: var(--shop-surface, #fff);
+        display: flex; flex-direction: column; gap: 10px;
+    }
+    .abp-quote__stars { color: rgba(148, 163, 184, .5); font-size: .85rem; letter-spacing: 2px; }
+    .abp-quote__stars .is-on { color: #f59e0b; }
+    .abp-quote__text {
+        font-size: .82rem; line-height: 1.95; color: #475569;
+        margin: 0; flex: 1;
+    }
+    .abp-quote__author {
+        display: flex; align-items: center; gap: 9px;
+        padding-top: 10px;
+        border-top: 1px solid var(--shop-border, #f1f5f9);
+    }
+    .abp-quote__initial {
+        width: 34px; height: 34px; flex-shrink: 0;
+        border-radius: 50%;
+        display: grid; place-items: center;
+        background: rgba(37, 99, 235, .1);
+        color: #2563eb;
+        font-size: .78rem; font-weight: 800;
+    }
+    .abp-quote__author strong { display: block; font-size: .78rem; }
+    .abp-quote__author small { display: block; font-size: .7rem; color: #94a3b8; }
+
+    /* ─────────── CTA ─────────── */
+    .abp-cta {
+        margin-top: 34px;
+        display: flex; align-items: center; justify-content: space-between;
+        flex-wrap: wrap; gap: 16px;
+        padding: 22px;
+        border-radius: 20px;
+        border: 1px solid rgba(37, 99, 235, .18);
+        background:
+            radial-gradient(120% 160% at 100% 0%, rgba(37, 99, 235, .12), transparent 60%),
+            var(--shop-surface, #fff);
+    }
+    .abp-cta__title { font-size: 1rem; font-weight: 800; margin: 0 0 4px; }
+    .abp-cta__text { font-size: .8rem; line-height: 1.9; color: #64748b; margin: 0; max-width: 640px; }
+
+    @@media (min-width: 992px) {
+        .abp-grid { grid-template-columns: 1.35fr 1fr; gap: 16px; }
+    }
+
+    @@media (max-width: 991.98px) {
+        .abp-hero--split { grid-template-columns: 1fr; }
+        .abp-hero__media { order: -1; aspect-ratio: 16 / 8; }
+    }
+
+    @@media (max-width: 575.98px) {
+        .about-page { padding: 16px 0 40px; }
+        .abp-hero { border-radius: 18px; padding: 20px 16px; }
+        .abp-card { padding: 18px 16px; border-radius: 16px; }
+        .abp-stats { grid-template-columns: repeat(2, 1fr); }
+        .abp-stat { padding: 12px 8px; }
+        .abp-stat__num { font-size: 1.15rem; }
+        .abp-btn { flex: 1; justify-content: center; }
+        .abp-cta { padding: 18px 16px; }
+    }
+
+    /* ─────────── دارک ─────────── */
+    html:root[data-theme="dark"] .abp-badge { color: #93c5fd; background: rgba(96, 165, 250, .14); }
+    html:root[data-theme="dark"] .abp-sub { color: #94a3b8; }
+    html:root[data-theme="dark"] .abp-story .abp-p { color: #cbd5e1; }
+    html:root[data-theme="dark"] .abp-mvv__text,
+    html:root[data-theme="dark"] .abp-feature__text,
+    html:root[data-theme="dark"] .abp-team__bio,
+    html:root[data-theme="dark"] .abp-quote__text,
+    html:root[data-theme="dark"] .abp-cta__text,
+    html:root[data-theme="dark"] .abp-section__desc,
+    html:root[data-theme="dark"] .abp-stat__label { color: #94a3b8; }
+    html:root[data-theme="dark"] .abp-stat__icon,
+    html:root[data-theme="dark"] .abp-mvv__icon,
+    html:root[data-theme="dark"] .abp-feature__icon { background: rgba(96, 165, 250, .14); color: #93c5fd; }
+    html:root[data-theme="dark"] .abp-team__role { color: #93c5fd; }
+    html:root[data-theme="dark"] .abp-quote__author { border-top-color: rgba(255, 255, 255, .08); }
+    html:root[data-theme="dark"] .abp-quote__initial { background: rgba(96, 165, 250, .16); color: #bfdbfe; }
+    html:root[data-theme="dark"] .abp-cta { border-color: rgba(96, 165, 250, .25); }
 </style>
 
 @code {
-    private List<TeamMemberDto>? teamMembers;
-    private List<TestimonialDto>? testimonials;
-    private bool _loadingTeam = true;
-    private string _aboutJsonLd = "";
+    private AboutPageDto? _content;
+    private List<TeamMemberDto> _teamMembers = new();
+    private List<TestimonialDto> _testimonials = new();
+    private bool _loading = true;
+    private string _seoTitle = "درباره ارورسرویس | فروشگاه قطعات، تعمیرات و آموزش لوازم خانگی";
+    private string _seoDescription = "ارورسرویس؛ بانک کدهای خطا، فروشگاه قطعات یدکی و خدمات تعمیر تخصصی لوازم خانگی.";
+    private string? _seoKeywords = "درباره ارورسرویس, تعمیر لوازم خانگی, کدهای خطا, فروشگاه قطعات";
+    private string _jsonLd = "";
+
+    private sealed record StatItem(string Icon, string Label, string Value);
+    private List<StatItem> StatsItems { get; } = new();
 
     protected override async Task OnInitializedAsync()
     {
-        _aboutJsonLd = $@"{{
-          ""@context"": ""https://schema.org"",
-          ""@type"": ""AboutPage"",
-          ""name"": ""درباره ارورسرویس"",
-          ""description"": ""ارورسرویس مرجع تخصصی کدهای خطا، تعمیرات و آموزش لوازم خانگی""
-        }}";
+        var contentTask = LoadContentAsync();
+        var teamTask = LoadTeamAsync();
+        var testimonialsTask = LoadTestimonialsAsync();
+
+        await Task.WhenAll(contentTask, teamTask, testimonialsTask);
+
+        BuildStats();
+        BuildSeo();
+        _loading = false;
+    }
+
+    private async Task LoadContentAsync()
+    {
         try
         {
-            var teamTask = Http.GetFromJsonAsync<List<TeamMemberDto>>("api/teammembers?onlyPublished=true");
-            var testimonialTask = Http.GetFromJsonAsync<List<TestimonialDto>>("api/trust/testimonials");
-            await Task.WhenAll(teamTask, testimonialTask);
-            teamMembers = teamTask.Result;
-            testimonials = testimonialTask.Result;
+            _content = await Http.GetFromJsonAsync<AboutPageDto>("api/about");
         }
-        catch { }
-        _loadingTeam = false;
+        catch
+        {
+            _content = null;
+        }
+    }
+
+    private async Task LoadTeamAsync()
+    {
+        try
+        {
+            _teamMembers = await Http.GetFromJsonAsync<List<TeamMemberDto>>("api/teammembers?onlyPublished=true") ?? new();
+        }
+        catch { _teamMembers = new(); }
+    }
+
+    private async Task LoadTestimonialsAsync()
+    {
+        try
+        {
+            var items = await Http.GetFromJsonAsync<List<TestimonialDto>>("api/trust/testimonials") ?? new();
+            _testimonials = items.Take(6).ToList();
+        }
+        catch { _testimonials = new(); }
+    }
+
+    private void BuildStats()
+    {
+        StatsItems.Clear();
+        if (_content == null || !_content.ShowStats) return;
+
+        var stats = _content.Stats ?? new AboutStatsDto();
+        if (_content.ShowStatExperience)
+            StatsItems.Add(new StatItem("clock", "سال تجربه", stats.ExperienceYears.ToString("N0")));
+        if (_content.ShowStatErrorCodes)
+            StatsItems.Add(new StatItem("list", "کد خطای ثبت‌شده", stats.ErrorCodesCount.ToString("N0")));
+        if (_content.ShowStatServices)
+            StatsItems.Add(new StatItem("wrench", "رسید و خدمت ثبت‌شده", stats.ServicesCount.ToString("N0")));
+        if (_content.ShowStatProducts)
+            StatsItems.Add(new StatItem("cart", "محصول فروشگاه", stats.ProductsCount.ToString("N0")));
+        if (_content.ShowStatAcademy)
+            StatsItems.Add(new StatItem("book", "محتوای آموزشی", stats.AcademyItemsCount.ToString("N0")));
+        if (_content.ShowStatMonitoring)
+            StatsItems.Add(new StatItem("pulse", "دستگاه پایش‌شده", stats.MonitoringCount.ToString("N0")));
+        if (_content.ShowStatWorkshops)
+            StatsItems.Add(new StatItem("people", "کارگاه همکار", stats.WorkshopsCount.ToString("N0")));
+    }
+
+    private void BuildSeo()
+    {
+        if (_content == null) return;
+
+        if (!string.IsNullOrWhiteSpace(_content.SeoTitle)) _seoTitle = _content.SeoTitle;
+        if (!string.IsNullOrWhiteSpace(_content.SeoDescription)) _seoDescription = _content.SeoDescription;
+        if (!string.IsNullOrWhiteSpace(_content.SeoKeywords)) _seoKeywords = _content.SeoKeywords;
+
+        try
+        {
+            _jsonLd = JsonSerializer.Serialize(new
+            {
+                @context = "https://schema.org",
+                @type = "AboutPage",
+                name = _seoTitle,
+                description = _seoDescription,
+                mainEntity = new
+                {
+                    @type = "Organization",
+                    name = "ارورسرویس",
+                    url = Nav.BaseUri.TrimEnd('/'),
+                    description = _content.HeroSubtitle,
+                    foundingDate = _content.FoundingYear.ToString()
+                }
+            }, new JsonSerializerOptions
+            {
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
+        }
+        catch
+        {
+            _jsonLd = "";
+        }
+    }
+
+    private static IEnumerable<string> Paragraphs(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) yield break;
+
+        var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        foreach (var block in normalized.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+        {
+            var paragraph = block.Trim();
+            if (paragraph.Length > 0) yield return paragraph;
+        }
+    }
+
+    private static string InitialOf(string? name)
+    {
+        var trimmed = (name ?? string.Empty).Trim();
+        return trimmed.Length == 0 ? "?" : trimmed[..1];
     }
 }

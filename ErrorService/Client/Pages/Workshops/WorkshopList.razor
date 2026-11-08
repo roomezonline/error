@@ -29,6 +29,43 @@
         </p>
     </header>
 
+    @if (!isLoading && items.Count > 0)
+    {
+        <div class="wsl-tools" dir="rtl">
+            <div class="wsl-search">
+                <span class="oi oi-magnifying-glass" aria-hidden="true"></span>
+                <input type="search" placeholder="نام تعمیرگاه، مالک یا شهر..." @bind="search" @bind:event="oninput" aria-label="جستجوی همکاران" />
+                @if (!string.IsNullOrWhiteSpace(search))
+                {
+                    <button type="button" class="wsl-search__clear" @onclick="ClearSearch" aria-label="پاک کردن جستجو">&times;</button>
+                }
+            </div>
+
+            <select class="wsl-select" @bind="provinceFilter" @bind:after="OnProvinceChanged" aria-label="استان">
+                <option value="">همه استان‌ها</option>
+                @foreach (var p in ProvinceOptions)
+                {
+                    <option value="@p">@p</option>
+                }
+            </select>
+
+            <select class="wsl-select" @bind="cityFilter" disabled="@string.IsNullOrEmpty(provinceFilter)" aria-label="شهر">
+                <option value="">همه شهرها</option>
+                @foreach (var c in CityOptions)
+                {
+                    <option value="@c">@c</option>
+                }
+            </select>
+
+            @if (HasFilters)
+            {
+                <button type="button" class="wsl-clear" @onclick="ResetFilters">حذف فیلترها</button>
+            }
+
+            <span class="wsl-count">@FilteredItems.Count همکار</span>
+        </div>
+    }
+
     @if (isLoading)
     {
         <div class="wsl-grid" aria-hidden="true">
@@ -46,10 +83,18 @@
             <a href="/" class="wsl-btn">بازگشت به خانه</a>
         </div>
     }
+    else if (FilteredItems.Count == 0)
+    {
+        <div class="wsl-empty">
+            <span class="oi oi-magnifying-glass"></span>
+            <p>همکاری با این فیلترها پیدا نشد. فیلترها را تغییر دهید.</p>
+            <button type="button" class="wsl-btn" @onclick="ResetFilters">حذف فیلترها</button>
+        </div>
+    }
     else
     {
         <div class="wsl-grid">
-            @foreach (var it in items)
+            @foreach (var it in FilteredItems)
             {
                 <a class="wsl-card" href="/workshops/@it.Id">
                     <div class="wsl-card__media">
@@ -83,6 +128,17 @@
                     </div>
                 </a>
             }
+        </div>
+    }
+
+    @if (!isLoading && items.Count > 0)
+    {
+        <div class="wsl-cta">
+            <div>
+                <strong>تعمیرکار شهر شما در این فهرست نیست؟</strong>
+                <p>درخواست تعمیر ثبت کنید تا کارشناسان ما در اولین فرصت با شما هماهنگ کنند.</p>
+            </div>
+            <a href="/admission/repair" class="wsl-btn">ثبت درخواست تعمیر</a>
         </div>
     }
 </div>
@@ -127,6 +183,72 @@
     }
     .wsl-title { font-size: clamp(1.5rem, 4vw, 2.1rem); font-weight: 800; margin: 0 0 .7rem; }
     .wsl-sub { max-width: 640px; margin: 0 auto; color: var(--wsl-muted); line-height: 2.05; font-size: .95rem; }
+
+    .wsl-tools {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .6rem;
+        margin-bottom: 1.25rem;
+    }
+    .wsl-search {
+        position: relative;
+        display: flex;
+        align-items: center;
+        flex: 1 1 260px;
+        background: #fff;
+        border: 1px solid var(--wsl-line);
+        border-radius: 12px;
+        padding: 0 .8rem;
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .wsl-search:focus-within { border-color: var(--wsl-blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+    .wsl-search .oi { color: var(--wsl-muted); font-size: .9rem; }
+    .wsl-search input {
+        flex: 1;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        padding: .7rem .55rem;
+        font: inherit;
+        font-size: .9rem;
+        color: var(--wsl-ink);
+        min-width: 0;
+    }
+    .wsl-search__clear {
+        border: 0;
+        background: transparent;
+        color: var(--wsl-muted);
+        font-size: 1.15rem;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0 .2rem;
+    }
+    .wsl-select {
+        border: 1px solid var(--wsl-line);
+        border-radius: 12px;
+        background: #fff;
+        padding: .68rem .8rem;
+        font: inherit;
+        font-size: .88rem;
+        color: var(--wsl-ink);
+        min-width: 150px;
+        cursor: pointer;
+    }
+    .wsl-select:disabled { opacity: .55; cursor: not-allowed; }
+    .wsl-clear {
+        border: 1px dashed #cbd5e1;
+        background: transparent;
+        border-radius: 12px;
+        padding: .62rem .9rem;
+        font: inherit;
+        font-size: .82rem;
+        font-weight: 700;
+        color: var(--wsl-muted);
+        cursor: pointer;
+    }
+    .wsl-clear:hover { color: var(--wsl-blue); border-color: var(--wsl-blue); }
+    .wsl-count { margin-inline-start: auto; font-size: .82rem; font-weight: 700; color: var(--wsl-muted); }
 
     .wsl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1.1rem; }
 
@@ -198,16 +320,96 @@
     .wsl-skel { height: 290px; border-radius: 18px; background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%); background-size: 400% 100%; animation: wslShimmer 1.4s ease infinite; }
     @@keyframes wslShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
+    .wsl-cta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-top: 2rem;
+        padding: 1.15rem 1.3rem;
+        border: 1px solid var(--wsl-line);
+        border-radius: 16px;
+        background: linear-gradient(135deg, #f8fafc, #eef2ff);
+    }
+    .wsl-cta strong { display: block; font-size: .98rem; margin-bottom: .3rem; }
+    .wsl-cta p { margin: 0; font-size: .86rem; color: var(--wsl-muted); line-height: 1.9; }
+    .wsl-cta .wsl-btn { margin-top: 0; }
+
     @@media (max-width: 575.98px) {
         .wsl { padding: 1rem .85rem 2.5rem; }
         .wsl-head { padding: 1.4rem 1rem; }
         .wsl-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .9rem; }
+        .wsl-search { flex-basis: 100%; }
+        .wsl-select { flex: 1 1 45%; min-width: 0; }
+        .wsl-count { margin-inline-start: 0; width: 100%; }
+        .wsl-cta { flex-direction: column; align-items: flex-start; }
     }
 </style>
 
 @code {
     private List<WorkshopDto> items = new();
     private bool isLoading = true;
+
+    private string search = "";
+    private string provinceFilter = "";
+    private string cityFilter = "";
+
+    private List<WorkshopDto> FilteredItems => items.Where(MatchesFilter).ToList();
+
+    private IEnumerable<string> ProvinceOptions => items
+        .Select(i => i.ProvinceName)
+        .Where(n => !string.IsNullOrWhiteSpace(n))
+        .Select(n => n!)
+        .Distinct()
+        .OrderBy(n => n);
+
+    private IEnumerable<string> CityOptions => items
+        .Where(i => string.IsNullOrEmpty(provinceFilter)
+                    || string.Equals(i.ProvinceName, provinceFilter, StringComparison.Ordinal))
+        .Select(i => i.CityName)
+        .Where(n => !string.IsNullOrWhiteSpace(n))
+        .Select(n => n!)
+        .Distinct()
+        .OrderBy(n => n);
+
+    private bool HasFilters => !string.IsNullOrWhiteSpace(search)
+                               || !string.IsNullOrEmpty(provinceFilter)
+                               || !string.IsNullOrEmpty(cityFilter);
+
+    private bool MatchesFilter(WorkshopDto w)
+    {
+        if (!string.IsNullOrEmpty(provinceFilter)
+            && !string.Equals(w.ProvinceName, provinceFilter, StringComparison.Ordinal))
+            return false;
+
+        if (!string.IsNullOrEmpty(cityFilter)
+            && !string.Equals(w.CityName, cityFilter, StringComparison.Ordinal))
+            return false;
+
+        var q = SearchNormalizer.Normalize(search);
+        if (q.Length == 0)
+            return true;
+
+        var haystack = SearchNormalizer.Normalize(
+            $"{w.WorkshopName} {w.OwnerFullName} {w.CityName} {w.ProvinceName} {w.Address}");
+        return haystack.Contains(q);
+    }
+
+    private void OnProvinceChanged()
+    {
+        if (!string.IsNullOrEmpty(cityFilter) && !CityOptions.Contains(cityFilter))
+            cityFilter = "";
+    }
+
+    private void ClearSearch() => search = "";
+
+    private void ResetFilters()
+    {
+        search = "";
+        provinceFilter = "";
+        cityFilter = "";
+    }
 
     private const string BaseUrl = "https://errorservice.ir";
 

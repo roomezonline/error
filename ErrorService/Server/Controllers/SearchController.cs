@@ -136,13 +136,107 @@ public class SearchController : ControllerBase
             ImageUrl = a.CoverImageUrl
         }).ToList();
 
+        var workshops = await _context.Workshops
+            .AsNoTracking()
+            .Where(w =>
+                w.IsActive && !w.IsDeleted && w.ShowInCustomersRow &&
+                (w.WorkshopName.Contains(q) ||
+                 w.OwnerFullName.Contains(q) ||
+                 w.Address.Contains(q) ||
+                 w.City.Name.Contains(q) ||
+                 w.Province.Name.Contains(q)))
+            .OrderBy(w => w.WorkshopName)
+            .Skip(skip)
+            .Take(take)
+            .Select(w => new SearchResultItemDto
+            {
+                Type = "workshop",
+                Id = w.Id,
+                Title = w.WorkshopName,
+                Subtitle = w.City.Name + "، " + w.Province.Name,
+                Url = $"/workshops/{w.Id}",
+                ImageUrl = w.ImageUrl
+            })
+            .ToListAsync(ct);
+
+        var sensors = await _context.SensorFinderRecords
+            .AsNoTracking()
+            .Where(s =>
+                s.SensorName.Contains(q) ||
+                (s.SensorType != null && s.SensorType.Contains(q)) ||
+                (s.SizeText != null && s.SizeText.Contains(q)) ||
+                (s.Notes != null && s.Notes.Contains(q)) ||
+                s.Device.Name.Contains(q))
+            .OrderBy(s => s.SensorName)
+            .Skip(skip)
+            .Take(take)
+            .Select(s => new SearchResultItemDto
+            {
+                Type = "sensor",
+                Id = s.Id,
+                Title = s.SensorName,
+                Subtitle = s.SensorType == null ? s.Device.Name : s.Device.Name + " • " + s.SensorType,
+                Url = $"/technical/sensor-finder?deviceId={s.DeviceId}",
+                ImageUrl = s.Images.OrderBy(i => i.SortOrder).Select(i => i.Url).FirstOrDefault()
+            })
+            .ToListAsync(ct);
+
+        var disabledCalculators = CalculatorCatalog.ParseDisabled(
+            await _context.SiteSettings.AsNoTracking()
+                .Select(s => s.CalculatorsDisabled)
+                .FirstOrDefaultAsync(ct));
+
+        var normalizedQuery = SearchNormalizer.Normalize(q);
+        var calculators = CalculatorCatalog.Tools
+            .Where(t => !disabledCalculators.Contains(t.Key))
+            .Where(t => normalizedQuery.Length == 0
+                        || SearchNormalizer.Normalize(t.Title).Contains(normalizedQuery)
+                        || SearchNormalizer.Normalize(t.ShortDescription).Contains(normalizedQuery)
+                        || SearchNormalizer.Normalize(t.Keywords).Contains(normalizedQuery))
+            .Skip(skip)
+            .Take(take)
+            .Select(t => new SearchResultItemDto
+            {
+                Type = "calculator",
+                Id = 0,
+                Title = t.Title,
+                Subtitle = t.ShortDescription,
+                Url = $"/technical/calculators?tool={t.Key}"
+            })
+            .ToList();
+
+        var faq = await _context.SiteFaqEntries
+            .AsNoTracking()
+            .Where(f =>
+                f.IsEnabled &&
+                (f.Question.Contains(q) ||
+                 f.Answer.Contains(q) ||
+                 (f.Keywords != null && f.Keywords.Contains(q))))
+            .OrderBy(f => f.SortOrder)
+            .ThenBy(f => f.Id)
+            .Skip(skip)
+            .Take(take)
+            .Select(f => new SearchResultItemDto
+            {
+                Type = "faq",
+                Id = f.Id,
+                Title = f.Question,
+                Subtitle = f.Answer,
+                Url = $"/faq#faq-item-{f.Id}"
+            })
+            .ToListAsync(ct);
+
         return Ok(new SearchResponseDto
         {
             Products = products,
             News = news,
             ErrorCodes = errorCodes,
             Courses = courses,
-            Articles = articleItems
+            Articles = articleItems,
+            Workshops = workshops,
+            Sensors = sensors,
+            Calculators = calculators,
+            Faq = faq
         });
     }
 

@@ -1,0 +1,270 @@
+@page "/admission/track"
+@using ErrorService.Shared
+@using ErrorService.Client.Utils
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject ErrorService.Client.Services.AuthService Auth
+@inject ErrorService.Client.Services.ToastService Toast
+
+<HeadContent>
+    <meta name="robots" content="noindex, nofollow" />
+</HeadContent>
+
+<PageTitle>پیگیری درخواست پذیرش | ارورسرویس</PageTitle>
+
+<div class="atrk py-5" dir="rtl">
+    <div class="container" style="max-width: 880px;">
+        <nav class="atrk-bc" aria-label="مسیر صفحه">
+            <a href="/">خانه</a>
+            <span>/</span>
+            <a href="/admission/repair">درخواست تعمیر</a>
+            <span>/</span>
+            <span class="cur">پیگیری درخواست</span>
+        </nav>
+
+        <header class="atrk-head">
+            <h1>پیگیری درخواست پذیرش</h1>
+            <p>شماره موبایلی که هنگام ثبت درخواست وارد کرده‌اید را بنویسید. در صورت نیاز، شماره درخواست هم وارد کنید.</p>
+        </header>
+
+        <div class="atrk-form">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label small">شماره درخواست (اختیاری)</label>
+                    <input class="form-control ltr" dir="ltr" inputmode="numeric" @bind="request.Id" placeholder="مثلا 120" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small">شماره موبایل</label>
+                    <input class="form-control ltr" dir="ltr" inputmode="tel" maxlength="11" @bind="request.Mobile" placeholder="09xxxxxxxxx" />
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button class="btn btn-primary w-100 fw-bold" @onclick="Search" disabled="@isLoading">
+                        @if (isLoading) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                        جستجو
+                    </button>
+                </div>
+
+                @if (otpRequired)
+                {
+                    <div class="col-md-8">
+                        <label class="form-label small">کد تایید پیامکی</label>
+                        <input class="form-control ltr" dir="ltr" inputmode="numeric" maxlength="6" @bind="request.VerificationCode" placeholder="کد ۶ رقمی" />
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button class="btn btn-outline-primary w-100" @onclick="SendOtp" disabled="@(isSendingOtp || cooldownRemaining > 0 || !IsPhoneValid)">
+                            @if (isSendingOtp)
+                            {
+                                <span class="spinner-border spinner-border-sm"></span>
+                            }
+                            else if (cooldownRemaining > 0)
+                            {
+                                <span>@cooldownRemaining ثانیه</span>
+                            }
+                            else
+                            {
+                                <span>ارسال کد</span>
+                            }
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (results.Count > 0)
+        {
+            <div class="atrk-results">
+                @foreach (var item in results)
+                {
+                    <article class="atrk-card">
+                        <div class="atrk-card__head">
+                            <div>
+                                <div class="small text-muted">درخواست @item.TypeTitle</div>
+                                <div class="atrk-id" dir="ltr">#@item.Id</div>
+                            </div>
+                            <span class="atrk-badge @item.Status">@item.StatusTitle</span>
+                        </div>
+
+                        <div class="atrk-meta">
+                            <div><span class="k">ثبت:</span> @PersianDate.ToJalaliDateTime(item.CreatedAt)</div>
+                            @if (item.UpdatedAt.HasValue)
+                            {
+                                <div><span class="k">آخرین به‌روزرسانی:</span> @PersianDate.ToJalaliDateTime(item.UpdatedAt.Value)</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(item.DeviceTypeName))
+                            {
+                                <div><span class="k">دستگاه:</span> @item.DeviceTypeName @item.DeviceBrandName</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(item.AssignedWorkshopName))
+                            {
+                                <div><span class="k">کارگاه:</span> @item.AssignedWorkshopName</div>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(item.AdminNote))
+                        {
+                            <div class="atrk-note">
+                                <div class="atrk-note__title">یادداشت کارشناس</div>
+                                <div class="atrk-note__body">@item.AdminNote</div>
+                            </div>
+                        }
+                    </article>
+                }
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="atrk-empty">
+                <span class="oi oi-warning"></span>
+                <p>@errorMessage</p>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .atrk { font-family: Vazirmatn, Tahoma, sans-serif; color: #0f172a; }
+    .atrk-bc { display: flex; flex-wrap: wrap; gap: .4rem; font-size: .82rem; color: #64748b; margin-bottom: 1rem; }
+    .atrk-bc a { color: #64748b; text-decoration: none; }
+    .atrk-bc a:hover { color: #2563eb; }
+    .atrk-bc .cur { color: #0f172a; font-weight: 700; }
+    .atrk-head { background: linear-gradient(135deg, #f8fafc, #eef2ff); border: 1px solid #e2e8f0; border-radius: 20px; padding: 1.6rem; margin-bottom: 1.25rem; }
+    .atrk-head h1 { font-size: clamp(1.35rem, 3.5vw, 1.9rem); font-weight: 800; margin: 0 0 .5rem; }
+    .atrk-head p { margin: 0; color: #64748b; line-height: 2; font-size: .92rem; }
+    .atrk-form { background: #fff; border: 1px solid #e2e8f0; border-radius: 20px; padding: 1.25rem; }
+    .atrk-results { display: grid; gap: 1rem; margin-top: 1.25rem; }
+    .atrk-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 1.1rem 1.25rem; }
+    .atrk-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; margin-bottom: .75rem; }
+    .atrk-id { font-size: 1.3rem; font-weight: 800; }
+    .atrk-badge { font-size: .78rem; font-weight: 800; padding: .35rem .8rem; border-radius: 999px; background: #eef2ff; color: #3730a3; }
+    .atrk-badge.done { background: #ecfdf5; color: #047857; }
+    .atrk-badge.rejected, .atrk-badge.canceled { background: #fef2f2; color: #b91c1c; }
+    .atrk-badge.processing { background: #eff6ff; color: #1d4ed8; }
+    .atrk-badge.verified { background: #f0fdf4; color: #15803d; }
+    .atrk-meta { display: grid; gap: .35rem; font-size: .88rem; color: #334155; }
+    .atrk-meta .k { color: #64748b; }
+    .atrk-note { margin-top: .8rem; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: .7rem .9rem; }
+    .atrk-note__title { font-size: .78rem; font-weight: 800; color: #475569; margin-bottom: .35rem; }
+    .atrk-note__body { font-size: .88rem; line-height: 1.9; white-space: pre-line; }
+    .atrk-empty { text-align: center; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 18px; padding: 2rem 1rem; margin-top: 1.25rem; }
+    .atrk-empty .oi { font-size: 1.6rem; display: block; margin-bottom: .5rem; }
+</style>
+
+@code {
+    private AdmissionTrackRequest request = new();
+    private List<AdmissionTrackingDto> results = new();
+    private string? errorMessage;
+    private bool isLoading;
+    private bool isSendingOtp;
+    private bool otpRequired;
+    private int cooldownRemaining;
+    [SupplyParameterFromQuery] public int? id { get; set; }
+    [SupplyParameterFromQuery] public string? phone { get; set; }
+
+    private bool IsPhoneValid =>
+        !string.IsNullOrWhiteSpace(request.Mobile) &&
+        request.Mobile.Length == 11 &&
+        request.Mobile.StartsWith("09");
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (id is > 0) request.Id = id;
+        if (!string.IsNullOrWhiteSpace(phone)) request.Mobile = phone;
+
+        try
+        {
+            var requirements = await Http.GetFromJsonAsync<OtpRequirementsDto>("api/otp/requirements");
+            otpRequired = requirements?.AdmissionTracking ?? false;
+        }
+        catch
+        {
+            otpRequired = false;
+        }
+    }
+
+    private async Task SendOtp()
+    {
+        if (!IsPhoneValid)
+        {
+            Toast.ShowError("شماره موبایل معتبر نیست");
+            return;
+        }
+
+        isSendingOtp = true;
+        try
+        {
+            var result = await Auth.SendOtpAsync(request.Mobile, OtpPurposes.AdmissionTracking);
+            if (result.Success)
+            {
+                Toast.ShowSuccess(result.Message ?? "کد تایید ارسال شد");
+                await StartCooldownAsync(60);
+            }
+            else
+            {
+                Toast.ShowError(result.Message ?? "خطا در ارسال کد تایید");
+            }
+        }
+        finally
+        {
+            isSendingOtp = false;
+        }
+    }
+
+    private async Task Search()
+    {
+        if (!IsPhoneValid)
+        {
+            Toast.ShowError("شماره موبایل معتبر نیست");
+            return;
+        }
+
+        if (otpRequired && string.IsNullOrWhiteSpace(request.VerificationCode))
+        {
+            Toast.ShowError("کد تایید را وارد کنید");
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = null;
+        results = new();
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/online-admission/track", request);
+            if (resp.IsSuccessStatusCode)
+            {
+                results = await resp.Content.ReadFromJsonAsync<List<AdmissionTrackingDto>>() ?? new();
+                if (results.Count == 0)
+                    errorMessage = "درخواستی با این مشخصات یافت نشد.";
+            }
+            else
+            {
+                errorMessage = (await resp.Content.ReadAsStringAsync()).Trim('"');
+            }
+        }
+        catch
+        {
+            errorMessage = "خطا در ارتباط با سرور. لطفاً دوباره تلاش کنید.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task StartCooldownAsync(int seconds)
+    {
+        cooldownRemaining = Math.Max(0, seconds);
+        while (cooldownRemaining > 0)
+        {
+            await Task.Delay(1000);
+            cooldownRemaining--;
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+        }
+    }
+}

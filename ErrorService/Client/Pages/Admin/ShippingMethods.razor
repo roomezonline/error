@@ -140,6 +140,11 @@ else
                             </div>
                         </div>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">الگوی لینک رهگیری (اختیاری)</label>
+                        <InputText class="form-control ltr" @bind-Value="editModel.TrackingUrlTemplate" placeholder="https://tracking.post.ir/?id={tracking}" />
+                        <div class="form-text">کد رهگیری جای <span dir="ltr">{tracking}</span> قرار می‌گیرد. خالی بماند تا لینک پیش‌فرض شرکت حمل استفاده شود.</div>
+                    </div>
                     <div class="mb-2">
                         <div class="form-check form-switch">
                             <input type="checkbox" class="form-check-input" id="freeCheck"
@@ -394,6 +399,7 @@ else
             EstimatedDays = m.EstimatedDays,
             IsActive = m.IsActive,
             IsFree = m.IsFree,
+            TrackingUrlTemplate = m.TrackingUrlTemplate,
             SortOrder = m.SortOrder
         };
         showEditor = true;

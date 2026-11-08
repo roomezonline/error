@@ -214,11 +214,12 @@ public sealed class ProductReviewsController : ControllerBase
         if (!reviewsEnabled)
             return BadRequest("ثبت دیدگاه در حال حاضر غیرفعال است.");
 
-        var productTitle = await _db.Products
+        var product = await _db.Products
             .Where(x => x.Id == productId)
-            .Select(x => x.Name)
+            .Select(x => new { x.Name, x.Slug })
             .FirstOrDefaultAsync();
-        if (productTitle == null) return NotFound("محصول یافت نشد");
+        if (product == null) return NotFound("محصول یافت نشد");
+        var productTitle = product.Name;
 
         if (request.ParentId.HasValue)
         {
@@ -249,20 +250,29 @@ public sealed class ProductReviewsController : ControllerBase
         _db.ProductReviews.Add(review);
         await _db.SaveChangesAsync();
 
-        if (!review.IsApproved)
+        if (!isAdminSubmitter)
         {
+            var status = review.IsApproved ? "منتشر شد" : "در انتظار تأیید";
+            var pagePath = SeoUrl.Product(productId,
+                string.IsNullOrWhiteSpace(product.Slug) ? null : Uri.EscapeDataString(product.Slug));
             await _notificationEvents.NotifyAsync(
                 eventType: "review.created",
                 values: new Dictionary<string, string?>
                 {
+                    ["UserName"] = review.FullName,
                     ["CustomerName"] = review.FullName,
-                    ["ProductTitle"] = productTitle
+                    ["ProductTitle"] = productTitle,
+                    ["Rating"] = review.Rating.ToString(),
+                    ["Content"] = NotificationEventService.CleanContent(review.Content),
+                    ["Status"] = status,
+                    ["PagePath"] = pagePath
                 },
                 idempotencyKey: $"review.created:{review.Id}",
                 fallbackSeverity: NotificationSeverity.Info,
-                fallbackTitle: "نظر جدید ثبت شد",
-                fallbackBody: $"{review.FullName} برای محصول «{productTitle}» نظر ثبت کرده است و در انتظار تأیید است.",
-                fallbackUrl: "/admin/product-reviews");
+                fallbackTitle: "نظر جدید برای محصول",
+                fallbackBody: $"محصول: {productTitle}\n{review.FullName}:\n{NotificationEventService.CleanContent(review.Content)}",
+                fallbackUrl: pagePath,
+                superAdminsOnly: true);
             await _db.SaveChangesAsync();
         }
 

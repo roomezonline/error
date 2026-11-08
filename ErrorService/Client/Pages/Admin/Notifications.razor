@@ -54,7 +54,7 @@
         <div class="ntf-card ntf-anim">
             <div class="gd-title"><span class="oi oi-info"></span> سطوح ارسال — از سوپر ادمین تا کاربران سایت</div>
             <div class="gd-grid">
-                <div class="gd-item"><span class="gd-n" style="background:#8b5cf618;color:#8b5cf6;">۱</span><div><b>سوپر ادمین</b><p>ارسال مستقیم به حساب سوپر ادمین</p></div></div>
+                <div class="gd-item"><span class="gd-n" style="background:#8b5cf618;color:#8b5cf6;">۱</span><div><b>سوپر ادمین</b><p>همه سوپر ادمین‌ها؛ چه حساب سایت و چه کاربر کارگاه</p></div></div>
                 <div class="gd-item"><span class="gd-n" style="background:#0d6efd18;color:#0d6efd;">۲</span><div><b>مدیران مجاز</b><p>دارندگان دسترسی «مشاهده اعلان‌ها»</p></div></div>
                 <div class="gd-item"><span class="gd-n" style="background:#16a34a18;color:#16a34a;">۳</span><div><b>پرسنل کارگاه</b><p>کاربران فعال کارگاه انتخابی</p></div></div>
                 <div class="gd-item"><span class="gd-n" style="background:#f59e0b18;color:#f59e0b;">۴</span><div><b>کاربران سایت</b><p>همه اعضای فعال + خریداران محصولات</p></div></div>
@@ -139,7 +139,7 @@
                                     <div class="seg @(segSuperAdmin ? "on" : "")" @onclick="() => ToggleSeg(ref segSuperAdmin)">
                                         <span class="seg__ck">@(segSuperAdmin ? "✓" : "")</span>
                                         <span class="seg__ic" style="background:#8b5cf615;color:#8b5cf6"><span class="oi oi-star"></span></span>
-                                        <div class="seg__tx"><b>سوپر ادمین</b><p>مدیر ارشد سامانه</p></div>
+                                        <div class="seg__tx"><b>سوپر ادمین</b><p>همه سوپر ادمین‌ها (سایت یا کارگاه)</p></div>
                                     </div>
                                 </div>
                             </div>
@@ -680,10 +680,20 @@
                                 </div>
 
                                 <div class="rl-foot">
-                                    <label class="rl-bc" title="ارسال هم‌زمان به دارندگان دسترسی مشاهده اعلان‌ها">
-                                        <input type="checkbox" disabled="@(!canManageRules)" @bind="rule.BroadcastToAdmins" />
-                                        <span>ارسال هم‌زمان به مدیران مجاز</span>
-                                    </label>
+                                    @if (rule.EventType == "monitoring.alert")
+                                    {
+                                        <span class="rl-bc" style="cursor:default;" title="هشدار دستگاه فقط برای کاربران همان کارگاه ارسال می‌شود و به مدیران یا سایر کارگاه‌ها نمی‌رود.">
+                                            <span class="oi oi-people"></span>
+                                            <span>فقط کاربران کارگاه دستگاه</span>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <label class="rl-bc" title="@(rule.EventType == "order.created.admin" ? "ارسال به همه سوپر ادمین‌ها (حساب سایت و کاربر کارگاه)" : "ارسال هم‌زمان به دارندگان دسترسی مشاهده اعلان‌ها")">
+                                            <input type="checkbox" disabled="@(!canManageRules)" @bind="rule.BroadcastToAdmins" />
+                                            <span>@(rule.EventType == "order.created.admin" ? "ارسال به سوپر ادمین‌ها" : "ارسال هم‌زمان به مدیران مجاز")</span>
+                                        </label>
+                                    }
                                     <span class="rl-upd">آخرین ویرایش: @(rule.UpdatedAt == default ? "—" : PersianDate.ToJalaliDateTime(rule.UpdatedAt))</span>
                                     @if (IsRuleDirty(rule))
                                     {

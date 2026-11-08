@@ -105,8 +105,8 @@
     {
         try
         {
-            var errorsTask = Http.GetFromJsonAsync<List<ErrorCodePreview>>("api/technical/error-codes/recent?take=6");
-            var sensorsTask = Http.GetFromJsonAsync<List<SensorPreview>>("api/sensor-finder/records/recent?take=6");
+            var errorsTask = Http.GetFromJsonAsync<List<ErrorCodePreview>>("api/technical/error-codes/random?take=6");
+            var sensorsTask = Http.GetFromJsonAsync<List<SensorPreview>>("api/sensor-finder/records/random?take=6");
 
             await Task.WhenAll(errorsTask, sensorsTask);
 

@@ -11,6 +11,8 @@ public sealed class TrainingArticleDto
     public string? CoverImageUrl { get; set; }
     public bool IsPublished { get; set; }
     public bool IsPremium { get; set; }
+    public string? Category { get; set; }
+    public bool IsFeatured { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public List<TrainingArticleBlockDto> Blocks { get; set; } = new();
     public List<TrainingArticleCommentDto> Comments { get; set; } = new();
@@ -75,4 +77,9 @@ public sealed class TrainingArticleUpsertRequest
 
     public bool IsPublished { get; set; }
     public bool IsPremium { get; set; }
+
+    [MaxLength(120)]
+    public string? Category { get; set; }
+
+    public bool IsFeatured { get; set; }
 }

@@ -1,4 +1,4 @@
-        window.ensureHljs = () => {
+﻿        window.ensureHljs = () => {
             if (window.hljs && typeof window.hljs.configure === 'function') {
                 try { window.hljs.configure({ ignoreUnescapedHTML: true }); } catch (e) { }
             }
@@ -55,11 +55,32 @@
             input.click();
         };
 
+        window.__normalizeEditorLink = (raw) => {
+            const v = String(raw || '').trim();
+            if (!v) return '';
+
+            const lower = v.toLowerCase();
+            if (
+                lower.startsWith('http://') ||
+                lower.startsWith('https://') ||
+                lower.startsWith('mailto:') ||
+                lower.startsWith('tel:') ||
+                lower.startsWith('#')
+            ) {
+                return v;
+            }
+            if (v.startsWith('//')) return 'https:' + v;
+            if (v.startsWith('/')) return v;
+            if (v.includes('.')) return 'https://' + v;
+            return '/' + v;
+        };
+
         window.promptAndToggleLinkForQuill = (containerId) => {
             const container = document.getElementById(containerId);
             if (!container || !container.__quill) return;
 
             const quill = container.__quill;
+            container.__allowQuillFocus = true;
             const range = quill.getSelection(true);
             if (!range) return;
 
@@ -68,44 +89,7 @@
             const url = prompt('لینک را وارد کنید (برای حذف لینک، خالی بگذارید)', current);
             if (url === null) return; // canceled
 
-            const normalizeLink = (raw) => {
-                const v = String(raw || '').trim();
-                if (!v) return '';
-
-                const lower = v.toLowerCase();
-                // Keep explicit schemes
-                if (
-                    lower.startsWith('http://') ||
-                    lower.startsWith('https://') ||
-                    lower.startsWith('mailto:') ||
-                    lower.startsWith('tel:') ||
-                    lower.startsWith('#')
-                ) {
-                    return v;
-                }
-
-                // Protocol-relative //example.com
-                if (v.startsWith('//')) {
-                    return 'https:' + v;
-                }
-
-                // Internal absolute path
-                if (v.startsWith('/')) {
-                    return v;
-                }
-
-                // If it looks like a domain (contains a dot) treat as external
-                // e.g. www.errorservice.ir or errorservice.ir/path
-                if (v.includes('.')) {
-                    return 'https://' + v;
-                }
-
-                // Otherwise treat as internal relative route
-                // e.g. news/12 => /news/12
-                return '/' + v;
-            };
-
-            const val = normalizeLink(url);
+            const val = window.__normalizeEditorLink(url);
             if (!val) {
                 quill.format('link', false, 'user');
                 return;
@@ -143,6 +127,24 @@
                     Font.whitelist = ['vazirmatn', 'vazir', 'shabnam', 'sahel'];
                     Quill.register(Font, true);
 
+                    // Allow h1..h3 (news editor quick buttons)
+                    const Header = Quill.import('formats/header');
+                    Header.whitelist = [1, 2, 3];
+                    Quill.register(Header, true);
+
+                    // Keep relative/internal links instead of Quill's about:blank
+                    const Link = Quill.import('formats/link');
+                    if (Link && !Link.__relativePatched) {
+                        const originalSanitize = Link.sanitize;
+                        Link.sanitize = function (url) {
+                            const v = String(url || '').trim();
+                            if (!v) return originalSanitize.call(Link, v);
+                            if (/^(https?:|mailto:|tel:|#)/i.test(v) || v.startsWith('/')) return v;
+                            return originalSanitize.call(Link, v);
+                        };
+                        Link.__relativePatched = true;
+                    }
+
                     // Register Callout attribute formally in Quill (stable persistence)
                     // Produces: <p data-callout="info">...</p>
                     const Parchment = Quill.import('parchment');
@@ -150,6 +152,16 @@
                         scope: Parchment.Scope.BLOCK
                     });
                     Quill.register(CalloutAttr, true);
+
+                    const CtaAttr = new Parchment.Attributor.Attribute('cta', 'data-cta', {
+                        scope: Parchment.Scope.BLOCK
+                    });
+                    Quill.register(CtaAttr, true);
+
+                    const CaptionAttr = new Parchment.Attributor.Attribute('caption', 'data-caption', {
+                        scope: Parchment.Scope.BLOCK
+                    });
+                    Quill.register(CaptionAttr, true);
                 } catch (e) { console.error('Quill register error:', e); }
 
                 // Quill Pro: modules
@@ -297,7 +309,7 @@
             if (container && container.__quill) {
                 return container.__quill.root.innerHTML;
             }
-            return "";
+            return null;
         };
 
         window.destroyQuillEditor = (containerId) => {
@@ -321,6 +333,7 @@
                 delete container.__lastImageDom;
                 delete container.__quillDocMouseDownHandler;
                 delete container.__allowQuillFocus;
+                delete container.__editorStateBound;
             } catch (e) { }
             container.innerHTML = '';
             return true;
@@ -364,6 +377,7 @@
             if (!container || !container.__quill) return;
 
             const quill = container.__quill;
+            container.__allowQuillFocus = true;
             const range = quill.getSelection(true);
             if (!range) return;
 
@@ -378,11 +392,42 @@
             quill.formatLine(range.index, len, 'callout', calloutType, 'user');
         };
 
+        window.applyQuillHeader = (containerId, level) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            container.__allowQuillFocus = true;
+            const range = quill.getSelection(true);
+            if (!range) return;
+
+            const len = Math.max(1, range.length || 0);
+            quill.formatLine(range.index, len, 'header', level ? Number(level) : false, 'user');
+        };
+
+        window.applyQuillFormat = (containerId, name, value) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return;
+
+            const quill = container.__quill;
+            container.__allowQuillFocus = true;
+            const range = quill.getSelection(true);
+            if (!range) return;
+
+            const normalized = (value === null || value === undefined || value === '' || value === 'false') ? false : value;
+            if (range.length > 0) {
+                quill.formatText(range.index, range.length, name, normalized, 'user');
+            } else {
+                quill.format(name, normalized, 'user');
+            }
+        };
+
         window.exitCalloutAndContinue = (containerId) => {
             const container = document.getElementById(containerId);
             if (!container || !container.__quill) return;
 
             const quill = container.__quill;
+            container.__allowQuillFocus = true;
             const range = quill.getSelection(true);
             if (!range) return;
 
@@ -400,30 +445,31 @@
             }
         };
 
-        window.bindCalloutSelectorForQuill = (containerId, selectorId) => {
+        window.bindNewsEditorStateForQuill = (containerId) => {
             const container = document.getElementById(containerId);
-            const selector = document.getElementById(selectorId);
-            if (!container || !container.__quill || !selector) return false;
+            if (!container || !container.__quill) return false;
+            if (container.__editorStateBound) return true;
+            container.__editorStateBound = true;
 
             const quill = container.__quill;
 
-            const update = () => {
-                const range = quill.getSelection(true);
-                if (!range) return;
-                const fmt = quill.getFormat(range.index, 1);
-                const v = fmt && fmt.callout ? String(fmt.callout) : 'none';
-                if (selector.value !== v) selector.value = v;
+            const sync = () => {
+                const range = quill.getSelection();
+                const fmt = range ? quill.getFormat(range.index, Math.max(1, range.length || 1)) : {};
+                const callout = fmt && fmt.callout ? String(fmt.callout) : 'none';
+                const header = fmt && fmt.header ? String(fmt.header) : '';
+
+                document.querySelectorAll('[data-callout-btn]').forEach(btn => {
+                    btn.classList.toggle('is-active', (btn.getAttribute('data-callout-btn') || 'none') === callout);
+                });
+                document.querySelectorAll('[data-header-btn]').forEach(btn => {
+                    btn.classList.toggle('is-active', (btn.getAttribute('data-header-btn') || '') === header);
+                });
             };
 
-            if (selector.dataset.boundToQuill === '1') {
-                update();
-                return true;
-            }
-            selector.dataset.boundToQuill = '1';
-
-            quill.on('selection-change', () => update());
-            quill.on('text-change', () => update());
-            update();
+            quill.on('selection-change', sync);
+            quill.on('text-change', sync);
+            sync();
             return true;
         };
 
@@ -474,6 +520,60 @@
             const cols = prompt('تعداد ستون جدول؟', '3');
             if (cols === null) return;
             window.insertTableForQuill(containerId, rows, cols);
+        };
+
+        window.promptAndInsertCta = (containerId) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return false;
+
+            const label = prompt('متن دکمه (مثلاً: مشاهده محصول)', 'مشاهده بیشتر');
+            if (!label) return false;
+            const url = prompt('آدرس لینک دکمه', 'https://');
+            if (!url) return false;
+
+            const quill = container.__quill;
+            const link = window.__normalizeEditorLink ? (window.__normalizeEditorLink(url) || url) : url;
+            const range = quill.getSelection(true);
+            if (!range) return false;
+
+            container.__allowQuillFocus = true;
+            let index = range.index + (range.length || 0);
+            const text = String(label).trim();
+            quill.insertText(index, '\n' + text, 'user');
+            index += 1;
+            quill.formatLine(index, text.length, 'cta', '1', 'user');
+            quill.formatText(index, text.length, 'link', link, 'user');
+
+            const end = index + text.length;
+            quill.insertText(end, '\n', 'user');
+            quill.formatLine(end + 1, 1, 'cta', false, 'user');
+            quill.setSelection(end + 1, 0, 'user');
+            return true;
+        };
+
+        window.promptAndInsertCaption = (containerId) => {
+            const container = document.getElementById(containerId);
+            if (!container || !container.__quill) return false;
+
+            const quill = container.__quill;
+            const range = quill.getSelection(true);
+            if (!range) return false;
+
+            const caption = prompt('متن زیرنویس عکس را وارد کنید');
+            if (!caption) return false;
+
+            container.__allowQuillFocus = true;
+            let index = range.index + (range.length || 0);
+            const text = String(caption).trim();
+            quill.insertText(index, '\n' + text, 'user');
+            index += 1;
+            quill.formatLine(index, text.length, 'caption', '1', 'user');
+
+            const end = index + text.length;
+            quill.insertText(end, '\n', 'user');
+            quill.formatLine(end + 1, 1, 'caption', false, 'user');
+            quill.setSelection(end + 1, 0, 'user');
+            return true;
         };
 
         window.exitCurrentBlockAndAddParagraph = (containerId) => {
@@ -953,3 +1053,37 @@
                 console.log('Page loaded, openPrintPreview exists:', typeof window.openPrintPreview === 'function');
             });
         })();
+
+// ==== read-more picker (admin) ====
+window.captureNewsEditorRange = (containerId) => {
+    const container = document.getElementById(containerId);
+    if (!container || !container.__quill) return;
+    const range = container.__quill.getSelection(true);
+    if (range) container.__quill.__savedRange = { index: range.index, length: range.length };
+};
+
+window.insertReadMoreCard = (containerId, url, label) => {
+    const container = document.getElementById(containerId);
+    if (!container || !container.__quill) return false;
+
+    const quill = container.__quill;
+    const link = window.__normalizeEditorLink(url) || url;
+    const text = String(label || '').trim() || 'بیشتر مطالعه کنید';
+    const range = quill.__savedRange || quill.getSelection(true);
+    quill.__savedRange = null;
+    if (!range) return false;
+
+    container.__allowQuillFocus = true;
+    let index = range.index + (range.length || 0);
+    quill.insertText(index, '\n' + text, 'user');
+    index += 1;
+
+    quill.formatLine(index, text.length, 'callout', 'readmore', 'user');
+    quill.formatText(index, text.length, 'link', link, 'user');
+
+    const end = index + text.length;
+    quill.insertText(end, '\n', 'user');
+    quill.formatLine(end + 1, 1, 'callout', false, 'user');
+    quill.setSelection(end + 1, 0, 'user');
+    return true;
+};

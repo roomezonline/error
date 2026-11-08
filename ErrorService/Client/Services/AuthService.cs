@@ -26,9 +26,24 @@ public class AuthService
     public async Task<string?> GetTokenAsync() => await _storage.GetAsync(TokenKey);
     public async Task<string?> GetWorkshopTokenAsync() => await _storage.GetAsync("workshop_token");
 
+    /// <summary>آیا توکن ذخیره‌شده‌ای وجود دارد که تاریخ انقضای آن گذشته است؟</summary>
+    public async Task<bool> HasExpiredSessionAsync()
+    {
+        var token = await GetTokenAsync();
+        if (!string.IsNullOrWhiteSpace(token) && JwtParser.IsExpired(token)) return true;
+
+        var workshopToken = await GetWorkshopTokenAsync();
+        if (!string.IsNullOrWhiteSpace(workshopToken) && JwtParser.IsExpired(workshopToken)) return true;
+
+        return false;
+    }
+
+
     public async Task InitializeAsync()
     {
         var token = await GetTokenAsync() ?? await GetWorkshopTokenAsync();
+        if (!string.IsNullOrWhiteSpace(token) && JwtParser.IsExpired(token))
+            token = null;
         ApplyTokenToHttp(token);
     }
 
@@ -90,6 +105,63 @@ public class AuthService
     public async Task<(bool ok, string? error)> ChangePasswordAsync(ChangePasswordRequest request)
     {
         var resp = await _http.PutAsJsonAsync("api/auth/change-password", request);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        var msg = await resp.Content.ReadAsStringAsync();
+        return (false, string.IsNullOrWhiteSpace(msg) ? "خطا در تغییر رمز" : msg.Trim('"'));
+    }
+
+    public async Task<AuthPublicConfigDto?> GetPublicConfigAsync()
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<AuthPublicConfigDto>("api/auth/public-config");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<OtpResultDto> SendOtpAsync(string mobile, string purpose)
+    {
+        try
+        {
+            var resp = await _http.PostAsJsonAsync("api/otp/send", new SendOtpByPurposeRequest { Mobile = mobile, Purpose = purpose });
+            var body = await resp.Content.ReadFromJsonAsync<OtpResultDto>();
+            if (body != null) return body;
+
+            var text = await resp.Content.ReadAsStringAsync();
+            return new OtpResultDto { Success = false, Message = text.Trim('"') };
+        }
+        catch
+        {
+            return new OtpResultDto { Success = false, Message = "خطا در ارتباط با سرور" };
+        }
+    }
+
+    public async Task<OtpResultDto> SendPasswordResetOtpAsync(string phone)
+    {
+        try
+        {
+            var resp = await _http.PostAsJsonAsync("api/auth/forgot-password/send-otp", new PasswordResetSendRequest { PhoneNumber = phone });
+            if (resp.IsSuccessStatusCode)
+            {
+                var ok = await resp.Content.ReadFromJsonAsync<OtpResultDto>();
+                return ok ?? new OtpResultDto { Success = true };
+            }
+
+            var text = await resp.Content.ReadAsStringAsync();
+            return new OtpResultDto { Success = false, Message = string.IsNullOrWhiteSpace(text) ? "خطا در ارسال کد تایید" : text.Trim('"') };
+        }
+        catch
+        {
+            return new OtpResultDto { Success = false, Message = "خطا در ارتباط با سرور" };
+        }
+    }
+
+    public async Task<(bool ok, string? error)> ResetPasswordAsync(PasswordResetRequest request)
+    {
+        var resp = await _http.PostAsJsonAsync("api/auth/forgot-password/reset", request);
         if (resp.IsSuccessStatusCode) return (true, null);
         var msg = await resp.Content.ReadAsStringAsync();
         return (false, string.IsNullOrWhiteSpace(msg) ? "خطا در تغییر رمز" : msg.Trim('"'));

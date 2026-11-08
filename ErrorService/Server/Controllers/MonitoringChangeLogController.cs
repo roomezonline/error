@@ -61,11 +61,39 @@ public class MonitoringChangeLogController : ControllerBase
                 x.DataSnapshot,
                 x.CustomerReceiptId,
                 x.WorkshopId,
-                x.CreatedAtFa
+                x.CreatedAtFa,
+                x.MonitoringId,
+                x.OldValue,
+                x.NewValue,
+                x.CreatedAt
             })
             .ToListAsync();
 
-        return Ok(new { total, page, pageSize, items });
+        var runtimes = await MonitoringRuntimeResolver.ResolveStopsAsync(
+            _db,
+            items.Select(x => (x.Id, x.MonitoringId, x.ChangeType, x.OldValue, x.NewValue, x.CreatedAt)));
+
+        var responseItems = items.Select(x =>
+        {
+            runtimes.TryGetValue(x.Id, out var runtime);
+            var hasRuntime = runtime.Seconds > 0;
+
+            return new
+            {
+                x.Id,
+                x.DeviceCode,
+                x.ChangeType,
+                x.ChangeDescription,
+                x.DataSnapshot,
+                x.CustomerReceiptId,
+                x.WorkshopId,
+                x.CreatedAtFa,
+                RuntimeSeconds = hasRuntime ? runtime.Seconds : (long?)null,
+                RuntimeStartedAtFa = hasRuntime ? runtime.StartedAtFa : null
+            };
+        }).ToList();
+
+        return Ok(new { total, page, pageSize, items = responseItems });
     }
 
     [HttpGet("{id:int}")]

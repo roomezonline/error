@@ -1,0 +1,185 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="series-parallel" Title="سری و موازی مقاومت"
+           Subtitle="مقاومت معادل دو تا چهار مقاومت را در اتصال سری یا موازی محاسبه می‌کند."
+           Icon="oi-loop-square"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-seg" role="group" aria-label="نوع اتصال">
+        <button type="button" class="calc-seg__btn @(mode == "series" ? "is-active" : "")"
+                @onclick='() => SetMode("series")'>سری</button>
+        <button type="button" class="calc-seg__btn @(mode == "parallel" ? "is-active" : "")"
+                @onclick='() => SetMode("parallel")'>موازی</button>
+    </div>
+
+    <div class="calc-form">
+        <div class="calc-field">
+            <label class="calc-label" for="sp-r1">مقاومت ۱</label>
+            <input id="sp-r1" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 10" @bind="r1" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="sp-r2">مقاومت ۲</label>
+            <input id="sp-r2" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 22" @bind="r2" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="sp-r3">مقاومت ۳ (اختیاری)</label>
+            <input id="sp-r3" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="—" @bind="r3" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="sp-r4">مقاومت ۴ (اختیاری)</label>
+            <input id="sp-r4" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="—" @bind="r4" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field calc-field--full">
+            <label class="calc-label" for="sp-unit">واحد مقاومت‌ها</label>
+            <select id="sp-unit" class="calc-select" @bind="unit" @bind:after="PersistAsync">
+                <option value="Ω">اهم (Ω)</option>
+                <option value="kΩ">کیلواهم (kΩ)</option>
+                <option value="MΩ">مگااهم (MΩ)</option>
+            </select>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">مقاومت معادل</span>
+                    <span class="calc-result__value" dir="ltr">@Result.Equivalent</span>
+                </div>
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">تعداد مقاومت</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Count</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">کوچک‌ترین</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Min</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">بزرگ‌ترین</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Max</span>
+                </div>
+            </div>
+            <p class="calc-note mt-2 mb-0">@Result.Note</p>
+        </div>
+    }
+</CalcShell>
+
+@code {
+    private string mode = "series";
+    private double? r1 = 10;
+    private double? r2 = 22;
+    private double? r3;
+    private double? r4;
+    private string unit = "Ω";
+
+    protected override string StorageKey => "series-parallel";
+
+    private double Multiplier => unit == "MΩ" ? 1_000_000 : unit == "kΩ" ? 1_000 : 1;
+
+    private sealed class SpResult
+    {
+        public string Equivalent { get; init; } = "—";
+        public string Count { get; init; } = "—";
+        public string Min { get; init; } = "—";
+        public string Max { get; init; } = "—";
+        public string Note { get; init; } = "";
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private SpResult Result => Compute();
+
+    private SpResult Compute()
+    {
+        var values = new[] { r1, r2, r3, r4 }
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value * Multiplier)
+            .ToList();
+
+        if (values.Count < 2)
+            return new SpResult { Hint = "دست‌کم دو مقاومت را وارد کنید." };
+
+        if (values.Any(v => v <= 0))
+            return new SpResult { Error = "همه مقاومت‌ها باید بزرگ‌تر از صفر باشند." };
+
+        double equivalent;
+        string note;
+
+        if (mode == "series")
+        {
+            equivalent = values.Sum();
+            note = "در اتصال سری، مقاومت‌ها جمع می‌شوند و مقاومت معادل از بزرگ‌ترین مقاومت بیشتر است.";
+        }
+        else
+        {
+            equivalent = 1.0 / values.Sum(v => 1.0 / v);
+            note = "در اتصال موازی، مقاومت معادل همیشه از کوچک‌ترین مقاومت کمتر است.";
+        }
+
+        return new SpResult
+        {
+            Equivalent = CalcFormat.Resistance(equivalent),
+            Count = values.Count.ToString(),
+            Min = CalcFormat.Resistance(values.Min()),
+            Max = CalcFormat.Resistance(values.Max()),
+            Note = note,
+            CopyText = $"مقاومت {(mode == "series" ? "سری" : "موازی")} — معادل {CalcFormat.Resistance(equivalent)} | تعداد {values.Count}"
+        };
+    }
+
+    private async Task SetMode(string newMode)
+    {
+        mode = newMode;
+        await PersistAsync();
+    }
+
+    private async Task ResetAsync()
+    {
+        mode = "series";
+        r1 = 10;
+        r2 = 22;
+        r3 = null;
+        r4 = null;
+        unit = "Ω";
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(new State(mode, r1, r2, r3, r4, unit), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            mode = s.Mode is "series" or "parallel" ? s.Mode : "series";
+            r1 = s.R1;
+            r2 = s.R2;
+            r3 = s.R3;
+            r4 = s.R4;
+            unit = s.Unit is "Ω" or "kΩ" or "MΩ" ? s.Unit : "Ω";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(string Mode, double? R1, double? R2, double? R3, double? R4, string Unit);
+}

@@ -101,6 +101,11 @@ public sealed class SiteSettingsDto
     public decimal? FreeShippingThreshold { get; set; }
     public bool EnableReturnRequests { get; set; }
     public bool EnableReorder { get; set; }
+    public bool EnableSavedAddresses { get; set; } = true;
+    public int MaxSavedAddresses { get; set; } = 5;
+    public bool EnablePriceDropAlerts { get; set; } = true;
+    public int PriceDropMinPercent { get; set; }
+    public bool EnableProductFeed { get; set; } = true;
     public bool EnableQuickView { get; set; } = true;
     public bool EnableCompare { get; set; } = true;
     public int CompareMaxItems { get; set; } = 4;
@@ -124,6 +129,9 @@ public sealed class SiteSettingsDto
     public bool EnableHomeBestSellers { get; set; } = true;
     public bool EnableHomeRestocked { get; set; } = true;
     public bool ShowEnamadSeal { get; set; } = true;
+
+    /// <summary>کلید ابزارهای غیرفعال صفحه /technical/calculators (CSV).</summary>
+    public string? CalculatorsDisabled { get; set; }
 
     public List<SiteHomeModuleDto> HomeModules { get; set; } = new();
 }

@@ -1,0 +1,192 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="motor-capacitor" Title="خازن موتور تک‌فاز"
+           Subtitle="ظرفیت تقریبی خازن دائم‌کار و خازن راه‌انداز موتور تک‌فاز را بر اساس توان موتور تخمین می‌زند."
+           Icon="oi-power-standby" Tag="برای تکنسین"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-form">
+        <div class="calc-field">
+            <label class="calc-label" for="mcap-p">توان موتور</label>
+            <input id="mcap-p" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 0.75" @bind="power" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="mcap-unit">واحد توان</label>
+            <select id="mcap-unit" class="calc-select" @bind="powerUnit" @bind:after="PersistAsync">
+                <option value="kW">کیلووات (kW)</option>
+                <option value="HP">اسب بخار (HP)</option>
+            </select>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">خازن دائم‌کار (Run)</span>
+                    <span class="calc-result__value" dir="ltr">@Result.RunRange</span>
+                </div>
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">نزدیک‌ترین مقادیر استاندارد موجود</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.RunStandard</span>
+                </div>
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">خازن راه‌انداز (Start)</span>
+                    <span class="calc-result__value" dir="ltr">@Result.StartRange</span>
+                </div>
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">نزدیک‌ترین مقادیر استاندارد موجود</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.StartStandard</span>
+                </div>
+            </div>
+            <p class="calc-note mt-2 mb-0" data-tone="warn">
+                این اعداد فقط تخمین مهندسی هستند (حدود ۳۰ تا ۵۰ میکروفاراد به ازای هر کیلووات برای خازن دائم‌کار).
+                مقدار قطعی را از پلاک موتور، کاتالوگ سازنده یا خازن قبلی بردارید و ولتاژ کار خازن را دست‌کم ۴۵۰ ولت AC انتخاب کنید.
+            </p>
+        </div>
+    }
+
+    <details class="calc-details">
+        <summary>جدول تقریبی خازن برای توان‌های رایج</summary>
+        <div class="calc-details__body">
+            <table class="calc-table">
+                <thead>
+                    <tr><th>توان موتور</th><th>خازن دائم‌کار</th><th>خازن راه‌انداز</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in CommonRows)
+                    {
+                        <tr>
+                            <td dir="ltr">@row.Power</td>
+                            <td dir="ltr">@row.Run</td>
+                            <td dir="ltr">@row.Start</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </details>
+</CalcShell>
+
+@code {
+    private double? power = 0.75;
+    private string powerUnit = "kW";
+
+    protected override string StorageKey => "motor-capacitor";
+
+    private const double RunPerKwMin = 30;
+    private const double RunPerKwMax = 50;
+    private const double StartPerKwMin = 200;
+    private const double StartPerKwMax = 400;
+
+    private sealed record CommonRow(string Power, string Run, string Start);
+
+    private static readonly CommonRow[] CommonRows =
+    {
+        new("0.37 kW (½ HP)", "11 – 18 µF", "74 – 148 µF"),
+        new("0.55 kW (¾ HP)", "16 – 27 µF", "110 – 220 µF"),
+        new("0.75 kW (1 HP)", "22 – 37 µF", "150 – 300 µF"),
+        new("1.1 kW (1.5 HP)", "33 – 55 µF", "220 – 440 µF"),
+        new("1.5 kW (2 HP)", "45 – 75 µF", "300 – 600 µF"),
+        new("2.2 kW (3 HP)", "66 – 110 µF", "440 – 880 µF")
+    };
+
+    private sealed class MotorCapResult
+    {
+        public string RunRange { get; init; } = "—";
+        public string RunStandard { get; init; } = "—";
+        public string StartRange { get; init; } = "—";
+        public string StartStandard { get; init; } = "—";
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private MotorCapResult Result => Compute();
+
+    private MotorCapResult Compute()
+    {
+        if (power == null)
+            return new MotorCapResult { Hint = "توان موتور را وارد کنید." };
+
+        if (power <= 0)
+            return new MotorCapResult { Error = "توان موتور باید بزرگ‌تر از صفر باشد." };
+
+        var kw = powerUnit == "HP" ? power.Value * 0.746 : power.Value;
+        var runMin = kw * RunPerKwMin;
+        var runMax = kw * RunPerKwMax;
+        var startMin = kw * StartPerKwMin;
+        var startMax = kw * StartPerKwMax;
+
+        return new MotorCapResult
+        {
+            RunRange = FormatRange(runMin, runMax),
+            RunStandard = FormatStandardRange(runMin, runMax),
+            StartRange = FormatRange(startMin, startMax),
+            StartStandard = FormatStandardRange(startMin, startMax),
+            CopyText = $"خازن موتور {CalcFormat.Num(kw, "0.##")}kW — دائم‌کار {FormatRange(runMin, runMax)} | راه‌انداز {FormatRange(startMin, startMax)}"
+        };
+    }
+
+    private static string FormatRange(double min, double max)
+        => CalcFormat.Num(min, "0.#") + " – " + CalcFormat.Num(max, "0.#") + " µF";
+
+    private static string FormatStandardRange(double min, double max)
+        => CalcFormat.Num(NearestStandard(min), "0.#") + " – " + CalcFormat.Num(NearestStandard(max), "0.#") + " µF";
+
+    private static double NearestStandard(double value)
+    {
+        var best = CalcFormat.StandardCapacitors[0];
+        var bestDiff = double.MaxValue;
+
+        foreach (var candidate in CalcFormat.StandardCapacitors)
+        {
+            var diff = Math.Abs(candidate - value);
+            if (diff < bestDiff)
+            {
+                bestDiff = diff;
+                best = candidate;
+            }
+        }
+
+        return best;
+    }
+
+    private async Task ResetAsync()
+    {
+        power = 0.75;
+        powerUnit = "kW";
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(new State(power, powerUnit), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            power = s.Power;
+            powerUnit = s.PowerUnit is "kW" or "HP" ? s.PowerUnit : "kW";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(double? Power, string PowerUnit);
+}

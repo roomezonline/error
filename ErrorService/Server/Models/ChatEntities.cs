@@ -183,6 +183,10 @@ public sealed class ChatAiProvider
     [MaxLength(500)]
     public string BaseUrl { get; set; } = string.Empty;
 
+    /// <summary>پروکسی خروجی (http/https/socks5)؛ خالی یعنی اتصال مستقیم.</summary>
+    [MaxLength(500)]
+    public string? ProxyUrl { get; set; }
+
     /// <summary>openrouter | openai | custom</summary>
     [MaxLength(30)]
     public string Kind { get; set; } = "custom";
@@ -191,9 +195,17 @@ public sealed class ChatAiProvider
 
     public int Priority { get; set; }
 
+    /// <summary>استفاده از این سرویس‌دهنده در دستیار چت.</summary>
+    public bool UseForChat { get; set; } = true;
+
+    /// <summary>استفاده از این سرویس‌دهنده در استودیوی محتوا.</summary>
+    public bool UseForContentStudio { get; set; } = true;
+
     public List<ChatAiApiKey> ApiKeys { get; set; } = new();
 
     public List<ChatAiModel> Models { get; set; } = new();
+
+    public List<ChatAiProxy> Proxies { get; set; } = new();
 }
 
 public sealed class ChatAiApiKey
@@ -214,6 +226,40 @@ public sealed class ChatAiApiKey
     public int Priority { get; set; }
 
     // وضعیت زنده (برای سویچ خودکار و نمایش در پنل ادمین)
+    public int ConsecutiveFailures { get; set; }
+
+    public DateTime? CooldownUntil { get; set; }
+
+    [MaxLength(500)]
+    public string? LastError { get; set; }
+
+    public DateTime? LastUsedAt { get; set; }
+
+    public long SuccessCount { get; set; }
+
+    public long FailureCount { get; set; }
+
+    public ChatAiProvider Provider { get; set; } = null!;
+}
+
+/// <summary>پروکسی خروجی؛ در صورت خطا به پروکسی بعدی همان سرویس‌دهنده سویچ می‌شود.</summary>
+public sealed class ChatAiProxy
+{
+    [Key]
+    public int Id { get; set; }
+
+    public int ProviderId { get; set; }
+
+    [MaxLength(500)]
+    public string Url { get; set; } = string.Empty;
+
+    [MaxLength(100)]
+    public string? Label { get; set; }
+
+    public bool Enabled { get; set; } = true;
+
+    public int Priority { get; set; }
+
     public int ConsecutiveFailures { get; set; }
 
     public DateTime? CooldownUntil { get; set; }

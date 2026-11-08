@@ -1,0 +1,230 @@
+@page "/admin/content-tags"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.news.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Services
+
+<PageTitle>برچسب‌های محتوا | ارورسرویس</PageTitle>
+
+<div class="admin-container" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h3 class="admin-page-title m-0">برچسب‌های مرکز محتوا</h3>
+            <div class="text-muted small mt-1">برچسب‌ها از روی محتواها جمع‌آوری می‌شوند؛ تغییر نام، همه محتواهای دارای آن برچسب را به‌روز می‌کند.</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="/admin/news" class="btn btn-outline-secondary rounded-3">بازگشت به محتوا</a>
+        </div>
+    </div>
+
+    <ConfirmDialog IsVisible="showConfirm"
+                   Title="حذف برچسب"
+                   Message=@($"آیا از حذف برچسب «{itemToDelete?.Title}» از همه محتواها اطمینان دارید؟")
+                   OnResult="HandleDeleteResult" />
+
+    <div class="card border-0 shadow-sm rounded-4 p-3 mb-3">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <select class="form-select form-select-sm rounded-3" style="width: 180px;" @bind="_typeFilter" @bind:after="() => LoadAsync()">
+                <option value="">همه نوع‌ها</option>
+                @foreach (var type in ContentTypeCatalog.All)
+                {
+                    <option value="@type">@ContentTypeCatalog.PluralLabel(type)</option>
+                }
+            </select>
+            <div class="input-group input-group-sm" style="width: 280px;">
+                <input type="search" class="form-control rounded-start-3" placeholder="جستجوی برچسب…"
+                       @bind="_query" @bind:event="oninput" @bind:after="() => LoadAsync()" />
+            </div>
+            <span class="small text-muted ms-auto">@items.Count برچسب</span>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">برچسب</th>
+                        <th>نامک</th>
+                        <th style="width: 120px;">تعداد محتوا</th>
+                        <th class="text-end pe-4" style="width: 180px;">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (loading)
+                    {
+                        <tr><td colspan="4" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
+                    }
+                    else if (!items.Any())
+                    {
+                        <tr><td colspan="4" class="text-center py-5 text-muted">برچسبی یافت نشد.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in items)
+                        {
+                            <tr>
+                                <td class="ps-4">
+                                    @if (_renameTitle == item.Title)
+                                    {
+                                        <div class="input-group input-group-sm" style="max-width: 320px;">
+                                            <input class="form-control rounded-start-3" @bind="_renameValue" @bind:event="oninput" />
+                                            <button type="button" class="btn btn-primary" @onclick="SaveRename" disabled="@isSaving">ذخیره</button>
+                                            <button type="button" class="btn btn-light" @onclick="CancelRename">×</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="fw-bold">@item.Title</span>
+                                    }
+                                </td>
+                                <td><span class="small text-muted">@item.Slug</span></td>
+                                <td><span class="small">@item.Count</span></td>
+                                <td class="text-end pe-4">
+                                    <button class="btn btn-sm btn-outline-primary border-0 rounded-circle me-1" @onclick="() => StartRename(item)" title="تغییر نام">
+                                        <span class="oi oi-pencil"></span>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger border-0 rounded-circle" @onclick="() => ConfirmDelete(item)" title="حذف">
+                                        <span class="oi oi-trash"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .admin-container { padding: 20px; }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    [Inject] private ToastService ToastService { get; set; } = default!;
+
+    private List<ContentTagDto> items = new();
+    private bool loading = true;
+    private bool isSaving;
+    private string _typeFilter = string.Empty;
+    private string _query = string.Empty;
+    private string? _renameTitle;
+    private string _renameValue = string.Empty;
+    private ContentTagDto? itemToDelete;
+    private bool showConfirm;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        try
+        {
+            var url = "api/content/tags";
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(_typeFilter)) parts.Add($"type={_typeFilter}");
+            if (!string.IsNullOrWhiteSpace(_query)) parts.Add($"q={Uri.EscapeDataString(_query.Trim())}");
+            if (parts.Count > 0) url += "?" + string.Join("&", parts);
+
+            items = await Http.GetFromJsonAsync<List<ContentTagDto>>(url) ?? new();
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در بارگذاری برچسب‌ها");
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void StartRename(ContentTagDto item)
+    {
+        _renameTitle = item.Title;
+        _renameValue = item.Title;
+    }
+
+    private void CancelRename()
+    {
+        _renameTitle = null;
+        _renameValue = string.Empty;
+    }
+
+    private async Task SaveRename()
+    {
+        if (string.IsNullOrWhiteSpace(_renameTitle) || string.IsNullOrWhiteSpace(_renameValue)) return;
+
+        isSaving = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/content/tags/rename", new ContentTagRenameRequest
+            {
+                OldTitle = _renameTitle,
+                NewTitle = _renameValue.Trim()
+            });
+
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("برچسب تغییر نام یافت");
+                CancelRename();
+                await LoadAsync();
+            }
+            else
+            {
+                ToastService.ShowError(await ReadErrorAsync(resp));
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void ConfirmDelete(ContentTagDto item)
+    {
+        itemToDelete = item;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool result)
+    {
+        showConfirm = false;
+        if (!result || itemToDelete == null) return;
+
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/content/tags?title={Uri.EscapeDataString(itemToDelete.Title)}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("برچسب حذف شد");
+                await LoadAsync();
+            }
+            else
+            {
+                ToastService.ShowError(await ReadErrorAsync(resp));
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+        }
+        finally
+        {
+            itemToDelete = null;
+        }
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage resp)
+    {
+        var text = await resp.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(text) ? "عملیات ناموفق بود." : text.Trim('"');
+    }
+}

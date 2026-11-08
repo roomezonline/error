@@ -1,9 +1,11 @@
 using ErrorService.Server.Data;
 using ErrorService.Server.Infrastructure;
 using ErrorService.Server.Models;
+using ErrorService.Server.Services;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 
 namespace ErrorService.Server.Controllers;
@@ -14,17 +16,43 @@ public sealed class TrainingArticlesController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
     private readonly IWebHostEnvironment _env;
+    private readonly IAuthorizationService _authorization;
+    private readonly NotificationEventService _notificationEvents;
 
-    public TrainingArticlesController(ErrorServiceDbContext db, IWebHostEnvironment env)
+    public TrainingArticlesController(
+        ErrorServiceDbContext db,
+        IWebHostEnvironment env,
+        IAuthorizationService authorization,
+        NotificationEventService notificationEvents)
     {
         _db = db;
         _env = env;
+        _authorization = authorization;
+        _notificationEvents = notificationEvents;
+    }
+
+    /// <summary>پیش‌نویس‌ها فقط برای مدیران محتوای آکادمی قابل مشاهده‌اند.</summary>
+    private async Task<bool> CanSeeUnpublishedAsync()
+        => User.Identity?.IsAuthenticated == true
+           && ((await _authorization.AuthorizeAsync(User, "perm:admin.academy.articles.manage")).Succeeded
+               || (await _authorization.AuthorizeAsync(User, "perm:admin.academy.articles.content.manage")).Succeeded);
+
+    private void DisableOutputCaching()
+    {
+        var cacheFeature = HttpContext.Features.Get<IOutputCacheFeature>();
+        if (cacheFeature != null) cacheFeature.Context.EnableOutputCaching = false;
     }
 
     [HttpGet]
     [OutputCache(Duration = 300, VaryByQueryKeys = new[] { "onlyPublished" })]
     public async Task<ActionResult<List<TrainingArticleDto>>> GetAll(bool onlyPublished = false)
     {
+        if (!onlyPublished)
+        {
+            if (await CanSeeUnpublishedAsync()) DisableOutputCaching();
+            else onlyPublished = true;
+        }
+
         var query = _db.TrainingArticles.AsQueryable();
         if (onlyPublished) query = query.Where(x => x.IsPublished);
 
@@ -39,6 +67,8 @@ public sealed class TrainingArticlesController : ControllerBase
                 CoverImageUrl = x.CoverImageUrl,
                 IsPublished = x.IsPublished,
                 IsPremium = x.IsPremium,
+                Category = x.Category,
+                IsFeatured = x.IsFeatured,
                 CreatedAt = x.CreatedAt,
                 ViewCount = x.ViewCount
             })
@@ -51,7 +81,8 @@ public sealed class TrainingArticlesController : ControllerBase
         var article = await _db.TrainingArticles
             .Include(x => x.Blocks.OrderBy(b => b.SortOrder))
             .FirstOrDefaultAsync(x => x.Id == id);
-        if (article == null) return NotFound();
+        if (article == null || (!article.IsPublished && !await CanSeeUnpublishedAsync()))
+            return NotFound();
 
         return await BuildArticleDto(article, onlyApprovedComments);
     }
@@ -65,7 +96,10 @@ public sealed class TrainingArticlesController : ControllerBase
             .AsQueryable();
 
         var article = await query.FirstOrDefaultAsync(x => x.Slug == slug);
-        if (article == null) return NotFound();
+        if (article == null || (!article.IsPublished && !await CanSeeUnpublishedAsync()))
+            return NotFound();
+
+        if (!article.IsPublished) DisableOutputCaching();
 
         return await BuildArticleDto(article, onlyApprovedComments);
     }
@@ -106,6 +140,8 @@ public sealed class TrainingArticlesController : ControllerBase
             CoverImageUrl = article.CoverImageUrl,
             IsPublished = article.IsPublished,
             IsPremium = article.IsPremium,
+            Category = article.Category,
+            IsFeatured = article.IsFeatured,
             CreatedAt = article.CreatedAt,
             AverageRating = avg,
             Blocks = article.Blocks.Select(b => new TrainingArticleBlockDto
@@ -133,8 +169,11 @@ public sealed class TrainingArticlesController : ControllerBase
         if (string.IsNullOrWhiteSpace(fullName)) return BadRequest("نام الزامی است");
         if (string.IsNullOrWhiteSpace(content)) return BadRequest("متن نظر الزامی است");
 
-        var articleExists = await _db.TrainingArticles.AnyAsync(x => x.Id == id);
-        if (!articleExists) return NotFound("مقاله یافت نشد");
+        var article = await _db.TrainingArticles
+            .Where(x => x.Id == id)
+            .Select(x => new { x.Title, x.Slug })
+            .FirstOrDefaultAsync();
+        if (article == null) return NotFound("مقاله یافت نشد");
 
         if (request.ParentId.HasValue)
         {
@@ -142,7 +181,7 @@ public sealed class TrainingArticlesController : ControllerBase
             if (!parentExists) return BadRequest("نظر والد یافت نشد");
         }
 
-        _db.TrainingArticleComments.Add(new TrainingArticleComment
+        var comment = new TrainingArticleComment
         {
             ArticleId = id,
             FullName = fullName.Length > 200 ? fullName[..200] : fullName,
@@ -151,8 +190,38 @@ public sealed class TrainingArticlesController : ControllerBase
             Rating = request.Rating,
             ParentId = request.ParentId,
             IsApproved = User.Identity?.IsAuthenticated == true
-        });
+        };
+        _db.TrainingArticleComments.Add(comment);
         await _db.SaveChangesAsync();
+
+        var isAdminSubmitter = User.Identity?.IsAuthenticated == true
+            && (User.IsInRole("super_admin")
+                || User.HasClaim("perm", "admin.academy.comments.manage"));
+
+        if (!isAdminSubmitter)
+        {
+            var status = comment.IsApproved ? "منتشر شد" : "در انتظار تأیید";
+            var pagePath = SeoUrl.Article(id,
+                string.IsNullOrWhiteSpace(article.Slug) ? null : Uri.EscapeDataString(article.Slug));
+            await _notificationEvents.NotifyAsync(
+                eventType: "academy.comment_created",
+                values: new Dictionary<string, string?>
+                {
+                    ["UserName"] = comment.FullName,
+                    ["ArticleTitle"] = article.Title,
+                    ["Content"] = NotificationEventService.CleanContent(comment.Content),
+                    ["Status"] = status,
+                    ["PagePath"] = pagePath
+                },
+                idempotencyKey: $"academy.comment:{comment.Id}",
+                fallbackSeverity: NotificationSeverity.Info,
+                fallbackTitle: "نظر جدید برای آموزش",
+                fallbackBody: $"آموزش: {article.Title}\n{comment.FullName}:\n{NotificationEventService.CleanContent(comment.Content)}",
+                fallbackUrl: pagePath,
+                superAdminsOnly: true);
+            await _db.SaveChangesAsync();
+        }
+
         SeoFallbackMiddleware.InvalidateHtmlCache();
 
         return Ok(new { message = "نظر شما با موفقیت ثبت شد و پس از تأیید نمایش داده خواهد شد." });
@@ -231,7 +300,9 @@ public sealed class TrainingArticlesController : ControllerBase
             Summary = request.Summary,
             CoverImageUrl = request.CoverImageUrl,
             IsPublished = request.IsPublished,
-            IsPremium = request.IsPremium
+            IsPremium = request.IsPremium,
+            Category = string.IsNullOrWhiteSpace(request.Category) ? null : request.Category.Trim(),
+            IsFeatured = request.IsFeatured
         };
 
         _db.TrainingArticles.Add(article);
@@ -256,6 +327,8 @@ public sealed class TrainingArticlesController : ControllerBase
         article.CoverImageUrl = request.CoverImageUrl;
         article.IsPublished = request.IsPublished;
         article.IsPremium = request.IsPremium;
+        article.Category = string.IsNullOrWhiteSpace(request.Category) ? null : request.Category.Trim();
+        article.IsFeatured = request.IsFeatured;
         article.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync();

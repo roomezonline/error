@@ -91,6 +91,11 @@
 /* Dark Mode Variables
    ========================================================================== */
 [data-theme="dark"] {
+    /* Bootstrap runtime variables (many page styles read var(--bs-body-bg)) */
+    --bs-body-bg: #0f172a;
+    --bs-body-color: #f1f5f9;
+    --bs-border-color: rgba(255, 255, 255, 0.1);
+
     /* Background Colors */
     --app-bg: #0f172a;
     --app-surface: #1e293b;
@@ -207,13 +212,19 @@ html[data-theme="dark"] body,
     color: var(--app-primary-hover);
 }
 
-/* Smooth transitions for theme changes - applied only to dark mode elements */
-[data-theme="dark"] *,
-[data-theme="dark"] *::before,
-[data-theme="dark"] *::after {
-    transition: background-color 0.2s ease, 
-                color 0.2s ease, 
-                border-color 0.2s ease;
+/* Theme switch transition runs only during the ~300 ms after a toggle
+   (html.theme-anim). A permanent `* { transition }` on every element forces
+   style recalculation on all nodes and noticeably slows down the site. */
+html.theme-anim,
+html.theme-anim body,
+html.theme-anim body *,
+html.theme-anim body *::before,
+html.theme-anim body *::after {
+    transition: background-color 0.25s ease,
+                color 0.25s ease,
+                border-color 0.25s ease,
+                fill 0.25s ease,
+                stroke 0.25s ease !important;
 }
 
 /* ==========================================================================
@@ -662,8 +673,18 @@ html[data-theme="dark"] body,
     border-color: var(--app-primary) !important;
 }
 
-[data-theme="dark"] .form-check-input:checked[type="checkbox"] {
+[data-theme="dark"] .form-check:not(.form-switch) .form-check-input:checked[type="checkbox"] {
     background-image: none !important;
+}
+
+/* Switches keep their knob (the rule above would erase it) on a lighter track */
+[data-theme="dark"] .form-switch .form-check-input {
+    background-color: rgba(255, 255, 255, 0.16) !important;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23cbd5e1'/%3e%3c/svg%3e");
+}
+
+[data-theme="dark"] .form-switch .form-check-input:checked {
+    background-position: right center;
 }
 
 /* Make card borders more visible on dark backgrounds */
@@ -1151,6 +1172,208 @@ textarea:focus-visible,
 [tabindex]:focus-visible {
     outline: 2px solid var(--app-primary);
     outline-offset: 2px;
+}
+
+/* ==========================================================================
+   Dark mode polish — native controls, tables, remaining Bootstrap pieces
+   ========================================================================== */
+
+/* Makes UA-rendered widgets (calendar picker, select dropdown, scrollbars)
+   follow the app theme instead of the OS one. */
+html[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+/* Bootstrap ships a near-black chevron that vanishes on dark inputs */
+[data-theme="dark"] .form-select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23cbd5e1' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+}
+
+/* Bootstrap 5.1 table accent layers (striped / hover / active) */
+[data-theme="dark"] .table {
+    --bs-table-bg: transparent;
+    --bs-table-accent-bg: transparent;
+    --bs-table-striped-color: var(--app-text);
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.04);
+    --bs-table-active-color: var(--app-text);
+    --bs-table-active-bg: rgba(255, 255, 255, 0.08);
+    --bs-table-hover-color: var(--app-text);
+    --bs-table-hover-bg: rgba(255, 255, 255, 0.06);
+    color: var(--app-text);
+    border-color: var(--app-table-border);
+}
+
+[data-theme="dark"] .table > :not(caption) > * > * {
+    border-color: var(--app-table-border);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .table caption {
+    color: var(--app-text-muted);
+}
+
+[data-theme="dark"] .table-light,
+[data-theme="dark"] .table-light > tbody > tr > *,
+[data-theme="dark"] .table-light > thead > tr > * {
+    background-color: var(--app-surface) !important;
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] .btn-close:not(.btn-close-white) {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+[data-theme="dark"] .btn-outline-dark {
+    color: var(--app-text);
+    border-color: var(--app-border-strong);
+}
+
+[data-theme="dark"] .btn-outline-dark:hover,
+[data-theme="dark"] .btn-outline-dark:focus {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-color: var(--app-border-strong);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .dropdown-header {
+    color: var(--app-text-muted);
+}
+
+[data-theme="dark"] .popover {
+    background-color: var(--app-card-bg);
+    border-color: var(--app-border);
+}
+
+[data-theme="dark"] .popover-header {
+    background-color: var(--app-surface);
+    border-bottom-color: var(--app-border);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .popover-body {
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .offcanvas {
+    background-color: var(--app-card-bg);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] hr {
+    border-color: var(--app-divider);
+}
+
+/* ==========================================================================
+   Inline light values that class selectors cannot reach
+   (style="background:#f0fdf4; color:#1E2A3A" and similar in Razor markup).
+   !important wins over non-important inline declarations.
+   ========================================================================== */
+
+[data-theme="dark"] [style*="background:#f0fdf4"],
+[data-theme="dark"] [style*="background: #f0fdf4"] {
+    background: rgba(16, 185, 129, 0.14) !important;
+    color: #6ee7b7 !important;
+}
+
+[data-theme="dark"] [style*="background:#fef2f2"],
+[data-theme="dark"] [style*="background: #fef2f2"] {
+    background: rgba(239, 68, 68, 0.14) !important;
+    color: #fca5a5 !important;
+}
+
+[data-theme="dark"] [style*="background:#eff6ff"],
+[data-theme="dark"] [style*="background: #eff6ff"] {
+    background: rgba(59, 130, 246, 0.16) !important;
+}
+
+/* Indigo/violet tint chips written inline (Dashboard KPI tiles, badges) */
+[data-theme="dark"] [style*="background:#eef2ff"],
+[data-theme="dark"] [style*="background: #eef2ff"],
+[data-theme="dark"] [style*="background:#ede9fe"],
+[data-theme="dark"] [style*="background: #ede9fe"],
+[data-theme="dark"] [style*="background:#e0e7ff"],
+[data-theme="dark"] [style*="background: #e0e7ff"],
+[data-theme="dark"] [style*="background:#f5f3ff"],
+[data-theme="dark"] [style*="background: #f5f3ff"],
+[data-theme="dark"] [style*="background:#dbeafe"],
+[data-theme="dark"] [style*="background: #dbeafe"] {
+    background: rgba(99, 102, 241, 0.16) !important;
+}
+
+[data-theme="dark"] [style*="background:#f8fafc"],
+[data-theme="dark"] [style*="background: #f8fafc"],
+[data-theme="dark"] [style*="background:#f1f5f9"],
+[data-theme="dark"] [style*="background: #f1f5f9"],
+[data-theme="dark"] [style*="background:#f0f0f0"],
+[data-theme="dark"] [style*="background: #f0f0f0"],
+[data-theme="dark"] [style*="background: white"],
+[data-theme="dark"] [style*="background:#fff"],
+[data-theme="dark"] [style*="background: #fff"] {
+    background: var(--app-surface) !important;
+}
+
+[data-theme="dark"] [style*="background:rgba(0,0,0,0.03)"],
+[data-theme="dark"] [style*="background: rgba(0,0,0,0.03)"] {
+    background: rgba(255, 255, 255, 0.04) !important;
+}
+
+[data-theme="dark"] [style*="border:1px solid #e5e7eb"],
+[data-theme="dark"] [style*="border: 1px solid #e5e7eb"] {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+[data-theme="dark"] [style*="color:rgba(15,23,42"],
+[data-theme="dark"] [style*="color: rgba(15,23,42"] {
+    color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] [style*="border:1px solid rgba(2,6,23"],
+[data-theme="dark"] [style*="border: 1px solid rgba(2,6,23"] {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* Hard-coded dark text colors on transparent backgrounds */
+[data-theme="dark"] [style*="color:#1E2A3A"],
+[data-theme="dark"] [style*="color: #1E2A3A"],
+[data-theme="dark"] [style*="color:#6B7A8A"],
+[data-theme="dark"] [style*="color: #6B7A8A"] {
+    color: var(--app-text) !important;
+}
+
+[data-theme="dark"] [style*="color:#64748b"],
+[data-theme="dark"] [style*="color: #64748b"],
+[data-theme="dark"] [style*="color:#94a3b8"],
+[data-theme="dark"] [style*="color: #94a3b8"] {
+    color: var(--app-text-muted) !important;
+}
+
+/* Saturated inline accents shift to their dark-mode tints */
+[data-theme="dark"] [style*="color:#2563eb"],
+[data-theme="dark"] [style*="color: #2563eb"],
+[data-theme="dark"] [style*="color:#0d6efd"],
+[data-theme="dark"] [style*="color: #0d6efd"] {
+    color: #93c5fd !important;
+}
+
+[data-theme="dark"] [style*="color:#6366f1"],
+[data-theme="dark"] [style*="color: #6366f1"],
+[data-theme="dark"] [style*="color:#4f46e5"],
+[data-theme="dark"] [style*="color: #4f46e5"],
+[data-theme="dark"] [style*="color:#8b5cf6"],
+[data-theme="dark"] [style*="color: #8b5cf6"] {
+    color: #a5b4fc !important;
+}
+
+[data-theme="dark"] [style*="color:#059669"],
+[data-theme="dark"] [style*="color: #059669"],
+[data-theme="dark"] [style*="color:#16a34a"],
+[data-theme="dark"] [style*="color: #16a34a"] {
+    color: #6ee7b7 !important;
+}
+
+[data-theme="dark"] [style*="color:#f59e0b"],
+[data-theme="dark"] [style*="color: #f59e0b"] {
+    color: #fbbf24 !important;
 }
 
 /* ==========================================================================

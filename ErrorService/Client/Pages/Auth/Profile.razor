@@ -107,6 +107,13 @@
                             <span class="pf-menu-text">ویرایش پروفایل</span>
                         </button>
 
+                        <button class="pf-menu-item" @onclick='() => Nav.NavigateTo("/my-addresses")'>
+                            <span class="pf-menu-icon" style="background: rgba(13,110,253,0.1); color: #0d6efd;">
+                                <span class="oi oi-map-marker"></span>
+                            </span>
+                            <span class="pf-menu-text">آدرس‌های من</span>
+                        </button>
+
                         <button class="pf-menu-item @(activeTab == "password" ? "active" : "")" @onclick='() => SwitchTab("password")'>
                             <span class="pf-menu-icon" style="background: rgba(220,53,69,0.1); color: #dc3545;">
                                 <span class="oi oi-lock-locked"></span>

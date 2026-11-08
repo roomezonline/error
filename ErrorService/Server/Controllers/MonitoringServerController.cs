@@ -196,7 +196,17 @@ public class MonitoringServerController : ControllerBase
 
         if (System.IO.File.Exists(filePath))
         {
-            var lines = System.IO.File.ReadAllLines(filePath, Encoding.UTF8);
+            // FileShare.ReadWrite تا نوشتن هم‌زمان دستگاه، خواندن را با خطای قفل قطع نکند.
+            string[] lines;
+            using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var reader = new StreamReader(stream, Encoding.UTF8))
+            {
+                var list = new List<string>();
+                while (reader.ReadLine() is { } line)
+                    list.Add(line);
+                lines = list.ToArray();
+            }
+
             if (data == null)
             {
                 priz = ParseLine(lines, "priz") ?? "off";
@@ -565,8 +575,12 @@ public class MonitoringServerController : ControllerBase
             var oldData = _cache.Exchange(deviceCode, data);
             await SaveChangeLogIfNeeded(deviceCode, data, oldData, monitoringId.Value, customerReceiptId, workshopId!.Value);
 
-            await SaveDataRecordAsync(deviceCode, monitoringId.Value, customerReceiptId, priz, motor_state, element1, element2,
-                temp1, temp2, temp3, jaryan, resolvedPower, dc1, ac1);
+            // چارت با جزییات فقط برای دستگاه‌هایی که سوپر ادمین مجوز داده ثبت می‌شود.
+            if (deviceEntity?.DetailedChartEnabled == true)
+            {
+                await SaveDataRecordAsync(deviceCode, monitoringId.Value, customerReceiptId, priz, motor_state, element1, element2,
+                    temp1, temp2, temp3, jaryan, resolvedPower, dc1, ac1);
+            }
 
             if (!string.IsNullOrEmpty(alarm) && (alarm.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) || IsOn(alarm)) && !string.IsNullOrEmpty(type_alarm))
             {
@@ -834,24 +848,8 @@ public class MonitoringServerController : ControllerBase
     /// مدت روشن‌بودن تجهیز تا لحظهٔ خاموش‌شدن، بر اساس آخرین رکورد «روشن» همان تجهیز.
     /// اگر رکورد روشن قبلی نباشد (شروع پایش در میانهٔ سیکل یا حذف تاریخچه) مقدار null است.
     /// </summary>
-    private async Task<(long Seconds, string? StartedAtFa)?> GetRuntimeAsync(int monitoringId, string changeType, DateTime stoppedAt)
-    {
-        var previous = await _db.MonitoringDeviceChangeLogs
-            .AsNoTracking()
-            .Where(x => x.MonitoringId == monitoringId
-                        && x.ChangeType == changeType
-                        && x.CreatedAt < stoppedAt)
-            .OrderByDescending(x => x.CreatedAt)
-            .ThenByDescending(x => x.Id)
-            .Select(x => new { x.CreatedAt, x.CreatedAtFa, x.NewValue })
-            .FirstOrDefaultAsync();
-
-        if (previous == null || !IsOn(previous.NewValue))
-            return null;
-
-        var seconds = (long)(stoppedAt - previous.CreatedAt).TotalSeconds;
-        return seconds > 0 ? (seconds, previous.CreatedAtFa) : null;
-    }
+    private Task<(long Seconds, string? StartedAtFa)?> GetRuntimeAsync(int monitoringId, string changeType, DateTime stoppedAt) =>
+        MonitoringRuntimeResolver.ResolveAsync(_db, monitoringId, changeType, stoppedAt);
 
     private sealed record AlertContext(string DeviceTitle, string? WorkshopName, int? WorkshopId, int? ReceiptId);
 
@@ -874,7 +872,8 @@ public class MonitoringServerController : ControllerBase
             fallbackTitle: $"هشدار پایش: {context.DeviceTitle}",
             fallbackBody: fullMessage,
             fallbackUrl: "/admin/monitoring-devices",
-            workshopId: context.WorkshopId);
+            workshopId: context.WorkshopId,
+            workshopOnly: true);
     }
 
     /// <summary>
@@ -924,8 +923,7 @@ public class MonitoringServerController : ControllerBase
         return parts.Count == 0 ? message : string.Join(" • ", parts) + " — " + message;
     }
 
-    private static bool IsOn(string? val) =>
-        val != null && val.Trim().Equals("on", StringComparison.OrdinalIgnoreCase);
+    private static bool IsOn(string? val) => MonitoringRuntimeResolver.IsOnValue(val);
 
     private async Task SaveAlertAsync(string deviceCode, string typeAlarm, string? maxJaryan, string? had, int monitoringId, int? customerReceiptId)
     {

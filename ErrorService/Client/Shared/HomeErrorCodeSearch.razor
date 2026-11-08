@@ -141,7 +141,7 @@
         try
         {
             var recent = await Http.GetFromJsonAsync<List<ErrorCodeQuickSearchItem>>(
-                "api/technical/error-codes/recent?take=4");
+                "api/technical/error-codes/random?take=4");
             if (recent != null)
                 _chips = recent;
         }

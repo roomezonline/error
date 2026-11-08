@@ -21,6 +21,8 @@ public class TrainingCourseDto
     public string? CoverImageUrl { get; set; }
     public bool IsPublished { get; set; }
     public bool IsPremium { get; set; }
+    public string? Category { get; set; }
+    public bool IsFeatured { get; set; }
     public int SortOrder { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public int LessonsCount { get; set; }
@@ -35,6 +37,9 @@ public class TrainingCourseUpsertRequest
     public string? CoverImageUrl { get; set; }
     public bool IsPublished { get; set; }
     public bool IsPremium { get; set; }
+    [MaxLength(120)]
+    public string? Category { get; set; }
+    public bool IsFeatured { get; set; }
     public int SortOrder { get; set; }
 }
 

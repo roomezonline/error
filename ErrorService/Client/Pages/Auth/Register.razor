@@ -19,7 +19,7 @@
 
         <EditForm Model="model" OnValidSubmit="HandleRegister">
             <DataAnnotationsValidator />
-            
+
             <div class="mb-3">
                 <label class="form-label small fw-bold">نام و نام خانوادگی</label>
                 <InputText @bind-Value="model.FullName" class="form-control auth-input rounded-pill px-4 py-2" placeholder="نام خود را وارد کنید" />
@@ -37,6 +37,31 @@
                 <InputText @bind-Value="model.Password" type="password" class="form-control auth-input rounded-pill px-4 py-2" placeholder="••••" />
                 <ValidationMessage For="@(() => model.Password)" class="text-danger small" />
             </div>
+
+            @if (config?.RegistrationOtpEnabled == true)
+            {
+                <div class="mb-4">
+                    <label class="form-label small fw-bold">کد تایید موبایل</label>
+                    <div class="d-flex gap-2">
+                        <InputText @bind-Value="model.VerificationCode" class="form-control auth-input rounded-pill px-4 py-2 ltr" inputmode="numeric" maxlength="6" placeholder="کد ۶ رقمی" />
+                        <button type="button" class="btn btn-outline-success rounded-pill px-3 flex-shrink-0" @onclick="SendOtp" disabled="@(isSendingOtp || cooldownRemaining > 0 || !IsPhoneValid)">
+                            @if (isSendingOtp)
+                            {
+                                <span class="spinner-border spinner-border-sm"></span>
+                            }
+                            else if (cooldownRemaining > 0)
+                            {
+                                <span>@cooldownRemaining ثانیه</span>
+                            }
+                            else
+                            {
+                                <span>ارسال کد</span>
+                            }
+                        </button>
+                    </div>
+                    <div class="form-text small">کد به شماره موبایل وارد شده ارسال می‌شود.</div>
+                </div>
+            }
 
             <button type="submit" class="btn btn-success w-100 rounded-pill py-2 fw-bold shadow-sm" disabled="@isBusy">
                 @if (isBusy) { <span class="spinner-border spinner-border-sm me-2"></span> }
@@ -60,10 +85,72 @@
 
 @code {
     private RegisterRequest model = new();
+    private AuthPublicConfigDto? config;
     private bool isBusy = false;
+    private bool isSendingOtp = false;
+    private int cooldownRemaining = 0;
+
+    private bool IsPhoneValid => !string.IsNullOrWhiteSpace(model.PhoneNumber) && model.PhoneNumber.Length == 11 && model.PhoneNumber.StartsWith("09");
+
+    protected override async Task OnInitializedAsync()
+    {
+        config = await Auth.GetPublicConfigAsync();
+    }
+
+    private async Task SendOtp()
+    {
+        if (!IsPhoneValid)
+        {
+            Toast.ShowError("شماره موبایل معتبر نیست");
+            return;
+        }
+
+        isSendingOtp = true;
+        try
+        {
+            var result = await Auth.SendOtpAsync(model.PhoneNumber, OtpPurposes.Registration);
+            if (result.Success)
+            {
+                Toast.ShowSuccess(result.Message ?? "کد تایید ارسال شد");
+                await StartCooldownAsync(config?.ResendCooldownSeconds ?? 60);
+            }
+            else
+            {
+                Toast.ShowError(result.Message ?? "خطا در ارسال کد تایید");
+            }
+        }
+        finally
+        {
+            isSendingOtp = false;
+        }
+    }
+
+    private async Task StartCooldownAsync(int seconds)
+    {
+        cooldownRemaining = Math.Max(0, seconds);
+        while (cooldownRemaining > 0)
+        {
+            await Task.Delay(1000);
+            cooldownRemaining--;
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+        }
+    }
 
     private async Task HandleRegister()
     {
+        if (config?.RegistrationOtpEnabled == true && string.IsNullOrWhiteSpace(model.VerificationCode))
+        {
+            Toast.ShowError("کد تایید موبایل را وارد کنید");
+            return;
+        }
+
         isBusy = true;
         try
         {

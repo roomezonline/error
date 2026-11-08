@@ -1,755 +1,2331 @@
-@page "/admin/news"
-@layout AdminLayout
-@using Microsoft.AspNetCore.Authorization
-@attribute [Authorize(Policy = "perm:admin.news.manage")]
-@using ErrorService.Shared
-@using System.Net.Http.Json
-@using Microsoft.AspNetCore.Components.Forms
-@using ErrorService.Client.Services
-@using ErrorService.Client.Utils
-@implements IDisposable
-@inject IJSRuntime JS
-@inject ToastService ToastService
+﻿@page "/admin/news"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.news.manage")]
+@using ErrorService.Shared
+@using ErrorService.Shared.Models
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@implements IDisposable
+@inject IJSRuntime JS
+@inject ToastService ToastService
 
-<PageTitle>اخبار | ارورسرویس</PageTitle>
-
-<div class="admin-container" dir="rtl">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3 class="admin-page-title m-0">مدیریت اخبار و مقالات</h3>
-        <button class="btn btn-primary shadow-sm rounded-3" @onclick="NewNews">
-            <span class="oi oi-plus me-1"></span> خبر جدید
-        </button>
-    </div>
-
-    <ConfirmDialog IsVisible="showConfirm" 
-                   Title="حذف خبر" 
-                   Message=@($"آیا از حذف خبر \"{itemToDelete?.Title}\" اطمینان دارید؟")
-                   OnResult="HandleDeleteResult" />
-
-    @if (showEditor)
-    {
-        <div class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h5 class="m-0 fw-bold">@(editingId == 0 ? "ایجاد خبر جدید" : "ویرایش خبر")</h5>
-                <button class="btn-close" @onclick="CloseEditor"></button>
-            </div>
-
-            <EditForm Model="model" OnValidSubmit="SaveNews">
-                <DataAnnotationsValidator />
-                <div class="row g-4">
-                    <div class="col-12">
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">عنوان خبر</label>
-                            <InputText @bind-Value="model.Title" class="form-control rounded-3" placeholder="عنوان جذاب انتخاب کنید..." />
-                            <ValidationMessage For="@(() => model.Title)" class="text-danger small" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">تاریخ و ساعت ایجاد</label>
-                            <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="createdAtInput" />
-                            <div class="text-muted small mt-1">در صورت خالی بودن، زمان فعلی ثبت می‌شود.</div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">خلاصه خبر (نمایش در لیست)</label>
-                            <InputTextArea @bind-Value="model.Summary" class="form-control rounded-3" rows="2" placeholder="توضیح کوتاه برای جذب مخاطب..." />
-                            <ValidationMessage For="@(() => model.Summary)" class="text-danger small" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">نویسنده خبر</label>
-                            <InputText @bind-Value="model.AuthorName" class="form-control rounded-3" placeholder="نام نویسنده..." />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">تگ‌ها (با کاما جدا کنید)</label>
-                            <InputText @bind-Value="model.Tags" class="form-control rounded-3" placeholder="مثلاً: تکنولوژی، هوش مصنوعی، خبر" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">متن کامل خبر</label>
-                            
-                            <!-- Custom Formatting Buttons -->
-                            <div class="d-flex flex-wrap gap-1 mb-2">
-                                <button type="button" class="btn btn-sm btn-light border" @onclick='() => InsertHtml("<p>", "</p>", false)'>پاراگراف</button>
-                                <select id="news-callout-selector" class="form-select form-select-sm" style="width: 170px;" @onchange="OnCalloutChanged">
-                                    <option value="none">بدون باکس</option>
-                                    <option value="info">باکس آبی</option>
-                                    <option value="danger">باکس قرمز</option>
-                                    <option value="success">باکس سبز</option>
-                                    <option value="quote">نقل‌قول</option>
-                                </select>
-                                <button type="button" class="btn btn-sm btn-dark" @onclick='ExitBoxAndContinue'>خروج از باکس</button>
-                                <label class="btn btn-sm btn-info mb-0 text-white">
-                                    <span class="oi oi-image me-1"></span> عکس
-                                    <InputFile OnChange="HandleInlineImageUpload" class="d-none" accept="image/*" />
-                                </label>
-                                <label class="btn btn-sm btn-secondary mb-0 text-white">
-                                    <span class="oi oi-video me-1"></span> ویدیو
-                                    <InputFile OnChange="HandleInlineVideoUpload" class="d-none" accept="video/*" />
-                                </label>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick='InsertVideoLink'>لینک ویدیو</button>
-                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick='InsertTable'>جدول</button>
-                                <div class="vr d-none d-sm-block"></div>
-                                <div class="btn-group btn-group-sm" role="group" aria-label="Resize image">
-                                    <button type="button" class="btn btn-outline-dark" @onclick='() => ResizeSelectedImage(25)'>25%</button>
-                                    <button type="button" class="btn btn-outline-dark" @onclick='() => ResizeSelectedImage(50)'>50%</button>
-                                    <button type="button" class="btn btn-outline-dark" @onclick='() => ResizeSelectedImage(75)'>75%</button>
-                                    <button type="button" class="btn btn-outline-dark" @onclick='() => ResizeSelectedImage(100)'>100%</button>
-                                </div>
-                            </div>
-                            
-                            <div id="quill-editor-container" style="min-height: 400px; background: white;"></div>
-                            <ValidationMessage For="@(() => model.Content)" class="text-danger small" />
-                        </div>
-                    </div>
-                    <div class="col-12">
-                        <div class="mb-4">
-                            <label class="form-label fw-bold">تصویر شاخص</label>
-                            <div class="image-upload-zone rounded-4 border-2 border-dashed d-flex flex-column align-items-center justify-content-center p-4 bg-light position-relative">
-                                @if (!string.IsNullOrEmpty(model.ImageUrl))
-                                {
-                                    <img src="@model.ImageUrl" class="img-fluid rounded-3 mb-2" style="max-height: 200px;" />
-                                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-2 rounded-circle shadow" @onclick="ClearImage">
-                                        <span class="oi oi-x"></span>
-                                    </button>
-                                }
-                                else
-                                {
-                                    <span class="oi oi-cloud-upload display-4 text-muted mb-2"></span>
-                                    <InputFile OnChange="HandleFileUpload" class="position-absolute w-100 h-100 opacity-0" style="cursor: pointer; top: 0; left: 0;" />
-                                    <span class="text-muted small text-center">برای انتخاب تصویر شاخص کلیک کنید</span>
-                                }
-                            </div>
-                            @if (isUploading)
-                            {
-                                <div class="progress mt-2" style="height: 6px;">
-                                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
-                                </div>
-                            }
-                        </div>
-
-                        <div class="card bg-light border-0 rounded-4 p-3">
-                            <div class="form-check form-switch">
-                                <InputCheckbox @bind-Value="model.IsPublished" class="form-check-input" id="isPublished" />
-                                <label class="form-check-label fw-bold" for="isPublished">انتشار در سایت</label>
-                            </div>
-                            <div class="text-muted small mt-1">در صورت غیرفعال بودن، خبر فقط در پنل ادمین نمایش داده می‌شود.</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
-                    <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseEditor">انصراف</button>
-                    <button type="submit" class="btn btn-primary rounded-3 px-4 shadow-sm" disabled="@(isSaving || isUploading)">
-                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
-                        ذخیره نهایی خبر
-                    </button>
-                </div>
-            </EditForm>
-        </div>
-    }
-
-    <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="bg-light">
-                    <tr>
-                        <th class="ps-4" style="width: 100px;">تصویر</th>
-                        <th>عنوان خبر</th>
-                        <th>تاریخ ایجاد</th>
-                        <th>وضعیت</th>
-                        <th class="text-end pe-4">عملیات</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (newsList == null)
-                    {
-                        <tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
-                    }
-                    else if (!newsList.Any())
-                    {
-                        <tr><td colspan="5" class="text-center py-5 text-muted">هیچ خبری یافت نشد.</td></tr>
-                    }
-                    else
-                    {
-                        @foreach (var news in newsList)
-                        {
-                            <tr>
-                                <td class="ps-4">
-                                    <div class="news-thumb rounded-3 bg-light overflow-hidden" style="width: 60px; height: 60px;">
-                                        @if (!string.IsNullOrEmpty(news.ImageUrl))
-                                        {
-                                            <img src="@news.ImageUrl" class="w-100 h-100 object-fit-cover" />
-                                        }
-                                        else
-                                        {
-                                            <div class="w-100 h-100 d-flex align-items-center justify-content-center text-muted bg-light border rounded-3">
-                                                <span class="oi oi-image" style="font-size: 1.2rem; opacity: 0.5;"></span>
-                                            </div>
-                                        }
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="fw-bold text-dark">@news.Title</div>
-                                    <div class="small text-muted text-truncate" style="max-width: 300px;">@news.Summary</div>
-                                </td>
-                                <td><span class="text-muted small">@PersianDate.ToJalaliDateTime(news.CreatedAt)</span></td>
-                                <td>
-                                    <span class="badge @(news.IsPublished ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning") rounded-pill px-3">
-                                        @(news.IsPublished ? "منتشر شده" : "پیش‌نویس")
-                                    </span>
-                                </td>
-                                <td class="text-end pe-4">
-                                    <button class="btn btn-sm btn-outline-primary border-0 rounded-circle me-1" @onclick="() => EditNews(news)" title="ویرایش">
-                                        <span class="oi oi-pencil"></span>
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-danger border-0 rounded-circle" @onclick="() => ConfirmDelete(news)" title="حذف">
-                                        <span class="oi oi-trash"></span>
-                                    </button>
-                                </td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
-        </div>
-        @if (newsList != null && newsList.Count < totalCount)
-        {
-            <div class="text-center p-3 border-top bg-light">
-                <button class="btn btn-outline-primary btn-sm rounded-pill px-4" @onclick="() => LoadNews(true)" disabled="@isLoadingMore">
-                    @if (isLoadingMore)
-                    {
-                        <span class="spinner-border spinner-border-sm me-1"></span>
-                    }
-                    مشاهده بیشتر (@(totalCount - newsList.Count) مورد باقی‌مانده)
-                </button>
-            </div>
-        }
-    </div>
-</div>
-
-<style>
-    .image-upload-zone {
-        min-height: 200px;
-        transition: all 0.2s ease;
-    }
-    .image-upload-zone:hover {
-        background: #f0f4f8 !important;
-        border-color: #0d6efd !important;
-    }
-    .object-fit-cover { object-fit: cover; }
-    .bg-success-subtle { background-color: #d1e7dd; }
-    .bg-warning-subtle { background-color: #fff3cd; }
-    .admin-container { padding: 20px; }
-    
-    /* Quill Editor Styles */
-    #quill-editor-container {
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        min-height: 400px;
-    }
-    #quill-editor-container .ql-toolbar {
-        border-top: none;
-        border-left: none;
-        border-right: none;
-        border-bottom: 1px solid #dee2e6;
-        background: #f8f9fa;
-        position: sticky;
-        top: 0;
-        z-index: 20;
-        overflow: visible;
-        white-space: normal;
-    }
-    #quill-editor-container .ql-toolbar::-webkit-scrollbar { height: 6px; }
-    #quill-editor-container .ql-toolbar::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.25); border-radius: 999px; }
-
-    #quill-editor-container .ql-formats { display: inline-flex; float: none; flex-wrap: wrap; }
-    #quill-editor-container .ql-picker { position: relative; }
-    #quill-editor-container .ql-picker-options { z-index: 9999; }
-    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="vazirmatn"]::before,
-    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="vazirmatn"]::before {
-        content: 'وزیرمتن';
-        font-family: 'Vazirmatn', sans-serif !important;
-    }
-    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="vazir"]::before,
-    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="vazir"]::before {
-        content: 'وزیر';
-        font-family: 'Vazir', sans-serif !important;
-    }
-    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="shabnam"]::before,
-    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="shabnam"]::before {
-        content: 'شبنم';
-        font-family: 'Shabnam', sans-serif !important;
-    }
-    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="sahel"]::before,
-    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="sahel"]::before {
-        content: 'ساحل';
-        font-family: 'Sahel', sans-serif !important;
-    }
-    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label::before,
-    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item::before {
-        font-size: 14px;
-    }
-    #quill-editor-container .ql-font-vazirmatn { font-family: 'Vazirmatn', sans-serif; }
-    #quill-editor-container .ql-font-vazir { font-family: 'Vazir', sans-serif; }
-    #quill-editor-container .ql-font-shabnam { font-family: 'Shabnam', sans-serif; }
-    #quill-editor-container .ql-font-sahel { font-family: 'Sahel', sans-serif; }
-
-    @@media (max-width: 576px) {
-        #quill-editor-container .ql-toolbar.ql-snow { padding: 8px; }
-        #quill-editor-container .ql-formats { margin: 0; }
-        #quill-editor-container .ql-toolbar button,
-        #quill-editor-container .ql-toolbar .ql-picker { margin: 0; }
-    }
-    #quill-editor-container .ql-container {
-        border: none;
-        min-height: 350px;
-        font-family: 'Vazirmatn', Tahoma, sans-serif;
-        font-size: 16px;
-    }
-    #quill-editor-container .ql-editor {
-        direction: rtl;
-        text-align: right;
-        min-height: 350px;
-    }
-
-    #quill-editor-container .ql-editor ol,
-    #quill-editor-container .ql-editor ul {
-        padding-right: 1.5em;
-        padding-left: 0 !important;
-        margin-right: 0;
-        margin-left: 0;
-    }
-    #quill-editor-container .ql-editor li {
-        padding-right: 0.5em;
-        padding-left: 0 !important;
-    }
-    #quill-editor-container .ql-editor li::before {
-        right: 0.3em !important;
-        left: auto !important;
-        text-align: right !important;
-    }
-    #quill-editor-container .ql-editor li.ql-indent-1 { padding-right: 3em !important; padding-left: 0 !important; }
-    #quill-editor-container .ql-editor li.ql-indent-2 { padding-right: 5em !important; padding-left: 0 !important; }
-    #quill-editor-container .ql-editor li.ql-indent-3 { padding-right: 7em !important; padding-left: 0 !important; }
-
-    #quill-editor-container .ql-editor pre.ql-syntax {
-        direction: ltr;
-        text-align: left;
-        border-radius: 10px;
-        padding: 14px 16px;
-        overflow: auto;
-    }
-
-    #quill-editor-container .ql-editor [data-callout],
-    #quill-editor-container .ql-editor p[data-callout],
-    #quill-editor-container .ql-editor [class*="article-callout--"],
-    #quill-editor-container .ql-editor p[class*="article-callout--"] {
-        padding: 14px 14px !important;
-        border-radius: 12px !important;
-        margin: 10px 0 !important;
-        border-right: 6px solid #2563eb !important;
-        border-left: none !important;
-        background-color: #f8fafc !important;
-        font-weight: 600 !important;
-        display: block !important;
-        min-height: 1em;
-    }
-    #quill-editor-container .ql-editor [data-callout="info"],
-    #quill-editor-container .ql-editor p[data-callout="info"],
-    #quill-editor-container .ql-editor .article-callout--info,
-    #quill-editor-container .ql-editor p.article-callout--info { border-right-color: #2563eb !important; background-color: #eff6ff !important; }
-    #quill-editor-container .ql-editor [data-callout="danger"],
-    #quill-editor-container .ql-editor p[data-callout="danger"],
-    #quill-editor-container .ql-editor .article-callout--danger,
-    #quill-editor-container .ql-editor p.article-callout--danger { border-right-color: #ef4444 !important; background-color: #fff1f2 !important; }
-    #quill-editor-container .ql-editor [data-callout="success"],
-    #quill-editor-container .ql-editor p[data-callout="success"],
-    #quill-editor-container .ql-editor .article-callout--success,
-    #quill-editor-container .ql-editor p.article-callout--success { border-right-color: #10b981 !important; background-color: #ecfdf5 !important; }
-    #quill-editor-container .ql-editor [data-callout="quote"],
-    #quill-editor-container .ql-editor p[data-callout="quote"],
-    #quill-editor-container .ql-editor .article-callout--quote,
-    #quill-editor-container .ql-editor p.article-callout--quote {
-        padding: 14px 16px !important;
-        border-radius: 12px !important;
-        margin: 12px 0 !important;
-        border-right: 5px solid #f59e0b !important;
-        border-left: none !important;
-        background-color: #fffbeb !important;
-        color: #475569 !important;
-        font-style: italic !important;
-        font-size: 1.1rem !important;
-        display: block !important;
-        min-height: 1em;
-    }
-    /* Hide default blockquote border if it persists */
-    #quill-editor-container .ql-editor blockquote {
-        border-left: none !important;
-        border-right: none !important;
-        padding-left: 0 !important;
-        padding-right: 0 !important;
-    }
-
-    #quill-editor-container .ql-editor table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 10px 0;
-    }
-    #quill-editor-container .ql-editor td,
-    #quill-editor-container .ql-editor th {
-        border: 1px solid #e2e8f0;
-        padding: 8px;
-        vertical-align: top;
-    }
-</style>
-
-@code {
-    [Inject] private HttpClient Http { get; set; } = default!;
-    private List<NewsDto>? newsList;
-    private NewsUpsertRequest model = new();
-    private bool showEditor = false;
-    private int editingId = 0;
-    private bool isSaving = false;
-    private bool isUploading = false;
-    private string createdAtInput = string.Empty;
-
-    private DotNetObjectReference<News>? objRef;
-    private int _lastQuillEditingId;
-    private bool _quillInitialized;
-
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadNews();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            await Task.Delay(100);
-            await JS.InvokeVoidAsync("initJalali");
-        }
-
-        if (!showEditor)
-            return;
-
-        // Ensure Quill exists whenever editor is visible
-        if (!_quillInitialized)
-        {
-            objRef ??= DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("initQuillEditor", "quill-editor-container", model.Content ?? "", objRef);
-            await JS.InvokeVoidAsync("bindCalloutSelectorForQuill", "quill-editor-container", "news-callout-selector");
-            _quillInitialized = true;
-            _lastQuillEditingId = editingId;
-            return;
-        }
-
-        // When switching between news items, update the content
-        if (_lastQuillEditingId != editingId)
-        {
-            await JS.InvokeVoidAsync("setQuillContent", "quill-editor-container", model.Content ?? "");
-            await JS.InvokeVoidAsync("bindCalloutSelectorForQuill", "quill-editor-container", "news-callout-selector");
-            _lastQuillEditingId = editingId;
-        }
-    }
-
-    [JSInvokable]
-    public void UpdateContent(string content)
-    {
-        model.Content = content;
-    }
-
-    public void Dispose() => objRef?.Dispose();
-
-    private int skip = 0;
-    private int take = 10;
-    private int totalCount = 0;
-    private bool isLoadingMore = false;
-
-    private async Task LoadNews(bool loadMore = false)
-    {
-        if (loadMore)
-        {
-            isLoadingMore = true;
-            skip += take;
-        }
-        else
-        {
-            skip = 0;
-            newsList = null;
-        }
-
-        try
-        {
-            var response = await Http.GetAsync($"api/news?skip={skip}&take={take}");
-            if (response.IsSuccessStatusCode)
-            {
-                if (response.Headers.TryGetValues("X-Total-Count", out var values))
-                {
-                    int.TryParse(values.FirstOrDefault(), out totalCount);
-                }
-
-                var data = await response.Content.ReadFromJsonAsync<List<NewsDto>>();
-                if (data != null)
-                {
-                    if (loadMore && newsList != null)
-                    {
-                        newsList.AddRange(data);
-                    }
-                    else
-                    {
-                        newsList = data;
-                    }
-                }
-            }
-        }
-        catch
-        {
-            ToastService.ShowError("خطا در بارگذاری اخبار");
-        }
-        finally
-        {
-            isLoadingMore = false;
-        }
-    }
-
-    private void ClearImage()
-    {
-        model.ImageUrl = null;
-    }
-
-    private async Task HandleFileUpload(InputFileChangeEventArgs e)
-    {
-        isUploading = true;
-        try
-        {
-            var file = e.File;
-            if (file == null) return;
-
-            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
-            using var content = new MultipartFormDataContent();
-            var byteContent = new ByteArrayContent(bytes);
-            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
-            content.Add(byteContent, "file", file.Name);
-
-            var resp = await Http.PostAsync("api/news/upload", content);
-            if (resp.IsSuccessStatusCode)
-            {
-                var url = (await resp.Content.ReadAsStringAsync()).Trim('"');
-                model.ImageUrl = url;
-                ToastService.ShowSuccess("تصویر شاخص آپلود شد");
-            }
-            else
-            {
-                ToastService.ShowError("خطا در آپلود تصویر شاخص");
-            }
-        }
-        catch (Exception ex)
-        {
-            ToastService.ShowError("خطا در آپلود: " + ex.Message);
-        }
-        finally
-        {
-            isUploading = false;
-        }
-    }
-
-    private async Task HandleInlineImageUpload(InputFileChangeEventArgs e)
-    {
-        try
-        {
-            var file = e.File;
-            if (file == null) return;
-
-            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
-            using var content = new MultipartFormDataContent();
-            var byteContent = new ByteArrayContent(bytes);
-            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
-            content.Add(byteContent, "file", file.Name);
-            
-            var resp = await Http.PostAsync("api/news/upload", content);
-            if (resp.IsSuccessStatusCode)
-            {
-                var url = (await resp.Content.ReadAsStringAsync()).Trim('"');
-                // Insert as Quill embed (enables resize module)
-                await JS.InvokeVoidAsync("insertImageAtCursor", "quill-editor-container", url);
-                ToastService.ShowSuccess("تصویر درج شد");
-            }
-        }
-        catch (Exception ex) { ToastService.ShowError("خطا در آپلود: " + ex.Message); }
-    }
-
-    private async Task HandleInlineVideoUpload(InputFileChangeEventArgs e)
-    {
-        try
-        {
-            var file = e.File;
-            if (file == null) return;
-
-            using var content = new MultipartFormDataContent();
-            var stream = file.OpenReadStream(150_000_000);
-            var streamContent = new StreamContent(stream);
-            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
-            content.Add(streamContent, "file", file.Name);
-
-            var resp = await Http.PostAsync("api/news/upload-video", content);
-            if (resp.IsSuccessStatusCode)
-            {
-                var url = (await resp.Content.ReadAsStringAsync()).Trim('"');
-                await JS.InvokeVoidAsync("insertVideoAtCursor", "quill-editor-container", url);
-                ToastService.ShowSuccess("ویدیو درج شد");
-            }
-            else
-            {
-                ToastService.ShowError("خطا در آپلود ویدیو");
-            }
-        }
-        catch (Exception ex) { ToastService.ShowError("خطا در آپلود: " + ex.Message); }
-    }
-
-    private async Task InsertVideoLink()
-    {
-        await JS.InvokeVoidAsync("promptAndInsertVideoLink", "quill-editor-container");
-    }
-
-    private async Task InsertTable()
-    {
-        await JS.InvokeVoidAsync("promptAndInsertTable", "quill-editor-container");
-    }
-
-    private async Task InsertHtml(string before, string after, bool addParagraphAfter)
-    {
-        var content = before + "متن اینجا..." + after;
-        if (addParagraphAfter)
-        {
-            content += "<p><br></p>"; // Add empty paragraph after for easy exit
-        }
-        await JS.InvokeVoidAsync("insertHtmlAtCursor", "quill-editor-container", content);
-    }
-
-    private async Task ExitBoxAndContinue()
-    {
-        await JS.InvokeVoidAsync("exitCalloutAndContinue", "quill-editor-container");
-    }
-
-    private async Task OnCalloutChanged(ChangeEventArgs e)
-    {
-        var value = e.Value?.ToString() ?? "none";
-        await JS.InvokeVoidAsync("applyCalloutToSelection", "quill-editor-container", value);
-    }
-
-    private async Task ResizeSelectedImage(int widthPercent)
-    {
-        await JS.InvokeVoidAsync("resizeImage", "quill-editor-container", widthPercent);
-    }
-
-    private void NewNews()
-    {
-        editingId = 0;
-        model = new NewsUpsertRequest { IsPublished = true };
-        createdAtInput = PersianDate.ToJalaliDateTime(DateTimeOffset.Now);
-        _quillInitialized = false;
-        _lastQuillEditingId = 0;
-        showEditor = true;
-    }
-
-    private void EditNews(NewsDto news)
-    {
-        editingId = news.Id;
-        model = new NewsUpsertRequest
-        {
-            Title = news.Title ?? string.Empty,
-            Summary = news.Summary,
-            Content = news.Content ?? string.Empty,
-            ImageUrl = news.ImageUrl,
-            Tags = news.Tags,
-            AuthorName = news.AuthorName,
-            IsPublished = news.IsPublished,
-            CreatedAt = news.CreatedAt
-        };
-
-        createdAtInput = PersianDate.ToJalaliDateTime(news.CreatedAt);
-        _quillInitialized = false;
-        _lastQuillEditingId = 0;
-        showEditor = true;
-    }
-
-    private async Task SaveNews()
-    {
-        isSaving = true;
-        try
-        {
-            // Get content from Quill editor
-            var quillContent = await JS.InvokeAsync<string>("getQuillContent", "quill-editor-container");
-            if (!string.IsNullOrEmpty(quillContent))
-            {
-                model.Content = quillContent;
-            }
-
-            if (PersianDate.TryParseJalaliDateTime(createdAtInput, out var createdAt))
-                model.CreatedAt = createdAt;
-            else
-                model.CreatedAt = null;
-
-            HttpResponseMessage resp;
-            if (editingId == 0) resp = await Http.PostAsJsonAsync("api/news", model);
-            else resp = await Http.PutAsJsonAsync($"api/news/{editingId}", model);
-            
-            if (resp.IsSuccessStatusCode)
-            {
-                ToastService.ShowSuccess(editingId == 0 ? "خبر با موفقیت ثبت شد" : "تغییرات خبر ذخیره شد");
-                await LoadNews();
-                CloseEditor();
-            }
-            else
-            {
-                ToastService.ShowError("خطا در ذخیره‌سازی خبر");
-            }
-        }
-        catch (Exception ex)
-        {
-            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
-        }
-        finally { isSaving = false; }
-    }
-
-    private void CloseEditor()
-    {
-        showEditor = false;
-        _quillInitialized = false;
-        _lastQuillEditingId = 0;
-        _ = JS.InvokeVoidAsync("destroyQuillEditor", "quill-editor-container");
-    }
-
-    private NewsDto? itemToDelete;
-    private bool showConfirm;
-
-    private void ConfirmDelete(NewsDto news)
-    {
-        itemToDelete = news;
-        showConfirm = true;
-    }
-
-    private async Task HandleDeleteResult(bool result)
-    {
-        showConfirm = false;
-        if (result && itemToDelete != null)
-        {
-            try
-            {
-                var response = await Http.DeleteAsync($"api/news/{itemToDelete.Id}");
-                if (response.IsSuccessStatusCode)
-                {
-                    ToastService.ShowSuccess("خبر با موفقیت حذف شد");
-                    await LoadNews();
-                }
-                else
-                {
-                    ToastService.ShowError("خطا در حذف خبر");
-                }
-            }
-            catch (Exception ex)
-            {
-                ToastService.ShowError($"خطای سیستمی: {ex.Message}");
-            }
-        }
-        itemToDelete = null;
-    }
-}
+<PageTitle>مرکز محتوا | ارورسرویس</PageTitle>
+
+<div class="admin-container" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 page-head">
+        <h3 class="admin-page-title m-0">مدیریت مرکز محتوا</h3>
+        <div class="d-flex flex-wrap gap-2 page-actions">
+            <a href="/admin/content-categories" class="btn btn-outline-secondary rounded-3">
+                <span class="oi oi-tags me-1"></span> دسته‌بندی‌ها
+            </a>
+            <a href="/admin/content-tags" class="btn btn-outline-secondary rounded-3">
+                <span class="oi oi-tag me-1"></span> برچسب‌ها
+            </a>
+            <a href="/admin/content-settings" class="btn btn-outline-secondary rounded-3">
+                <span class="oi oi-cog me-1"></span> تنظیمات
+            </a>
+            <button class="btn btn-primary shadow-sm rounded-3" @onclick="NewNews">
+                <span class="oi oi-plus me-1"></span> محتوای جدید
+            </button>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm rounded-4 p-3 mb-3">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="content-type-tabs">
+                <button type="button" class="ctab @(_typeFilter == null ? "is-active" : null)" @onclick="() => SetTypeFilter(null)">همه</button>
+                @foreach (var type in ContentTypeCatalog.All)
+                {
+                    <button type="button" class="ctab @(_typeFilter == type ? "is-active" : null)" @onclick="() => SetTypeFilter(type)">
+                        <span class="oi @ContentTypeCatalog.Icon(type) me-1"></span>@ContentTypeCatalog.PluralLabel(type)
+                    </button>
+                }
+            </div>
+            <div class="ms-auto d-flex flex-wrap gap-2 content-filters">
+                <select class="form-select form-select-sm rounded-3" style="width: 160px;" @bind="_statusFilter" @bind:after="() => LoadNews()">
+                    <option value="">همه وضعیت‌ها</option>
+                    <option value="published">منتشرشده</option>
+                    <option value="scheduled">زمان‌بندی‌شده</option>
+                    <option value="draft">پیش‌نویس</option>
+                    <option value="archived">آرشیو</option>
+                </select>
+                <select class="form-select form-select-sm rounded-3" style="width: 180px;" @bind="_categoryFilterId" @bind:after="() => LoadNews()">
+                    <option value="">همه دسته‌ها</option>
+                    @foreach (var cat in CategoriesForFilter)
+                    {
+                        <option value="@cat.Id">@cat.Title</option>
+                    }
+                </select>
+                <div class="input-group input-group-sm" style="width: 240px;">
+                    <input type="search" class="form-control rounded-start-3" placeholder="جستجو در عنوان و برچسب…"
+                           @bind="_searchQuery" @bind:event="oninput" @bind:after="OnSearchChanged" />
+                    @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                    {
+                        <button type="button" class="btn btn-outline-secondary" @onclick="ClearSearch" title="پاک کردن">×</button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <ConfirmDialog IsVisible="showConfirm" 
+                   Title="حذف خبر" 
+                   Message=@($"آیا از حذف خبر \"{itemToDelete?.Title}\" اطمینان دارید؟")
+                   OnResult="HandleDeleteResult" />
+
+    @if (showEditor)
+    {
+        <div class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="m-0 fw-bold">
+                    @(editingId == 0 ? "ایجاد " : "ویرایش ")@ContentTypeCatalog.Label(model.ContentType)
+                </h5>
+                <button class="btn-close" @onclick="CloseEditor"></button>
+            </div>
+
+            <EditForm Model="model" OnValidSubmit="SaveNews">
+                <DataAnnotationsValidator />
+                <div class="row g-4">
+                    <div class="col-12">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">عنوان خبر</label>
+                            <InputText @bind-Value="model.Title" class="form-control rounded-3" placeholder="عنوان جذاب انتخاب کنید..." />
+                            <ValidationMessage For="@(() => model.Title)" class="text-danger small" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">تاریخ و ساعت ایجاد</label>
+                            <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="createdAtInput" />
+                            <div class="text-muted small mt-1">در صورت خالی بودن، زمان فعلی ثبت می‌شود.</div>
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">نوع محتوا</label>
+                                <InputSelect @bind-Value="model.ContentType" class="form-select rounded-3" @onchange="OnEditorTypeChanged">
+                                    @foreach (var type in ContentTypeCatalog.All)
+                                    {
+                                        <option value="@type">@ContentTypeCatalog.PluralLabel(type)</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">دسته‌بندی</label>
+                                <InputSelect @bind-Value="model.CategoryId" class="form-select rounded-3">
+                                    <option value="">بدون دسته</option>
+                                    @foreach (var cat in EditorCategories)
+                                    {
+                                        <option value="@cat.Id">@cat.Title</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                        </div>
+                        <div class="card bg-light border-0 rounded-4 p-3 mb-3">
+                            <div class="fw-bold mb-2">زمان‌بندی انتشار</div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small">انتشار از</label>
+                                    <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="_publishAtInput" placeholder="خالی = بلافاصله" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">آرشیو خودکار از</label>
+                                    <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="_expireAtInput" placeholder="خالی = بدون انقضا" />
+                                </div>
+                            </div>
+                            <div class="form-check form-switch mt-3">
+                                <InputCheckbox @bind-Value="model.IsFeatured" class="form-check-input" id="isFeatured" />
+                                <label class="form-check-label fw-bold" for="isFeatured">محتوای منتخب (نمایش ویژه)</label>
+                            </div>
+                            <div class="mt-2">
+                                <label class="form-label small">سنجاق تا تاریخ</label>
+                                <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="_pinnedUntilInput" placeholder="خالی = بدون سنجاق" />
+                            </div>
+                        </div>
+                        <div class="seo-panel mb-3">
+                            <button type="button" class="seo-panel__toggle @(_seoOpen ? "is-open" : null)"
+                                    @onclick="ToggleSeoPanel" aria-expanded="@(_seoOpen ? "true" : "false")">
+                                <span class="seo-panel__title">
+                                    <span class="oi oi-document me-2"></span>سئو و منبع (اختیاری)
+                                </span>
+                                <span class="seo-panel__meta">
+                                    @if (!string.IsNullOrWhiteSpace(model.SourceName))
+                                    {
+                                        <span class="seo-panel__badge">منبع: @model.SourceName</span>
+                                    }
+                                    <span class="oi @(_seoOpen ? "oi-chevron-top" : "oi-chevron-bottom")"></span>
+                                </span>
+                            </button>
+                            @if (_seoOpen)
+                            {
+                                <div class="seo-panel__body">
+                                    <div class="mb-2">
+                                        <label class="form-label small">عنوان سئو</label>
+                                        <InputText @bind-Value="model.SeoTitle" class="form-control rounded-3" placeholder="خالی = عنوان اصلی" />
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small">توضیح متا</label>
+                                        <InputTextArea @bind-Value="model.SeoDescription" class="form-control rounded-3" rows="2" placeholder="خالی = خلاصه خودکار" />
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small">آدرس کانونیکال</label>
+                                        <InputText @bind-Value="model.CanonicalUrl" class="form-control rounded-3" placeholder="https://…" />
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">نام منبع</label>
+                                            <InputText @bind-Value="model.SourceName" class="form-control rounded-3" placeholder="مثلاً: زومیت" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">لینک منبع</label>
+                                            <InputText @bind-Value="model.SourceUrl" class="form-control rounded-3" placeholder="https://…" />
+                                        </div>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(model.SourceName) || !string.IsNullOrWhiteSpace(model.SourceUrl))
+                                    {
+                                        <div class="d-flex justify-content-end mt-2">
+                                            <button type="button" class="btn btn-sm btn-outline-danger rounded-3" @onclick="ClearSource">
+                                                <span class="oi oi-trash me-1"></span> حذف منبع
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">خلاصه خبر (نمایش در لیست)</label>
+                            <InputTextArea @bind-Value="model.Summary" class="form-control rounded-3" rows="2" placeholder="توضیح کوتاه برای جذب مخاطب..." />
+                            <ValidationMessage For="@(() => model.Summary)" class="text-danger small" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">نویسنده خبر</label>
+                            <InputText @bind-Value="model.AuthorName" class="form-control rounded-3" placeholder="نام نویسنده..." />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">تگ‌ها (با کاما جدا کنید)</label>
+                            <InputText @bind-Value="model.Tags" class="form-control rounded-3" placeholder="مثلاً: تکنولوژی، هوش مصنوعی، خبر" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">متن کامل خبر</label>
+                            
+                            <div class="news-tools">
+                                <div class="news-tools__row">
+                                    <span class="news-tools__label">قالب</span>
+                                    <div class="news-tools__group">
+                                        <button type="button" class="news-chip" data-header-btn="2" @onclick='() => ApplyHeader(2)'>تیتر</button>
+                                        <button type="button" class="news-chip" data-header-btn="3" @onclick='() => ApplyHeader(3)'>زیرتیتر</button>
+                                        <button type="button" class="news-chip" data-header-btn="" @onclick='() => ApplyHeader(0)'>متن معمولی</button>
+                                    </div>
+                                </div>
+
+                                <div class="news-tools__row">
+                                    <span class="news-tools__label">باکس</span>
+                                    <div class="news-tools__group">
+                                        <button type="button" class="news-chip" data-callout-btn="info" @onclick='() => ApplyCallout("info")'><span class="news-dot" style="--dot:#2563eb"></span>اطلاعات</button>
+                                        <button type="button" class="news-chip" data-callout-btn="note" @onclick='() => ApplyCallout("note")'><span class="news-dot" style="--dot:#f59e0b"></span>نکته</button>
+                                        <button type="button" class="news-chip" data-callout-btn="warning" @onclick='() => ApplyCallout("warning")'><span class="news-dot" style="--dot:#f97316"></span>هشدار</button>
+                                        <button type="button" class="news-chip" data-callout-btn="danger" @onclick='() => ApplyCallout("danger")'><span class="news-dot" style="--dot:#ef4444"></span>فوری</button>
+                                        <button type="button" class="news-chip" data-callout-btn="success" @onclick='() => ApplyCallout("success")'><span class="news-dot" style="--dot:#10b981"></span>موفقیت</button>
+                                        <button type="button" class="news-chip" data-callout-btn="quote" @onclick='() => ApplyCallout("quote")'><span class="news-dot" style="--dot:#f59e0b"></span>نقل‌قول</button>
+                                        <button type="button" class="news-chip news-chip--ghost" data-callout-btn="none" @onclick='() => ApplyCallout("none")'>بدون باکس</button>
+                                        <button type="button" class="news-chip news-chip--cta" data-callout-btn="readmore" @onclick="OpenReadMorePicker">بیشتر مطالعه کنید</button>
+                                        <button type="button" class="news-chip news-chip--ghost" @onclick="ExitBoxAndContinue">خروج از باکس</button>
+                                    </div>
+                                </div>
+
+                                <div class="news-tools__row">
+                                    <span class="news-tools__label">رنگ متن</span>
+                                    <div class="news-tools__group">
+                                        <button type="button" class="news-chip news-chip--color" @onclick='() => ApplyColor("#1d4ed8")'><span class="news-dot" style="--dot:#1d4ed8"></span>آبی</button>
+                                        <button type="button" class="news-chip news-chip--color" @onclick='() => ApplyColor("#dc2626")'><span class="news-dot" style="--dot:#dc2626"></span>قرمز</button>
+                                        <button type="button" class="news-chip news-chip--color" @onclick='() => ApplyColor("#047857")'><span class="news-dot" style="--dot:#047857"></span>سبز</button>
+                                        <button type="button" class="news-chip news-chip--color" @onclick='() => ApplyColor("#c2410c")'><span class="news-dot" style="--dot:#c2410c"></span>نارنجی</button>
+                                        <button type="button" class="news-chip news-chip--ghost" @onclick="() => ApplyColor(null)">رنگ پیش‌فرض</button>
+                                    </div>
+                                    <span class="news-tools__label">هایلایت</span>
+                                    <div class="news-tools__group">
+                                        <button type="button" class="news-chip news-chip--color" @onclick='() => ApplyHighlight("#fef08a")'><span class="news-dot" style="--dot:#fef08a"></span>زرد</button>
+                                        <button type="button" class="news-chip news-chip--color" @onclick='() => ApplyHighlight("#dbeafe")'><span class="news-dot" style="--dot:#dbeafe"></span>آبی</button>
+                                        <button type="button" class="news-chip news-chip--color" @onclick='() => ApplyHighlight("#dcfce7")'><span class="news-dot" style="--dot:#dcfce7"></span>سبز</button>
+                                        <button type="button" class="news-chip news-chip--color" @onclick='() => ApplyHighlight("#fce7f3")'><span class="news-dot" style="--dot:#fce7f3"></span>صورتی</button>
+                                        <button type="button" class="news-chip news-chip--ghost" @onclick="() => ApplyHighlight(null)">بدون هایلایت</button>
+                                    </div>
+                                </div>
+
+                                <div class="news-tools__row news-tools__row--media">
+                                    <label class="news-chip news-chip--media mb-0">
+                                        <span class="oi oi-image me-1"></span> عکس
+                                        <InputFile OnChange="HandleInlineImageUpload" class="d-none" accept="image/*" />
+                                    </label>
+                                    <label class="news-chip news-chip--media mb-0">
+                                        <span class="oi oi-video me-1"></span> ویدیو
+                                        <InputFile OnChange="HandleInlineVideoUpload" class="d-none" accept="video/*" />
+                                    </label>
+                                    <button type="button" class="news-chip" @onclick='InsertVideoLink'>لینک ویدیو</button>
+                                    <button type="button" class="news-chip" @onclick='InsertTable'>جدول</button>
+                                    <button type="button" class="news-chip" @onclick='InsertCta'><span class="oi oi-link-intact me-1"></span>دکمه لینک</button>
+                                    <button type="button" class="news-chip" @onclick='InsertCaption'><span class="oi oi-text me-1"></span>زیرنویس عکس</button>
+                                    <div class="news-tools__group">
+                                        <span class="news-tools__label">اندازه عکس</span>
+                                        <button type="button" class="news-chip" @onclick='() => ResizeSelectedImage(25)'>25%</button>
+                                        <button type="button" class="news-chip" @onclick='() => ResizeSelectedImage(50)'>50%</button>
+                                        <button type="button" class="news-chip" @onclick='() => ResizeSelectedImage(75)'>75%</button>
+                                        <button type="button" class="news-chip" @onclick='() => ResizeSelectedImage(100)'>100%</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="quill-editor-container" style="min-height: 400px; background: white;"></div>
+                            <ValidationMessage For="@(() => model.Content)" class="text-danger small" />
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">تصویر شاخص</label>
+                            <div class="image-upload-zone rounded-4 border-2 border-dashed d-flex flex-column align-items-center justify-content-center p-4 bg-light position-relative">
+                                @if (!string.IsNullOrEmpty(model.ImageUrl))
+                                {
+                                    <img src="@model.ImageUrl" class="img-fluid rounded-3 mb-2" style="max-height: 200px;" />
+                                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-2 rounded-circle shadow" @onclick="ClearImage">
+                                        <span class="oi oi-x"></span>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="oi oi-cloud-upload display-4 text-muted mb-2"></span>
+                                    <InputFile OnChange="HandleFileUpload" class="position-absolute w-100 h-100 opacity-0" style="cursor: pointer; top: 0; left: 0;" />
+                                    <span class="text-muted small text-center">برای انتخاب تصویر شاخص کلیک کنید</span>
+                                }
+                            </div>
+                            @if (isUploading)
+                            {
+                                <div class="progress mt-2" style="height: 6px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="card bg-light border-0 rounded-4 p-3">
+                            <div class="form-check form-switch">
+                                <InputCheckbox @bind-Value="model.IsPublished" class="form-check-input" id="isPublished" />
+                                <label class="form-check-label fw-bold" for="isPublished">انتشار در سایت</label>
+                            </div>
+                            <div class="text-muted small mt-1">در صورت غیرفعال بودن، خبر فقط در پنل ادمین نمایش داده می‌شود.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="news-actions mt-4 pt-3 border-top">
+                    <button type="button" class="btn btn-outline-primary rounded-3 news-actions__preview" @onclick="OpenLivePreview">
+                        <span class="oi oi-eye me-1"></span> پیش‌نمایش زنده
+                    </button>
+                    @if (editingId != 0)
+                    {
+                        <a class="btn btn-outline-secondary rounded-3 news-actions__page" href="@ContentTypeCatalog.DetailRoute(model.ContentType, editingId, currentSlug)" target="_blank">
+                            <span class="oi oi-external-link me-1"></span> صفحه منتشرشده
+                        </a>
+                    }
+                    <div class="news-actions__main">
+                        <button type="button" class="btn btn-light rounded-3" @onclick="CloseEditor">انصراف</button>
+                        <button type="submit" class="btn btn-primary rounded-3 shadow-sm" disabled="@(isSaving || isUploading)">
+                            @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            ذخیره نهایی
+                        </button>
+                    </div>
+                </div>
+            </EditForm>
+
+            @if (_previewOpen)
+            {
+                <div class="nprev-overlay" @onclick="CloseLivePreview"></div>
+                <div class="nprev-modal @(_previewMobile ? "is-mobile" : null)" role="dialog" aria-modal="true" aria-label="پیش‌نمایش زنده" dir="rtl">
+                    <div class="nprev-head">
+                        <div class="nprev-head__title"><span class="oi oi-eye me-1"></span> پیش‌نمایش زنده</div>
+                        <div class="nprev-devices">
+                            <button type="button" class="nprev-dev @(_previewMobile ? null : "is-active")" @onclick='() => _previewMobile = false'>دسکتاپ</button>
+                            <button type="button" class="nprev-dev @(_previewMobile ? "is-active" : null)" @onclick='() => _previewMobile = true'>موبایل</button>
+                        </div>
+                        <button type="button" class="btn-close" @onclick="CloseLivePreview" aria-label="بستن"></button>
+                    </div>
+                    <div class="nprev-body">
+                        <div class="nprev-canvas">
+                            <div class="nd-page" dir="rtl">
+                                <article class="nd-article">
+                                    <h1 class="nd-title">@(string.IsNullOrWhiteSpace(model.Title) ? "عنوان پیش‌نمایش" : model.Title)</h1>
+                                    @if (!string.IsNullOrWhiteSpace(model.Summary))
+                                    {
+                                        <div class="nd-summary">
+                                            <span class="nd-summary__label">خلاصه</span>
+                                            <p class="nd-summary__text">@model.Summary</p>
+                                        </div>
+                                    }
+                                    <div class="nd-body article-content-body">
+                                        @((MarkupString)HtmlSanitizer.Sanitize(_previewHtml))
+                                    </div>
+                                </article>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_linkPickerOpen)
+    {
+        <div class="lp-overlay" @onclick="CloseReadMorePicker"></div>
+        <div class="lp-modal" role="dialog" aria-modal="true" aria-label="انتخاب مطلب برای بیشتر مطالعه کنید" dir="rtl">
+            <div class="lp-head">
+                <div>
+                    <h5 class="lp-title">درج کارت «بیشتر مطالعه کنید»</h5>
+                    <p class="lp-sub">از مطالب سایت انتخاب کنید؛ عنوان و لینک به‌صورت خودکار ثبت می‌شود.</p>
+                </div>
+                <button type="button" class="btn-close" @onclick="CloseReadMorePicker" aria-label="بستن"></button>
+            </div>
+
+            <div class="lp-tabs">
+                @foreach (var tab in LinkPickerTabs)
+                {
+                    <button type="button" class="lp-tab @(_linkPickerTab == tab.Key ? "is-active" : null)" @onclick="() => SwitchLinkTab(tab.Key)">
+                        @tab.Label
+                        @if (tab.Key == _linkPickerTab && _linkPickerLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm" style="width: .7rem; height: .7rem;"></span>
+                        }
+                    </button>
+                }
+            </div>
+
+            <div class="lp-search">
+                <span class="oi oi-magnifying-glass"></span>
+                <input type="search" class="lp-search__input" placeholder="@LinkSearchPlaceholder"
+                       @bind="_linkPickerQuery" @bind:event="oninput" @bind:after="OnLinkQueryChanged" />
+                @if (!string.IsNullOrEmpty(_linkPickerQuery))
+                {
+                    <button type="button" class="lp-search__clear" @onclick="ClearLinkQuery" title="پاک کردن جستجو">×</button>
+                }
+            </div>
+
+            <div class="lp-list">
+                @if (_linkPickerError != null)
+                {
+                    <div class="lp-empty text-danger">@_linkPickerError</div>
+                }
+                else if (_linkPickerLoading)
+                {
+                    @for (var i = 0; i < 5; i++)
+                    {
+                        <div class="lp-skeleton"></div>
+                    }
+                }
+                else if (!FilteredLinkItems.Any())
+                {
+                    <div class="lp-empty">
+                        @(string.IsNullOrWhiteSpace(_linkPickerQuery) ? "موردی در این بخش ثبت نشده است." : "نتیجه‌ای برای این جستجو پیدا نشد.")
+                    </div>
+                }
+                else
+                {
+                    @foreach (var item in FilteredLinkItems)
+                    {
+                        <button type="button" class="lp-item @(_linkPickerSelected == item ? "is-selected" : null)" @onclick="() => SelectLinkItem(item)">
+                            <span class="lp-item__badge lp-item__badge--@item.Type">@item.TypeLabel</span>
+                            <span class="lp-item__body">
+                                <span class="lp-item__title">@item.Title</span>
+                                @if (!string.IsNullOrWhiteSpace(item.Meta))
+                                {
+                                    <span class="lp-item__meta">@item.Meta</span>
+                                }
+                            </span>
+                            <span class="lp-item__check"><span class="oi oi-check"></span></span>
+                        </button>
+                    }
+                }
+            </div>
+
+            <div class="lp-custom">
+                <div class="lp-custom__row">
+                    <label class="lp-custom__label" for="lpCustomLabel">متن کارت</label>
+                    <div class="lp-custom__field">
+                        <input id="lpCustomLabel" type="text" class="lp-custom__input" maxlength="140"
+                               placeholder="خالی = متن پیش‌فرض (نوع و عنوان خودکار)"
+                               @bind="_linkCustomLabel" @bind:event="oninput" />
+                        @if (!string.IsNullOrWhiteSpace(_linkCustomLabel))
+                        {
+                            <button type="button" class="lp-custom__clear" @onclick="ClearLinkCustomLabel" title="بازگشت به پیش‌فرض">×</button>
+                        }
+                    </div>
+                </div>
+                <p class="lp-custom__hint">
+                    @if (_linkPickerSelected is null)
+                    {
+                        <text>پس از انتخاب مطلب، متن پیش‌فرض کارت (نوع و عنوان) خودکار ساخته می‌شود.</text>
+                    }
+                    else
+                    {
+                        <text>پیش‌فرض: «@AutoCardLabel» — اگر متنی بنویسید، همان جای پیش‌فرض درج می‌شود.</text>
+                    }
+                </p>
+            </div>
+
+            <div class="lp-foot">
+                <div class="lp-picked">
+                    @if (_linkPickerSelected != null)
+                    {
+                        <span class="lp-picked__label">متن نهایی:</span>
+                        <span class="lp-picked__title">@EffectiveCardLabel</span>
+                    }
+                    else
+                    {
+                        <span class="lp-picked__hint">یک مورد را انتخاب کنید.</span>
+                    }
+                </div>
+                <div class="lp-actions">
+                    <button type="button" class="btn btn-light rounded-3 px-3" @onclick="CloseReadMorePicker">انصراف</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" disabled="@(_linkPickerSelected == null)" @onclick="InsertSelectedReadMore">
+                        <span class="oi oi-arrow-left me-1"></span> درج در متن
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (selectedIds.Count > 0)
+    {
+        <div class="bulk-bar d-flex flex-wrap align-items-center gap-2 mb-2 px-3 py-2 rounded-3">
+            <span class="fw-bold small">@selectedIds.Count مورد انتخاب شده</span>
+            <div class="ms-auto d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-outline-success rounded-3" @onclick='() => RunBulk("publish")'>انتشار</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary rounded-3" @onclick='() => RunBulk("unpublish")'>لغو انتشار</button>
+                <button type="button" class="btn btn-sm btn-outline-warning rounded-3" @onclick='() => RunBulk("archive")'>آرشیو</button>
+                <button type="button" class="btn btn-sm btn-outline-danger rounded-3" @onclick='() => RunBulk("delete")'>حذف</button>
+            </div>
+        </div>
+    }
+
+    <div class="content-list shadow-sm">
+        <div class="content-list__toolbar">
+            <label class="content-list__selectall">
+                <input type="checkbox" class="form-check-input m-0" checked="@AllSelected" @onchange="ToggleSelectAll" />
+                <span>انتخاب همه</span>
+            </label>
+            <span class="content-list__count">@totalCount.ToString("N0") مورد</span>
+        </div>
+
+        @if (newsList == null)
+        {
+            <div class="content-list__state"><div class="spinner-border text-primary"></div></div>
+        }
+        else if (!newsList.Any())
+        {
+            <div class="content-list__state text-muted">محتوایی با این فیلترها یافت نشد.</div>
+        }
+        else
+        {
+            @foreach (var news in newsList)
+            {
+                <div class="content-item @(selectedIds.Contains(news.Id) ? "is-selected" : null)">
+                    <div class="content-item__check">
+                        <input type="checkbox" class="form-check-input m-0"
+                               checked="@selectedIds.Contains(news.Id)"
+                               @onchange="e => ToggleSelect(news.Id, (bool?)e.Value == true)" />
+                    </div>
+                    <a class="content-item__thumb" href="@ContentTypeCatalog.DetailRoute(news.ContentType, news.Id, news.Slug)" target="_blank" tabindex="-1">
+                        @if (!string.IsNullOrEmpty(news.ImageUrl))
+                        {
+                            <img src="@news.ImageUrl" alt="@news.Title" loading="lazy" />
+                        }
+                        else
+                        {
+                            <span class="oi oi-image"></span>
+                        }
+                    </a>
+                    <div class="content-item__body">
+                        <a class="content-item__title" href="@ContentTypeCatalog.DetailRoute(news.ContentType, news.Id, news.Slug)" target="_blank">
+                            @if (news.IsFeatured) { <span class="oi oi-star-fill content-item__flag is-featured" title="منتخب"></span> }
+                            @if (news.PinnedUntil.HasValue && news.PinnedUntil > DateTimeOffset.UtcNow) { <span class="oi oi-pin content-item__flag is-pinned" title="سنجاق‌شده"></span> }
+                            <span>@news.Title</span>
+                        </a>
+                        @if (!string.IsNullOrWhiteSpace(news.Summary))
+                        {
+                            <div class="content-item__summary">@news.Summary</div>
+                        }
+                        <div class="content-item__meta">
+                            <span class="badge rounded-pill @ContentTypeCatalog.BadgeClass(news.ContentType)">@ContentTypeCatalog.Label(news.ContentType)</span>
+                            @if (!string.IsNullOrWhiteSpace(news.CategoryTitle))
+                            {
+                                <span class="content-item__chip"><span class="oi oi-folder"></span>@news.CategoryTitle</span>
+                            }
+                            <span class="content-item__chip"><span class="oi oi-calendar"></span>@PersianDate.ToJalaliDateTime(news.PublishedAt)</span>
+                            @if (news.PublishAt.HasValue && news.PublishAt > DateTimeOffset.UtcNow)
+                            {
+                                <span class="content-item__chip is-info"><span class="oi oi-clock"></span>زمان‌بندی‌شده</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="content-item__side">
+                        <span class="badge @ContentStatusResolver.BadgeClass(news.Status) rounded-pill">@ContentStatusResolver.Label(news.Status)</span>
+                        <span class="content-item__views" title="بازدید"><span class="oi oi-eye"></span>@news.ViewCount.ToString("N0")</span>
+                    </div>
+                    <div class="content-item__actions">
+                        <a class="content-act is-view" href="@ContentTypeCatalog.DetailRoute(news.ContentType, news.Id, news.Slug)" target="_blank" title="پیش‌نمایش">
+                            <span class="oi oi-eye"></span>
+                        </a>
+                        <button type="button" class="content-act is-edit" @onclick="() => EditNews(news)" title="ویرایش">
+                            <span class="oi oi-pencil"></span>
+                        </button>
+                        <button type="button" class="content-act is-delete" @onclick="() => ConfirmDelete(news)" title="حذف">
+                            <span class="oi oi-trash"></span>
+                        </button>
+                    </div>
+                </div>
+            }
+        }
+
+        @if (newsList != null && newsList.Count < totalCount)
+        {
+            <div class="content-list__more">
+                <button class="btn btn-outline-primary btn-sm rounded-pill px-4" @onclick="() => LoadNews(true)" disabled="@isLoadingMore">
+                    @if (isLoadingMore)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    مشاهده بیشتر (@(totalCount - newsList.Count) مورد باقی‌مانده)
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .image-upload-zone {
+        min-height: 200px;
+        transition: all 0.2s ease;
+    }
+    .image-upload-zone:hover {
+        background: #f0f4f8 !important;
+        border-color: #0d6efd !important;
+    }
+    .object-fit-cover { object-fit: cover; }
+    .bg-success-subtle { background-color: #d1e7dd; }
+    .bg-warning-subtle { background-color: #fff3cd; }
+    .admin-container { padding: 0; }
+    /* SEO/source panel (Blazor-driven; Bootstrap JS is not loaded here) */
+    .seo-panel {
+        border: 1px solid var(--app-border, #e2e8f0);
+        border-radius: 16px;
+        background: var(--app-surface, #fff);
+        overflow: hidden;
+    }
+    .seo-panel__toggle {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 16px;
+        border: 0;
+        background: var(--app-table-header, #f8fafc);
+        color: var(--app-text, #0f172a);
+        font-weight: 800;
+        font-size: .9rem;
+        text-align: start;
+        cursor: pointer;
+        transition: background .15s ease;
+    }
+    .seo-panel__toggle:hover { background: var(--app-table-row-hover, #f1f5f9); }
+    .seo-panel__toggle.is-open {
+        border-bottom: 1px solid var(--app-border, #e2e8f0);
+        color: var(--app-primary, #2563eb);
+    }
+    .seo-panel__meta { display: inline-flex; align-items: center; gap: 8px; color: var(--app-text-muted, #64748b); }
+    .seo-panel__badge {
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: .72rem;
+        font-weight: 700;
+        color: var(--app-primary, #2563eb);
+        background: var(--app-primary-light, rgba(37, 99, 235, .1));
+        border-radius: 999px;
+        padding: 2px 10px;
+    }
+    .seo-panel__body { padding: 14px 16px 16px; }
+
+    /* Editor action bar: wraps instead of squeezing on narrow screens */
+    .news-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .news-actions__preview { margin-inline-end: auto; }
+    .news-actions__main { display: flex; align-items: center; gap: 8px; }
+    .news-actions .btn { white-space: nowrap; }
+    @@media (max-width: 767.98px) {
+        .news-actions { display: grid; grid-template-columns: 1fr 1fr; }
+        .news-actions__preview,
+        .news-actions__page { grid-column: 1 / -1; margin-inline-end: 0; width: 100%; }
+        .news-actions__main { display: contents; }
+        .news-actions .btn { width: 100%; padding-inline: 8px; }
+    }
+    .content-type-tabs { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+    .ctab {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 14px;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        background: #fff;
+        color: #475569;
+        font-size: .82rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all .15s ease;
+    }
+    .ctab:hover { border-color: #93c5fd; color: #1d4ed8; background: #f0f7ff; }
+    .ctab.is-active { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; box-shadow: 0 0 0 2px rgba(37, 99, 235, .12); }
+    .bulk-bar { background: #eff6ff; border: 1px solid #bfdbfe; }
+
+    /* Content list: responsive rows instead of a cramped table */
+    .content-list {
+        background: var(--app-surface, #fff);
+        border: 1px solid var(--app-border, #e2e8f0);
+        border-radius: 18px;
+        overflow: hidden;
+    }
+    .content-list__toolbar {
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        padding: 10px 16px;
+        background: var(--app-table-header, #f8fafc);
+        border-bottom: 1px solid var(--app-border, #e2e8f0);
+    }
+    .content-list__selectall {
+        display: flex; align-items: center; gap: 8px; margin: 0;
+        font-size: .8rem; font-weight: 800;
+        color: var(--app-text-secondary, #475569);
+        cursor: pointer;
+    }
+    .content-list__count { font-size: .75rem; color: var(--app-text-muted, #64748b); }
+    .content-list__state { padding: 56px 16px; text-align: center; }
+    .content-list__more {
+        padding: 14px; text-align: center;
+        border-top: 1px solid var(--app-border, #e2e8f0);
+        background: var(--app-table-header, #f8fafc);
+    }
+    .content-item {
+        display: grid;
+        grid-template-columns: 32px 60px minmax(0, 1fr) 104px 116px;
+        grid-template-areas: "check thumb body side actions";
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--app-divider, rgba(15, 23, 42, .06));
+        border-inline-start: 3px solid transparent;
+        transition: background .15s ease, border-color .15s ease;
+    }
+    .content-item:last-child { border-bottom: 0; }
+    .content-item:hover { background: var(--app-table-row-hover, #f8fafc); }
+    .content-item.is-selected {
+        background: var(--app-primary-light, rgba(37, 99, 235, .08));
+        border-inline-start-color: var(--app-primary, #2563eb);
+    }
+    .content-item__check { grid-area: check; display: flex; justify-content: center; }
+    .content-item__thumb {
+        grid-area: thumb;
+        width: 56px; height: 56px;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 12px; overflow: hidden;
+        background: var(--app-table-header, #f1f5f9);
+        color: var(--app-text-muted, #94a3b8);
+        font-size: 1.15rem;
+        text-decoration: none;
+    }
+    .content-item__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .content-item__body { grid-area: body; min-width: 0; }
+    .content-item__title {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+        font-size: .9rem; font-weight: 800; line-height: 1.7;
+        color: var(--app-text, #0f172a);
+        text-decoration: none;
+    }
+    .content-item__title:hover { color: var(--app-primary, #2563eb); }
+    .content-item__flag.is-featured { color: #f59e0b; font-size: .75rem; }
+    .content-item__flag.is-pinned { color: var(--app-primary, #2563eb); font-size: .72rem; }
+    .content-item__summary {
+        margin-top: 2px;
+        font-size: .76rem; color: var(--app-text-muted, #64748b);
+        overflow: hidden; display: -webkit-box;
+        -webkit-line-clamp: 1; -webkit-box-orient: vertical;
+    }
+    .content-item__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+    .content-item__chip {
+        display: inline-flex; align-items: center; gap: 3px;
+        padding: 2px 8px; border-radius: 999px;
+        font-size: .7rem; font-weight: 600;
+        color: var(--app-text-muted, #64748b);
+        background: var(--app-table-header, #f1f5f9);
+    }
+    .content-item__chip.is-info { color: var(--app-info, #0369a1); background: var(--app-info-bg, rgba(6, 182, 212, .12)); }
+    .content-item__side { grid-area: side; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+    .content-item__views { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; color: var(--app-text-muted, #64748b); }
+    .content-item__actions { grid-area: actions; display: flex; justify-content: flex-end; gap: 6px; }
+    .content-act {
+        width: 34px; height: 34px;
+        display: inline-flex; align-items: center; justify-content: center;
+        border: 1px solid transparent; border-radius: 10px;
+        background: transparent; text-decoration: none;
+        transition: all .15s ease;
+    }
+    .content-act.is-view { color: var(--app-text-secondary, #475569); border-color: var(--app-border, #e2e8f0); }
+    .content-act.is-edit { color: var(--app-primary, #2563eb); background: var(--app-primary-light, rgba(37, 99, 235, .1)); }
+    .content-act.is-delete { color: var(--app-danger, #dc2626); background: var(--app-danger-bg, rgba(220, 38, 38, .1)); }
+    .content-act:hover { transform: translateY(-1px); }
+    .content-act.is-view:hover { background: var(--app-table-header, #f1f5f9); }
+    .content-act.is-edit:hover { background: var(--app-primary, #2563eb); color: #fff; }
+    .content-act.is-delete:hover { background: var(--app-danger, #dc2626); color: #fff; }
+    @@media (max-width: 991.98px) {
+        .content-item {
+            grid-template-columns: 24px 52px minmax(0, 1fr);
+            grid-template-areas:
+                "check thumb body"
+                "check thumb side"
+                "actions actions actions";
+            align-items: start;
+            gap: 6px 10px;
+            padding: 12px;
+        }
+        .content-item__thumb { width: 48px; height: 48px; }
+        .content-item__check { padding-top: 4px; }
+        .content-item__side { flex-direction: row; align-items: center; gap: 8px; }
+        .content-item__actions {
+            justify-content: flex-end;
+            margin-top: 2px; padding-top: 8px;
+            border-top: 1px dashed var(--app-divider, #e2e8f0);
+        }
+    }
+    @@media (max-width: 575.98px) {
+        .content-list { border-radius: 14px; }
+        .content-list__toolbar { padding: 8px 10px; }
+        .content-item { padding: 10px; gap: 5px 8px; }
+        .content-item__title { font-size: .84rem; }
+        .content-item__summary { -webkit-line-clamp: 2; }
+        .content-act { width: 38px; height: 38px; }
+        .page-head { gap: 10px; }
+        .page-actions { width: 100%; }
+        .page-actions .btn { flex: 1 1 45%; white-space: nowrap; }
+        .content-type-tabs { width: 100%; }
+        .ctab { flex: 1 1 auto; justify-content: center; }
+        .content-filters { width: 100%; }
+        .content-filters > select,
+        .content-filters > .input-group { width: 100% !important; }
+    }
+
+    
+    /* Quill Editor Styles */
+    #quill-editor-container {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        min-height: 400px;
+    }
+    #quill-editor-container .ql-toolbar {
+        border-top: none;
+        border-left: none;
+        border-right: none;
+        border-bottom: 1px solid #dee2e6;
+        background: #f8f9fa;
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        overflow: visible;
+        white-space: normal;
+    }
+    #quill-editor-container .ql-toolbar::-webkit-scrollbar { height: 6px; }
+    #quill-editor-container .ql-toolbar::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.25); border-radius: 999px; }
+
+    #quill-editor-container .ql-formats { display: inline-flex; float: none; flex-wrap: wrap; }
+    #quill-editor-container .ql-picker { position: relative; }
+    #quill-editor-container .ql-picker-options { z-index: 9999; }
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="vazirmatn"]::before,
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="vazirmatn"]::before {
+        content: 'وزیرمتن';
+        font-family: 'Vazirmatn', sans-serif !important;
+    }
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="vazir"]::before,
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="vazir"]::before {
+        content: 'وزیر';
+        font-family: 'Vazir', sans-serif !important;
+    }
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="shabnam"]::before,
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="shabnam"]::before {
+        content: 'شبنم';
+        font-family: 'Shabnam', sans-serif !important;
+    }
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label[data-value="sahel"]::before,
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item[data-value="sahel"]::before {
+        content: 'ساحل';
+        font-family: 'Sahel', sans-serif !important;
+    }
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-label::before,
+    #quill-editor-container .ql-toolbar .ql-font .ql-picker-item::before {
+        font-size: 14px;
+    }
+    #quill-editor-container .ql-font-vazirmatn { font-family: 'Vazirmatn', sans-serif; }
+    #quill-editor-container .ql-font-vazir { font-family: 'Vazir', sans-serif; }
+    #quill-editor-container .ql-font-shabnam { font-family: 'Shabnam', sans-serif; }
+    #quill-editor-container .ql-font-sahel { font-family: 'Sahel', sans-serif; }
+
+    @@media (max-width: 576px) {
+        #quill-editor-container .ql-toolbar.ql-snow { padding: 8px; }
+        #quill-editor-container .ql-formats { margin: 0; }
+        #quill-editor-container .ql-toolbar button,
+        #quill-editor-container .ql-toolbar .ql-picker { margin: 0; }
+    }
+    #quill-editor-container .ql-container {
+        border: none;
+        min-height: 350px;
+        font-family: 'Vazirmatn', Tahoma, sans-serif;
+        font-size: 16px;
+    }
+    #quill-editor-container .ql-editor {
+        direction: rtl;
+        text-align: right;
+        min-height: 350px;
+    }
+
+    #quill-editor-container .ql-editor ol,
+    #quill-editor-container .ql-editor ul {
+        padding-right: 1.5em;
+        padding-left: 0 !important;
+        margin-right: 0;
+        margin-left: 0;
+    }
+    #quill-editor-container .ql-editor li {
+        padding-right: 0.5em;
+        padding-left: 0 !important;
+    }
+    #quill-editor-container .ql-editor li::before {
+        right: 0.3em !important;
+        left: auto !important;
+        text-align: right !important;
+    }
+    #quill-editor-container .ql-editor li.ql-indent-1 { padding-right: 3em !important; padding-left: 0 !important; }
+    #quill-editor-container .ql-editor li.ql-indent-2 { padding-right: 5em !important; padding-left: 0 !important; }
+    #quill-editor-container .ql-editor li.ql-indent-3 { padding-right: 7em !important; padding-left: 0 !important; }
+
+    #quill-editor-container .ql-editor pre.ql-syntax {
+        direction: ltr;
+        text-align: left;
+        border-radius: 10px;
+        padding: 14px 16px;
+        overflow: auto;
+    }
+
+    /* ابزارهای سریع ادیتور خبر */
+    .news-tools {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding: 10px 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+    }
+    .news-tools__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .news-tools__row--media { border-top: 1px dashed #e2e8f0; padding-top: 8px; }
+    .news-tools__label { font-size: .72rem; font-weight: 800; color: #64748b; padding-inline: 2px; }
+    .news-tools__group { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+    .news-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        font-size: .78rem;
+        font-weight: 700;
+        line-height: 1.6;
+        color: #334155;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: all .15s ease;
+    }
+    .news-chip:hover { border-color: #93c5fd; color: #1d4ed8; background: #f0f7ff; }
+    .news-chip.is-active {
+        border-color: #2563eb;
+        color: #1d4ed8;
+        background: #eff6ff;
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, .12);
+    }
+    .news-chip--ghost { color: #64748b; background: transparent; }
+    .news-chip--cta {
+        color: #ffffff;
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        border-color: transparent;
+    }
+    .news-chip--cta:hover { color: #ffffff; background: linear-gradient(135deg, #1d4ed8, #1e40af); }
+    .news-chip--media { color: #ffffff; background: #475569; border-color: transparent; }
+    .news-chip--media:hover { color: #ffffff; background: #334155; }
+    .news-dot {
+        width: 10px;
+        height: 10px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--dot, #2563eb);
+        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .12);
+    }
+
+    #quill-editor-container .ql-editor [data-callout],
+    #quill-editor-container .ql-editor p[data-callout],
+    #quill-editor-container .ql-editor [class*="article-callout--"],
+    #quill-editor-container .ql-editor p[class*="article-callout--"] {
+        padding: 14px 14px !important;
+        border-radius: 12px !important;
+        margin: 10px 0 !important;
+        border-right: 6px solid #2563eb !important;
+        border-left: none !important;
+        background-color: #f8fafc !important;
+        font-weight: 600 !important;
+        display: block !important;
+        min-height: 1em;
+    }
+    #quill-editor-container .ql-editor [data-callout="info"],
+    #quill-editor-container .ql-editor p[data-callout="info"],
+    #quill-editor-container .ql-editor .article-callout--info,
+    #quill-editor-container .ql-editor p.article-callout--info { border-right-color: #2563eb !important; background-color: #eff6ff !important; }
+    #quill-editor-container .ql-editor [data-callout="danger"],
+    #quill-editor-container .ql-editor p[data-callout="danger"],
+    #quill-editor-container .ql-editor .article-callout--danger,
+    #quill-editor-container .ql-editor p.article-callout--danger { border-right-color: #ef4444 !important; background-color: #fff1f2 !important; }
+    #quill-editor-container .ql-editor [data-callout="success"],
+    #quill-editor-container .ql-editor p[data-callout="success"],
+    #quill-editor-container .ql-editor .article-callout--success,
+    #quill-editor-container .ql-editor p.article-callout--success { border-right-color: #10b981 !important; background-color: #ecfdf5 !important; }
+
+    #quill-editor-container .ql-editor [data-callout="note"],
+    #quill-editor-container .ql-editor p[data-callout="note"] {
+        border-right-color: #f59e0b !important;
+        background-color: #fffbeb !important;
+        color: #92400e !important;
+    }
+    #quill-editor-container .ql-editor [data-callout="warning"],
+    #quill-editor-container .ql-editor p[data-callout="warning"] {
+        border-right-color: #f97316 !important;
+        background-color: #fff7ed !important;
+        color: #9a3412 !important;
+    }
+    #quill-editor-container .ql-editor [data-callout="readmore"],
+    #quill-editor-container .ql-editor p[data-callout="readmore"] {
+        border-right-color: #2563eb !important;
+        background-color: #eff6ff !important;
+        color: #1e3a8a !important;
+        font-weight: 800 !important;
+    }
+    #quill-editor-container .ql-editor [data-callout="readmore"] a {
+        display: flex !important;
+        align-items: center;
+        justify-content: space-between;
+        color: #1d4ed8 !important;
+        font-weight: 800 !important;
+        text-decoration: none !important;
+    }
+    #quill-editor-container .ql-editor [data-callout="readmore"] a::after {
+        content: "←";
+        font-size: 1.15em;
+        line-height: 1;
+    }
+    #quill-editor-container .ql-editor [data-callout="quote"],
+    #quill-editor-container .ql-editor p[data-callout="quote"],
+    #quill-editor-container .ql-editor .article-callout--quote,
+    #quill-editor-container .ql-editor p.article-callout--quote {
+        padding: 14px 16px !important;
+        border-radius: 12px !important;
+        margin: 12px 0 !important;
+        border-right: 5px solid #f59e0b !important;
+        border-left: none !important;
+        background-color: #fffbeb !important;
+        color: #475569 !important;
+        font-style: italic !important;
+        font-size: 1.1rem !important;
+        display: block !important;
+        min-height: 1em;
+    }
+    /* Hide default blockquote border if it persists */
+    #quill-editor-container .ql-editor blockquote {
+        border-left: none !important;
+        border-right: none !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+
+    #quill-editor-container .ql-editor table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0;
+    }
+    #quill-editor-container .ql-editor td,
+    #quill-editor-container .ql-editor th {
+        border: 1px solid #e2e8f0;
+        padding: 8px;
+        vertical-align: top;
+    }
+
+    /* ===== Read-more picker ===== */
+    .lp-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, .55);
+        backdrop-filter: blur(3px);
+        z-index: 1300;
+    }
+    .lp-modal {
+        position: fixed;
+        z-index: 1301;
+        inset-inline: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: min(760px, calc(100vw - 24px));
+        margin-inline: auto;
+        max-height: min(82vh, 720px);
+        display: flex;
+        flex-direction: column;
+        background: #ffffff;
+        border: 1px solid rgba(15, 23, 42, .06);
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 30px 80px -30px rgba(15, 23, 42, .55);
+    }
+    .lp-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px 20px 12px;
+    }
+    .lp-title { margin: 0; font-size: 1.05rem; font-weight: 900; color: #0f172a; }
+    .lp-sub { margin: 4px 0 0; font-size: .78rem; color: #64748b; }
+    .lp-tabs {
+        display: flex;
+        gap: 6px;
+        padding: 0 20px 12px;
+        overflow-x: auto;
+        border-bottom: 1px solid #eef2f7;
+        scrollbar-width: none;
+    }
+    .lp-tabs::-webkit-scrollbar { display: none; }
+    .lp-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        padding: 7px 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #475569;
+        font-size: .78rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all .15s ease;
+    }
+    .lp-tab:hover { border-color: #93c5fd; color: #1d4ed8; background: #f0f7ff; }
+    .lp-tab.is-active {
+        border-color: #2563eb;
+        color: #1d4ed8;
+        background: #eff6ff;
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, .12);
+    }
+    .lp-search {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 12px 20px;
+        padding: 0 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #f8fafc;
+    }
+    .lp-search .oi { color: #94a3b8; font-size: .9rem; }
+    .lp-search__input {
+        flex: 1;
+        border: 0;
+        background: transparent;
+        padding: 10px 0;
+        font-size: .86rem;
+        color: #0f172a;
+        outline: none;
+    }
+    .lp-search__input::-webkit-search-cancel-button { display: none; }
+    .lp-search__clear {
+        border: 0;
+        background: transparent;
+        color: #64748b;
+        font-size: 1.1rem;
+        line-height: 1;
+        cursor: pointer;
+        padding: 2px;
+    }
+    .lp-list {
+        flex: 1;
+        min-height: 160px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 0 12px 12px;
+    }
+    .lp-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        text-align: right;
+        padding: 10px 12px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: #ffffff;
+        cursor: pointer;
+        transition: all .12s ease;
+    }
+    .lp-item:hover { background: #f8fafc; border-color: #e2e8f0; }
+    .lp-item.is-selected {
+        background: #eff6ff;
+        border-color: #93c5fd;
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, .1);
+    }
+    .lp-item__badge {
+        flex: 0 0 auto;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        color: #475569;
+        font-size: .66rem;
+        font-weight: 800;
+    }
+    .lp-item__badge--news { background: #e0f2fe; color: #0369a1; }
+    .lp-item__badge--article { background: #dbeafe; color: #1d4ed8; }
+    .lp-item__badge--course { background: #ede9fe; color: #6d28d9; }
+    .lp-item__badge--product { background: #dcfce7; color: #15803d; }
+    .lp-item__badge--errorcode { background: #fef3c7; color: #b45309; }
+    .lp-item__badge--page { background: #f1f5f9; color: #475569; }
+    .lp-item__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .lp-item__title { font-size: .86rem; font-weight: 800; color: #0f172a; line-height: 1.6; }
+    .lp-item__meta { font-size: .72rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lp-item__check {
+        flex: 0 0 auto;
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: #eff6ff;
+        color: #2563eb;
+        opacity: 0;
+        transition: opacity .12s ease;
+    }
+    .lp-item__check .oi { font-size: .7rem; }
+    .lp-item:hover .lp-item__check { opacity: .45; }
+    .lp-item.is-selected .lp-item__check { opacity: 1; }
+    .lp-empty { padding: 28px 12px; text-align: center; color: #94a3b8; font-size: .82rem; }
+    .lp-skeleton {
+        height: 52px;
+        border-radius: 12px;
+        background: linear-gradient(90deg, #eef2f7 25%, #f8fafc 37%, #eef2f7 63%);
+        background-size: 400% 100%;
+        animation: lp-shimmer 1.4s ease infinite;
+    }
+    @@keyframes lp-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+    .lp-custom {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 0 20px 12px;
+    }
+    .lp-custom__row { display: flex; align-items: center; gap: 10px; }
+    .lp-custom__label { flex: 0 0 auto; font-size: .78rem; font-weight: 800; color: #1d4ed8; }
+    .lp-custom__field {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #f8fafc;
+        padding: 0 12px;
+        transition: border-color .12s ease, box-shadow .12s ease;
+    }
+    .lp-custom__field:focus-within { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37, 99, 235, .1); }
+    .lp-custom__input {
+        flex: 1;
+        border: 0;
+        background: transparent;
+        padding: 9px 0;
+        font-size: .84rem;
+        color: #0f172a;
+        outline: none;
+    }
+    .lp-custom__input::placeholder { color: #94a3b8; }
+    .lp-custom__clear {
+        border: 0;
+        background: transparent;
+        color: #64748b;
+        font-size: 1.05rem;
+        line-height: 1;
+        cursor: pointer;
+        padding: 2px;
+    }
+    .lp-custom__hint {
+        margin: 0;
+        font-size: .72rem;
+        color: #94a3b8;
+        line-height: 1.7;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .lp-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 12px 20px;
+        border-top: 1px solid #eef2f7;
+        background: #fbfdff;
+    }
+    .lp-picked { min-width: 0; display: flex; align-items: center; gap: 6px; font-size: .78rem; color: #64748b; }
+    .lp-picked__label { font-weight: 800; color: #1d4ed8; }
+    .lp-picked__title {
+        max-width: 320px;
+        font-weight: 800;
+        color: #0f172a;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .lp-actions { display: flex; gap: 8px; }
+    @@media (max-width: 575.98px) {
+        .lp-modal { max-height: 88vh; border-radius: 16px; }
+        .lp-head { padding: 14px 16px 10px; }
+        .lp-tabs { padding: 0 16px 10px; }
+        .lp-search { margin: 10px 16px; }
+        .lp-list { padding: 0 8px 10px; }
+        .lp-custom { padding: 0 16px 10px; }
+        .lp-custom__row { flex-direction: column; align-items: stretch; gap: 4px; }
+        .lp-custom__hint { white-space: normal; }
+        .lp-foot { padding: 10px 16px; }
+        .lp-picked__title { max-width: 180px; }
+    }
+
+    /* Live preview modal */
+    .nprev-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1090;
+        background: rgba(2, 6, 23, .62);
+        backdrop-filter: blur(3px);
+        -webkit-backdrop-filter: blur(3px);
+    }
+    .nprev-modal {
+        position: fixed;
+        z-index: 1091;
+        inset: 3vh 50% auto auto;
+        transform: translateX(50%);
+        width: min(1080px, 94vw);
+        max-height: 94vh;
+        display: flex;
+        flex-direction: column;
+        background: #f7f9fc;
+        border-radius: 20px;
+        box-shadow: 0 40px 100px -30px rgba(2, 6, 23, .7);
+        overflow: hidden;
+        transition: width .2s ease;
+    }
+    .nprev-modal.is-mobile { width: min(430px, 96vw); }
+    .nprev-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        background: #fff;
+        border-bottom: 1px solid #eef2f7;
+    }
+    .nprev-head__title { font-weight: 800; color: #0f172a; font-size: .88rem; }
+    .nprev-devices {
+        display: flex;
+        gap: 4px;
+        margin-inline-start: auto;
+        background: #f1f5f9;
+        border-radius: 10px;
+        padding: 3px;
+    }
+    .nprev-dev {
+        border: 0;
+        background: transparent;
+        border-radius: 8px;
+        padding: 5px 12px;
+        font-size: .72rem;
+        font-weight: 800;
+        color: #64748b;
+        cursor: pointer;
+    }
+    .nprev-dev.is-active { background: #fff; color: #1d4ed8; box-shadow: 0 4px 10px -6px rgba(15, 23, 42, .4); }
+    .nprev-body { overflow: auto; padding: 16px; }
+    .nprev-canvas { max-width: 900px; margin: 0 auto; }
+    .nprev-canvas .nd-page { padding: 0 !important; background: transparent !important; }
+    .nprev-modal.is-mobile .nprev-canvas { max-width: 390px; }
+    .nprev-modal.is-mobile .nprev-canvas .nd-article { padding: 20px 16px; border-radius: 16px; }
+
+    /* Editor previews for inline caption / CTA */
+    #quill-editor-container .ql-editor [data-caption] {
+        margin: -.4rem 0 1.1rem !important;
+        text-align: center !important;
+        color: #64748b !important;
+        font-size: .84rem !important;
+        line-height: 1.9 !important;
+        font-weight: 600 !important;
+    }
+    #quill-editor-container .ql-editor [data-cta] {
+        margin: 1rem 0 !important;
+        padding: 10px 14px !important;
+        border-radius: 14px !important;
+        background: #eff6ff !important;
+        border: 1px dashed #93c5fd !important;
+        text-align: center !important;
+    }
+    #quill-editor-container .ql-editor [data-cta] a {
+        display: inline-block !important;
+        padding: 7px 18px !important;
+        border-radius: 999px !important;
+        background: #2563eb !important;
+        color: #fff !important;
+        font-weight: 800 !important;
+        text-decoration: none !important;
+    }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    private List<NewsDto>? newsList;
+    private NewsUpsertRequest model = new();
+    private bool showEditor = false;
+    private int editingId = 0;
+    private bool isSaving = false;
+    private bool isUploading = false;
+    private string createdAtInput = string.Empty;
+
+    private ContentType? _typeFilter;
+    private string _statusFilter = string.Empty;
+    private int? _categoryFilterId;
+    private string _searchQuery = string.Empty;
+    private List<ContentCategoryDto> categories = new();
+    private ContentSettingsDto contentSettings = new();
+    private readonly HashSet<int> selectedIds = new();
+    private CancellationTokenSource? _searchCts;
+    private string _publishAtInput = string.Empty;
+    private string _expireAtInput = string.Empty;
+    private string _pinnedUntilInput = string.Empty;
+    private string? currentSlug;
+    private bool _previewOpen;
+    private bool _previewMobile;
+    private string _previewHtml = string.Empty;
+    private bool _seoOpen;
+
+    private IEnumerable<ContentCategoryDto> CategoriesForFilter => categories;
+    private IEnumerable<ContentCategoryDto> EditorCategories =>
+        categories.Where(c => c.ContentType == null || c.ContentType == model.ContentType);
+    private bool AllSelected => newsList is { Count: > 0 } && newsList.All(n => selectedIds.Contains(n.Id));
+
+    private static readonly (string Key, string Label)[] LinkPickerTabs =
+    {
+        ("news", "اخبار"),
+        ("article", "مقالات آکادمی"),
+        ("course", "دوره‌ها"),
+        ("product", "محصولات"),
+        ("errorcode", "کدهای خطا"),
+        ("page", "صفحات سایت")
+    };
+
+    private sealed record LinkPickerItem(string Type, string TypeLabel, string Title, string Url, string Meta);
+
+    private bool _linkPickerOpen;
+    private string _linkPickerTab = "news";
+    private string _linkPickerQuery = string.Empty;
+    private bool _linkPickerLoading;
+    private string? _linkPickerError;
+    private LinkPickerItem? _linkPickerSelected;
+    private string _linkCustomLabel = string.Empty;
+
+    private List<LinkPickerItem> _linkNews = new();
+    private List<LinkPickerItem> _linkArticles = new();
+    private List<LinkPickerItem> _linkCourses = new();
+    private List<LinkPickerItem> _linkProducts = new();
+    private List<LinkPickerItem> _linkProductsBase = new();
+    private List<LinkPickerItem> _linkErrorCodes = new();
+    private List<LinkPickerItem> _linkErrorCodesBase = new();
+
+    private readonly List<LinkPickerItem> _linkPages = new()
+    {
+        new LinkPickerItem("page", "صفحه سایت", "صفحه اصلی", "/", ""),
+        new LinkPickerItem("page", "صفحه سایت", "فروشگاه", "/products", ""),
+        new LinkPickerItem("page", "صفحه سایت", "آکادمی", "/academy", ""),
+        new LinkPickerItem("page", "صفحه سایت", "اخبار", "/news", ""),
+        new LinkPickerItem("page", "صفحه سایت", "بانک کدهای خطا", "/technical/error-codes", ""),
+        new LinkPickerItem("page", "صفحه سایت", "ابزارهای محاسباتی", "/technical/calculators", ""),
+        new LinkPickerItem("page", "صفحه سایت", "مشاوره فنی", "/technical/consultation", ""),
+        new LinkPickerItem("page", "صفحه سایت", "سنسوریاب", "/technical/sensor-finder", ""),
+        new LinkPickerItem("page", "صفحه سایت", "درباره ما", "/about", ""),
+        new LinkPickerItem("page", "صفحه سایت", "تماس با ما", "/contact", ""),
+        new LinkPickerItem("page", "صفحه سایت", "پرسش‌های متداول", "/faq", ""),
+        new LinkPickerItem("page", "صفحه سایت", "کارگاه‌های تعمیر", "/workshops", ""),
+        new LinkPickerItem("page", "صفحه سایت", "پذیرش تعمیر", "/admission/repair", ""),
+        new LinkPickerItem("page", "صفحه سایت", "پیگیری سفارش", "/order-tracking", ""),
+        new LinkPickerItem("page", "صفحه سایت", "نمونه کارها", "/trust/portfolio", ""),
+        new LinkPickerItem("page", "صفحه سایت", "تعهدنامه", "/commitment", "")
+    };
+
+    private bool _linkNewsLoaded;
+    private bool _linkArticlesLoaded;
+    private bool _linkCoursesLoaded;
+    private bool _linkProductsLoaded;
+    private bool _linkErrorCodesLoaded;
+    private CancellationTokenSource? _linkQueryCts;
+
+    private DotNetObjectReference<News>? objRef;
+    private int _lastQuillEditingId;
+    private bool _quillInitialized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCategoriesAsync();
+        await LoadNews();
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        try
+        {
+            categories = await Http.GetFromJsonAsync<List<ContentCategoryDto>>("api/content/categories/admin") ?? new();
+        }
+        catch
+        {
+            categories = new();
+        }
+
+        try
+        {
+            contentSettings = await Http.GetFromJsonAsync<ContentSettingsDto>("api/content/settings") ?? new();
+        }
+        catch
+        {
+            contentSettings = new();
+        }
+    }
+
+    private void SetTypeFilter(ContentType? type)
+    {
+        _typeFilter = type;
+        _categoryFilterId = null;
+        _ = LoadNews();
+    }
+
+    private async Task OnSearchChanged()
+    {
+        _searchCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+
+        try { await Task.Delay(320, cts.Token); }
+        catch (OperationCanceledException) { return; }
+
+        await LoadNews();
+    }
+
+    private void ClearSearch()
+    {
+        _searchQuery = string.Empty;
+        _ = LoadNews();
+    }
+
+    private void ToggleSelect(int id, bool selected)
+    {
+        if (selected) selectedIds.Add(id);
+        else selectedIds.Remove(id);
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        var select = e.Value is bool b && b;
+        selectedIds.Clear();
+        if (!select || newsList == null) return;
+        foreach (var item in newsList) selectedIds.Add(item.Id);
+    }
+
+    private async Task RunBulk(string action)
+    {
+        if (selectedIds.Count == 0) return;
+
+        var label = action switch
+        {
+            "publish" => "انتشار",
+            "unpublish" => "لغو انتشار",
+            "archive" => "آرشیو",
+            _ => "حذف"
+        };
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"{label} {selectedIds.Count} مورد انتخاب‌شده انجام شود؟");
+        if (!confirmed) return;
+
+        try
+        {
+            var request = new ContentBulkRequest { Ids = selectedIds.ToList(), Action = action };
+            var resp = await Http.PostAsJsonAsync("api/news/bulk", request);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess($"{selectedIds.Count} مورد {label} شد.");
+                selectedIds.Clear();
+                await LoadNews();
+            }
+            else
+            {
+                ToastService.ShowError("عملیات گروهی ناموفق بود.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+        }
+    }
+
+    private void OnEditorTypeChanged()
+    {
+        if (model.CategoryId.HasValue && !EditorCategories.Any(c => c.Id == model.CategoryId.Value))
+            model.CategoryId = null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Task.Delay(100);
+            await JS.InvokeVoidAsync("initJalali");
+        }
+
+        if (!showEditor)
+            return;
+
+        // Ensure Quill exists whenever editor is visible
+        if (!_quillInitialized)
+        {
+            objRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("initQuillEditor", "quill-editor-container", model.Content ?? "", objRef);
+            await JS.InvokeVoidAsync("bindNewsEditorStateForQuill", "quill-editor-container");
+            _quillInitialized = true;
+            _lastQuillEditingId = editingId;
+            return;
+        }
+
+        // When switching between news items, update the content
+        if (_lastQuillEditingId != editingId)
+        {
+            await JS.InvokeVoidAsync("setQuillContent", "quill-editor-container", model.Content ?? "");
+            await JS.InvokeVoidAsync("bindNewsEditorStateForQuill", "quill-editor-container");
+            _lastQuillEditingId = editingId;
+        }
+    }
+
+    [JSInvokable]
+    public void UpdateContent(string content)
+    {
+        model.Content = content;
+    }
+
+    public void Dispose()
+    {
+        _linkQueryCts?.Cancel();
+        _linkQueryCts?.Dispose();
+        objRef?.Dispose();
+    }
+
+    private int skip = 0;
+    private int take = 10;
+    private int totalCount = 0;
+    private bool isLoadingMore = false;
+
+    private async Task LoadNews(bool loadMore = false)
+    {
+        if (loadMore)
+        {
+            isLoadingMore = true;
+            skip += take;
+        }
+        else
+        {
+            skip = 0;
+            newsList = null;
+            selectedIds.Clear();
+        }
+
+        try
+        {
+            var query = $"api/news?skip={skip}&take={take}&sort=newest&pinnedFirst=false";
+            if (_typeFilter.HasValue) query += $"&type={_typeFilter.Value}";
+            if (!string.IsNullOrWhiteSpace(_statusFilter)) query += $"&status={_statusFilter}";
+            if (_categoryFilterId.HasValue) query += $"&categoryId={_categoryFilterId.Value}";
+            if (!string.IsNullOrWhiteSpace(_searchQuery)) query += $"&q={Uri.EscapeDataString(_searchQuery.Trim())}";
+
+            var response = await Http.GetAsync(query);
+            if (response.IsSuccessStatusCode)
+            {
+                if (response.Headers.TryGetValues("X-Total-Count", out var values))
+                {
+                    int.TryParse(values.FirstOrDefault(), out totalCount);
+                }
+
+                var data = await response.Content.ReadFromJsonAsync<List<NewsDto>>();
+                if (data != null)
+                {
+                    if (loadMore && newsList != null)
+                    {
+                        newsList.AddRange(data);
+                    }
+                    else
+                    {
+                        newsList = data;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در بارگذاری اخبار");
+        }
+        finally
+        {
+            isLoadingMore = false;
+        }
+    }
+
+    private void ClearImage()
+    {
+        model.ImageUrl = null;
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        isUploading = true;
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/news/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                model.ImageUrl = url;
+                ToastService.ShowSuccess("تصویر شاخص آپلود شد");
+            }
+            else
+            {
+                ToastService.ShowError("خطا در آپلود تصویر شاخص");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطا در آپلود: " + ex.Message);
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private async Task HandleInlineImageUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+            
+            var resp = await Http.PostAsync("api/news/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                // Insert as Quill embed (enables resize module)
+                await JS.InvokeVoidAsync("insertImageAtCursor", "quill-editor-container", url);
+                ToastService.ShowSuccess("تصویر درج شد");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا در آپلود: " + ex.Message); }
+    }
+
+    private async Task HandleInlineVideoUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            using var content = new MultipartFormDataContent();
+            var stream = file.OpenReadStream(150_000_000);
+            var streamContent = new StreamContent(stream);
+            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(streamContent, "file", file.Name);
+
+            var resp = await Http.PostAsync("api/news/upload-video", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                await JS.InvokeVoidAsync("insertVideoAtCursor", "quill-editor-container", url);
+                ToastService.ShowSuccess("ویدیو درج شد");
+            }
+            else
+            {
+                ToastService.ShowError("خطا در آپلود ویدیو");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا در آپلود: " + ex.Message); }
+    }
+
+    private async Task InsertVideoLink()
+    {
+        await JS.InvokeVoidAsync("promptAndInsertVideoLink", "quill-editor-container");
+    }
+
+    private async Task InsertTable()
+    {
+        await JS.InvokeVoidAsync("promptAndInsertTable", "quill-editor-container");
+    }
+
+    private async Task ApplyHeader(int level)
+    {
+        await JS.InvokeVoidAsync("applyQuillHeader", "quill-editor-container", level);
+    }
+
+    private async Task ApplyCallout(string value)
+    {
+        await JS.InvokeVoidAsync("applyCalloutToSelection", "quill-editor-container", value);
+    }
+
+    private async Task ApplyColor(string? color)
+    {
+        await JS.InvokeVoidAsync("applyQuillFormat", "quill-editor-container", "color", color);
+    }
+
+    private async Task ApplyHighlight(string? color)
+    {
+        await JS.InvokeVoidAsync("applyQuillFormat", "quill-editor-container", "background", color);
+    }
+
+    private async Task InsertCta()
+    {
+        await JS.InvokeVoidAsync("promptAndInsertCta", "quill-editor-container");
+    }
+
+    private async Task InsertCaption()
+    {
+        await JS.InvokeVoidAsync("promptAndInsertCaption", "quill-editor-container");
+    }
+
+    private async Task OpenLivePreview()
+    {
+        try
+        {
+            var html = await JS.InvokeAsync<string>("getQuillContent", "quill-editor-container");
+            _previewHtml = string.IsNullOrWhiteSpace(html) ? (model.Content ?? string.Empty) : html;
+        }
+        catch
+        {
+            _previewHtml = model.Content ?? string.Empty;
+        }
+        _previewOpen = true;
+    }
+
+    private void CloseLivePreview() => _previewOpen = false;
+
+    private string LinkSearchPlaceholder => _linkPickerTab switch
+    {
+        "product" => "نام محصول را جستجو کنید…",
+        "errorcode" => "کد خطا، برند یا شرح خطا (حداقل ۲ حرف)…",
+        _ => "جستجو در عنوان‌ها…"
+    };
+
+    private string AutoCardLabel => _linkPickerSelected is { } item
+        ? (item.Type == "errorcode" ? item.Title : $"{item.TypeLabel}: {item.Title}")
+        : string.Empty;
+
+    private string EffectiveCardLabel => string.IsNullOrWhiteSpace(_linkCustomLabel)
+        ? AutoCardLabel
+        : _linkCustomLabel.Trim();
+
+    private IEnumerable<LinkPickerItem> FilteredLinkItems
+    {
+        get
+        {
+            var source = _linkPickerTab switch
+            {
+                "news" => _linkNews,
+                "article" => _linkArticles,
+                "course" => _linkCourses,
+                "product" => _linkProducts,
+                "errorcode" => _linkErrorCodes,
+                _ => _linkPages
+            };
+
+            var q = _linkPickerQuery.Trim();
+            if (q.Length == 0)
+                return source;
+
+            return source.Where(x => x.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
+                                     || x.Meta.Contains(q, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private async Task OpenReadMorePicker()
+    {
+        try { await JS.InvokeVoidAsync("captureNewsEditorRange", "quill-editor-container"); } catch { }
+
+        _linkPickerOpen = true;
+        _linkPickerSelected = null;
+        _linkCustomLabel = string.Empty;
+        _linkPickerQuery = string.Empty;
+        _linkPickerError = null;
+        StateHasChanged();
+
+        await LoadLinkTabAsync(_linkPickerTab);
+    }
+
+    private void CloseReadMorePicker()
+    {
+        _linkPickerOpen = false;
+        _linkPickerSelected = null;
+        _linkCustomLabel = string.Empty;
+        _linkPickerError = null;
+    }
+
+    private async Task SwitchLinkTab(string key)
+    {
+        if (_linkPickerTab == key) return;
+        _linkPickerTab = key;
+        _linkPickerQuery = string.Empty;
+        _linkPickerSelected = null;
+        _linkPickerError = null;
+        StateHasChanged();
+        await LoadLinkTabAsync(key);
+    }
+
+    private void SelectLinkItem(LinkPickerItem item) => _linkPickerSelected = item;
+
+    private void ClearLinkCustomLabel() => _linkCustomLabel = string.Empty;
+
+    private void ClearLinkQuery()
+    {
+        _linkPickerQuery = string.Empty;
+        if (_linkPickerTab == "product") _linkProducts = _linkProductsBase;
+        if (_linkPickerTab == "errorcode") _linkErrorCodes = _linkErrorCodesBase;
+    }
+
+    private async Task InsertSelectedReadMore()
+    {
+        if (_linkPickerSelected is null) return;
+        var item = _linkPickerSelected;
+        var label = EffectiveCardLabel;
+
+        try
+        {
+            await JS.InvokeVoidAsync("insertReadMoreCard", "quill-editor-container", item.Url, label);
+            ToastService.ShowSuccess("کارت «بیشتر مطالعه کنید» درج شد.");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"درج کارت ناموفق بود: {ex.Message}");
+        }
+
+        CloseReadMorePicker();
+    }
+
+    private async Task LoadLinkTabAsync(string tab)
+    {
+        var alreadyLoaded = tab switch
+        {
+            "news" => _linkNewsLoaded,
+            "article" => _linkArticlesLoaded,
+            "course" => _linkCoursesLoaded,
+            "product" => _linkProductsLoaded,
+            "errorcode" => _linkErrorCodesLoaded,
+            _ => true
+        };
+        if (alreadyLoaded) return;
+
+        _linkPickerLoading = true;
+        _linkPickerError = null;
+        StateHasChanged();
+
+        try
+        {
+            switch (tab)
+            {
+                case "news":
+                {
+                    var news = await Http.GetFromJsonAsync<List<NewsDto>>("api/news?onlyPublished=true&take=100") ?? new();
+                    _linkNews = news
+                        .Where(x => x.Id != editingId && !string.IsNullOrWhiteSpace(x.Title))
+                        .Select(x => new LinkPickerItem(
+                            "news",
+                            "خبر مرتبط",
+                            x.Title!,
+                            $"/news/{(string.IsNullOrWhiteSpace(x.Slug) ? x.Id.ToString() : x.Slug!)}",
+                            Short(x.Summary, 90)))
+                        .ToList();
+                    _linkNewsLoaded = true;
+                    break;
+                }
+                case "article":
+                {
+                    var articles = await Http.GetFromJsonAsync<List<TrainingArticleDto>>("api/trainingarticles?onlyPublished=true") ?? new();
+                    _linkArticles = articles
+                        .Where(x => !string.IsNullOrWhiteSpace(x.Title))
+                        .Select(x => new LinkPickerItem(
+                            "article",
+                            "مقاله آموزشی",
+                            x.Title,
+                            $"/academy/articles/{(string.IsNullOrWhiteSpace(x.Slug) ? x.Id.ToString() : x.Slug!)}",
+                            Short(x.Summary, 90)))
+                        .ToList();
+                    _linkArticlesLoaded = true;
+                    break;
+                }
+                case "course":
+                {
+                    var courses = await Http.GetFromJsonAsync<List<TrainingCourseDto>>("api/trainings/courses?onlyPublished=true") ?? new();
+                    _linkCourses = courses
+                        .Where(x => !string.IsNullOrWhiteSpace(x.Title))
+                        .Select(x => new LinkPickerItem(
+                            "course",
+                            "دوره آموزشی",
+                            x.Title,
+                            $"/academy/{(string.IsNullOrWhiteSpace(x.Slug) ? x.Id.ToString() : x.Slug!)}",
+                            Short(x.Summary, 90)))
+                        .ToList();
+                    _linkCoursesLoaded = true;
+                    break;
+                }
+                case "product":
+                {
+                    var products = await Http.GetFromJsonAsync<List<ProductDto>>("api/products?take=100") ?? new();
+                    _linkProductsBase = MapProducts(products);
+                    _linkProducts = _linkProductsBase;
+                    _linkProductsLoaded = true;
+                    break;
+                }
+                case "errorcode":
+                {
+                    var recent = await Http.GetFromJsonAsync<List<ErrorCodeQuickSearchItem>>("api/technical/error-codes/recent?take=60") ?? new();
+                    _linkErrorCodesBase = MapErrorCodes(recent);
+                    _linkErrorCodes = _linkErrorCodesBase;
+                    _linkErrorCodesLoaded = true;
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _linkPickerError = "دریافت فهرست این بخش ناموفق بود.";
+            Console.Error.WriteLine($"Link picker load error: {ex.Message}");
+        }
+        finally
+        {
+            _linkPickerLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnLinkQueryChanged()
+    {
+        _linkPickerSelected = null;
+
+        if (_linkPickerTab is not ("product" or "errorcode"))
+        {
+            StateHasChanged();
+            return;
+        }
+
+        _linkQueryCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _linkQueryCts = cts;
+
+        try { await Task.Delay(320, cts.Token); }
+        catch (OperationCanceledException) { return; }
+
+        var q = _linkPickerQuery.Trim();
+        if (q.Length < 2)
+        {
+            if (_linkPickerTab == "product") _linkProducts = _linkProductsBase;
+            else _linkErrorCodes = _linkErrorCodesBase;
+            StateHasChanged();
+            return;
+        }
+
+        _linkPickerLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            if (_linkPickerTab == "product")
+            {
+                var products = await Http.GetFromJsonAsync<List<ProductDto>>($"api/products?take=60&search={Uri.EscapeDataString(q)}", cts.Token) ?? new();
+                _linkProducts = MapProducts(products);
+            }
+            else
+            {
+                var result = await Http.GetFromJsonAsync<ErrorCodeQuickSearchResult>(
+                    $"api/technical/error-codes/quick-search?q={Uri.EscapeDataString(q)}&take=20", cts.Token) ?? new();
+                _linkErrorCodes = MapErrorCodes(result.Items);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _linkPickerError = "جستجو ناموفق بود.";
+            Console.Error.WriteLine($"Link picker search error: {ex.Message}");
+        }
+        finally
+        {
+            if (!cts.IsCancellationRequested)
+            {
+                _linkPickerLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private static List<LinkPickerItem> MapProducts(IEnumerable<ProductDto> items) =>
+        items
+            .Where(p => !p.IsDraft && !string.IsNullOrWhiteSpace(p.Name))
+            .Select(p => new LinkPickerItem(
+                "product",
+                "محصول",
+                p.Name,
+                $"/products/{(string.IsNullOrWhiteSpace(p.Slug) ? p.Id.ToString() : p.Slug!)}",
+                p.CategoryName ?? string.Empty))
+            .ToList();
+
+    private static List<LinkPickerItem> MapErrorCodes(IEnumerable<ErrorCodeQuickSearchItem> items) =>
+        items
+            .Where(e => !string.IsNullOrWhiteSpace(e.Code))
+            .Select(e => new LinkPickerItem(
+                "errorcode",
+                "کد خطا",
+                string.IsNullOrWhiteSpace(e.Description) ? $"کد خطای {e.Code}" : $"کد خطای {e.Code} – {Short(e.Description, 70)}",
+                $"/technical/error-codes/{Uri.EscapeDataString(e.Brand)}/{Uri.EscapeDataString(e.DeviceType)}/{Uri.EscapeDataString(e.Code)}",
+                string.Join(" • ", new[] { e.Brand, e.DeviceType }.Where(x => !string.IsNullOrWhiteSpace(x)))))
+            .ToList();
+
+    private static string Short(string? value, int max)
+    {
+        var text = (value ?? string.Empty).Trim();
+        return text.Length <= max ? text : text[..max] + "…";
+    }
+
+    private async Task ExitBoxAndContinue()
+    {
+        await JS.InvokeVoidAsync("exitCalloutAndContinue", "quill-editor-container");
+    }
+
+    private async Task ResizeSelectedImage(int widthPercent)
+    {
+        await JS.InvokeVoidAsync("resizeImage", "quill-editor-container", widthPercent);
+    }
+
+    private void NewNews()
+    {
+        editingId = 0;
+        currentSlug = null;
+        model = new NewsUpsertRequest
+        {
+            IsPublished = true,
+            ContentType = _typeFilter ?? ContentType.News
+        };
+        createdAtInput = PersianDate.ToJalaliDateTime(DateTimeOffset.Now);
+        _publishAtInput = string.Empty;
+        _expireAtInput = string.Empty;
+        _pinnedUntilInput = string.Empty;
+        _quillInitialized = false;
+        _lastQuillEditingId = 0;
+        _seoOpen = false;
+        showEditor = true;
+    }
+
+    private async Task EditNews(NewsDto news)
+    {
+        try
+        {
+            var full = await Http.GetFromJsonAsync<NewsDto>($"api/news/{news.Id}") ?? news;
+            news = full;
+        }
+        catch
+        {
+            // در صورت خطا همان داده فهرست کافی است؛ متن در ویرایشگر خالی می‌ماند.
+        }
+
+        editingId = news.Id;
+        currentSlug = news.Slug;
+        model = new NewsUpsertRequest
+        {
+            Title = news.Title ?? string.Empty,
+            Summary = news.Summary,
+            Content = news.Content ?? string.Empty,
+            ImageUrl = news.ImageUrl,
+            Tags = news.Tags,
+            AuthorName = news.AuthorName,
+            IsPublished = news.IsPublished,
+            CreatedAt = news.CreatedAt,
+            ContentType = news.ContentType,
+            CategoryId = news.CategoryId,
+            PublishAt = news.PublishAt,
+            ExpireAt = news.ExpireAt,
+            IsFeatured = news.IsFeatured,
+            PinnedUntil = news.PinnedUntil,
+            SeoTitle = news.SeoTitle,
+            SeoDescription = news.SeoDescription,
+            CanonicalUrl = news.CanonicalUrl,
+            SourceName = news.SourceName,
+            SourceUrl = news.SourceUrl
+        };
+
+        createdAtInput = PersianDate.ToJalaliDateTime(news.CreatedAt);
+        _publishAtInput = news.PublishAt.HasValue ? PersianDate.ToJalaliDateTime(news.PublishAt.Value) : string.Empty;
+        _expireAtInput = news.ExpireAt.HasValue ? PersianDate.ToJalaliDateTime(news.ExpireAt.Value) : string.Empty;
+        _pinnedUntilInput = news.PinnedUntil.HasValue ? PersianDate.ToJalaliDateTime(news.PinnedUntil.Value) : string.Empty;
+        _seoOpen = !string.IsNullOrWhiteSpace(news.SeoTitle)
+                   || !string.IsNullOrWhiteSpace(news.SeoDescription)
+                   || !string.IsNullOrWhiteSpace(news.CanonicalUrl)
+                   || !string.IsNullOrWhiteSpace(news.SourceName)
+                   || !string.IsNullOrWhiteSpace(news.SourceUrl);
+        _quillInitialized = false;
+        _lastQuillEditingId = 0;
+        showEditor = true;
+    }
+
+    private void ToggleSeoPanel() => _seoOpen = !_seoOpen;
+
+    private void ClearSource()
+    {
+        model.SourceName = null;
+        model.SourceUrl = null;
+    }
+
+    private static bool IsQuillEmpty(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return true;
+        var text = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]*>", string.Empty)
+            .Replace("&nbsp;", " ")
+            .Trim();
+        return text.Length == 0;
+    }
+
+    private async Task SaveNews()
+    {
+        isSaving = true;
+        try
+        {
+            // Get content from Quill editor
+            var quillContent = await JS.InvokeAsync<string?>("getQuillContent", "quill-editor-container");
+            if (quillContent != null)
+            {
+                model.Content = IsQuillEmpty(quillContent) ? string.Empty : quillContent;
+            }
+
+            if (PersianDate.TryParseJalaliDateTime(createdAtInput, out var createdAt))
+                model.CreatedAt = createdAt;
+            else
+                model.CreatedAt = null;
+
+            model.PublishAt = PersianDate.TryParseJalaliDateTime(_publishAtInput, out var publishAt) ? publishAt : null;
+            model.ExpireAt = PersianDate.TryParseJalaliDateTime(_expireAtInput, out var expireAt) ? expireAt : null;
+            model.PinnedUntil = PersianDate.TryParseJalaliDateTime(_pinnedUntilInput, out var pinnedUntil) ? pinnedUntil : null;
+
+            if (model.PublishAt.HasValue && model.ExpireAt.HasValue && model.ExpireAt <= model.PublishAt)
+            {
+                ToastService.ShowError("زمان آرشیو باید بعد از زمان انتشار باشد.");
+                return;
+            }
+
+            HttpResponseMessage resp;
+            if (editingId == 0) resp = await Http.PostAsJsonAsync("api/news", model);
+            else resp = await Http.PutAsJsonAsync($"api/news/{editingId}", model);
+            
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess(editingId == 0 ? "خبر با موفقیت ثبت شد" : "تغییرات خبر ذخیره شد");
+                await LoadNews();
+                CloseEditor();
+            }
+            else
+            {
+                ToastService.ShowError("خطا در ذخیره‌سازی خبر");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+        }
+        finally { isSaving = false; }
+    }
+
+    private void CloseEditor()
+    {
+        showEditor = false;
+        _quillInitialized = false;
+        _lastQuillEditingId = 0;
+        _ = JS.InvokeVoidAsync("destroyQuillEditor", "quill-editor-container");
+    }
+
+    private NewsDto? itemToDelete;
+    private bool showConfirm;
+
+    private void ConfirmDelete(NewsDto news)
+    {
+        itemToDelete = news;
+        showConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool result)
+    {
+        showConfirm = false;
+        if (result && itemToDelete != null)
+        {
+            try
+            {
+                var response = await Http.DeleteAsync($"api/news/{itemToDelete.Id}");
+                if (response.IsSuccessStatusCode)
+                {
+                    ToastService.ShowSuccess("خبر با موفقیت حذف شد");
+                    await LoadNews();
+                }
+                else
+                {
+                    ToastService.ShowError("خطا در حذف خبر");
+                }
+            }
+            catch (Exception ex)
+            {
+                ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+            }
+        }
+        itemToDelete = null;
+    }
+}

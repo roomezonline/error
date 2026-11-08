@@ -1,0 +1,223 @@
+@page "/admin/content-settings"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.news.settings.manage")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using ErrorService.Client.Services
+
+<PageTitle>تنظیمات مرکز محتوا | ارورسرویس</PageTitle>
+
+<div class="admin-container" dir="rtl">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h3 class="admin-page-title m-0">تنظیمات مرکز محتوا</h3>
+            <div class="text-muted small mt-1">فعال/غیرفعال کردن نوع‌ها، دیدگاه‌ها، شمارش بازدید و چیدمان نمایش عمومی.</div>
+        </div>
+        <a href="/admin/news" class="btn btn-outline-secondary rounded-3">بازگشت به محتوا</a>
+    </div>
+
+    @if (loading)
+    {
+        <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+    }
+    else
+    {
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h6 class="fw-bold mb-3">نوع‌های محتوا</h6>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="newsType" checked disabled />
+                        <label class="form-check-label fw-bold" for="newsType">اخبار (همیشه فعال)</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="tipsType" @bind="model.TipsEnabled" />
+                        <label class="form-check-label fw-bold" for="tipsType">ترفندها</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="annType" @bind="model.AnnouncementsEnabled" />
+                        <label class="form-check-label fw-bold" for="annType">اطلاعیه‌ها</label>
+                    </div>
+
+                    <hr class="my-3" />
+                    <h6 class="fw-bold mb-3">دیدگاه‌ها</h6>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="newsComments" @bind="model.NewsCommentsEnabled" />
+                        <label class="form-check-label" for="newsComments">دیدگاه برای اخبار</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="tipsComments" @bind="model.TipsCommentsEnabled" />
+                        <label class="form-check-label" for="tipsComments">دیدگاه برای ترفندها</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="annComments" @bind="model.AnnouncementsCommentsEnabled" />
+                        <label class="form-check-label" for="annComments">دیدگاه برای اطلاعیه‌ها</label>
+                    </div>
+
+                    <hr class="my-3" />
+                    <h6 class="fw-bold mb-3">قابلیت‌ها</h6>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="showViews" @bind="model.ShowViewCount" />
+                        <label class="form-check-label" for="showViews">نمایش تعداد بازدید</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="featuredOn" @bind="model.FeaturedEnabled" />
+                        <label class="form-check-label" for="featuredOn">امکان انتخاب محتوای منتخب</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="pinnedOn" @bind="model.PinnedEnabled" />
+                        <label class="form-check-label" for="pinnedOn">امکان سنجاق کردن محتوا</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="schedOn" @bind="model.ScheduledPublishingEnabled" />
+                        <label class="form-check-label" for="schedOn">انتشار زمان‌بندی‌شده</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h6 class="fw-bold mb-3">نمایش صفحه مقاله</h6>
+                    <div class="text-muted small mb-3">این گزینه‌ها روی صفحهٔ جزئیات همهٔ نوع‌های محتوا اعمال می‌شوند.</div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="showToc" @bind="model.ShowTableOfContents" />
+                        <label class="form-check-label" for="showToc">فهرست مطالب (خودکار از تیترها)</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="showAuthor" @bind="model.ShowAuthorBox" />
+                        <label class="form-check-label" for="showAuthor">باکس نویسنده</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="showRelated" @bind="model.ShowRelatedContent" />
+                        <label class="form-check-label" for="showRelated">بخش مطالب مرتبط</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="showReadingTime" @bind="model.ShowReadingTime" />
+                        <label class="form-check-label" for="showReadingTime">زمان مطالعه</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="showProgress" @bind="model.ShowReadingProgress" />
+                        <label class="form-check-label" for="showProgress">نوار پیشرفت مطالعه</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
+                    <h6 class="fw-bold mb-3">تعدادها و چیدمان</h6>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label small">تعداد محتوا در هر صفحه</label>
+                            <input type="number" class="form-control rounded-3" @bind="model.PageSize" min="1" max="60" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">تعداد محتوای مرتبط</label>
+                            <input type="number" class="form-control rounded-3" @bind="model.RelatedCount" min="0" max="12" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">کارت‌های صفحه اصلی</label>
+                            <input type="number" class="form-control rounded-3" @bind="model.HomeCardCount" min="0" max="12" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">فهرست صفحه اصلی</label>
+                            <input type="number" class="form-control rounded-3" @bind="model.HomeListCount" min="0" max="20" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">عنوان بخش صفحه اصلی</label>
+                            <input class="form-control rounded-3" @bind="model.HomeTitle" maxlength="200" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small d-block">نوع‌های نمایش در صفحه اصلی</label>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" id="homeNews" @bind="_homeNews" />
+                                <label class="form-check-label" for="homeNews">خبر</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" id="homeTips" @bind="_homeTips" />
+                                <label class="form-check-label" for="homeTips">ترفند</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" id="homeAnn" @bind="_homeAnn" />
+                                <label class="form-check-label" for="homeAnn">اطلاعیه</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">نویسنده پیش‌فرض</label>
+                            <input class="form-control rounded-3" @bind="model.DefaultAuthorName" maxlength="100" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end mt-3">
+            <button class="btn btn-primary rounded-3 px-4" @onclick="Save" disabled="@isSaving">
+                @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                ذخیره تنظیمات
+            </button>
+        </div>
+    }
+</div>
+
+<style>
+    .admin-container { padding: 20px; }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+    [Inject] private ToastService ToastService { get; set; } = default!;
+
+    private ContentSettingsDto model = new();
+    private bool loading = true;
+    private bool isSaving;
+    private bool _homeNews = true;
+    private bool _homeTips = true;
+    private bool _homeAnn = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            model = await Http.GetFromJsonAsync<ContentSettingsDto>("api/content/settings") ?? new();
+            _homeNews = model.HomeContentTypes().Contains(ContentType.News);
+            _homeTips = model.HomeContentTypes().Contains(ContentType.Tip);
+            _homeAnn = model.HomeContentTypes().Contains(ContentType.Announcement);
+        }
+        catch
+        {
+            ToastService.ShowError("خطا در بارگذاری تنظیمات");
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task Save()
+    {
+        var types = new List<string>();
+        if (_homeNews) types.Add(nameof(ContentType.News));
+        if (_homeTips) types.Add(nameof(ContentType.Tip));
+        if (_homeAnn) types.Add(nameof(ContentType.Announcement));
+        model.HomeTypes = types.Count == 0 ? nameof(ContentType.News) : string.Join(",", types);
+
+        isSaving = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync("api/content/settings", model);
+            if (resp.IsSuccessStatusCode)
+                ToastService.ShowSuccess("تنظیمات مرکز محتوا ذخیره شد");
+            else
+                ToastService.ShowError("خطا در ذخیره تنظیمات");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطای سیستمی: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

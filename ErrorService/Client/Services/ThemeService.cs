@@ -16,9 +16,16 @@ namespace ErrorService.Client.Services
 
         public async Task InitializeAsync()
         {
-            var theme = await _js.InvokeAsync<string>("localStorage.getItem", "theme");
-            _isDarkMode = theme == "dark";
-            await ApplyTheme();
+            try
+            {
+                var theme = await _js.InvokeAsync<string>("localStorage.getItem", "theme");
+                _isDarkMode = theme == "dark";
+                await ApplyTheme();
+            }
+            catch (JSException)
+            {
+                // Pre-rendering has no JS runtime; the client picks the theme up on first paint.
+            }
         }
 
         public async Task ToggleThemeAsync()
@@ -29,11 +36,21 @@ namespace ErrorService.Client.Services
             NotifyStateChanged();
         }
 
+        /// <summary>لایهٔ دارک صفحات عمومی با اولین ورود به حالت تاریک بارگذاری می‌شود.</summary>
         private async Task ApplyTheme()
         {
-            await _js.InvokeVoidAsync("document.documentElement.setAttribute", "data-theme", _isDarkMode ? "dark" : "light");
-            await _js.InvokeVoidAsync("document.documentElement.classList.toggle", "app-dark", _isDarkMode);
-            try { await _js.InvokeVoidAsync("esApplyThemeColor", _isDarkMode); } catch { }
+            await _js.InvokeVoidAsync("esApplyTheme", _isDarkMode);
+        }
+
+        /// <summary>لایهٔ دارک مخصوص پنل مدیریت فقط در حالت تاریک و در صفحات ادمین بارگذاری می‌شود.</summary>
+        public async Task EnsureAdminCssAsync()
+        {
+            if (!_isDarkMode) return;
+            try
+            {
+                await _js.InvokeVoidAsync("esLoadCssOnce", "/css/dark-admin.css");
+            }
+            catch (JSException) { }
         }
 
         public event Action? OnChange;

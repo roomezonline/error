@@ -15,6 +15,9 @@ public class RegisterRequest
     [Required(ErrorMessage = "رمز عبور الزامی است")]
     [MinLength(4, ErrorMessage = "رمز عبور کوتاه است")]
     public string Password { get; set; } = string.Empty;
+
+    /// <summary>در صورت فعال بودن کد تایید ثبت‌نام توسط ادمین الزامی می‌شود.</summary>
+    public string? VerificationCode { get; set; }
 }
 
 public class LoginRequest

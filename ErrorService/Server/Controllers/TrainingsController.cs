@@ -4,6 +4,7 @@ using ErrorService.Server.Models;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,14 +17,33 @@ public class TrainingsController : ControllerBase
     private readonly ErrorServiceDbContext _db;
     private readonly IWebHostEnvironment _env;
     private readonly IConfiguration _configuration;
+    private readonly IAuthorizationService _authorization;
 
     private const string VipRoleKey = "vip";
 
-    public TrainingsController(ErrorServiceDbContext db, IWebHostEnvironment env, IConfiguration configuration)
+    public TrainingsController(
+        ErrorServiceDbContext db,
+        IWebHostEnvironment env,
+        IConfiguration configuration,
+        IAuthorizationService authorization)
     {
         _db = db;
         _env = env;
         _configuration = configuration;
+        _authorization = authorization;
+    }
+
+    /// <summary>پیش‌نویس دوره/درس فقط برای مدیران آکادمی قابل مشاهده است.</summary>
+    private async Task<bool> CanSeeUnpublishedAsync()
+        => User.Identity?.IsAuthenticated == true
+           && ((await _authorization.AuthorizeAsync(User, "perm:admin.academy.courses.manage")).Succeeded
+               || (await _authorization.AuthorizeAsync(User, "perm:admin.academy.lessons.manage")).Succeeded
+               || (await _authorization.AuthorizeAsync(User, "perm:admin.academy.lessons.content.manage")).Succeeded);
+
+    private void DisableOutputCaching()
+    {
+        var cacheFeature = HttpContext.Features.Get<IOutputCacheFeature>();
+        if (cacheFeature != null) cacheFeature.Context.EnableOutputCaching = false;
     }
 
     [HttpGet("media/{fileName}")]
@@ -92,6 +112,12 @@ public class TrainingsController : ControllerBase
     [OutputCache(Duration = 300, VaryByQueryKeys = new[] { "onlyPublished" })]
     public async Task<ActionResult<List<TrainingCourseDto>>> GetCourses(bool onlyPublished = false)
     {
+        if (!onlyPublished)
+        {
+            if (await CanSeeUnpublishedAsync()) DisableOutputCaching();
+            else onlyPublished = true;
+        }
+
         var query = _db.TrainingCourses.AsQueryable();
         if (onlyPublished) query = query.Where(x => x.IsPublished);
 
@@ -107,6 +133,8 @@ public class TrainingsController : ControllerBase
                 CoverImageUrl = x.CoverImageUrl,
                 IsPublished = x.IsPublished,
                 IsPremium = x.IsPremium,
+                Category = x.Category,
+                IsFeatured = x.IsFeatured,
                 SortOrder = x.SortOrder,
                 CreatedAt = x.CreatedAt,
                 LessonsCount = x.Lessons.Count,
@@ -123,7 +151,10 @@ public class TrainingsController : ControllerBase
             .Include(x => x.Lessons)
             .FirstOrDefaultAsync(x => x.Slug == slug);
 
-        if (course == null) return NotFound();
+        if (course == null || (!course.IsPublished && !await CanSeeUnpublishedAsync()))
+            return NotFound();
+
+        if (!course.IsPublished) DisableOutputCaching();
 
         return new TrainingCourseDto
         {
@@ -134,6 +165,8 @@ public class TrainingsController : ControllerBase
             CoverImageUrl = course.CoverImageUrl,
             IsPublished = course.IsPublished,
             IsPremium = course.IsPremium,
+            Category = course.Category,
+            IsFeatured = course.IsFeatured,
             SortOrder = course.SortOrder,
             CreatedAt = course.CreatedAt,
             LessonsCount = course.Lessons.Count,
@@ -149,7 +182,10 @@ public class TrainingsController : ControllerBase
             .Include(x => x.Lessons)
             .FirstOrDefaultAsync(x => x.Id == id);
 
-        if (course == null) return NotFound();
+        if (course == null || (!course.IsPublished && !await CanSeeUnpublishedAsync()))
+            return NotFound();
+
+        if (!course.IsPublished) DisableOutputCaching();
 
         return new TrainingCourseDto
         {
@@ -160,6 +196,8 @@ public class TrainingsController : ControllerBase
             CoverImageUrl = course.CoverImageUrl,
             IsPublished = course.IsPublished,
             IsPremium = course.IsPremium,
+            Category = course.Category,
+            IsFeatured = course.IsFeatured,
             SortOrder = course.SortOrder,
             CreatedAt = course.CreatedAt,
             LessonsCount = course.Lessons.Count,
@@ -167,6 +205,7 @@ public class TrainingsController : ControllerBase
         };
     }
 
+    [Authorize(Policy = "perm:admin.academy.courses.manage")]
     [HttpPost("courses")]
     public async Task<ActionResult<TrainingCourseDto>> CreateCourse(TrainingCourseUpsertRequest request)
     {
@@ -180,6 +219,8 @@ public class TrainingsController : ControllerBase
             CoverImageUrl = request.CoverImageUrl,
             IsPublished = request.IsPublished,
             IsPremium = request.IsPremium,
+            Category = string.IsNullOrWhiteSpace(request.Category) ? null : request.Category.Trim(),
+            IsFeatured = request.IsFeatured,
             SortOrder = request.SortOrder
         };
 
@@ -189,6 +230,7 @@ public class TrainingsController : ControllerBase
         return Ok(new TrainingCourseDto { Id = course.Id, Title = course.Title, Slug = course.Slug });
     }
 
+    [Authorize(Policy = "perm:admin.academy.courses.manage")]
     [HttpPut("courses/{id:int}")]
     public async Task<IActionResult> UpdateCourse(int id, TrainingCourseUpsertRequest request)
     {
@@ -205,6 +247,8 @@ public class TrainingsController : ControllerBase
         course.CoverImageUrl = request.CoverImageUrl;
         course.IsPublished = request.IsPublished;
         course.IsPremium = request.IsPremium;
+        course.Category = string.IsNullOrWhiteSpace(request.Category) ? null : request.Category.Trim();
+        course.IsFeatured = request.IsFeatured;
         course.SortOrder = request.SortOrder;
         course.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -212,6 +256,7 @@ public class TrainingsController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Policy = "perm:admin.academy.courses.manage")]
     [HttpDelete("courses/{id:int}")]
     public async Task<IActionResult> DeleteCourse(int id)
     {
@@ -231,6 +276,18 @@ public class TrainingsController : ControllerBase
     [OutputCache(Duration = 300, VaryByQueryKeys = new[] { "onlyPublished" })]
     public async Task<ActionResult<List<TrainingLessonDto>>> GetLessons(int courseId, bool onlyPublished = false)
     {
+        var canSeeUnpublished = false;
+        if (!onlyPublished)
+        {
+            canSeeUnpublished = await CanSeeUnpublishedAsync();
+            if (canSeeUnpublished) DisableOutputCaching();
+            else onlyPublished = true;
+        }
+
+        if (!canSeeUnpublished
+            && !await _db.TrainingCourses.AnyAsync(c => c.Id == courseId && c.IsPublished))
+            return NotFound();
+
         var query = _db.TrainingLessons.Where(x => x.CourseId == courseId);
         if (onlyPublished) query = query.Where(x => x.IsPublished);
 
@@ -260,6 +317,11 @@ public class TrainingsController : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (lesson == null) return NotFound();
+
+        if (!lesson.IsPublished || lesson.Course?.IsPublished != true)
+        {
+            if (!await CanSeeUnpublishedAsync()) return NotFound();
+        }
 
         var isPremium = lesson.IsPremium;
         if (isPremium)
@@ -305,6 +367,7 @@ public class TrainingsController : ControllerBase
         };
     }
 
+    [Authorize(Policy = "perm:admin.academy.lessons.manage")]
     [HttpPost("lessons")]
     public async Task<ActionResult<TrainingLessonDto>> CreateLesson(TrainingLessonUpsertRequest request)
     {
@@ -324,6 +387,7 @@ public class TrainingsController : ControllerBase
         return Ok(new TrainingLessonDto { Id = lesson.Id, Title = lesson.Title });
     }
 
+    [Authorize(Policy = "perm:admin.academy.lessons.manage")]
     [HttpPut("lessons/{id:int}")]
     public async Task<IActionResult> UpdateLesson(int id, TrainingLessonUpsertRequest request)
     {
@@ -341,6 +405,7 @@ public class TrainingsController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Policy = "perm:admin.academy.lessons.manage")]
     [HttpDelete("lessons/{id:int}")]
     public async Task<IActionResult> DeleteLesson(int id)
     {
@@ -356,6 +421,7 @@ public class TrainingsController : ControllerBase
 
     #region Blocks
 
+    [Authorize(Policy = "perm:admin.academy.lessons.content.manage")]
     [HttpPost("blocks")]
     public async Task<ActionResult<TrainingBlockDto>> CreateBlock(TrainingBlockUpsertRequest request)
     {
@@ -377,6 +443,7 @@ public class TrainingsController : ControllerBase
         return Ok(new TrainingBlockDto { Id = block.Id, BlockType = (TrainingBlockTypeDto)block.BlockType });
     }
 
+    [Authorize(Policy = "perm:admin.academy.lessons.content.manage")]
     [HttpPut("blocks/{id:int}")]
     public async Task<IActionResult> UpdateBlock(int id, TrainingBlockUpsertRequest request)
     {
@@ -398,6 +465,7 @@ public class TrainingsController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Policy = "perm:admin.academy.lessons.content.manage")]
     [HttpDelete("blocks/{id:int}")]
     public async Task<IActionResult> DeleteBlock(int id)
     {
@@ -413,6 +481,7 @@ public class TrainingsController : ControllerBase
 
     #region Attachments
 
+    [Authorize(Policy = "perm:admin.academy.lessons.content.manage")]
     [HttpPost("attachments")]
     public async Task<ActionResult<TrainingAttachmentDto>> CreateAttachment(TrainingAttachmentUpsertRequest request)
     {
@@ -431,6 +500,7 @@ public class TrainingsController : ControllerBase
         return Ok(new TrainingAttachmentDto { Id = attachment.Id, Title = attachment.Title });
     }
 
+    [Authorize(Policy = "perm:admin.academy.lessons.content.manage")]
     [HttpPut("attachments/{id:int}")]
     public async Task<IActionResult> UpdateAttachment(int id, TrainingAttachmentUpsertRequest request)
     {
@@ -447,6 +517,7 @@ public class TrainingsController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Policy = "perm:admin.academy.lessons.content.manage")]
     [HttpDelete("attachments/{id:int}")]
     public async Task<IActionResult> DeleteAttachment(int id)
     {
@@ -462,6 +533,7 @@ public class TrainingsController : ControllerBase
 
     #region Upload
 
+    [Authorize(Policy = "perm:admin.academy.lessons.content.manage")]
     [HttpPost("upload")]
     [RequestSizeLimit(100_000_000)] // 100MB for media
     public async Task<ActionResult<string>> Upload([FromForm] IFormFile file, CancellationToken cancellationToken = default)

@@ -90,6 +90,18 @@ public sealed class SiteSettings
     public bool EnableReturnRequests { get; set; }
     public bool EnableReorder { get; set; }
 
+    // ===== دفترچه آدرس مشتری =====
+    public bool EnableSavedAddresses { get; set; } = true;
+    public int MaxSavedAddresses { get; set; } = 5;
+
+    // ===== یادآوری کاهش قیمت =====
+    public bool EnablePriceDropAlerts { get; set; } = true;
+    /// <summary>حداقل درصد کاهش قیمت برای ارسال اطلاع؛ صفر = هر کاهشی.</summary>
+    public int PriceDropMinPercent { get; set; }
+
+    // ===== فید محصولات برای گوگل (Google Merchant) =====
+    public bool EnableProductFeed { get; set; } = true;
+
     // ===== کارت محصول: نمایش سریع و مقایسه =====
     public bool EnableQuickView { get; set; } = true;
     public bool EnableCompare { get; set; } = true;
@@ -117,6 +129,12 @@ public sealed class SiteSettings
     public bool EnableHomeBestSellers { get; set; } = true;
     public bool EnableHomeRestocked { get; set; } = true;
     public bool ShowEnamadSeal { get; set; } = true;
+
+    /// <summary>
+    /// کلید ابزارهای غیرفعال صفحه محاسبات فنی، جدا شده با کاما.
+    /// خالی بودن یعنی همه ابزارها فعال هستند.
+    /// </summary>
+    public string? CalculatorsDisabled { get; set; }
 
     public List<SiteHomeModuleSetting> HomeModules { get; set; } = new();
 }

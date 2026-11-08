@@ -61,7 +61,7 @@ public sealed class ZibalPaymentGateway : IShopPaymentGateway
 
             if (result == 100)
             {
-                var trackId = root.TryGetProperty("trackId", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
+                var trackId = ReadScalar(root, "trackId");
                 if (string.IsNullOrWhiteSpace(trackId))
                     return new PaymentIntentResult { Success = false, Message = "پاسخ درگاه زیبال ناقص بود (trackId دریافت نشد)." };
 
@@ -121,7 +121,22 @@ public sealed class ZibalPaymentGateway : IShopPaymentGateway
                 return new PaymentIntentResult { Success = false, Message = $"تایید پرداخت ناموفق بود: {message ?? $"(کد {result})"}" };
             }
 
-            var refNumber = root.TryGetProperty("refNumber", out var rf) && rf.ValueKind == JsonValueKind.String ? rf.GetString() : null;
+            // زیبال در پاسخ verify مبلغ نهایی را برمی‌گرداند؛ باید با مبلغ سفارش
+            // یکی باشد وگرنه تراکنش متعلق به این سفارش نیست.
+            var paidAmount = root.TryGetProperty("amount", out var amountEl) && amountEl.ValueKind == JsonValueKind.Number
+                ? amountEl.GetInt64()
+                : -1;
+            var expectedAmount = (long)Math.Round(payload.Amount);
+
+            if (expectedAmount > 0 && paidAmount >= 0 && paidAmount != expectedAmount)
+            {
+                _logger.LogWarning(
+                    "Zibal amount mismatch. OrderId={OrderId}, expected={Expected}, paid={Paid}, trackId={TrackId}",
+                    payload.OrderId, expectedAmount, paidAmount, payload.Authority);
+                return new PaymentIntentResult { Success = false, Message = "مبلغ پرداخت‌شده با مبلغ سفارش مطابقت ندارد." };
+            }
+
+            var refNumber = ReadScalar(root, "refNumber");
             return new PaymentIntentResult
             {
                 Success = true,
@@ -137,6 +152,19 @@ public sealed class ZibalPaymentGateway : IShopPaymentGateway
             _logger.LogError(ex, "Zibal verify failed for order {OrderId}", payload.OrderId);
             return new PaymentIntentResult { Success = false, Message = "خطا در تایید پرداخت." };
         }
+    }
+
+    // زیبال برخی فیلدها (trackId/refNumber) را بسته به نسخه API به صورت عدد
+    // یا رشته برمی‌گرداند؛ هر دو حالت باید خوانده شود.
+    private static string? ReadScalar(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var el)) return null;
+        return el.ValueKind switch
+        {
+            JsonValueKind.String => el.GetString(),
+            JsonValueKind.Number => el.GetRawText(),
+            _ => null
+        };
     }
 }
 

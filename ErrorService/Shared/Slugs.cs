@@ -39,6 +39,15 @@ public static class SeoUrl
     public static string News(int id, string? slug)
         => string.IsNullOrEmpty(slug) ? $"/news/{id}" : $"/news/{slug}";
 
+    public static string Content(ContentType type, int id, string? slug)
+        => ContentTypeCatalog.DetailRoute(type, id, slug);
+
+    public static string ContentCategory(ContentType type, string slug)
+        => ContentTypeCatalog.CategoryRoute(type, slug);
+
+    public static string ContentTag(ContentType type, string tag)
+        => ContentTypeCatalog.TagRoute(type, tag);
+
     public static string Course(int id, string? slug)
         => string.IsNullOrEmpty(slug) ? $"/academy/{id}" : $"/academy/{slug}";
 

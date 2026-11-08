@@ -136,6 +136,97 @@ public class News
 
     public bool IsPublished { get; set; } = true;
 
+    public ContentType ContentType { get; set; } = ContentType.News;
+
+    public int? CategoryId { get; set; }
+    public ContentCategory? Category { get; set; }
+
+    /// <summary>انتشار از این زمان به بعد؛ خالی یعنی بلافاصله.</summary>
+    public DateTimeOffset? PublishAt { get; set; }
+
+    /// <summary>آرشیو خودکار از این زمان؛ خالی یعنی بدون انقضا.</summary>
+    public DateTimeOffset? ExpireAt { get; set; }
+
+    public bool IsFeatured { get; set; }
+
+    /// <summary>سنجاق در بالای فهرست تا این زمان.</summary>
+    public DateTimeOffset? PinnedUntil { get; set; }
+
+    public int ViewCount { get; set; }
+
+    [MaxLength(200)]
+    public string? SeoTitle { get; set; }
+
+    [MaxLength(500)]
+    public string? SeoDescription { get; set; }
+
+    [MaxLength(500)]
+    public string? CanonicalUrl { get; set; }
+
+    [MaxLength(200)]
+    public string? SourceName { get; set; }
+
+    [MaxLength(500)]
+    public string? SourceUrl { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public class ContentCategory
+{
+    public int Id { get; set; }
+
+    [Required]
+    [MaxLength(120)]
+    public string Title { get; set; } = string.Empty;
+
+    [MaxLength(120)]
+    public string? Slug { get; set; }
+
+    /// <summary>خالی یعنی مشترک بین همه نوع‌های محتوا.</summary>
+    public ContentType? ContentType { get; set; }
+
+    public int SortOrder { get; set; }
+
+    public bool IsActive { get; set; } = true;
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public ICollection<News> Contents { get; set; } = new List<News>();
+}
+
+/// <summary>تنظیمات تک‌ردیفی مرکز محتوا؛ فقط از پنل ادمین تغییر می‌کند.</summary>
+public sealed class ContentSettings
+{
+    public int Id { get; set; }
+
+    public bool TipsEnabled { get; set; } = true;
+    public bool AnnouncementsEnabled { get; set; } = true;
+
+    public bool NewsCommentsEnabled { get; set; } = true;
+    public bool TipsCommentsEnabled { get; set; } = true;
+    public bool AnnouncementsCommentsEnabled { get; set; }
+
+    public bool ShowViewCount { get; set; } = true;
+    public bool ShowTableOfContents { get; set; } = true;
+    public bool ShowAuthorBox { get; set; } = true;
+    public bool ShowRelatedContent { get; set; } = true;
+    public bool ShowReadingTime { get; set; } = true;
+    public bool ShowReadingProgress { get; set; } = true;
+    public bool FeaturedEnabled { get; set; } = true;
+    public bool PinnedEnabled { get; set; } = true;
+    public bool ScheduledPublishingEnabled { get; set; } = true;
+
+    public int PageSize { get; set; } = 12;
+    public int RelatedCount { get; set; } = 3;
+    public int HomeCardCount { get; set; } = 3;
+    public int HomeListCount { get; set; } = 5;
+    public string HomeTitle { get; set; } = "آخرین اخبار";
+    public string HomeTypes { get; set; } = "News,Tip,Announcement";
+    public string DefaultAuthorName { get; set; } = "تحریریه ارورسرویس";
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

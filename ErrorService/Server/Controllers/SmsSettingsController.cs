@@ -28,6 +28,13 @@ public sealed class SmsSettingsController : ControllerBase
         {
             IsActive = true,
             OtpEnabled = true,
+            OtpAdmissionRepairEnabled = true,
+            OtpAdmissionExpertiseEnabled = true,
+            OtpAdmissionTrackingEnabled = true,
+            OtpPasswordResetEnabled = true,
+            OtpCodeTtlSeconds = 120,
+            OtpResendCooldownSeconds = 60,
+            OtpMaxAttempts = 5,
             TariffPerSms = 0,
             MonthlyQuota = 0,
             WarningThreshold = 0
@@ -37,6 +44,14 @@ public sealed class SmsSettingsController : ControllerBase
         {
             IsActive = settings.IsActive,
             OtpEnabled = settings.OtpEnabled,
+            OtpRegistrationEnabled = settings.OtpRegistrationEnabled,
+            OtpAdmissionRepairEnabled = settings.OtpAdmissionRepairEnabled,
+            OtpAdmissionExpertiseEnabled = settings.OtpAdmissionExpertiseEnabled,
+            OtpAdmissionTrackingEnabled = settings.OtpAdmissionTrackingEnabled,
+            OtpPasswordResetEnabled = settings.OtpPasswordResetEnabled,
+            OtpCodeTtlSeconds = settings.OtpCodeTtlSeconds,
+            OtpResendCooldownSeconds = settings.OtpResendCooldownSeconds,
+            OtpMaxAttempts = settings.OtpMaxAttempts,
             TariffPerSms = settings.TariffPerSms,
             ApiKey = settings.ApiKey,
             SenderNumber = settings.SenderNumber,
@@ -58,6 +73,14 @@ public sealed class SmsSettingsController : ControllerBase
 
         settings.IsActive = request.IsActive;
         settings.OtpEnabled = request.OtpEnabled;
+        settings.OtpRegistrationEnabled = request.OtpRegistrationEnabled;
+        settings.OtpAdmissionRepairEnabled = request.OtpAdmissionRepairEnabled;
+        settings.OtpAdmissionExpertiseEnabled = request.OtpAdmissionExpertiseEnabled;
+        settings.OtpAdmissionTrackingEnabled = request.OtpAdmissionTrackingEnabled;
+        settings.OtpPasswordResetEnabled = request.OtpPasswordResetEnabled;
+        settings.OtpCodeTtlSeconds = Math.Clamp(request.OtpCodeTtlSeconds, 60, 600);
+        settings.OtpResendCooldownSeconds = Math.Clamp(request.OtpResendCooldownSeconds, 0, 600);
+        settings.OtpMaxAttempts = Math.Clamp(request.OtpMaxAttempts, 1, 20);
         settings.TariffPerSms = request.TariffPerSms;
         Console.WriteLine($"[SmsSettings] Saving: IsActive={request.IsActive}, OtpEnabled={request.OtpEnabled}, Tariff={request.TariffPerSms}, ApiKey={request.ApiKey}, Sender={request.SenderNumber}, Quota={request.MonthlyQuota}, Threshold={request.WarningThreshold}");
         settings.ApiKey = request.ApiKey;

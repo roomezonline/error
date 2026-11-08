@@ -422,6 +422,10 @@ public class ShippingMethodDto
 
     /// <summary>ارسال رایگان — فقط با تیک «رایگان» هنگام تعریف.</summary>
     public bool IsFree { get; set; }
+
+    /// <summary>الگوی لینک رهگیری؛ {tracking} جایگزین کد رهگیری می‌شود.</summary>
+    public string? TrackingUrlTemplate { get; set; }
+
     public int SortOrder { get; set; }
 }
 
@@ -443,6 +447,10 @@ public class ShippingMethodCreateRequest
 
     /// <summary>ارسال رایگان — فقط با تیک «رایگان» هنگام تعریف.</summary>
     public bool IsFree { get; set; }
+
+    /// <summary>الگوی لینک رهگیری؛ {tracking} جایگزین کد رهگیری می‌شود.</summary>
+    [MaxLength(500)]
+    public string? TrackingUrlTemplate { get; set; }
 
     public int SortOrder { get; set; }
 }
@@ -627,6 +635,17 @@ public class AdminCartSaveResult
 /// <summary>تبدیل سبد (اصلاح‌شده) به پیش‌فاکتور یا سفارش آمادهٔ پرداخت.</summary>
 public class AdminCartCheckoutRequest
 {
+    /// <summary>در صورت خالی بودن، اطلاعات پروفایل مشتری استفاده می‌شود.</summary>
+    public string? FullName { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string? Email { get; set; }
+    public string? Address { get; set; }
+    public int? ProvinceId { get; set; }
+    public int? CityId { get; set; }
+    public string? ProvinceName { get; set; }
+    public string? CityName { get; set; }
+    public string? PostalCode { get; set; }
+
     public string? CouponCode { get; set; }
     public decimal? ManualDiscountAmount { get; set; }
     public int? ShippingMethodId { get; set; }
@@ -699,8 +718,8 @@ public class AdminOrderMarkPaidRequest
 
     public DateTimeOffset? PaidAt { get; set; }
 
-    [MaxLength(500)]
-    public string? ReceiptUrl { get; set; }
+    /// <summary>حداکثر ۳ آدرس تصویر رسید (خروجی آپلود ادمین).</summary>
+    public List<string>? ReceiptUrls { get; set; }
 
     [MaxLength(1000)]
     public string? Notes { get; set; }

@@ -1,0 +1,458 @@
+@page "/admin/about"
+@layout AdminLayout
+@attribute [Authorize(Policy = "perm:admin.about.manage")]
+@using Microsoft.AspNetCore.Authorization
+@using ErrorService.Shared
+@using ErrorService.Shared.Models
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService Toast
+
+<PageTitle>مدیریت صفحه درباره ما | ارورسرویس</PageTitle>
+
+<div class="admin-container" dir="rtl">
+    <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+            <h3 class="admin-page-title m-0">محتوای صفحه درباره ما</h3>
+            <p class="text-muted small mt-1 mb-0">متن‌ها، آمار، خدمات و سئوی صفحه «درباره ما» را از اینجا مدیریت کنید.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="/about" target="_blank" rel="noopener" class="btn btn-light rounded-3 px-3">
+                <span class="oi oi-external-link me-1"></span>
+                پیش‌نمایش صفحه
+            </a>
+            <button class="btn btn-primary rounded-3 px-4 shadow-sm" @onclick="SaveAsync" disabled="@(_saving || model == null)">
+                @if (_saving)
+                {
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <span>در حال ذخیره...</span>
+                }
+                else
+                {
+                    <span class="oi oi-check me-1"></span>
+                    <span>ذخیره تغییرات</span>
+                }
+            </button>
+        </div>
+    </div>
+
+    @if (_loading || model == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary"></div>
+            <p class="text-muted mt-3">در حال بارگذاری...</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-lg-7">
+                <div class="card border-0 shadow-sm rounded-4 mb-4">
+                    <div class="card-header bg-transparent fw-bold py-3">
+                        <span class="oi oi-bullhorn me-2"></span>هدر صفحه
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-5">
+                                <label class="form-label">برچسب بالای عنوان</label>
+                                <input class="form-control" @bind="model.HeroBadge" maxlength="120" />
+                            </div>
+                            <div class="col-md-7">
+                                <label class="form-label">عنوان اصلی</label>
+                                <input class="form-control" @bind="model.HeroTitle" maxlength="200" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">توضیح زیر عنوان</label>
+                                <textarea class="form-control" rows="3" @bind="model.HeroSubtitle" maxlength="600"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm rounded-4 mb-4">
+                    <div class="card-header bg-transparent fw-bold py-3">
+                        <span class="oi oi-document me-2"></span>داستان ما
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">عنوان بخش</label>
+                            <input class="form-control" @bind="model.StoryTitle" maxlength="120" />
+                        </div>
+                        <div class="mb-0">
+                            <label class="form-label">متن</label>
+                            <textarea class="form-control" rows="8" @bind="model.StoryText" maxlength="6000"></textarea>
+                            <div class="form-text">برای جداسازی پاراگراف‌ها یک خط خالی بین آن‌ها بگذارید.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm rounded-4 mb-4">
+                    <div class="card-header bg-transparent fw-bold py-3">
+                        <span class="oi oi-target me-2"></span>رسالت، چشم‌انداز و ارزش‌ها
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">رسالت — عنوان</label>
+                                <input class="form-control mb-2" @bind="model.MissionTitle" maxlength="120" />
+                                <textarea class="form-control" rows="4" @bind="model.MissionText" maxlength="600"></textarea>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">چشم‌انداز — عنوان</label>
+                                <input class="form-control mb-2" @bind="model.VisionTitle" maxlength="120" />
+                                <textarea class="form-control" rows="4" @bind="model.VisionText" maxlength="600"></textarea>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">ارزش‌ها — عنوان</label>
+                                <input class="form-control mb-2" @bind="model.ValuesTitle" maxlength="120" />
+                                <textarea class="form-control" rows="4" @bind="model.ValuesText" maxlength="600"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm rounded-4 mb-4">
+                    <div class="card-header bg-transparent fw-bold py-3 d-flex justify-content-between align-items-center">
+                        <span><span class="oi oi-grid-three-up me-2"></span>خدمات و ویژگی‌ها</span>
+                        <button type="button" class="btn btn-sm btn-outline-primary rounded-3" @onclick="AddFeature" disabled="@(model.Features.Count >= 8)">
+                            <span class="oi oi-plus me-1"></span>افزودن
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">عنوان بخش</label>
+                                <input class="form-control" @bind="model.FeaturesTitle" maxlength="160" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">توضیح بخش</label>
+                                <input class="form-control" @bind="model.FeaturesSubtitle" maxlength="400" />
+                            </div>
+                        </div>
+
+                        @if (model.Features.Count == 0)
+                        {
+                            <div class="abm-empty">آیتمی وجود ندارد؛ این بخش در سایت نمایش داده نمی‌شود.</div>
+                        }
+
+                        @for (var index = 0; index < model.Features.Count; index++)
+                        {
+                            var feature = model.Features[index];
+                            <div class="abm-feature" @key="feature">
+                                <div class="row g-2 align-items-start">
+                                    <div class="col-md-4">
+                                        <label class="form-label small">آیکون</label>
+                                        <select class="form-select" @bind="feature.Icon">
+                                            @foreach (var icon in IconOptions)
+                                            {
+                                                <option value="@icon.Value">@icon.Text</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label small">عنوان</label>
+                                        <input class="form-control" @bind="feature.Title" maxlength="120" />
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small">توضیح</label>
+                                        <textarea class="form-control" rows="2" @bind="feature.Description" maxlength="400"></textarea>
+                                    </div>
+                                </div>
+                                <div class="abm-feature__actions">
+                                    <button type="button" class="btn btn-sm btn-light rounded-2" disabled="@(index == 0)" @onclick="() => MoveFeature(index, -1)" title="بالا">
+                                        <span class="oi oi-arrow-top"></span>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-light rounded-2" disabled="@(index == model.Features.Count - 1)" @onclick="() => MoveFeature(index, 1)" title="پایین">
+                                        <span class="oi oi-arrow-bottom"></span>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger rounded-2" @onclick="() => RemoveFeature(index)" title="حذف">
+                                        <span class="oi oi-trash"></span>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm rounded-4 mb-4">
+                    <div class="card-header bg-transparent fw-bold py-3">
+                        <span class="oi oi-image me-2"></span>تصویر هدر
+                    </div>
+                    <div class="card-body">
+                        <ImageUploader @bind-ImageUrl="model.HeroImageUrl" UploadUrl="api/about/upload" MaxSizeMb="5" />
+                        <div class="form-text">اختیاری؛ اگر خالی باشد فقط پس‌زمینهٔ گرافیکی نمایش داده می‌شود.</div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm rounded-4 mb-4">
+                    <div class="card-header bg-transparent fw-bold py-3">
+                        <span class="oi oi-bar-chart me-2"></span>نوار آمار
+                    </div>
+                    <div class="card-body">
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="showStats" @bind="model.ShowStats" />
+                            <label class="form-check-label fw-bold" for="showStats">نمایش نوار آمار در صفحه</label>
+                        </div>
+                        <div class="form-text mb-2">اعداد به‌صورت خودکار و زنده از دیتابیس خوانده می‌شوند.</div>
+
+                        <div class="@(model.ShowStats ? "" : "abm-disabled")">
+                            <div class="row g-2">
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="statExperience" @bind="model.ShowStatExperience" disabled="@(!model.ShowStats)" />
+                                        <label class="form-check-label" for="statExperience">سال تجربه</label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="statErrors" @bind="model.ShowStatErrorCodes" disabled="@(!model.ShowStats)" />
+                                        <label class="form-check-label" for="statErrors">کدهای خطا</label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="statServices" @bind="model.ShowStatServices" disabled="@(!model.ShowStats)" />
+                                        <label class="form-check-label" for="statServices">رسیدها و خدمات ثبت‌شده</label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="statProducts" @bind="model.ShowStatProducts" disabled="@(!model.ShowStats)" />
+                                        <label class="form-check-label" for="statProducts">محصولات فروشگاه</label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="statAcademy" @bind="model.ShowStatAcademy" disabled="@(!model.ShowStats)" />
+                                        <label class="form-check-label" for="statAcademy">محتوای آموزشی منتشرشده</label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="statMonitoring" @bind="model.ShowStatMonitoring" disabled="@(!model.ShowStats)" />
+                                        <label class="form-check-label" for="statMonitoring">دستگاه‌های پایش‌شده</label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="statWorkshops" @bind="model.ShowStatWorkshops" disabled="@(!model.ShowStats)" />
+                                        <label class="form-check-label" for="statWorkshops">کارگاه‌های همکار</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mt-3">
+                                <label class="form-label">سال شروع فعالیت (شمسی)</label>
+                                <input type="number" class="form-control" min="1300" max="1450" @bind="model.FoundingYear" />
+                                <div class="form-text">«سال تجربه» از اختلاف سال جاری شمسی با این مقدار محاسبه می‌شود.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm rounded-4 mb-4">
+                    <div class="card-header bg-transparent fw-bold py-3">
+                        <span class="oi oi-people me-2"></span>تیم و نظرات
+                    </div>
+                    <div class="card-body">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="showTeam" @bind="model.ShowTeam" />
+                            <label class="form-check-label" for="showTeam">نمایش بخش تیم (از منوی همکاران)</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="showTestimonials" @bind="model.ShowTestimonials" />
+                            <label class="form-check-label" for="showTestimonials">نمایش نظرات مشتریان (از بخش اعتماد)</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm rounded-4 mb-4">
+                    <div class="card-header bg-transparent fw-bold py-3">
+                        <span class="oi oi-bullhorn me-2"></span>دعوت به اقدام (CTA)
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <label class="form-label">عنوان</label>
+                            <input class="form-control" @bind="model.CtaTitle" maxlength="200" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">توضیح</label>
+                            <textarea class="form-control" rows="2" @bind="model.CtaText" maxlength="600"></textarea>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-5">
+                                <label class="form-label">متن دکمه</label>
+                                <input class="form-control" @bind="model.CtaButtonText" maxlength="80" />
+                            </div>
+                            <div class="col-7">
+                                <label class="form-label">لینک دکمه</label>
+                                <input class="form-control" dir="ltr" @bind="model.CtaButtonUrl" maxlength="300" placeholder="/contact" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm rounded-4 mb-4">
+                    <div class="card-header bg-transparent fw-bold py-3">
+                        <span class="oi oi-magnifying-glass me-2"></span>سئوی صفحه
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <label class="form-label">عنوان سئو</label>
+                            <input class="form-control" @bind="model.SeoTitle" maxlength="200" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">توضیح متا</label>
+                            <textarea class="form-control" rows="3" @bind="model.SeoDescription" maxlength="500"></textarea>
+                        </div>
+                        <div class="mb-0">
+                            <label class="form-label">کلمات کلیدی</label>
+                            <textarea class="form-control" rows="2" @bind="model.SeoKeywords" maxlength="500"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary w-100 rounded-3 py-3 shadow-sm" @onclick="SaveAsync" disabled="@_saving">
+                    <span class="oi oi-check me-1"></span>
+                    ذخیره تغییرات
+                </button>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .abm-empty {
+        border: 1px dashed #cbd5e1;
+        border-radius: 12px;
+        padding: 18px;
+        text-align: center;
+        color: #94a3b8;
+        font-size: .85rem;
+    }
+
+    .abm-feature {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 12px;
+        margin-bottom: 12px;
+        background: #f8fafc;
+    }
+
+    .abm-feature__actions {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+        margin-top: 8px;
+    }
+
+    .abm-disabled {
+        opacity: .55;
+        pointer-events: none;
+    }
+
+    html:root[data-theme="dark"] .abm-feature {
+        background: #0f172a;
+        border-color: rgba(255, 255, 255, .1);
+    }
+
+    html:root[data-theme="dark"] .abm-empty {
+        border-color: rgba(255, 255, 255, .15);
+        color: #94a3b8;
+    }
+</style>
+
+@code {
+    private AboutPageDto? model;
+    private bool _loading = true;
+    private bool _saving;
+
+    private static readonly (string Value, string Text)[] IconOptions =
+    {
+        ("list", "فهرست"),
+        ("cart", "سبد خرید"),
+        ("wrench", "آچار"),
+        ("book", "کتاب"),
+        ("target", "هدف"),
+        ("eye", "چشم"),
+        ("star", "ستاره"),
+        ("shield", "سپر"),
+        ("clock", "ساعت"),
+        ("people", "افراد"),
+        ("phone", "تلفن"),
+        ("map-marker", "موقعیت"),
+        ("graph", "نمودار"),
+        ("lightbulb", "ایده"),
+        ("puzzle-piece", "قطعه"),
+        ("badge", "نشان"),
+        ("check", "تیک")
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            model = await Http.GetFromJsonAsync<AboutPageDto>("api/about/admin");
+        }
+        catch
+        {
+            Toast.ShowError("بارگذاری محتوای صفحه درباره ما انجام نشد");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void AddFeature()
+    {
+        if (model == null || model.Features.Count >= 8) return;
+        model.Features.Add(new AboutFeatureDto { Icon = "check", Title = "", Description = "" });
+    }
+
+    private void RemoveFeature(int index)
+    {
+        if (model == null || index < 0 || index >= model.Features.Count) return;
+        model.Features.RemoveAt(index);
+    }
+
+    private void MoveFeature(int index, int delta)
+    {
+        if (model == null) return;
+        var target = index + delta;
+        if (target < 0 || target >= model.Features.Count) return;
+        (model.Features[index], model.Features[target]) = (model.Features[target], model.Features[index]);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || model == null) return;
+
+        _saving = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync("api/about", model);
+            if (response.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("محتوای صفحه درباره ما ذخیره شد");
+                var refreshed = await Http.GetFromJsonAsync<AboutPageDto>("api/about/admin");
+                if (refreshed != null) model = refreshed;
+            }
+            else
+            {
+                var body = (await response.Content.ReadAsStringAsync()).Trim().Trim('"');
+                Toast.ShowError(string.IsNullOrWhiteSpace(body) ? "ذخیره تغییرات انجام نشد" : body);
+            }
+        }
+        catch
+        {
+            Toast.ShowError("خطای ارتباط با سرور");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

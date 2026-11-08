@@ -7,12 +7,10 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 
-<PageTitle>فروشگاه ارورسرویس | لوازم الکترونیک، ابزار دقیق و تعمیرات تخصصی</PageTitle>
-
 <SeoHeader
-    Title="ارورسرویس | لوازم الکترونیک، ابزار دقیق و تعمیرات تخصصی"
-    Description="فروشگاه تخصصی لوازم الکترونیک، قطعات الکترونیکی، بردهای آماده، تجهیزات ابزار دقیق، ابزارآلات تخصصی و ملزومات فنی با بهترین قیمت و ارسال سریع"
-    Keywords="لوازم الکترونیک, قطعات الکترونیکی, ابزار دقیق, تجهیزات صنعتی, بردهای آماده, ابزارآلات تخصصی"
+    Title="@ListingSeo.Title"
+    Description="@ListingSeo.Description"
+    Keywords="@ListingSeo.Keywords"
     CanonicalUrl="@BuildCanonicalUrl()"
     OgType="website" />
 
@@ -221,10 +219,10 @@
 
         @if (products == null)
         {
-            <div class="row g-3 g-lg-4">
+            <div class="sp-grid">
                 @for (int i = 0; i < 12; i++)
                 {
-                    <div class="col-6 col-md-4 col-lg-3 col-xxl-2">
+                    <div class="sp-grid__item">
                         <div class="sp-sk">
                             <div class="sp-sk__img"></div>
                             <div class="sp-sk__line w40"></div>
@@ -246,11 +244,11 @@
         }
         else
         {
-            <div class="row g-3 g-lg-4">
+            <div class="sp-grid">
                 @for (int _i = 0; _i < products.Count; _i++)
                 {
                     var prod = products[_i];
-                    <div class="col-6 col-md-4 col-lg-3 col-xxl-2" @key="prod.Id">
+                    <div class="sp-grid__item" @key="prod.Id">
                         <ProductCard Product="prod" Index="_i" ShowNewBadge="true"
                                      CountdownText="@(DiscountHelper.IsTimedActive(prod) ? GetCountdown(prod.Id) : null)" />
                     </div>
@@ -736,17 +734,25 @@
 
     private string BuildCanonicalUrl()
     {
-        // جستجو در canonical نمی‌آید تا با سمت سرور یکی باشد (نتایج جستجو تکراری
-        // از دید موتور جستجو محسوب می‌شوند).
-        var d = StateQuery();
-        d.Remove("search");
+        // فقط دسته و شماره صفحه در canonical می‌آیند تا حالت‌های مختلف مرتب‌سازی،
+        // بازه قیمت و فیلتر موجودی به‌عنوان صفحات تکراری ایندکس نشوند.
         var parts = new List<string>();
-        foreach (var key in QueryKeys)
-        {
-            if (d.TryGetValue(key, out var v)) parts.Add($"{key}={Uri.EscapeDataString(v)}");
-        }
+        if (selectedCategoryId is int cat && cat > 0) parts.Add($"categoryId={cat}");
+        if (currentPage > 1) parts.Add($"page={currentPage}");
         var q = string.Join("&", parts);
         return $"https://errorservice.ir/products{(q.Length > 0 ? "?" + q : "")}";
+    }
+
+    private CategoryDto? SelectedCategory =>
+        selectedCategoryId is int id ? categories?.FirstOrDefault(c => c.Id == id) : null;
+
+    private (string Title, string Description, string Keywords) ListingSeo
+    {
+        get
+        {
+            var category = SelectedCategory;
+            return ShopListingSeo.Build(category?.Name, currentPage, category?.SeoTitle, category?.SeoDescription);
+        }
     }
 
     private async Task ApplyFilters()

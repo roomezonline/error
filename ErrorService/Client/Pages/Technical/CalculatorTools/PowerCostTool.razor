@@ -1,0 +1,183 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="power-cost" Title="مصرف برق و هزینه"
+           Subtitle="مصرف روزانه و ماهانه و هزینه تقریبی برق هر وسیله را بر اساس وات، ساعت کارکرد و نرخ هر کیلووات‌ساعت محاسبه می‌کند."
+           Icon="oi-bar-chart" Tag="برای مشتری"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-form">
+        <div class="calc-field calc-field--full">
+            <label class="calc-label" for="pc-w">توان دستگاه (وات)</label>
+            <input id="pc-w" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 2000" @bind="watts" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="pc-h">کارکرد روزانه (ساعت)</label>
+            <input id="pc-h" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 2" @bind="hoursPerDay" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="pc-d">تعداد روز در ماه</label>
+            <input id="pc-d" class="calc-input" type="number" inputmode="numeric" step="1" dir="ltr"
+                   @bind="daysPerMonth" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field calc-field--full">
+            <label class="calc-label" for="pc-t">نرخ هر کیلووات‌ساعت (تومان)</label>
+            <input id="pc-t" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="نرخ را از قبض برق خود وارد کنید" @bind="tariff" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item">
+                    <span class="calc-result__label">مصرف روزانه</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.DailyKwh</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">مصرف ماهانه</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.MonthlyKwh</span>
+                </div>
+                @if (!string.IsNullOrEmpty(Result.MonthlyCost))
+                {
+                    <div class="calc-result__item calc-result__item--wide">
+                        <span class="calc-result__label">هزینه ماهانه تقریبی</span>
+                        <span class="calc-result__value">@Result.MonthlyCost</span>
+                    </div>
+                    <div class="calc-result__item calc-result__item--wide">
+                        <span class="calc-result__label">هزینه سالانه تقریبی</span>
+                        <span class="calc-result__value calc-result__value--sm">@Result.YearlyCost</span>
+                    </div>
+                }
+            </div>
+            @if (!string.IsNullOrEmpty(Result.TariffHint))
+            {
+                <p class="calc-note mt-2 mb-0">@Result.TariffHint</p>
+            }
+            <p class="calc-note mt-2 mb-0">
+                هزینه بر اساس نرخ واردشده است؛ قبض برق پلکانی محاسبه می‌شود و مصرف کل خانه در پله‌های بالاتر نرخ بیشتری دارد.
+            </p>
+        </div>
+    }
+
+    <details class="calc-details">
+        <summary>چند مثال از مصرف لوازم خانگی</summary>
+        <div class="calc-details__body">
+            <table class="calc-table">
+                <thead>
+                    <tr><th>وسیله</th><th>توان تقریبی</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>یخچال فریزر</td><td dir="ltr">100 – 250 W</td></tr>
+                    <tr><td>ماشین لباسشویی</td><td dir="ltr">500 – 2200 W</td></tr>
+                    <tr><td>مایکروویو</td><td dir="ltr">800 – 1500 W</td></tr>
+                    <tr><td>کولر گازی ۱۲۰۰۰</td><td dir="ltr">1000 – 1500 W</td></tr>
+                    <tr><td>تلویزیون LED</td><td dir="ltr">50 – 120 W</td></tr>
+                </tbody>
+            </table>
+            <p class="calc-note mb-0 mt-2">توان‌ها تقریبی هستند؛ مقدار دقیق روی پلاک یا برچسب انرژی دستگاه نوشته شده است.</p>
+        </div>
+    </details>
+</CalcShell>
+
+@code {
+    private double? watts = 2000;
+    private double? hoursPerDay = 2;
+    private int daysPerMonth = 30;
+    private double? tariff;
+
+    protected override string StorageKey => "power-cost";
+
+    private sealed class CostResult
+    {
+        public string DailyKwh { get; init; } = "—";
+        public string MonthlyKwh { get; init; } = "—";
+        public string? MonthlyCost { get; init; }
+        public string? YearlyCost { get; init; }
+        public string? TariffHint { get; init; }
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private CostResult Result => Compute();
+
+    private CostResult Compute()
+    {
+        if (watts == null || hoursPerDay == null)
+            return new CostResult { Hint = "توان دستگاه و ساعت کارکرد روزانه را وارد کنید." };
+
+        if (watts <= 0 || hoursPerDay <= 0)
+            return new CostResult { Error = "توان و ساعت کارکرد باید بزرگ‌تر از صفر باشند." };
+
+        var days = daysPerMonth is > 0 and <= 31 ? daysPerMonth : 30;
+        var dailyKwh = watts.Value / 1000.0 * hoursPerDay.Value;
+        var monthlyKwh = dailyKwh * days;
+        var yearlyKwh = monthlyKwh * 12;
+
+        if (tariff is null or <= 0)
+        {
+            return new CostResult
+            {
+                DailyKwh = CalcFormat.Num(dailyKwh, "0.###") + " kWh",
+                MonthlyKwh = CalcFormat.Num(monthlyKwh, "0.##") + " kWh",
+                TariffHint = "برای محاسبه هزینه، نرخ هر کیلووات‌ساعت را از قبض برق خود وارد کنید.",
+                CopyText = $"مصرف برق — روزانه {CalcFormat.Num(dailyKwh, "0.###")} kWh | ماهانه {CalcFormat.Num(monthlyKwh, "0.##")} kWh"
+            };
+        }
+
+        var monthlyCost = monthlyKwh * tariff.Value;
+        var yearlyCost = yearlyKwh * tariff.Value;
+
+        return new CostResult
+        {
+            DailyKwh = CalcFormat.Num(dailyKwh, "0.###") + " kWh",
+            MonthlyKwh = CalcFormat.Num(monthlyKwh, "0.##") + " kWh",
+            MonthlyCost = CalcFormat.Money(monthlyCost) + " تومان",
+            YearlyCost = CalcFormat.Money(yearlyCost) + " تومان",
+            CopyText = $"هزینه برق — ماهانه {CalcFormat.Num(monthlyKwh, "0.##")} kWh | {CalcFormat.Money(monthlyCost)} تومان | سالانه {CalcFormat.Money(yearlyCost)} تومان"
+        };
+    }
+
+    private async Task ResetAsync()
+    {
+        watts = 2000;
+        hoursPerDay = 2;
+        daysPerMonth = 30;
+        tariff = null;
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(new State(watts, hoursPerDay, daysPerMonth, tariff), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            watts = s.Watts;
+            hoursPerDay = s.HoursPerDay;
+            daysPerMonth = s.DaysPerMonth is > 0 and <= 31 ? s.DaysPerMonth : 30;
+            tariff = s.Tariff;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(double? Watts, double? HoursPerDay, int DaysPerMonth, double? Tariff);
+}

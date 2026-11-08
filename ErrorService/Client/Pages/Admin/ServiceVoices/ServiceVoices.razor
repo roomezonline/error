@@ -1,0 +1,1263 @@
+@page "/admin/service-voices"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.servicevoices.manage")]
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@inject ToastService ToastService
+@inject IJSRuntime JS
+
+<PageTitle>آوای ارورسرویس | ارورسرویس</PageTitle>
+
+<ConfirmDialog IsVisible="_showDeleteConfirm"
+               Title="حذف اکشن"
+               Message=@($"آیا از حذف اکشن «{_itemToDelete?.TitleFa}» و فایل صدای آن اطمینان دارید؟")
+               OnResult="HandleDeleteResult" />
+
+<div class="admin-container sv-page" dir="rtl">
+    <div class="sv-hero">
+        <div class="sv-hero__text">
+            <h3 class="admin-page-title m-0">آوای ارورسرویس</h3>
+            <p class="text-muted small m-0">
+                برای هر اکشن (دیفراست، استارت موتور، وصل شدن برق و…) صدا ضبط کنید؛ تعداد تکرار و اولویت پخش را همین‌جا تعیین کنید.
+            </p>
+        </div>
+        <div class="sv-hero__actions">
+            <span class="sv-pill sv-pill--ok">
+                <span class="sv-dot"></span>
+                @ActiveCount اکشن فعال
+            </span>
+            <button type="button" class="btn btn-primary rounded-3 shadow-sm" @onclick="NewItemAsync">
+                <span class="oi oi-plus me-1"></span>
+                اکشن جدید
+            </button>
+        </div>
+    </div>
+
+    <div class="sv-stats">
+        <div class="sv-stat">
+            <span class="sv-stat__num">@(_items?.Count ?? 0)</span>
+            <span class="sv-stat__label">کل اکشن‌ها</span>
+        </div>
+        <div class="sv-stat">
+            <span class="sv-stat__num">@ActiveCount</span>
+            <span class="sv-stat__label">فعال</span>
+        </div>
+        <div class="sv-stat">
+            <span class="sv-stat__num">@WithAudioCount</span>
+            <span class="sv-stat__label">دارای فایل صدا</span>
+        </div>
+    </div>
+
+    <div class="sv-layout">
+        <section class="sv-panel">
+            <header class="sv-panel__head">
+                <div>
+                    <div class="sv-panel__title"><span class="oi oi-list"></span> اکشن‌های تعریف‌شده</div>
+                    <div class="sv-hint">چیدمان بر اساس اولویت پخش</div>
+                </div>
+                <button type="button" class="sv-icon-btn" @onclick="LoadAsync" title="بازخوانی" aria-label="بازخوانی">
+                    <span class="oi oi-reload"></span>
+                </button>
+            </header>
+
+            @if (_items == null)
+            {
+                <div class="sv-empty">
+                    <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+                    در حال بارگذاری…
+                </div>
+            }
+            else if (!_items.Any())
+            {
+                <div class="sv-empty">
+                    <div class="sv-empty__icon"><span class="oi oi-audio"></span></div>
+                    <div class="fw-bold mb-1">هنوز اکشنی تعریف نشده است</div>
+                    <div class="small">از دکمه «اکشن جدید» شروع کنید؛ مثلاً دیفراست یا استارت موتور.</div>
+                </div>
+            }
+            else
+            {
+                <div class="sv-items">
+                    @foreach (var it in _items)
+                    {
+                        <article class="sv-item @(_editingId == it.Id ? "is-editing" : "")">
+                            <div class="sv-item__top">
+                                <div class="sv-item__lead">
+                                    <span class="sv-prio" title="اولویت">@it.Priority</span>
+                                    <div class="sv-item__nameline">
+                                        <div class="sv-item__title">@it.TitleFa</div>
+                                        <code class="sv-item__key" dir="ltr">@it.Key</code>
+                                    </div>
+                                </div>
+                                <div class="sv-item__tools">
+                                    <button type="button" class="sv-icon-btn" title="ویرایش" aria-label="ویرایش" @onclick="() => Edit(it)">
+                                        <span class="oi oi-pencil"></span>
+                                    </button>
+                                    <button type="button" class="sv-icon-btn sv-icon-btn--danger" title="حذف" aria-label="حذف" @onclick="() => AskDelete(it)">
+                                        <span class="oi oi-trash"></span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="sv-item__meta">
+                                <button type="button" class="sv-toggle @(it.IsActive ? "on" : "")"
+                                        @onclick="() => ToggleAsync(it)"
+                                        title="@(it.IsActive ? "غیرفعال کردن" : "فعال کردن")">
+                                    <span class="sv-toggle__track"><span class="sv-toggle__dot"></span></span>
+                                    <span>@(it.IsActive ? "فعال" : "غیرفعال")</span>
+                                </button>
+                                <span class="sv-tag"><span class="oi oi-loop"></span>@it.RepeatCount بار</span>
+                                @if (!string.IsNullOrWhiteSpace(it.AudioUrl))
+                                {
+                                    <span class="sv-tag sv-tag--ok"><span class="oi oi-audio"></span>@FormatSize(it.AudioSizeBytes)</span>
+                                }
+                                else
+                                {
+                                    <span class="sv-tag sv-tag--off">بدون صدا</span>
+                                }
+                                @if (it.UpdatedAt != default)
+                                {
+                                    <span class="sv-tag sv-tag--off">آخرین ویرایش: @PersianDate.ToJalaliDateTime(it.UpdatedAt)</span>
+                                }
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(it.AudioUrl))
+                            {
+                                <div class="sv-audio-row">
+                                    <span class="sv-audio-row__icon"><span class="oi oi-audio"></span></span>
+                                    <audio controls preload="none" src="@it.AudioUrl" class="sv-audio" dir="ltr"></audio>
+                                </div>
+                            }
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="sv-panel sv-editor" id="sv-editor">
+            <header class="sv-panel__head">
+                <div>
+                    <div class="sv-panel__title">@(_editingId is null ? "تعریف اکشن جدید" : "ویرایش اکشن")</div>
+                    <div class="sv-hint">@(_editingId is null ? "کلید انگلیسی، نام فارسی و مشخصات پخش" : $"در حال ویرایش اکشن #{_editingId}")</div>
+                </div>
+                @if (_editingId is not null)
+                {
+                    <button type="button" class="sv-btn sv-btn--ghost" @onclick="NewItemAsync">
+                        <span class="oi oi-plus"></span>
+                        جدید
+                    </button>
+                }
+            </header>
+
+            <EditForm Model="_model" OnValidSubmit="SaveAsync" class="sv-form">
+                <DataAnnotationsValidator />
+
+                <div class="sv-field">
+                    <label class="sv-label">کلید اکشن</label>
+                    <InputText class="form-control" dir="ltr" @bind-Value="_model.Key" placeholder="defrost" />
+                    <div class="sv-hint">حروف انگلیسی کوچک، عدد، خط تیره یا زیرخط — مثل <code dir="ltr">engine_start</code></div>
+                    <ValidationMessage For="@(() => _model.Key)" class="text-danger small" />
+                </div>
+
+                <div class="sv-field">
+                    <label class="sv-label">نام نمایشی</label>
+                    <InputText class="form-control" @bind-Value="_model.TitleFa" placeholder="دیفراست" />
+                    <ValidationMessage For="@(() => _model.TitleFa)" class="text-danger small" />
+                </div>
+
+                <div class="row g-3 sv-field">
+                    <div class="col-6">
+                        <label class="sv-label">تعداد تکرار</label>
+                        <InputNumber class="form-control" dir="ltr" min="1" max="50" @bind-Value="_model.RepeatCount" />
+                        <div class="sv-hint">۱ تا ۵۰</div>
+                        <ValidationMessage For="@(() => _model.RepeatCount)" class="text-danger small" />
+                    </div>
+                    <div class="col-6">
+                        <label class="sv-label">اولویت</label>
+                        <InputNumber class="form-control" dir="ltr" min="0" max="1000" @bind-Value="_model.Priority" />
+                        <div class="sv-hint">عدد کمتر = اولویت بالاتر</div>
+                        <ValidationMessage For="@(() => _model.Priority)" class="text-danger small" />
+                    </div>
+                </div>
+
+                <div class="form-check form-switch sv-switch">
+                    <InputCheckbox class="form-check-input" @bind-Value="_model.IsActive" />
+                    <label class="form-check-label">اکشن فعال باشد</label>
+                </div>
+
+                <div class="sv-recorder @(_isRecording ? "is-recording" : "")">
+                    <div class="sv-recorder__head">
+                        <div class="sv-recorder__title"><span class="oi oi-audio"></span> صدای اکشن</div>
+                        @if (!string.IsNullOrWhiteSpace(_existingAudioUrl) && string.IsNullOrWhiteSpace(_pendingUrl))
+                        {
+                            <button type="button" class="sv-btn sv-btn--danger" @onclick="DeleteAudioAsync" disabled="@_saving">
+                                <span class="oi oi-trash"></span>
+                                حذف صدا
+                            </button>
+                        }
+                    </div>
+
+                    @if (!_recorderSupported)
+                    {
+                        <div class="sv-note">
+                            ضبط صدا در این مرورگر پشتیبانی نمی‌شود. از Chrome یا Edge روی اتصال HTTPS استفاده کنید.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="sv-rec-stage">
+                            @if (_isRecording)
+                            {
+                                <button type="button" class="sv-rec-btn is-rec" @onclick="StopRecordingAsync" title="پایان ضبط" aria-label="پایان ضبط">
+                                    <span class="oi oi-media-stop"></span>
+                                </button>
+                                <div class="sv-rec-info">
+                                    <div class="sv-rec-time" dir="ltr">@FormatDuration(_recordSeconds)</div>
+                                    <div class="sv-rec-caption">در حال ضبط… برای پایان، دکمه را بزنید</div>
+                                </div>
+                                <div class="sv-eq" aria-hidden="true">
+                                    <span></span><span></span><span></span><span></span><span></span>
+                                </div>
+                            }
+                            else
+                            {
+                                <button type="button" class="sv-rec-btn" @onclick="StartRecordingAsync" disabled="@_saving" title="شروع ضبط" aria-label="شروع ضبط">
+                                    <span class="oi oi-microphone"></span>
+                                </button>
+                                <div class="sv-rec-info">
+                                    <div class="sv-rec-title">ضبط زنده صدا</div>
+                                    <div class="sv-rec-caption">میکروفون را بزنید و صدای اکشن را ضبط کنید</div>
+                                </div>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(_pendingUrl))
+                        {
+                            <div class="sv-take">
+                                <div class="sv-take__label">
+                                    <span class="sv-tag sv-tag--ok"><span class="oi oi-check"></span>ضبط جدید — پیش از ذخیره تست کنید</span>
+                                </div>
+                                <audio controls src="@_pendingUrl" class="sv-audio" dir="ltr"></audio>
+                                <div class="sv-take__actions">
+                                    <button type="button" class="sv-btn sv-btn--ghost" @onclick="StartRecordingAsync" disabled="@_saving">
+                                        <span class="oi oi-microphone"></span>
+                                        ضبط مجدد
+                                    </button>
+                                    <button type="button" class="sv-btn sv-btn--danger" @onclick="ClearPendingAsync" disabled="@_saving">
+                                        <span class="oi oi-x"></span>
+                                        پاک کردن ضبط
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(_existingAudioUrl))
+                        {
+                            <div class="sv-take">
+                                <div class="sv-take__label">صدای ذخیره‌شده روی سرور</div>
+                                <audio controls preload="none" src="@_existingAudioUrl" class="sv-audio" dir="ltr"></audio>
+                                <div class="sv-take__actions">
+                                    <button type="button" class="sv-btn sv-btn--ghost" @onclick="StartRecordingAsync" disabled="@_saving">
+                                        <span class="oi oi-microphone"></span>
+                                        ضبط مجدد
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="sv-rec-hint">
+                                صدایی ثبت نشده است. بعد از ضبط، «ذخیره اکشن» را بزنید تا فایل روی سرور ذخیره شود.
+                            </div>
+                        }
+                    }
+                </div>
+
+                <div class="sv-form__actions">
+                    <button class="btn btn-primary rounded-3 flex-grow-1" type="submit" disabled="@(_saving || _isRecording)">
+                        @if (_saving)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span>در حال ذخیره…</span>
+                        }
+                        else
+                        {
+                            <span class="oi oi-check me-1"></span>
+                            <span>ذخیره اکشن</span>
+                        }
+                    </button>
+                    <button class="btn btn-light rounded-3" type="button" @onclick="Reset" disabled="@_saving">
+                        انصراف
+                    </button>
+                </div>
+            </EditForm>
+        </section>
+    </div>
+</div>
+
+<style>
+    .sv-hero {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+
+    .sv-hero__text {
+        max-width: 680px;
+    }
+
+    .sv-hero__actions {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        flex-wrap: wrap;
+    }
+
+    .sv-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        border-radius: 999px;
+        padding: .38rem .8rem;
+        font-size: .75rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+    }
+
+    .sv-pill--ok {
+        background: var(--app-success-bg);
+        color: var(--app-success);
+    }
+
+    .sv-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+    }
+
+    .sv-stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .6rem;
+        margin-bottom: 1rem;
+    }
+
+    .sv-stat {
+        background: var(--app-surface);
+        border: 1px solid var(--app-border);
+        border-radius: 14px;
+        padding: .75rem .9rem;
+        display: flex;
+        flex-direction: column;
+        gap: .1rem;
+    }
+
+    .sv-stat__num {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: var(--app-text);
+        line-height: 1.4;
+    }
+
+    .sv-stat__label {
+        font-size: .72rem;
+        color: var(--app-text-muted);
+    }
+
+    .sv-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(0, .95fr);
+        gap: 1rem;
+        align-items: start;
+    }
+
+    .sv-panel {
+        background: var(--app-surface);
+        border: 1px solid var(--app-border);
+        border-radius: 18px;
+        overflow: hidden;
+        min-width: 0;
+    }
+
+    .sv-panel__head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .75rem;
+        padding: .9rem 1.05rem;
+        border-bottom: 1px solid var(--app-divider);
+    }
+
+    .sv-panel__title {
+        font-weight: 800;
+        font-size: .95rem;
+        color: var(--app-text);
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+    }
+
+    .sv-hint {
+        font-size: .72rem;
+        color: var(--app-text-muted);
+        margin-top: .15rem;
+        line-height: 1.7;
+    }
+
+    .sv-empty {
+        text-align: center;
+        padding: 2.4rem 1rem;
+        color: var(--app-text-muted);
+        font-size: .82rem;
+    }
+
+    .sv-empty__icon {
+        width: 52px;
+        height: 52px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        margin: 0 auto .7rem;
+        background: var(--app-primary-light);
+        color: var(--app-primary);
+        font-size: 1.35rem;
+    }
+
+    .sv-items {
+        display: flex;
+        flex-direction: column;
+        gap: .7rem;
+        padding: .9rem 1rem 1rem;
+    }
+
+    .sv-item {
+        border: 1px solid var(--app-border);
+        border-radius: 14px;
+        padding: .8rem .9rem;
+        background: var(--app-surface);
+        transition: border-color .15s ease, background .15s ease;
+    }
+
+    .sv-item:hover {
+        border-color: var(--app-border-strong);
+    }
+
+    .sv-item.is-editing {
+        border-color: var(--app-primary);
+        background: var(--app-primary-light);
+    }
+
+    .sv-item__top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: .75rem;
+    }
+
+    .sv-item__lead {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        min-width: 0;
+    }
+
+    .sv-prio {
+        flex: 0 0 auto;
+        width: 34px;
+        height: 34px;
+        border-radius: 11px;
+        display: grid;
+        place-items: center;
+        background: var(--app-bg);
+        border: 1px solid var(--app-border);
+        font-weight: 800;
+        font-size: .8rem;
+        color: var(--app-text-secondary);
+    }
+
+    .sv-item__nameline {
+        min-width: 0;
+    }
+
+    .sv-item__title {
+        font-weight: 800;
+        font-size: .92rem;
+        line-height: 1.6;
+        color: var(--app-text);
+        overflow-wrap: anywhere;
+    }
+
+    .sv-item__key {
+        display: inline-block;
+        margin-top: .15rem;
+        padding: .02rem .4rem;
+        font-size: .7rem;
+        color: var(--app-text-muted);
+        background: var(--app-bg);
+        border: 1px solid var(--app-border);
+        border-radius: 7px;
+    }
+
+    .sv-item__tools {
+        display: flex;
+        gap: .25rem;
+        flex: 0 0 auto;
+    }
+
+    .sv-icon-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--app-text-muted);
+        display: grid;
+        place-items: center;
+    }
+
+    .sv-icon-btn:hover {
+        background: var(--app-bg);
+        border-color: var(--app-border);
+        color: var(--app-primary);
+    }
+
+    .sv-icon-btn--danger:hover {
+        color: var(--app-danger);
+    }
+
+    .sv-item__meta {
+        display: flex;
+        align-items: center;
+        gap: .35rem;
+        flex-wrap: wrap;
+        margin-top: .55rem;
+    }
+
+    .sv-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .16rem .55rem;
+        border-radius: 999px;
+        border: 1px solid var(--app-border);
+        background: var(--app-bg);
+        color: var(--app-text-secondary);
+        font-size: .68rem;
+        font-weight: 700;
+    }
+
+    .sv-tag--ok {
+        background: var(--app-success-bg);
+        color: var(--app-success);
+        border-color: transparent;
+    }
+
+    .sv-tag--off {
+        color: var(--app-text-muted);
+    }
+
+    .sv-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        border: 0;
+        background: transparent;
+        padding: 0;
+        font-size: .7rem;
+        font-weight: 800;
+        color: var(--app-text-muted);
+    }
+
+    .sv-toggle__track {
+        position: relative;
+        width: 30px;
+        height: 17px;
+        border-radius: 999px;
+        background: var(--app-border-strong);
+        transition: background .15s ease;
+    }
+
+    .sv-toggle__dot {
+        position: absolute;
+        top: 2px;
+        inset-inline-start: 2px;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+        transition: inset-inline-start .15s ease;
+    }
+
+    .sv-toggle.on {
+        color: var(--app-success);
+    }
+
+    .sv-toggle.on .sv-toggle__track {
+        background: var(--app-success);
+    }
+
+    .sv-toggle.on .sv-toggle__dot {
+        inset-inline-start: 15px;
+    }
+
+    .sv-audio-row {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        margin-top: .6rem;
+        padding: .45rem .55rem;
+        background: var(--app-bg);
+        border: 1px solid var(--app-border);
+        border-radius: 11px;
+    }
+
+    .sv-audio-row__icon {
+        flex: 0 0 auto;
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        display: grid;
+        place-items: center;
+        background: var(--app-primary-light);
+        color: var(--app-primary);
+    }
+
+    .sv-audio {
+        flex: 1 1 auto;
+        min-width: 0;
+        width: 100%;
+        height: 34px;
+    }
+
+    .sv-editor {
+        scroll-margin-top: 132px;
+    }
+
+    .sv-form {
+        padding: 1rem 1.05rem 1.1rem;
+    }
+
+    .sv-field {
+        margin-bottom: .9rem;
+    }
+
+    .sv-label {
+        display: block;
+        margin-bottom: .35rem;
+        font-size: .8rem;
+        font-weight: 700;
+        color: var(--app-text-secondary);
+    }
+
+    .sv-form .form-control {
+        border-radius: 11px;
+    }
+
+    .sv-switch {
+        margin-bottom: 1rem;
+    }
+
+    .sv-switch .form-check-label {
+        font-size: .82rem;
+        font-weight: 700;
+        color: var(--app-text-secondary);
+    }
+
+    .sv-recorder {
+        border: 1px solid var(--app-border);
+        border-radius: 16px;
+        background: var(--app-bg);
+        padding: .85rem;
+        margin-bottom: 1rem;
+    }
+
+    .sv-recorder__head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .5rem;
+        margin-bottom: .7rem;
+    }
+
+    .sv-recorder__title {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        font-size: .85rem;
+        font-weight: 800;
+        color: var(--app-text);
+    }
+
+    .sv-rec-stage {
+        display: flex;
+        align-items: center;
+        gap: .8rem;
+        padding: .55rem .6rem;
+        border: 1px dashed var(--app-border-strong);
+        border-radius: 13px;
+        background: var(--app-surface);
+    }
+
+    .sv-rec-btn {
+        flex: 0 0 auto;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        border: 0;
+        background: var(--app-primary);
+        color: #fff;
+        font-size: 1.35rem;
+        display: grid;
+        place-items: center;
+        box-shadow: 0 6px 16px rgba(37, 99, 235, .25);
+    }
+
+    .sv-rec-btn:hover {
+        filter: brightness(1.05);
+    }
+
+    .sv-rec-btn.is-rec {
+        background: var(--app-danger);
+        box-shadow: 0 6px 16px rgba(239, 68, 68, .25);
+        animation: svPulse 1.4s ease-in-out infinite;
+    }
+
+    .sv-rec-info {
+        min-width: 0;
+    }
+
+    .sv-rec-title {
+        font-size: .82rem;
+        font-weight: 800;
+        color: var(--app-text);
+    }
+
+    .sv-rec-time {
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: var(--app-text);
+        font-variant-numeric: tabular-nums;
+        line-height: 1.5;
+    }
+
+    .sv-rec-caption {
+        font-size: .72rem;
+        color: var(--app-text-muted);
+        line-height: 1.7;
+    }
+
+    .sv-eq {
+        margin-inline-start: auto;
+        display: flex;
+        align-items: flex-end;
+        gap: 3px;
+        height: 22px;
+        padding-inline-end: .4rem;
+    }
+
+    .sv-eq span {
+        width: 3px;
+        border-radius: 2px;
+        background: var(--app-danger);
+        animation: svEq .9s ease-in-out infinite;
+    }
+
+    .sv-eq span:nth-child(1) { height: 35%; animation-delay: 0s; }
+    .sv-eq span:nth-child(2) { height: 65%; animation-delay: .12s; }
+    .sv-eq span:nth-child(3) { height: 100%; animation-delay: .24s; }
+    .sv-eq span:nth-child(4) { height: 60%; animation-delay: .36s; }
+    .sv-eq span:nth-child(5) { height: 40%; animation-delay: .48s; }
+
+    .sv-take {
+        margin-top: .75rem;
+        padding: .7rem;
+        background: var(--app-surface);
+        border: 1px solid var(--app-border);
+        border-radius: 12px;
+    }
+
+    .sv-take__label {
+        font-size: .72rem;
+        font-weight: 700;
+        color: var(--app-text-muted);
+        margin-bottom: .45rem;
+    }
+
+    .sv-take__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+        margin-top: .5rem;
+    }
+
+    .sv-rec-hint {
+        margin-top: .65rem;
+        font-size: .72rem;
+        color: var(--app-text-muted);
+        line-height: 1.8;
+    }
+
+    .sv-note {
+        font-size: .75rem;
+        line-height: 1.8;
+        color: var(--app-text-secondary);
+        background: var(--app-warning-bg);
+        border-radius: 11px;
+        padding: .6rem .7rem;
+    }
+
+    .sv-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .35rem;
+        border-radius: 9px;
+        border: 1px solid transparent;
+        padding: .32rem .6rem;
+        font-size: .72rem;
+        font-weight: 700;
+        line-height: 1.6;
+    }
+
+    .sv-btn--ghost {
+        background: var(--app-surface);
+        border-color: var(--app-border);
+        color: var(--app-text-secondary);
+    }
+
+    .sv-btn--ghost:hover {
+        border-color: var(--app-border-strong);
+        color: var(--app-text);
+    }
+
+    .sv-btn--danger {
+        background: var(--app-danger-bg);
+        color: var(--app-danger);
+    }
+
+    .sv-btn--danger:hover {
+        filter: brightness(.97);
+    }
+
+    .sv-btn:disabled {
+        opacity: .55;
+    }
+
+    .sv-form__actions {
+        display: flex;
+        gap: .5rem;
+        margin-top: .9rem;
+    }
+
+    @@keyframes svPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.06); }
+    }
+
+    @@keyframes svEq {
+        0%, 100% { transform: scaleY(.5); }
+        50% { transform: scaleY(1); }
+    }
+
+    @@media (max-width: 1099.98px) {
+        .sv-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private List<ServiceVoiceActionDto>? _items;
+    private ServiceVoiceActionUpsertRequest _model = NewModel(10);
+    private int? _editingId;
+    private bool _saving;
+    private bool _recorderSupported;
+    private bool _isRecording;
+    private int _recordSeconds;
+    private string _pendingUrl = string.Empty;
+    private string _existingAudioUrl = string.Empty;
+    private DotNetObjectReference<ServiceVoices>? _dotNetRef;
+
+    private ServiceVoiceActionDto? _itemToDelete;
+    private bool _showDeleteConfirm;
+
+    private int ActiveCount => _items?.Count(x => x.IsActive) ?? 0;
+    private int WithAudioCount => _items?.Count(x => !string.IsNullOrWhiteSpace(x.AudioUrl)) ?? 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        Reset();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _recorderSupported = await JS.InvokeAsync<bool>("serviceVoiceRecorder.isSupported");
+            if (_recorderSupported) StateHasChanged();
+        }
+        catch
+        {
+            _recorderSupported = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _items = await Http.GetFromJsonAsync<List<ServiceVoiceActionDto>>("api/admin/service-voices") ?? new();
+            _items = _items.OrderBy(x => x.Priority).ThenBy(x => x.Id).ToList();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                                           || ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _items = new();
+            ToastService.ShowError("خطای دسترسی: این بخش فقط برای سوپر ادمین فعال است.");
+        }
+        catch
+        {
+            _items = new();
+            ToastService.ShowError("خطا در بارگذاری اکشن‌ها");
+        }
+    }
+
+    private async Task NewItemAsync()
+    {
+        Reset();
+        await ScrollToEditorAsync();
+    }
+
+    private void Edit(ServiceVoiceActionDto it)
+    {
+        _editingId = it.Id;
+        _model = new ServiceVoiceActionUpsertRequest
+        {
+            Id = it.Id,
+            Key = it.Key,
+            TitleFa = it.TitleFa,
+            IsActive = it.IsActive,
+            RepeatCount = it.RepeatCount,
+            Priority = it.Priority
+        };
+        _existingAudioUrl = it.AudioUrl ?? string.Empty;
+        _pendingUrl = string.Empty;
+        _recordSeconds = 0;
+        _ = ClearRecorderPendingAsync();
+        _ = ScrollToEditorAsync();
+    }
+
+    private void Reset()
+    {
+        _editingId = null;
+        _model = NewModel(NextPriority());
+        _existingAudioUrl = string.Empty;
+        _pendingUrl = string.Empty;
+        _recordSeconds = 0;
+        _ = ClearRecorderPendingAsync();
+    }
+
+    private int NextPriority()
+    {
+        if (_items == null || _items.Count == 0) return 10;
+        return Math.Min(1000, _items.Max(x => x.Priority) + 10);
+    }
+
+    private static ServiceVoiceActionUpsertRequest NewModel(int priority) => new()
+    {
+        Key = string.Empty,
+        TitleFa = string.Empty,
+        IsActive = true,
+        RepeatCount = 1,
+        Priority = priority
+    };
+
+    private async Task ScrollToEditorAsync()
+    {
+        try { await JS.InvokeVoidAsync("serviceVoiceRecorder.scrollToEditor", "sv-editor"); } catch { }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_isRecording) return;
+
+        _saving = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/admin/service-voices", _model);
+            if (!resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowError(await ReadErrorAsync(resp, "خطا در ذخیره اکشن"));
+                return;
+            }
+
+            var saved = await resp.Content.ReadFromJsonAsync<ServiceVoiceActionDto>();
+            if (saved == null)
+            {
+                ToastService.ShowError("پاسخ سرور نامعتبر بود");
+                return;
+            }
+
+            var uploaded = false;
+            if (_recorderSupported && await JS.InvokeAsync<bool>("serviceVoiceRecorder.hasPending"))
+            {
+                var result = await JS.InvokeAsync<VoiceUploadResult>(
+                    "serviceVoiceRecorder.uploadPending", $"/api/admin/service-voices/{saved.Id}/audio");
+
+                if (result?.Ok == true)
+                {
+                    uploaded = true;
+                }
+                else
+                {
+                    ToastService.ShowWarning("اکشن ذخیره شد، اما آپلود صدا انجام نشد: " +
+                        CleanErrorBody(result?.Body) + " — دوباره ضبط و ذخیره کنید.");
+                }
+            }
+
+            _pendingUrl = string.Empty;
+            _recordSeconds = 0;
+            ToastService.ShowSuccess(uploaded ? "اکشن و صدا ذخیره شد" : "اکشن ذخیره شد");
+
+            await LoadAsync();
+            var refreshed = _items?.FirstOrDefault(x => x.Id == saved.Id);
+            if (refreshed != null)
+            {
+                _editingId = refreshed.Id;
+                _model = new ServiceVoiceActionUpsertRequest
+                {
+                    Id = refreshed.Id,
+                    Key = refreshed.Key,
+                    TitleFa = refreshed.TitleFa,
+                    IsActive = refreshed.IsActive,
+                    RepeatCount = refreshed.RepeatCount,
+                    Priority = refreshed.Priority
+                };
+                _existingAudioUrl = refreshed.AudioUrl ?? string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"خطا در ذخیره: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ToggleAsync(ServiceVoiceActionDto it)
+    {
+        try
+        {
+            var resp = await Http.PostAsync($"api/admin/service-voices/{it.Id}/toggle", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                await LoadAsync();
+            }
+            else
+            {
+                ToastService.ShowError(await ReadErrorAsync(resp, "تغییر وضعیت انجام نشد"));
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("تغییر وضعیت انجام نشد");
+        }
+    }
+
+    private async Task DeleteAudioAsync()
+    {
+        if (_editingId is null) return;
+
+        _saving = true;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/admin/service-voices/{_editingId}/audio");
+            if (resp.IsSuccessStatusCode)
+            {
+                _existingAudioUrl = string.Empty;
+                ToastService.ShowSuccess("صدای اکشن حذف شد");
+                await LoadAsync();
+            }
+            else
+            {
+                ToastService.ShowError(await ReadErrorAsync(resp, "حذف صدا انجام نشد"));
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("حذف صدا انجام نشد");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void AskDelete(ServiceVoiceActionDto it)
+    {
+        _itemToDelete = it;
+        _showDeleteConfirm = true;
+    }
+
+    private async Task HandleDeleteResult(bool ok)
+    {
+        _showDeleteConfirm = false;
+        var item = _itemToDelete;
+        _itemToDelete = null;
+
+        if (!ok || item == null) return;
+
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/admin/service-voices/{item.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("اکشن حذف شد");
+                if (_editingId == item.Id) Reset();
+                await LoadAsync();
+            }
+            else
+            {
+                ToastService.ShowError(await ReadErrorAsync(resp, "حذف اکشن انجام نشد"));
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("حذف اکشن انجام نشد");
+        }
+    }
+
+    private async Task StartRecordingAsync()
+    {
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        try
+        {
+            var result = await JS.InvokeAsync<VoiceStartResult>("serviceVoiceRecorder.start", _dotNetRef);
+            if (result?.Ok == true)
+            {
+                _isRecording = true;
+                _recordSeconds = 0;
+                _pendingUrl = string.Empty;
+            }
+            else
+            {
+                ToastService.ShowError(result?.Error ?? "شروع ضبط انجام نشد");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"شروع ضبط انجام نشد: {ex.Message}");
+        }
+    }
+
+    private async Task StopRecordingAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("serviceVoiceRecorder.stop");
+        }
+        catch
+        {
+            // callback نتیجه را برمی‌گرداند
+        }
+        _isRecording = false;
+    }
+
+    private async Task ClearPendingAsync()
+    {
+        _pendingUrl = string.Empty;
+        _recordSeconds = 0;
+        await ClearRecorderPendingAsync();
+    }
+
+    private async Task ClearRecorderPendingAsync()
+    {
+        if (!_recorderSupported) return;
+        try { await JS.InvokeVoidAsync("serviceVoiceRecorder.clearPending"); } catch { }
+    }
+
+    [JSInvokable]
+    public Task OnRecordingTick(int seconds)
+    {
+        _recordSeconds = seconds;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public async Task OnRecordingStopped(int seconds)
+    {
+        _isRecording = false;
+        _recordSeconds = seconds;
+        try
+        {
+            _pendingUrl = await JS.InvokeAsync<string>("serviceVoiceRecorder.getPendingUrl");
+        }
+        catch
+        {
+            _pendingUrl = string.Empty;
+        }
+        StateHasChanged();
+    }
+
+    private static string FormatDuration(int seconds) =>
+        TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(@"mm\:ss");
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes <= 0) return "0 KB";
+        if (bytes < 1024 * 1024) return $"{Math.Max(1, bytes / 1024)} KB";
+        return $"{bytes / (1024.0 * 1024.0):0.0} MB";
+    }
+
+    private static string CleanErrorBody(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return "خطای ناشناخته";
+        return body.Trim().Trim('"');
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage resp, string fallback)
+    {
+        try
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            return string.IsNullOrWhiteSpace(body) ? fallback : CleanErrorBody(body);
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("serviceVoiceRecorder.stop"); } catch { }
+        try { await JS.InvokeVoidAsync("serviceVoiceRecorder.clearPending"); } catch { }
+        _dotNetRef?.Dispose();
+    }
+
+    private sealed class VoiceStartResult
+    {
+        public bool Ok { get; set; }
+        public string? Error { get; set; }
+    }
+
+    private sealed class VoiceUploadResult
+    {
+        public bool Ok { get; set; }
+        public int Status { get; set; }
+        public string? Body { get; set; }
+    }
+}

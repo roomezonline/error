@@ -4,8 +4,8 @@ using ErrorService.Server.Services;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace ErrorService.Server.Controllers;
 
@@ -16,19 +16,16 @@ public sealed class OnlineAdmissionController : ControllerBase
     private readonly ErrorServiceDbContext _db;
     private readonly IWebHostEnvironment _env;
     private readonly ISmsService _sms;
-    private readonly IMemoryCache _cache;
+    private readonly OtpService _otp;
     private readonly NotificationEventService _notificationEvents;
-    private const int WorkshopIdForOtp = 1;
-    private const int OtpTemplateId = 969320;
     private const int TechnicianSmsTemplateId = 532056;
-    private static readonly TimeSpan OtpExpiry = TimeSpan.FromMinutes(2);
 
-    public OnlineAdmissionController(ErrorServiceDbContext db, IWebHostEnvironment env, ISmsService sms, IMemoryCache cache, NotificationEventService notificationEvents)
+    public OnlineAdmissionController(ErrorServiceDbContext db, IWebHostEnvironment env, ISmsService sms, OtpService otp, NotificationEventService notificationEvents)
     {
         _db = db;
         _env = env;
         _sms = sms;
-        _cache = cache;
+        _otp = otp;
         _notificationEvents = notificationEvents;
     }
 
@@ -36,7 +33,7 @@ public sealed class OnlineAdmissionController : ControllerBase
     public async Task<ActionResult<AdmissionExpertiseSettingsDto>> GetSettings()
     {
         var settings = await _db.AdmissionExpertiseSettings.FirstOrDefaultAsync();
-        var smsSettings = await _db.SmsSettings.FirstOrDefaultAsync();
+        var requirements = await _otp.GetRequirementsAsync();
         var bankAccounts = await _db.BankAccounts
             .Where(x => x.WorkshopId == 1 && x.IsActive)
             .OrderBy(x => x.SortOrder)
@@ -57,54 +54,40 @@ public sealed class OnlineAdmissionController : ControllerBase
             Amount = settings?.Amount ?? 0,
             HtmlDescription = settings?.HtmlDescription ?? "لطفاً مبلغ کارشناسی را به یکی از حساب‌های زیر واریز نموده و رسید را آپلود کنید.",
             IsEnabled = settings?.IsEnabled ?? true,
-            OtpEnabled = smsSettings?.OtpEnabled ?? true,
+            OtpEnabled = requirements.MasterEnabled,
+            OtpRepairEnabled = requirements.AdmissionRepair,
+            OtpExpertiseEnabled = requirements.AdmissionExpertise,
+            OtpTrackingEnabled = requirements.AdmissionTracking,
+            OtpCodeTtlSeconds = requirements.CodeTtlSeconds,
             BankAccounts = bankAccounts
         });
     }
 
     [HttpPost("send-otp")]
+    [EnableRateLimiting("auth")]
     public async Task<ActionResult<OtpResultDto>> SendOtp([FromBody] SendOtpRequest request)
-    {
-        var smsSettings = await _db.SmsSettings.FirstOrDefaultAsync();
-        if (smsSettings != null && !smsSettings.OtpEnabled)
-            return Ok(new OtpResultDto { Success = false, Message = "ارسال کد تایید توسط مدیر سیستم غیرفعال شده است." });
-
-        var code = Random.Shared.Next(100000, 999999).ToString();
-        _cache.Set($"otp:{request.Mobile}", code, OtpExpiry);
-
-        var result = await _sms.SendVerificationSmsAsync(WorkshopIdForOtp, request.Mobile, code, OtpTemplateId);
-
-        if (result.Success == false)
-        {
-            _cache.Remove($"otp:{request.Mobile}");
-            Console.Error.WriteLine($"[SmsService ERROR] {result.Message} — mobile: {request.Mobile}");
-        }
-
-        return Ok(result);
-    }
+        => Ok(await _otp.SendAsync(request.Mobile, PurposeForType(request.Type)));
 
     [HttpPost("verify-otp")]
-    public ActionResult<OtpResultDto> VerifyOtp([FromBody] VerifyOtpRequest request)
+    [EnableRateLimiting("auth")]
+    public async Task<ActionResult<OtpResultDto>> VerifyOtp([FromBody] VerifyOtpRequest request)
     {
-        var cached = _cache.Get<string>($"otp:{request.Mobile}");
-        if (cached == null)
-            return Ok(new OtpResultDto { Success = false, Message = "کد تایید منقضی شده است. لطفاً مجدداً درخواست دهید." });
-
-        if (cached != request.Code)
-            return Ok(new OtpResultDto { Success = false, Message = "کد تایید اشتباه است" });
-
-        return Ok(new OtpResultDto { Success = true });
+        var result = await _otp.VerifyAsync(request.Mobile, PurposeForType(request.Type), request.Code, consume: false);
+        return Ok(new OtpResultDto { Success = result.Success, Message = result.Message });
     }
 
     [HttpPost("submit")]
     public async Task<ActionResult> SubmitRequest([FromBody] OnlineAdmissionCreateRequest request)
     {
-        var smsSettings = await _db.SmsSettings.FirstOrDefaultAsync();
-        if (smsSettings?.OtpEnabled != false)
+        if (!OnlineAdmissionTypes.All.Contains(request.Type))
+            return BadRequest("نوع درخواست معتبر نیست");
+
+        var purpose = PurposeForType(request.Type);
+        if (await _otp.IsRequiredAsync(purpose))
         {
-            var cached = _cache.Get<string>($"otp:{request.CustomerMobile}");
-            if (cached == null || cached != request.VerificationCode)
-                return BadRequest("کد تایید معتبر نیست");
+            var verification = await _otp.VerifyAsync(request.CustomerMobile, purpose, request.VerificationCode, consume: true);
+            if (!verification.Success)
+                return BadRequest(verification.Message ?? "کد تایید معتبر نیست");
         }
 
         var settings = await _db.AdmissionExpertiseSettings.FirstOrDefaultAsync();
@@ -146,9 +129,58 @@ public sealed class OnlineAdmissionController : ControllerBase
             fallbackUrl: "/admin/online-admission");
         await _db.SaveChangesAsync();
 
-        if (smsSettings?.OtpEnabled != false)
-            _cache.Remove($"otp:{request.CustomerMobile}");
         return Ok(new { id = entity.Id });
+    }
+
+    [HttpPost("track")]
+    [EnableRateLimiting("auth")]
+    public async Task<ActionResult<List<AdmissionTrackingDto>>> Track([FromBody] AdmissionTrackRequest request)
+    {
+        if (await _otp.IsRequiredAsync(OtpPurposes.AdmissionTracking))
+        {
+            var verification = await _otp.VerifyAsync(request.Mobile, OtpPurposes.AdmissionTracking, request.VerificationCode, consume: false);
+            if (!verification.Success)
+                return BadRequest(verification.Message ?? "کد تایید معتبر نیست");
+        }
+
+        var query = _db.OnlineAdmissionRequests
+            .AsNoTracking()
+            .Include(x => x.DeviceType)
+            .Include(x => x.DeviceBrand)
+            .Include(x => x.AssignedWorkshop)
+            .Where(x => x.CustomerMobile == request.Mobile && x.Status != OnlineAdmissionStatuses.Deleted);
+
+        if (request.Id is > 0)
+            query = query.Where(x => x.Id == request.Id!.Value);
+
+        var entities = await query
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(20)
+            .ToListAsync();
+
+        if (entities.Count == 0)
+            return NotFound("درخواستی با این مشخصات یافت نشد");
+
+        return Ok(entities.Select(entity =>
+        {
+            var isExpertise = string.Equals(entity.Type, OnlineAdmissionTypes.Expertise, StringComparison.OrdinalIgnoreCase);
+            return new AdmissionTrackingDto
+            {
+                Id = entity.Id,
+                Type = entity.Type,
+                TypeTitle = isExpertise ? "کارشناسی" : "تعمیر در محل",
+                Status = entity.Status,
+                StatusTitle = OnlineAdmissionStatuses.Label(entity.Status),
+                CustomerFullName = entity.CustomerFullName,
+                AdminNote = entity.AdminNote,
+                AssignedWorkshopName = entity.AssignedWorkshop?.WorkshopName,
+                ExpertiseAmount = entity.ExpertiseAmount,
+                DeviceTypeName = entity.DeviceType?.Name,
+                DeviceBrandName = entity.DeviceBrand?.Name,
+                CreatedAt = entity.CreatedAt,
+                UpdatedAt = entity.UpdatedAt
+            };
+        }).ToList());
     }
 
     [Authorize(Policy = "perm:admin.onlineadmission.manage")] // فقط سوپر ادمین
@@ -215,11 +247,13 @@ public sealed class OnlineAdmissionController : ControllerBase
         var entity = await _db.OnlineAdmissionRequests.FindAsync(id);
         if (entity == null) return NotFound();
 
+        var previousStatus = entity.Status;
         entity.Status = status;
         entity.AdminNote = adminNote;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
-        
+
         await _db.SaveChangesAsync();
+        await NotifyStatusChangedAsync(entity, previousStatus);
         return Ok();
     }
 
@@ -233,11 +267,13 @@ public sealed class OnlineAdmissionController : ControllerBase
         var entity = await _db.OnlineAdmissionRequests.FindAsync(id);
         if (entity == null) return NotFound();
 
+        var previousStatus = entity.Status;
         entity.Status = OnlineAdmissionStatuses.Rejected;
         entity.AdminNote = adminNote.Trim();
         entity.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync();
+        await NotifyStatusChangedAsync(entity, previousStatus);
         return Ok();
     }
 
@@ -368,6 +404,7 @@ public sealed class OnlineAdmissionController : ControllerBase
         _db.CustomerReceipts.Add(receipt);
         await _db.SaveChangesAsync(); // save receipt first to get ID
 
+        var previousStatus = req.Status;
         req.Status = OnlineAdmissionStatuses.Verified;
         req.AdminNote = note;
         req.AssignedWorkshopId = workshopId;
@@ -375,6 +412,7 @@ public sealed class OnlineAdmissionController : ControllerBase
         req.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync();
+        await NotifyStatusChangedAsync(req, previousStatus);
         return Ok(new { receiptId = receipt.Id });
     }
 
@@ -413,6 +451,47 @@ public sealed class OnlineAdmissionController : ControllerBase
         }
 
         return Ok(new SendTechnicianSmsResponse { Results = results });
+    }
+
+    private static string PurposeForType(string? type)
+        => string.Equals(type, OnlineAdmissionTypes.Expertise, StringComparison.OrdinalIgnoreCase)
+            ? OtpPurposes.AdmissionExpertise
+            : OtpPurposes.AdmissionRepair;
+
+    private async Task NotifyStatusChangedAsync(OnlineAdmissionRequest entity, string? previousStatus)
+    {
+        if (string.Equals(previousStatus, entity.Status, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (string.Equals(entity.Status, OnlineAdmissionStatuses.Deleted, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var isExpertise = string.Equals(entity.Type, OnlineAdmissionTypes.Expertise, StringComparison.OrdinalIgnoreCase);
+        var workType = isExpertise ? "کارشناسی" : "تعمیر در محل";
+        var label = OnlineAdmissionStatuses.Label(entity.Status);
+        var severity = entity.Status switch
+        {
+            OnlineAdmissionStatuses.Done or OnlineAdmissionStatuses.Verified => NotificationSeverity.Success,
+            OnlineAdmissionStatuses.Rejected or OnlineAdmissionStatuses.Canceled => NotificationSeverity.Warning,
+            _ => NotificationSeverity.Info
+        };
+
+        await _notificationEvents.NotifyAsync(
+            eventType: "admission.status_changed",
+            values: new Dictionary<string, string?>
+            {
+                ["Id"] = entity.Id.ToString(),
+                ["CustomerName"] = entity.CustomerFullName,
+                ["WorkType"] = workType,
+                ["Status"] = label,
+                ["Phone"] = entity.CustomerMobile
+            },
+            idempotencyKey: $"admission.status:{entity.Id}:{entity.Status}:{entity.UpdatedAt?.UtcTicks}",
+            fallbackSeverity: severity,
+            fallbackTitle: "وضعیت درخواست شما به‌روزرسانی شد",
+            fallbackBody: $"وضعیت درخواست «{workType}» شما به «{label}» تغییر کرد.",
+            fallbackUrl: $"/admission/track?id={entity.Id}",
+            phone: entity.CustomerMobile);
     }
 
     private async Task<string?> CopyImageToWorkshopFolderAsync(string? sourceUrl, int targetWorkshopId)

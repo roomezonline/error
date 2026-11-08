@@ -17,14 +17,29 @@ public class AuthController : ControllerBase
     private readonly ErrorServiceDbContext _db;
     private readonly JwtTokenService _jwt;
     private readonly NotificationEventService _notificationEvents;
+    private readonly OtpService _otp;
     private readonly PasswordHasher<AppUser> _userHasher = new();
     private readonly PasswordHasher<WorkshopUser> _workshopHasher = new();
 
-    public AuthController(ErrorServiceDbContext db, JwtTokenService jwt, NotificationEventService notificationEvents)
+    public AuthController(ErrorServiceDbContext db, JwtTokenService jwt, NotificationEventService notificationEvents, OtpService otp)
     {
         _db = db;
         _jwt = jwt;
         _notificationEvents = notificationEvents;
+        _otp = otp;
+    }
+
+    [HttpGet("public-config")]
+    public async Task<ActionResult<AuthPublicConfigDto>> PublicConfig()
+    {
+        var requirements = await _otp.GetRequirementsAsync();
+        return Ok(new AuthPublicConfigDto
+        {
+            RegistrationOtpEnabled = requirements.Registration,
+            PasswordResetOtpEnabled = requirements.PasswordReset,
+            CodeTtlSeconds = requirements.CodeTtlSeconds,
+            ResendCooldownSeconds = requirements.ResendCooldownSeconds
+        });
     }
 
     [HttpPost("register")]
@@ -36,6 +51,13 @@ public class AuthController : ControllerBase
         var exists = await _db.Users.AnyAsync(x => x.PhoneNumber == phone);
         if (exists)
             return BadRequest("این شماره موبایل قبلاً ثبت شده است");
+
+        if (await _otp.IsRequiredAsync(OtpPurposes.Registration))
+        {
+            var verification = await _otp.VerifyAsync(phone, OtpPurposes.Registration, request.VerificationCode, consume: true);
+            if (!verification.Success)
+                return BadRequest(verification.Message ?? "کد تایید معتبر نیست");
+        }
 
         var user = new AppUser
         {
@@ -268,6 +290,71 @@ public class AuthController : ControllerBase
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    [HttpPost("forgot-password/send-otp")]
+    [EnableRateLimiting("auth")]
+    public async Task<ActionResult<OtpResultDto>> SendPasswordResetOtp([FromBody] PasswordResetSendRequest request)
+    {
+        if (!await _otp.IsRequiredAsync(OtpPurposes.PasswordReset))
+            return BadRequest("بازیابی رمز عبور با کد تایید توسط مدیر سیستم غیرفعال شده است.");
+
+        var phone = request.PhoneNumber.Trim();
+        var userExists = await _db.Users.AnyAsync(x => x.PhoneNumber == phone && !x.IsDeleted)
+            || await _db.WorkshopUsers.AnyAsync(x => x.PhoneNumber == phone && !x.IsDeleted && !x.Workshop.IsDeleted);
+
+        // برای جلوگیری از افشای وجود حساب، در هر حالت پیام یکسان برمی‌گردد.
+        if (!userExists)
+            return Ok(new OtpResultDto
+            {
+                Success = true,
+                Message = "اگر این شماره در سیستم ثبت شده باشد، کد تایید ارسال می‌شود."
+            });
+
+        // نتیجه ارسال SMS عمداً افشا نمی‌شود تا وجود/عدم وجود حساب قابل تشخیص نباشد.
+        await _otp.SendAsync(phone, OtpPurposes.PasswordReset);
+        return Ok(new OtpResultDto
+        {
+            Success = true,
+            Message = "اگر این شماره در سیستم ثبت شده باشد، کد تایید ارسال می‌شود."
+        });
+    }
+
+    [HttpPost("forgot-password/reset")]
+    [EnableRateLimiting("auth")]
+    public async Task<ActionResult> ResetPassword([FromBody] PasswordResetRequest request)
+    {
+        if (!await _otp.IsRequiredAsync(OtpPurposes.PasswordReset))
+            return BadRequest("بازیابی رمز عبور با کد تایید توسط مدیر سیستم غیرفعال شده است.");
+
+        var phone = request.PhoneNumber.Trim();
+        var verification = await _otp.VerifyAsync(phone, OtpPurposes.PasswordReset, request.VerificationCode, consume: true);
+        if (!verification.Success)
+            return BadRequest(verification.Message ?? "کد تایید معتبر نیست");
+
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.PhoneNumber == phone && !x.IsDeleted);
+        var workshopUser = await _db.WorkshopUsers
+            .FirstOrDefaultAsync(x => x.PhoneNumber == phone && !x.IsDeleted && !x.Workshop.IsDeleted);
+
+        if (user == null && workshopUser == null)
+            return BadRequest("حسابی با این شماره یافت نشد");
+
+        var now = DateTimeOffset.UtcNow;
+        if (user != null)
+        {
+            user.PasswordHash = _userHasher.HashPassword(user, request.NewPassword);
+            user.PasswordPlain = request.NewPassword;
+            user.UpdatedAt = now;
+        }
+
+        if (workshopUser != null)
+        {
+            workshopUser.PasswordHash = _workshopHasher.HashPassword(workshopUser, request.NewPassword);
+            workshopUser.UpdatedAt = now;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "رمز عبور با موفقیت تغییر کرد" });
     }
 
     private int GetUserId()

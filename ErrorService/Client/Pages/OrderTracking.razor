@@ -7,6 +7,10 @@
 @inject NavigationManager Nav
 @inject ToastService Toast
 
+<HeadContent>
+    <meta name="robots" content="noindex, nofollow" />
+</HeadContent>
+
 <SeoHeader Title="پیگیری سفارش | ارورسرویس" Description="وضعیت سفارش خود را با شماره سفارش و شماره موبایل دنبال کنید" OgType="website" />
 
 <div class="tracking-page py-5" dir="rtl">
@@ -87,7 +91,13 @@
                         }
                         @if (!string.IsNullOrEmpty(_order.TrackingNumber))
                         {
-                            <div>کد رهگیری: <span dir="ltr" class="fw-bold">@_order.TrackingNumber</span></div>
+                            <div>
+                                کد رهگیری: <span dir="ltr" class="fw-bold">@_order.TrackingNumber</span>
+                                @if (!string.IsNullOrEmpty(TrackingUrl))
+                                {
+                                    <a class="ms-2 small" href="@TrackingUrl" target="_blank" rel="noopener">رهگیری مرسوله</a>
+                                }
+                            </div>
                         }
                         @if (!string.IsNullOrEmpty(_order.AdminNotes))
                         {
@@ -147,6 +157,19 @@
     private OrderDto? _order;
     private string? _error;
     private bool _loading;
+    private string? _trackingTemplate;
+
+    private string TrackingUrl
+    {
+        get
+        {
+            if (_order == null || string.IsNullOrWhiteSpace(_order.TrackingNumber)) return string.Empty;
+            var tracking = Uri.EscapeDataString(_order.TrackingNumber);
+            if (!string.IsNullOrWhiteSpace(_trackingTemplate))
+                return _trackingTemplate.Replace("{tracking}", tracking);
+            return $"https://tracking.post.ir/?id={tracking}";
+        }
+    }
 
     private string InvoiceUrl => _order == null ? "#" : $"/api/orders/{_order.Id}/invoice?token={Uri.EscapeDataString(_order.AccessToken ?? "")}";
 
@@ -192,6 +215,12 @@
             if (response.IsSuccessStatusCode)
             {
                 _order = await response.Content.ReadFromJsonAsync<OrderDto>();
+                try
+                {
+                    var methods = await Http.GetFromJsonAsync<List<ShippingMethodDto>>("api/shippingmethods");
+                    _trackingTemplate = methods?.FirstOrDefault(m => m.Id == _order?.ShippingMethodId)?.TrackingUrlTemplate;
+                }
+                catch { }
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {

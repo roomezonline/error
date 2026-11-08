@@ -1,4 +1,4 @@
-using ErrorService.Server.Data;
+﻿using ErrorService.Server.Data;
 using ErrorService.Server.Infrastructure;
 using ErrorService.Server.Models;
 using ErrorService.Server.Services;
@@ -283,14 +283,16 @@ public class ProductsController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly IConfiguration _configuration;
     private readonly StockAlertNotifier _stockAlerts;
+    private readonly PriceDropNotifier _priceDrops;
     private readonly IOutputCacheStore _outputCache;
 
-    public ProductsController(ErrorServiceDbContext context, IWebHostEnvironment env, IConfiguration configuration, StockAlertNotifier stockAlerts, IOutputCacheStore outputCache)
+    public ProductsController(ErrorServiceDbContext context, IWebHostEnvironment env, IConfiguration configuration, StockAlertNotifier stockAlerts, PriceDropNotifier priceDrops, IOutputCacheStore outputCache)
     {
         _context = context;
         _env = env;
         _configuration = configuration;
         _stockAlerts = stockAlerts;
+        _priceDrops = priceDrops;
         _outputCache = outputCache;
     }
 
@@ -1374,6 +1376,7 @@ public class ProductsController : ControllerBase
 
         var oldName = product.Name;
         var priceChanged = product.Price != request.Price || product.DiscountPrice != request.DiscountPrice;
+        var oldEffectivePrice = DiscountHelper.GetEffectivePrice(product);
         var wasOutOfStock = !product.IsAvailable || product.StockQuantity <= 0;
         product.Name = request.Name;
         product.Sku = string.IsNullOrWhiteSpace(request.Sku) ? null : request.Sku.Trim();
@@ -1426,6 +1429,10 @@ public class ProductsController : ControllerBase
         var isRestocked = wasOutOfStock && product.IsAvailable && product.StockQuantity > 0;
         if (isRestocked)
             await _stockAlerts.NotifyRestockedAsync(new[] { product.Id });
+
+        var newEffectivePrice = DiscountHelper.GetEffectivePrice(product);
+        if (newEffectivePrice < oldEffectivePrice)
+            await _priceDrops.NotifyDroppedAsync(product.Id, oldEffectivePrice, newEffectivePrice);
 
         return NoContent();
     }

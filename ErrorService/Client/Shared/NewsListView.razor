@@ -2,7 +2,7 @@
 @using System.Net.Http.Json
 @using ErrorService.Client.Utils
 
-<div class="news-list-view" dir="rtl">
+<div class="news-list-view flex-grow-1 d-flex flex-column" dir="rtl">
     @if (newsList == null)
     {
         <div class="text-center p-4">
@@ -15,17 +15,17 @@
     }
     else
     {
-        <div class="news-list-card card border-0 shadow-sm rounded-4 overflow-hidden">
-            <div class="list-group list-group-flush">
+        <div class="news-list-card card border-0 shadow-sm rounded-4 overflow-hidden flex-grow-1 d-flex flex-column">
+            <div class="list-group list-group-flush flex-grow-1 d-flex flex-column">
                 @foreach (var news in newsList)
                 {
-                    <a href="@SeoUrl.News(news.Id, news.Slug)" class="list-group-item list-group-item-action border-0 px-4 py-3 d-flex align-items-center gap-3">
+                    <a href="@SeoUrl.Content(news.ContentType, news.Id, news.Slug)" class="news-list-item list-group-item list-group-item-action border-0 px-4 py-3 d-flex align-items-center gap-3">
                         <div class="news-dot flex-shrink-0"></div>
-                        <div class="flex-grow-1 min-w-0">
+                        <div class="news-list-item__body flex-grow-1">
                             <div class="news-title-link text-truncate">@news.Title</div>
-                            <div class="news-date-small text-muted">@PersianDate.ToJalaliDateTime(news.CreatedAt)</div>
+                            <div class="news-date-small text-muted">@PersianDate.ToJalaliDateTime(news.PublishedAt)</div>
                         </div>
-                        <span class="oi oi-chevron-left text-muted small"></span>
+                        <span class="oi oi-chevron-left news-list-item__chevron text-muted" aria-hidden="true"></span>
                     </a>
                 }
             </div>
@@ -42,6 +42,20 @@
         background-color: rgba(13,110,253,0.06);
         transform: translateX(-2px);
     }
+    /* ردیف‌ها فضای باقی‌مانده را پر می‌کنند تا ارتفاع لیست با کارت‌های کنارش برابر شود */
+    .news-list-item {
+        flex: 1 1 auto;
+        min-height: 58px;
+    }
+    /* بدون min-width:0 عنوان بلند ستون را می‌کشد و فلش را بیرون کادر می‌برد */
+    .news-list-item__body {
+        min-width: 0;
+    }
+    .news-list-item__chevron {
+        flex-shrink: 0;
+        font-size: 0.7rem;
+        opacity: 0.55;
+    }
     .news-dot {
         width: 10px;
         height: 10px;
@@ -53,24 +67,32 @@
         font-size: 0.9rem;
         color: #1f2937;
         font-weight: 600;
-        line-height: 0.9;
+        line-height: 1.6;
     }
     .news-date-small {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
+        line-height: 1.5;
         margin-top: 2px;
     }
 </style>
 
 @code {
     [Parameter] public int Count { get; set; } = 5;
+    [Parameter] public string? Types { get; set; }
     [Inject] private HttpClient Http { get; set; } = default!;
     private List<NewsDto>? newsList;
+    private string? _loadedKey;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
+        var key = $"{Count}|{Types}";
+        if (_loadedKey == key) return;
+        _loadedKey = key;
+
         try
         {
-            newsList = await Http.GetFromJsonAsync<List<NewsDto>>($"api/news?onlyPublished=true&skip=0&take={Count}");
+            var typeQuery = string.IsNullOrWhiteSpace(Types) ? "" : $"&types={Uri.EscapeDataString(Types)}";
+            newsList = await Http.GetFromJsonAsync<List<NewsDto>>($"api/news?onlyPublished=true&skip=0&take={Math.Max(1, Count)}{typeQuery}");
         }
         catch { newsList = new(); }
     }

@@ -32,7 +32,14 @@ public class SystemEventMiddleware
 
             // ردیابی عملکردهای واقعاً بحرانی (بیش از 10 ثانیه)
             // با توجه به استفاده از فیلترشکن، آستانه را بالا بردیم تا لاگ‌های غیرضروری ثبت نشوند
-            if (stopwatch.ElapsedMilliseconds > 10000 && !requestPath.Contains("_framework"))
+            var path = requestPath ?? string.Empty;
+            var isLongLivedConnection =
+                path.StartsWith("/hubs", StringComparison.OrdinalIgnoreCase) ||
+                context.Response.StatusCode == StatusCodes.Status101SwitchingProtocols;
+
+            if (stopwatch.ElapsedMilliseconds > 10000
+                && !path.Contains("_framework")
+                && !isLongLivedConnection)
             {
                 await eventService.LogEventAsync(new SystemEventLog
                 {

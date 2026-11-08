@@ -6,43 +6,69 @@ namespace ErrorService.Client.Services;
 public class AuthHttpHandler : DelegatingHandler
 {
     private readonly LocalStorageService _storage;
+    private readonly SessionExpiryNotifier _sessionExpiry;
 
-    public AuthHttpHandler(LocalStorageService storage)
+    public AuthHttpHandler(LocalStorageService storage, SessionExpiryNotifier sessionExpiry)
     {
         _storage = storage;
+        _sessionExpiry = sessionExpiry;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        string? attachedToken = null;
+
         if (request.Headers.Authorization == null)
         {
             var token = await _storage.GetAsync("auth_token");
             if (string.IsNullOrWhiteSpace(token))
                 token = await _storage.GetAsync("workshop_token");
+
             if (!string.IsNullOrWhiteSpace(token))
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            {
+                // توکن منقضی را حتی نفرست: هم درخواست بی‌نتیجه است، هم کاربر
+                // باید فوراً به صفحه ورود هدایت شود (لاگین قبلی باطل شده است).
+                if (JwtParser.IsExpired(token))
+                {
+                    await ClearStoredTokensAsync();
+                    _sessionExpiry.NotifyExpired();
+                }
+                else
+                {
+                    attachedToken = token;
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                }
+            }
+        }
+        else if (string.Equals(request.Headers.Authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase))
+        {
+            attachedToken = request.Headers.Authorization.Parameter;
         }
 
         var response = await base.SendAsync(request, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
-            // Only clear stored token when /api/auth/me itself returns 401 —
-            // that is the source-of-truth for token validity.
-            // A 401 from any other endpoint (e.g. cart, tickets) could be a
-            // permission or server-side issue, and must not wipe login state.
-            var authHeader = request.Headers.Authorization;
-            var isAuthMeRequest = request.RequestUri?.AbsolutePath?.Contains("/api/auth/me") == true;
-
-            if (authHeader != null
-                && string.Equals(authHeader.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
-                && isAuthMeRequest)
+            // فقط وقتی جلسه واقعاً منقضی شده پاک‌سازی می‌کنیم. 401 به معنای
+            // نداشتن مجوز نباید کاربر را از حساب خارج کند.
+            if (!string.IsNullOrWhiteSpace(attachedToken) && JwtParser.IsExpired(attachedToken))
             {
-                await _storage.RemoveAsync("auth_token");
-                await _storage.RemoveAsync("workshop_token");
+                await ClearStoredTokensAsync();
+                _sessionExpiry.NotifyExpired();
+            }
+            else if (request.RequestUri?.AbsolutePath?.Contains("/api/auth/me") == true)
+            {
+                // /api/auth/me منبع حقیقت اعتبار توکن است.
+                await ClearStoredTokensAsync();
             }
         }
 
         return response;
+    }
+
+    private async Task ClearStoredTokensAsync()
+    {
+        await _storage.RemoveAsync("auth_token");
+        await _storage.RemoveAsync("workshop_token");
     }
 }

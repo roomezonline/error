@@ -250,11 +250,24 @@ public static class VisitPathNamer
                 case KindSensor:
                     if (ids.Count > 0)
                     {
+                        // نام دستگاه هم در عنوان می‌آید؛ قبلاً فقط SensorName بود و ردیف‌های
+                        // دستگاه‌های مختلف با برچسب یکسان («سنسور: سنسور دما») یکی می‌شدند.
                         var rows = await db.SensorFinderRecords.AsNoTracking()
                             .Where(x => ids.Contains(x.Id))
-                            .Select(x => new { x.Id, x.SensorName })
+                            .Select(x => new
+                            {
+                                x.Id,
+                                x.SensorName,
+                                DeviceName = x.Device != null ? x.Device.Name : null
+                            })
                             .ToListAsync();
-                        foreach (var r in rows) Add(kind, r.Id, null, "سنسور: " + r.SensorName);
+                        foreach (var r in rows)
+                        {
+                            var title = string.IsNullOrWhiteSpace(r.DeviceName)
+                                ? "سنسور: " + r.SensorName
+                                : $"سنسور {r.SensorName} — {r.DeviceName}";
+                            Add(kind, r.Id, null, title);
+                        }
                     }
                     break;
             }

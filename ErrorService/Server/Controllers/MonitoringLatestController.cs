@@ -13,10 +13,12 @@ namespace ErrorService.Server.Controllers;
 public class MonitoringLatestController : ControllerBase
 {
     private readonly MonitoringAuthorizationService _authz;
+    private readonly MonitoringCacheService _cache;
 
-    public MonitoringLatestController(MonitoringAuthorizationService authz)
+    public MonitoringLatestController(MonitoringAuthorizationService authz, MonitoringCacheService cache)
     {
         _authz = authz;
+        _cache = cache;
     }
 
     [HttpGet]
@@ -28,8 +30,52 @@ public class MonitoringLatestController : ControllerBase
         if (!await _authz.CanAccessLiveData(User, code))
             return Forbid();
 
-        var data = ReadFromFile(code);
-        return Ok(data);
+        // داده لحظه‌ای همان‌جا که تله‌متری دستگاه ثبت می‌شود در حافظه هم نگه داشته می‌شود؛
+        // خواندن از فایل هم کندتر است و هم با نوشتن هم‌زمان دستگاه قفل می‌خورد.
+        var data = _cache.Get(code);
+        if (data != null)
+        {
+            StampFileWriteTime(code, data);
+            return Ok(data);
+        }
+
+        return Ok(ReadFromFile(code));
+    }
+
+    private static void StampFileWriteTime(string code, MonitoringDeviceData data)
+    {
+        var filePath = Path.Combine(
+            Directory.GetCurrentDirectory(), "wwwroot", "monitoring-data",
+            code, "server", $"device_{code}.txt");
+
+        if (!System.IO.File.Exists(filePath)) return;
+
+        data.FileWriteTime = System.IO.File.GetLastWriteTimeUtc(filePath);
+        data.FileWriteTimeFa = PersianDateHelper.ToPersianDateTimeString(
+            data.FileWriteTime.ToLocalTime(), true);
+    }
+
+    private static string[] ReadAllLinesShared(string filePath)
+    {
+        // FileShare.ReadWrite تا اگر دستگاه در همان لحظه در حال نوشتن است،
+        // خطای «being used by another process» رخ ندهد.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(
+                    filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new StreamReader(stream, Encoding.UTF8);
+                var lines = new List<string>();
+                while (reader.ReadLine() is { } line)
+                    lines.Add(line);
+                return lines.ToArray();
+            }
+            catch (IOException) when (attempt < 2)
+            {
+                Thread.Sleep(40);
+            }
+        }
     }
 
     private static MonitoringDeviceData ReadFromFile(string code)
@@ -56,7 +102,7 @@ public class MonitoringLatestController : ControllerBase
             return result;
         }
 
-        var lines = System.IO.File.ReadAllLines(filePath, Encoding.UTF8);
+        var lines = ReadAllLinesShared(filePath);
         foreach (var line in lines)
         {
             var trimmed = line.Trim();

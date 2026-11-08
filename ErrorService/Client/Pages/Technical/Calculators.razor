@@ -1,369 +1,715 @@
 @page "/technical/calculators"
-@using ErrorService.Shared.Models
-@inject ErrorService.Client.Services.ThemeService Theme
+@implements IDisposable
+@using System.Text.Json
+@using ErrorService.Shared
+@using ErrorService.Client.Pages.Technical.CalculatorTools
+@using ErrorService.Client.Services
+@inject SiteSettingsService Settings
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject LocalStorageService LocalStorage
 
-<SeoHeader 
-    Title="ابزارهای محاسباتی الکترونیک | ارورسرویس"
-    Description="محاسبهگر کد رنگ مقاومت، قانون اهم و ابزارهای محاسباتی الکترونیک برای تعمیرکاران و مهندسین"
-    Keywords="محاسبهگر مقاومت, کد رنگ مقاومت, قانون اهم, ابزار الکترونیک"
-    OgType="website" />
+<SeoHeader
+    Title="ماشین‌حساب تعمیرکاران: ۱۳ ابزار محاسبه برق و الکترونیک | ارورسرویس"
+    Description="۱۳ ماشین‌حساب رایگان برای تعمیرکاران و تکنسین‌ها: کد رنگ مقاومت، قانون اهم، مقاومت LED، افت ولتاژ کابل، جریان و خازن موتور، مصرف برق و عمر باتری. بدون نصب و مناسب موبایل."
+    Keywords="ماشین حساب تعمیرات, محاسبه قانون اهم, کد رنگ مقاومت, افت ولتاژ کابل, محاسبه سطح مقطع سیم, جریان موتور, خازن موتور تک فاز, محاسبه مصرف برق, ابزار تعمیرکار"
+    OgType="website"
+    JsonLd="@jsonLd" />
 
-<div class="container py-4">
-    <div class="text-center mb-5">
-        <h2 class="fw-black text-primary mb-2">ابزارهای محاسباتی الکترونیک</h2>
-        <p class="text-muted">محاسبات دقیق قطعات برای تعمیرکاران و مهندسین</p>
-    </div>
+<div class="calc-page" dir="rtl">
+    <section class="calc-hero @(ActiveTool != null ? "calc-hero--compact" : "")">
+        <div class="calc-hero__inner">
+            <h1>ابزارهای محاسباتی تعمیرکاران</h1>
+            <p>
+                محاسبات پرکاربرد برق، الکترونیک و لوازم خانگی در یک صفحه؛ از کد رنگ مقاومت و افت ولتاژ کابل
+                تا جریان و خازن موتور. هر ابزار صفحه اختصاصی خودش را دارد، ورودی‌ها در همین مرورگر ذخیره می‌شوند
+                و نیازی به نصب نیست.
+            </p>
+            <div class="calc-hero__stats">
+                <span class="calc-hero__stat"><span class="oi oi-calculator" aria-hidden="true"></span> @ToolCount ابزار فعال</span>
+                <span class="calc-hero__stat"><span class="oi oi-check" aria-hidden="true"></span> ذخیره خودکار مقادیر</span>
+                <span class="calc-hero__stat"><span class="oi oi-phone" aria-hidden="true"></span> بهینه برای موبایل</span>
+            </div>
+        </div>
+    </section>
 
-    <div class="row g-4">
-        <!-- Resistor Color Code Calculator -->
-        <div class="col-lg-6">
-            <div class="calc-card p-4 rounded-4 shadow-sm border-0 h-100">
-                <div class="d-flex align-items-center mb-4">
-                    <div class="calc-icon bg-primary-subtle text-primary me-3">
-                        <span class="oi oi-list"></span>
+    @if (ActiveTool is { } active)
+    {
+        <div class="container">
+            <div class="calc-workspace">
+                <aside class="calc-side" aria-label="فهرست ابزارهای محاسباتی">
+                    <p class="calc-side__title">
+                        <span>ابزارها</span>
+                        <span class="calc-side__count">@ToolCount</span>
+                    </p>
+                    @foreach (var category in CategoriesWithTools)
+                    {
+                        <div class="calc-side__group">
+                            <p class="calc-side__label">
+                                <span class="oi @category.Icon" aria-hidden="true"></span>
+                                @category.Title
+                            </p>
+                            @foreach (var tool in ToolsIn(category.Key))
+                            {
+                                <a class="calc-side__link @(tool.Key == active.Key ? "is-active" : "")"
+                                   href="@ToolHref(tool.Key)"
+                                   aria-current="@(tool.Key == active.Key ? "page" : null)"
+                                   @onclick:preventDefault="true"
+                                   @onclick="() => SelectTool(tool.Key)">
+                                    @tool.Title
+                                </a>
+                            }
+                        </div>
+                    }
+                </aside>
+
+                <div class="calc-stage" id="calc-stage">
+                    <div class="calc-stage__bar">
+                        <nav class="calc-crumbs" aria-label="مسیر صفحه">
+                            <a href="/">خانه</a>
+                            <span class="calc-crumbs__sep" aria-hidden="true">/</span>
+                            <a href="/technical/calculators" @onclick:preventDefault="true" @onclick="CloseTool">ابزارهای محاسباتی</a>
+                            <span class="calc-crumbs__sep" aria-hidden="true">/</span>
+                            <span class="calc-crumbs__current" aria-current="page">@active.Title</span>
+                        </nav>
+                        <div class="calc-stage__actions">
+                            <button type="button" class="calc-fav @(IsFavorite(active.Key) ? "is-active" : "")"
+                                    @onclick="() => ToggleFavoriteAsync(active.Key)"
+                                    aria-pressed="@(IsFavorite(active.Key) ? "true" : "false")"
+                                    title="افزودن به ابزارهای موردعلاقه">
+                                <span class="oi oi-star" aria-hidden="true"></span>
+                                @(IsFavorite(active.Key) ? "در علاقه‌مندی‌ها" : "علاقه‌مندی")
+                            </button>
+                            <a class="calc-back" href="/technical/calculators" @onclick:preventDefault="true" @onclick="CloseTool">
+                                <span class="oi oi-arrow-right" aria-hidden="true"></span>
+                                همه ابزارها
+                            </a>
+                        </div>
                     </div>
-                    <h4 class="fw-bold mb-0">محاسبه کد رنگ مقاومت</h4>
+
+                    <div class="calc-mobile-switch">
+                        <label class="calc-label" for="calc-tool-select">ابزار جاری</label>
+                        <select id="calc-tool-select" class="calc-select" @onchange="OnToolChanged">
+                            @foreach (var category in CategoriesWithTools)
+                            {
+                                <optgroup label="@category.Title">
+                                    @foreach (var tool in ToolsIn(category.Key))
+                                    {
+                                        <option value="@tool.Key" selected="@(tool.Key == active.Key)">@tool.Title</option>
+                                    }
+                                </optgroup>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="calc-focus calc-tone-@active.CategoryKey">
+                        @switch (active.Key)
+                        {
+                            case "ohm-law":
+                                <OhmLawTool />
+                                break;
+                            case "resistor-color":
+                                <ResistorColorTool />
+                                break;
+                            case "led-resistor":
+                                <LedResistorTool />
+                                break;
+                            case "voltage-divider":
+                                <VoltageDividerTool />
+                                break;
+                            case "series-parallel":
+                                <SeriesParallelTool />
+                                break;
+                            case "capacitor-code":
+                                <CapacitorCodeTool />
+                                break;
+                            case "rc-time":
+                                <RcTimeTool />
+                                break;
+                            case "voltage-drop":
+                                <VoltageDropTool />
+                                break;
+                            case "motor-current":
+                                <MotorCurrentTool />
+                                break;
+                            case "power-cost":
+                                <PowerCostTool />
+                                break;
+                            case "motor-capacitor":
+                                <MotorCapacitorTool />
+                                break;
+                            case "inverter-rpm":
+                                <InverterRpmTool />
+                                break;
+                            case "battery-life":
+                                <BatteryLifeTool />
+                                break;
+                        }
+                    </div>
+
+                    <nav class="calc-pager" aria-label="جابه‌جایی بین ابزارها">
+                        @if (PrevTool is { } prev)
+                        {
+                            <a class="calc-pager__item" href="@ToolHref(prev.Key)"
+                               @onclick:preventDefault="true" @onclick="() => SelectTool(prev.Key)">
+                                <span class="calc-pager__dir">
+                                    <span class="oi oi-arrow-right" aria-hidden="true"></span>
+                                    ابزار قبلی
+                                </span>
+                                <span class="calc-pager__title">@prev.Title</span>
+                            </a>
+                        }
+                        else
+                        {
+                            <span class="calc-pager__item calc-pager__item--empty"></span>
+                        }
+
+                        @if (NextTool is { } next)
+                        {
+                            <a class="calc-pager__item calc-pager__item--next" href="@ToolHref(next.Key)"
+                               @onclick:preventDefault="true" @onclick="() => SelectTool(next.Key)">
+                                <span class="calc-pager__dir">
+                                    ابزار بعدی
+                                    <span class="oi oi-arrow-left" aria-hidden="true"></span>
+                                </span>
+                                <span class="calc-pager__title">@next.Title</span>
+                            </a>
+                        }
+                        else
+                        {
+                            <span class="calc-pager__item calc-pager__item--empty"></span>
+                        }
+                    </nav>
+
+                    <div class="calc-cta">
+                        <div>
+                            <h3>محاسبه کافی نیست؟ به کمک فنی بیشتری نیاز دارید؟</h3>
+                            <p>کد خطای دستگاه را در بانک کد خطا جستجو کنید یا درخواست مشاوره فنی ثبت کنید.</p>
+                        </div>
+                        <div class="calc-cta__actions">
+                            <a href="/technical/error-codes" class="btn btn-outline-primary rounded-pill px-4">بانک کدهای خطا</a>
+                            <a href="/technical/consultation" class="btn btn-primary rounded-pill px-4">مشاوره فنی</a>
+                        </div>
+                    </div>
                 </div>
-
-                <div class="resistor-preview mb-4 p-3 rounded-3 d-flex align-items-center justify-content-center" style="background: #e2e8f0; min-height: 80px;">
-                    <div class="resistor-body position-relative d-flex justify-content-between align-items-center px-4">
-                        <div class="band" style="background-color: @GetColorHex(band1)"></div>
-                        <div class="band" style="background-color: @GetColorHex(band2)"></div>
-                        <div class="band" style="background-color: @GetColorHex(multiplier)"></div>
-                        <div class="band" style="background-color: @GetColorHex(tolerance)"></div>
-                    </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="container">
+            <div class="calc-toolbar" id="calc-browser">
+                <div class="calc-search">
+                    <span class="calc-search__icon oi oi-magnifying-glass" aria-hidden="true"></span>
+                    <input type="search" aria-label="جستجوی ابزار" placeholder="جستجو: مقاومت، افت ولتاژ، خازن موتور، مصرف برق..."
+                           @bind="search" @bind:event="oninput" @bind:after="OnSearchChanged" />
                 </div>
-
-                <div class="row g-2 mb-4">
-                    <div class="col-6">
-                        <label class="small fw-bold mb-1">نوار اول</label>
-                        <select class="form-select form-select-sm" @bind="band1">
-                            @foreach (var color in resistorColors.Where(c => c.Value != null))
-                            {
-                                <option value="@color.Key">@color.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="col-6">
-                        <label class="small fw-bold mb-1">نوار دوم</label>
-                        <select class="form-select form-select-sm" @bind="band2">
-                            @foreach (var color in resistorColors.Where(c => c.Value != null))
-                            {
-                                <option value="@color.Key">@color.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="col-6">
-                        <label class="small fw-bold mb-1">ضریب (نوار سوم)</label>
-                        <select class="form-select form-select-sm" @bind="multiplier">
-                            @foreach (var color in resistorColors)
-                            {
-                                <option value="@color.Key">@color.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="col-6">
-                        <label class="small fw-bold mb-1">تلرانس</label>
-                        <select class="form-select form-select-sm" @bind="tolerance">
-                            @foreach (var color in toleranceColors)
-                            {
-                                <option value="@color.Key">@color.Name (@color.Percent%)</option>
-                            }
-                        </select>
-                    </div>
+                <div class="calc-chips">
+                    <button type="button" class="calc-chip @(activeCategory == "all" ? "is-active" : "")"
+                            @onclick='() => SelectCategory("all")'>همه ابزارها</button>
+                    @foreach (var category in CategoriesWithTools)
+                    {
+                        <button type="button" class="calc-chip @(activeCategory == category.Key ? "is-active" : "")"
+                                data-cat="@category.Key"
+                                @onclick="() => SelectCategory(category.Key)">
+                            <span class="oi @category.Icon" aria-hidden="true"></span> @category.Title
+                        </button>
+                    }
                 </div>
+                <p class="calc-toolbar__hint">
+                    <span class="oi oi-loop-square" aria-hidden="true"></span>
+                    روی هر ابزار بزنید تا کامل باز شود؛ آخرین ورودی‌ها هم در همین مرورگر ذخیره می‌شوند.
+                </p>
+            </div>
 
-                <div class="result-box p-3 rounded-3 text-center">
-                    @{ var r = CalculateResistorValueParts(); }
-                    <h5 class="fw-black text-primary mb-1">
-                        <span class="unit-group">
-                            <span class="unit-value">@r.Number</span>
-                            <span class="unit-label">@r.Unit</span>
+            @if (!VisibleCategories.Any())
+            {
+                <div class="calc-empty">
+                    <span class="oi oi-warning" aria-hidden="true"></span>
+                    @if (string.IsNullOrWhiteSpace(search))
+                    {
+                        <p class="mb-0">در حال حاضر ابزاری برای نمایش وجود ندارد.</p>
+                    }
+                    else
+                    {
+                        <p class="mb-3">ابزاری با این عنوان پیدا نشد. عبارت کوتاه‌تری مثل «مقاومت» یا «ولتاژ» امتحان کنید.</p>
+                        <button type="button" class="btn btn-outline-primary rounded-pill px-4" @onclick="ClearSearch">پاک کردن جستجو</button>
+                    }
+                </div>
+            }
+            else
+            {
+                @if (QuickTools.Any() && string.IsNullOrWhiteSpace(search) && activeCategory == "all")
+                {
+                    <div class="calc-start">
+                        <span class="calc-start__label">
+                            <span class="oi oi-bolt" aria-hidden="true"></span>
+                            شروع سریع
                         </span>
-                    </h5>
-                    <span class="small text-muted">تلرانس: @GetTolerancePercent()%</span>
+                        <div class="calc-start__list">
+                            @foreach (var tool in QuickTools)
+                            {
+                                <a class="calc-quick" href="@ToolHref(tool.Key)"
+                                   @onclick:preventDefault="true" @onclick="() => SelectTool(tool.Key)">
+                                    <span class="oi @tool.Icon" aria-hidden="true"></span>
+                                    @tool.Title
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (FavoriteTools.Any() || RecentTools.Any())
+                {
+                    <div class="calc-start calc-start--mine">
+                        @if (FavoriteTools.Any())
+                        {
+                            <span class="calc-start__label">
+                                <span class="oi oi-star" aria-hidden="true"></span>
+                                موردعلاقه‌های من
+                            </span>
+                            <div class="calc-start__list">
+                                @foreach (var tool in FavoriteTools)
+                                {
+                                    <a class="calc-quick" href="@ToolHref(tool.Key)"
+                                       @onclick:preventDefault="true" @onclick="() => SelectTool(tool.Key)">
+                                        <span class="oi @tool.Icon" aria-hidden="true"></span>
+                                        @tool.Title
+                                    </a>
+                                }
+                            </div>
+                        }
+                        @if (RecentTools.Any())
+                        {
+                            <span class="calc-start__label">
+                                <span class="oi oi-clock" aria-hidden="true"></span>
+                                اخیراً استفاده‌شده
+                            </span>
+                            <div class="calc-start__list">
+                                @foreach (var tool in RecentTools)
+                                {
+                                    <a class="calc-quick" href="@ToolHref(tool.Key)"
+                                       @onclick:preventDefault="true" @onclick="() => SelectTool(tool.Key)">
+                                        <span class="oi @tool.Icon" aria-hidden="true"></span>
+                                        @tool.Title
+                                    </a>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+
+                @foreach (var category in VisibleCategories)
+                {
+                    <section class="calc-section" data-cat="@category.Key" id="cat-@category.Key" aria-labelledby="cat-title-@category.Key">
+                        <div class="calc-section__head">
+                            <span class="calc-section__icon"><span class="oi @category.Icon" aria-hidden="true"></span></span>
+                            <div class="calc-section__titles">
+                                <h2 class="calc-section__title" id="cat-title-@category.Key">@category.Title</h2>
+                                <p class="calc-section__sub">@category.Subtitle</p>
+                            </div>
+                            <span class="calc-section__count">@ToolsFor(category.Key).Count() ابزار</span>
+                        </div>
+
+                        <div class="calc-tiles">
+                            @foreach (var tool in ToolsFor(category.Key))
+                            {
+                                <a class="ct-tile" href="@ToolHref(tool.Key)"
+                                   @onclick:preventDefault="true" @onclick="() => SelectTool(tool.Key)">
+                                    <span class="ct-tile__icon"><span class="oi @tool.Icon" aria-hidden="true"></span></span>
+                                    <span class="ct-tile__body">
+                                        <span class="ct-tile__title">@tool.Title</span>
+                                        <span class="ct-tile__desc">@tool.ShortDescription</span>
+                                    </span>
+                                    <span class="ct-tile__go oi oi-arrow-left" aria-hidden="true"></span>
+                                </a>
+                            }
+                        </div>
+                    </section>
+                }
+            }
+
+            <section class="calc-guide" aria-labelledby="calc-guide-title">
+                <h2 class="calc-guide__title" id="calc-guide-title">سوالات متداول درباره ابزارهای محاسباتی</h2>
+                @foreach (var item in Faq)
+                {
+                    <details class="calc-faq__item">
+                        <summary>@item.Question</summary>
+                        <p class="calc-faq__answer">@item.Answer</p>
+                    </details>
+                }
+            </section>
+
+            <div class="calc-cta">
+                <div>
+                    <h3>محاسبه کافی نیست؟ به کمک فنی بیشتری نیاز دارید؟</h3>
+                    <p>کد خطای دستگاه را در بانک کد خطا جستجو کنید یا درخواست مشاوره فنی ثبت کنید.</p>
+                </div>
+                <div class="calc-cta__actions">
+                    <a href="/technical/error-codes" class="btn btn-outline-primary rounded-pill px-4">بانک کدهای خطا</a>
+                    <a href="/technical/consultation" class="btn btn-primary rounded-pill px-4">مشاوره فنی</a>
                 </div>
             </div>
         </div>
-
-        <!-- Ohm's Law Calculator -->
-        <div class="col-lg-6">
-            <div class="calc-card p-4 rounded-4 shadow-sm border-0 h-100">
-                <div class="d-flex align-items-center mb-4">
-                    <div class="calc-icon bg-success-subtle text-success me-3">
-                        <span class="oi oi-bolt"></span>
-                    </div>
-                    <h4 class="fw-bold mb-0">قانون اهم (V = I × R)</h4>
-                </div>
-
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="small fw-bold mb-1">ولتاژ (V - Volts)</label>
-                        <input type="number" class="form-control" @bind="voltage" @bind:event="oninput" placeholder="0" />
-                    </div>
-                    <div class="col-md-6">
-                        <label class="small fw-bold mb-1">جریان (I - Amperes)</label>
-                        <input type="number" class="form-control" @bind="current" @bind:event="oninput" placeholder="0" />
-                    </div>
-                    <div class="col-md-6">
-                        <label class="small fw-bold mb-1">مقاومت (R - Ohms)</label>
-                        <input type="number" class="form-control" @bind="resistance" @bind:event="oninput" placeholder="0" />
-                    </div>
-                    <div class="col-md-6 d-flex align-items-end">
-                        <button class="btn btn-outline-secondary w-100" @onclick="ClearOhm">پاک کردن</button>
-                    </div>
-                </div>
-
-                <div class="mt-4 p-3 rounded-3 bg-light-subtle border">
-                    <p class="mb-1 fw-bold text-center">نتایج محاسبه:</p>
-                    @{ var o = CalculateOhm(); }
-                    <div class="row g-2 text-center">
-                        <div class="col-6">
-                            <small class="d-block text-muted">ولتاژ</small>
-                            <span class="fw-bold">
-                                <span class="unit-group">
-                                    <span class="unit-value">@o.Voltage</span>
-                                    <span class="unit-label">V</span>
-                                </span>
-                            </span>
-                        </div>
-                        <div class="col-6">
-                            <small class="d-block text-muted">جریان</small>
-                            <span class="fw-bold">
-                                <span class="unit-group">
-                                    <span class="unit-value">@o.Current</span>
-                                    <span class="unit-label">A</span>
-                                </span>
-                            </span>
-                        </div>
-                        <div class="col-6">
-                            <small class="d-block text-muted">مقاومت</small>
-                            <span class="fw-bold">
-                                <span class="unit-group">
-                                    <span class="unit-value">@o.ResistanceNumber</span>
-                                    <span class="unit-label">@o.ResistanceUnit</span>
-                                </span>
-                            </span>
-                        </div>
-                        <div class="col-6">
-                            <small class="d-block text-muted">توان</small>
-                            <span class="fw-bold">
-                                <span class="unit-group">
-                                    <span class="unit-value">@o.PowerNumber</span>
-                                    <span class="unit-label">@o.PowerUnit</span>
-                                </span>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <div class="mt-3 small text-muted text-center">
-                    * برای محاسبه هر مقدار، دو مقدار دیگر را وارد کنید.
-                </div>
-            </div>
-        </div>
-    </div>
+    }
 </div>
 
-<style>
-    .calc-card {
-        background: var(--app-surface);
-        border: 1px solid var(--app-border) !important;
-    }
-    .calc-icon {
-        width: 48px;
-        height: 48px;
-        border-radius: 14px;
-        display: grid;
-        place-items: center;
-        font-size: 1.4rem;
-    }
-    .resistor-body {
-        width: 200px;
-        height: 34px;
-        background: #f1bf85;
-        border-radius: 17px;
-        box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
-    }
-    .band {
-        width: 12px;
-        height: 100%;
-        box-shadow: 1px 0 2px rgba(0,0,0,0.1);
-    }
-    .result-box {
-        background: var(--app-bg);
-        border: 2px dashed var(--app-primary);
-    }
-    .bg-primary-subtle { background: rgba(37, 99, 235, 0.1); }
-    .bg-success-subtle { background: rgba(16, 185, 129, 0.1); }
-
-    .unit-group {
-        direction: ltr;
-        display: inline-flex;
-        gap: 0.35rem;
-        align-items: baseline;
-        justify-content: center;
-        white-space: nowrap;
-    }
-    .unit-label {
-        font-size: 0.95em;
-        opacity: 0.9;
-    }
-</style>
-
 @code {
-    // Resistor logic
-    private string band1 = "brown";
-    private string band2 = "black";
-    private string multiplier = "red";
-    private string tolerance = "gold";
+    private const string FavoritesKey = "es_calc_favorites";
+    private const string RecentKey = "es_calc_recent";
+    private const int RecentLimit = 6;
 
-    private class ColorBand { public string Key { get; set; } = ""; public string Name { get; set; } = ""; public int? Value { get; set; } public double Multiplier { get; set; } public string Hex { get; set; } = ""; }
-    private class ToleranceBand { public string Key { get; set; } = ""; public string Name { get; set; } = ""; public double Percent { get; set; } public string Hex { get; set; } = ""; }
+    private string? jsonLd;
+    private string search = "";
+    private string activeCategory = "all";
+    private string? selectedTool;
+    private string? scrollTarget;
+    private HashSet<string> disabledTools = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> favorites = new(StringComparer.OrdinalIgnoreCase);
+    private List<string> recent = new();
+    private bool localLoaded;
 
-    private List<ColorBand> resistorColors = new() {
-        new ColorBand { Key = "black", Name = "مشکی", Value = 0, Multiplier = 1, Hex = "#000000" },
-        new ColorBand { Key = "brown", Name = "قهوه‌ای", Value = 1, Multiplier = 10, Hex = "#8B4513" },
-        new ColorBand { Key = "red", Name = "قرمز", Value = 2, Multiplier = 100, Hex = "#FF0000" },
-        new ColorBand { Key = "orange", Name = "نارنجی", Value = 3, Multiplier = 1000, Hex = "#FFA500" },
-        new ColorBand { Key = "yellow", Name = "زرد", Value = 4, Multiplier = 10000, Hex = "#FFFF00" },
-        new ColorBand { Key = "green", Name = "سبز", Value = 5, Multiplier = 100000, Hex = "#008000" },
-        new ColorBand { Key = "blue", Name = "آبی", Value = 6, Multiplier = 1000000, Hex = "#0000FF" },
-        new ColorBand { Key = "violet", Name = "بنفش", Value = 7, Multiplier = 10000000, Hex = "#EE82EE" },
-        new ColorBand { Key = "grey", Name = "خاکستری", Value = 8, Multiplier = 100000000, Hex = "#808080" },
-        new ColorBand { Key = "white", Name = "سفید", Value = 9, Multiplier = 1000000000, Hex = "#FFFFFF" },
-        new ColorBand { Key = "gold", Name = "طلایی", Value = null, Multiplier = 0.1, Hex = "#FFD700" },
-        new ColorBand { Key = "silver", Name = "نقره‌ای", Value = null, Multiplier = 0.01, Hex = "#C0C0C0" }
-    };
+    private static readonly IReadOnlyList<CalculatorCategory> Categories = CalculatorCatalog.Categories;
 
-    private List<ToleranceBand> toleranceColors = new() {
-        new ToleranceBand { Key = "brown", Name = "قهوه‌ای", Percent = 1, Hex = "#8B4513" },
-        new ToleranceBand { Key = "red", Name = "قرمز", Percent = 2, Hex = "#FF0000" },
-        new ToleranceBand { Key = "gold", Name = "طلایی", Percent = 5, Hex = "#FFD700" },
-        new ToleranceBand { Key = "silver", Name = "نقره‌ای", Percent = 10, Hex = "#C0C0C0" }
-    };
+    private static readonly string[] QuickKeys = { "ohm-law", "resistor-color", "voltage-drop", "motor-capacitor" };
 
-    private string GetColorHex(string key) => resistorColors.FirstOrDefault(c => c.Key == key)?.Hex ?? toleranceColors.FirstOrDefault(c => c.Key == key)?.Hex ?? "#ccc";
+    private static IReadOnlyList<CalculatorFaqItem> Faq => CalculatorCatalog.Faq;
 
-    private DisplayParts CalculateResistorValueParts() {
-        var v1 = resistorColors.First(c => c.Key == band1).Value ?? 0;
-        var v2 = resistorColors.First(c => c.Key == band2).Value ?? 0;
-        var m = resistorColors.First(c => c.Key == multiplier).Multiplier;
-        double val = (v1 * 10 + v2) * m;
+    private IEnumerable<CalculatorTool> EnabledTools
+        => CalculatorCatalog.Tools.Where(t => !disabledTools.Contains(t.Key));
 
-        return FormatResistance(val);
-    }
+    private int ToolCount => EnabledTools.Count();
 
-    private double GetTolerancePercent() => toleranceColors.First(c => c.Key == tolerance).Percent;
+    private IEnumerable<CalculatorCategory> CategoriesWithTools
+        => Categories.Where(c => EnabledTools.Any(t => t.CategoryKey == c.Key));
 
-    // Ohm's Law logic
-    private double? voltage;
-    private double? current;
-    private double? resistance;
-
-    private void ClearOhm() { voltage = null; current = null; resistance = null; }
-
-    private sealed class DisplayParts
+    private IEnumerable<CalculatorCategory> VisibleCategories
     {
-        public string Number { get; set; } = "0";
-        public string Unit { get; set; } = string.Empty;
-    }
-
-    private sealed class OhmResult
-    {
-        public string Voltage { get; set; } = "0";
-        public string Current { get; set; } = "0";
-        public string ResistanceNumber { get; set; } = "0";
-        public string ResistanceUnit { get; set; } = "Ω";
-        public string PowerNumber { get; set; } = "0";
-        public string PowerUnit { get; set; } = "W";
-    }
-
-    private OhmResult CalculateOhm()
-    {
-        var v = voltage;
-        var i = current;
-        var r = resistance;
-
-        var unknowns = 0;
-        if (!v.HasValue) unknowns++;
-        if (!i.HasValue) unknowns++;
-        if (!r.HasValue) unknowns++;
-
-        // if more than one input is empty, we can't solve uniquely
-        if (unknowns > 1)
+        get
         {
-            return new OhmResult
+            var list = CategoriesWithTools;
+            if (activeCategory != "all")
+                list = list.Where(c => c.Key == activeCategory);
+            return list.Where(c => ToolsFor(c.Key).Any());
+        }
+    }
+
+    private IReadOnlyList<CalculatorTool> QuickTools
+        => QuickKeys
+            .Select(CalculatorCatalog.Find)
+            .OfType<CalculatorTool>()
+            .Where(t => EnabledTools.Any(e => e.Key == t.Key))
+            .ToList();
+
+    private IReadOnlyList<CalculatorTool> FavoriteTools
+        => favorites
+            .Select(CalculatorCatalog.Find)
+            .OfType<CalculatorTool>()
+            .Where(t => EnabledTools.Any(e => e.Key == t.Key))
+            .ToList();
+
+    private IReadOnlyList<CalculatorTool> RecentTools
+        => recent
+            .Select(CalculatorCatalog.Find)
+            .OfType<CalculatorTool>()
+            .Where(t => EnabledTools.Any(e => e.Key == t.Key))
+            .ToList();
+
+    private bool IsFavorite(string key) => favorites.Contains(key);
+
+    private CalculatorTool? ActiveTool
+        => selectedTool == null
+            ? null
+            : EnabledTools.FirstOrDefault(t => string.Equals(t.Key, selectedTool, StringComparison.OrdinalIgnoreCase));
+
+    private CalculatorTool? PrevTool
+    {
+        get
+        {
+            var list = EnabledTools.ToList();
+            var index = list.FindIndex(t => t.Key == selectedTool);
+            return index > 0 ? list[index - 1] : null;
+        }
+    }
+
+    private CalculatorTool? NextTool
+    {
+        get
+        {
+            var list = EnabledTools.ToList();
+            var index = list.FindIndex(t => t.Key == selectedTool);
+            return index >= 0 && index < list.Count - 1 ? list[index + 1] : null;
+        }
+    }
+
+    private IEnumerable<CalculatorTool> ToolsIn(string categoryKey)
+        => EnabledTools.Where(t => t.CategoryKey == categoryKey);
+
+    private IEnumerable<CalculatorTool> ToolsFor(string categoryKey)
+    {
+        var query = SearchNormalizer.Normalize(search).Trim();
+        return ToolsIn(categoryKey)
+            .Where(t => query.Length == 0
+                        || SearchNormalizer.Normalize(t.Title).Contains(query)
+                        || SearchNormalizer.Normalize(t.ShortDescription).Contains(query)
+                        || SearchNormalizer.Normalize(t.Keywords).Contains(query));
+    }
+
+    private static string ToolHref(string key) => $"/technical/calculators?tool={key}";
+
+    private static string? ResolveToolKey(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return null;
+
+        foreach (var part in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pair = part.Split('=', 2);
+            if (pair.Length == 2 && string.Equals(pair[0], "tool", StringComparison.OrdinalIgnoreCase))
             {
-                Voltage = v?.ToString("G") ?? "0",
-                Current = i?.ToString("G") ?? "0",
-                ResistanceNumber = r.HasValue ? FormatResistance(r.Value).Number : "0",
-                ResistanceUnit = r.HasValue ? FormatResistance(r.Value).Unit : "Ω",
-                PowerNumber = FormatPower(CalculatePowerWatts(v, i, r)).Number,
-                PowerUnit = FormatPower(CalculatePowerWatts(v, i, r)).Unit
-            };
+                var key = Uri.UnescapeDataString(pair[1]);
+                if (CalculatorCatalog.Find(key) is { } tool)
+                    return tool.Key;
+            }
         }
 
-        // Solve the unknown
-        if (!v.HasValue && i.HasValue && r.HasValue)
+        var fragment = uri.Fragment.TrimStart('#');
+        return fragment.Length > 0 ? CalculatorCatalog.Find(Uri.UnescapeDataString(fragment))?.Key : null;
+    }
+
+    protected override void OnInitialized()
+    {
+        BuildJsonLd();
+
+        selectedTool = ResolveToolKey(Nav.Uri);
+
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
         {
-            v = i.Value * r.Value;
+            var settings = await Settings.GetAsync();
+            disabledTools = CalculatorCatalog.ParseDisabled(settings?.CalculatorsDisabled);
         }
-        else if (!i.HasValue && v.HasValue && r.HasValue && r.Value != 0)
+        catch
         {
-            i = v.Value / r.Value;
-        }
-        else if (!r.HasValue && v.HasValue && i.HasValue && i.Value != 0)
-        {
-            r = v.Value / i.Value;
+            disabledTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
-        var formattedR = r.HasValue ? FormatResistance(r.Value) : new DisplayParts { Number = "0", Unit = "Ω" };
-        var formattedP = FormatPower(CalculatePowerWatts(v, i, r));
+        if (selectedTool != null && !EnabledTools.Any(t => string.Equals(t.Key, selectedTool, StringComparison.OrdinalIgnoreCase)))
+            selectedTool = null;
+    }
 
-        return new OhmResult
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !localLoaded)
         {
-            Voltage = v?.ToString("G") ?? "0",
-            Current = i?.ToString("G") ?? "0",
-            ResistanceNumber = formattedR.Number,
-            ResistanceUnit = formattedR.Unit,
-            PowerNumber = formattedP.Number,
-            PowerUnit = formattedP.Unit
+            localLoaded = true;
+            await LoadLocalAsync();
+            if (ActiveTool != null)
+                await RecordRecentAsync(ActiveTool.Key);
+            StateHasChanged();
+        }
+
+        if (firstRender && ActiveTool != null && scrollTarget == null)
+            scrollTarget = "calc-stage";
+
+        if (scrollTarget is null)
+            return;
+
+        var target = scrollTarget;
+        scrollTarget = null;
+
+        try { await JS.InvokeVoidAsync("scrollToId", target, "start"); }
+        catch { }
+    }
+
+    private async Task LoadLocalAsync()
+    {
+        try
+        {
+            var favoritesJson = await LocalStorage.GetAsync(FavoritesKey);
+            if (!string.IsNullOrWhiteSpace(favoritesJson))
+            {
+                var keys = JsonSerializer.Deserialize<List<string>>(favoritesJson) ?? new();
+                favorites = new HashSet<string>(keys, StringComparer.OrdinalIgnoreCase);
+            }
+
+            var recentJson = await LocalStorage.GetAsync(RecentKey);
+            if (!string.IsNullOrWhiteSpace(recentJson))
+                recent = JsonSerializer.Deserialize<List<string>>(recentJson) ?? new();
+        }
+        catch
+        {
+            favorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            recent = new();
+        }
+    }
+
+    private async Task ToggleFavoriteAsync(string key)
+    {
+        if (favorites.Contains(key))
+            favorites.Remove(key);
+        else
+            favorites.Add(key);
+
+        try
+        {
+            await LocalStorage.SetAsync(FavoritesKey, JsonSerializer.Serialize(favorites.ToList()));
+        }
+        catch
+        {
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task RecordRecentAsync(string key)
+    {
+        recent.RemoveAll(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
+        recent.Insert(0, key);
+        if (recent.Count > RecentLimit)
+            recent = recent.Take(RecentLimit).ToList();
+
+        try
+        {
+            await LocalStorage.SetAsync(RecentKey, JsonSerializer.Serialize(recent));
+        }
+        catch
+        {
+        }
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        var key = ResolveToolKey(e.Location);
+        if (key != null && !EnabledTools.Any(t => string.Equals(t.Key, key, StringComparison.OrdinalIgnoreCase)))
+            key = null;
+
+        if (string.Equals(key, selectedTool, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        selectedTool = key;
+        scrollTarget = key == null ? "calc-browser" : "calc-stage";
+        if (key != null)
+            _ = RecordRecentAsync(key);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void SelectTool(string key)
+    {
+        if (!EnabledTools.Any(t => string.Equals(t.Key, key, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        if (string.Equals(selectedTool, key, StringComparison.OrdinalIgnoreCase))
+        {
+            scrollTarget = "calc-stage";
+            return;
+        }
+
+        selectedTool = key;
+        scrollTarget = "calc-stage";
+        _ = RecordRecentAsync(key);
+        Nav.NavigateTo(ToolHref(key));
+    }
+
+    private void CloseTool()
+    {
+        selectedTool = null;
+        scrollTarget = "calc-browser";
+        Nav.NavigateTo("/technical/calculators");
+    }
+
+    private void OnToolChanged(ChangeEventArgs e)
+    {
+        var key = e.Value?.ToString();
+        if (!string.IsNullOrWhiteSpace(key))
+            SelectTool(key);
+    }
+
+    private void OnSearchChanged()
+    {
+        activeCategory = "all";
+    }
+
+    private void SelectCategory(string key)
+    {
+        activeCategory = key;
+        search = "";
+    }
+
+    private void ClearSearch()
+    {
+        search = "";
+        activeCategory = "all";
+    }
+
+    private void BuildJsonLd()
+    {
+        var pageUrl = "https://errorservice.ir/technical/calculators";
+
+        var webApp = new Dictionary<string, object?>
+        {
+            ["@type"] = "WebApplication",
+            ["name"] = "ماشین‌حساب تعمیرکاران ارورسرویس",
+            ["url"] = pageUrl,
+            ["applicationCategory"] = "UtilitiesApplication",
+            ["operatingSystem"] = "Web",
+            ["inLanguage"] = "fa-IR",
+            ["description"] = "۱۳ ابزار محاسباتی برق، الکترونیک و لوازم خانگی برای تعمیرکاران؛ قانون اهم، کد رنگ مقاومت، افت ولتاژ کابل، جریان و خازن موتور، مصرف برق و عمر باتری.",
+            ["offers"] = new Dictionary<string, object?>
+            {
+                ["@type"] = "Offer",
+                ["price"] = "0",
+                ["priceCurrency"] = "IRR"
+            }
         };
-    }
 
-    private static double CalculatePowerWatts(double? v, double? i, double? r)
-    {
-        if (v.HasValue && i.HasValue) return v.Value * i.Value;
-        if (i.HasValue && r.HasValue) return i.Value * i.Value * r.Value;
-        if (v.HasValue && r.HasValue && r.Value != 0) return v.Value * v.Value / r.Value;
-        return 0;
-    }
+        var breadcrumb = new Dictionary<string, object?>
+        {
+            ["@type"] = "BreadcrumbList",
+            ["itemListElement"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["@type"] = "ListItem",
+                    ["position"] = 1,
+                    ["name"] = "خانه",
+                    ["item"] = "https://errorservice.ir/"
+                },
+                new Dictionary<string, object?>
+                {
+                    ["@type"] = "ListItem",
+                    ["position"] = 2,
+                    ["name"] = "ابزارهای محاسباتی",
+                    ["item"] = pageUrl
+                }
+            }
+        };
 
-    private static DisplayParts FormatResistance(double ohms)
-    {
-        var val = Math.Abs(ohms);
-        if (val >= 1000000)
+        var faqPage = new Dictionary<string, object?>
         {
-            return new DisplayParts { Number = (ohms / 1000000).ToString("G"), Unit = "MΩ" };
-        }
-        if (val >= 1000)
-        {
-            return new DisplayParts { Number = (ohms / 1000).ToString("G"), Unit = "kΩ" };
-        }
-        return new DisplayParts { Number = ohms.ToString("G"), Unit = "Ω" };
-    }
+            ["@type"] = "FAQPage",
+            ["mainEntity"] = Faq.Select(item => new Dictionary<string, object?>
+            {
+                ["@type"] = "Question",
+                ["name"] = item.Question,
+                ["acceptedAnswer"] = new Dictionary<string, object?>
+                {
+                    ["@type"] = "Answer",
+                    ["text"] = item.Answer
+                }
+            }).ToArray()
+        };
 
-    private static DisplayParts FormatPower(double watts)
-    {
-        var val = Math.Abs(watts);
-        if (val >= 1000000)
+        jsonLd = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
-            return new DisplayParts { Number = (watts / 1000000).ToString("G"), Unit = "MW" };
-        }
-        if (val >= 1000)
-        {
-            return new DisplayParts { Number = (watts / 1000).ToString("G"), Unit = "kW" };
-        }
-        return new DisplayParts { Number = watts.ToString("G"), Unit = "W" };
+            ["@context"] = "https://schema.org",
+            ["@graph"] = new object[] { webApp, breadcrumb, faqPage }
+        });
     }
 }

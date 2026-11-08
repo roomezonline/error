@@ -1,10 +1,17 @@
 @page "/help/faq"
 @page "/faq"
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using System.Text.Json
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <SeoHeader 
     Title="سوالات متداول | خرید لوازم الکترونیک و تعمیر لوازم خانگی | ارورسرویس"
     Description="پاسخ به سوالات متداول درباره خرید لوازم الکترونیکی، شرایط ارسال، ضمانت اصالت کالا، تعمیر لوازم خانگی، مرجوعی و پشتیبانی ارورسرویس"
     Keywords="سوالات متداول, FAQ, راهنمای خرید, لوازم الکترونیک, تعمیر لوازم خانگی, ضمانت اصالت"
+    CanonicalUrl="https://errorservice.ir/faq"
     OgType="website"
     JsonLd="@_faqJsonLd" />
 
@@ -19,45 +26,74 @@
         <div class="row g-4">
             <div class="col-lg-3">
                 <div class="faq-sidebar p-3">
+                    <div class="faq-search mb-3">
+                        <span class="oi oi-magnifying-glass" aria-hidden="true"></span>
+                        <input type="search" placeholder="جستجو در سوالات..." aria-label="جستجو در سوالات متداول"
+                               @bind="search" @bind:event="oninput" @bind:after="OnFilterChanged" />
+                    </div>
+
                     <div class="fw-bold mb-2 px-2 text-muted small">دسته‌بندی</div>
-                    @foreach (var cat in _categories)
+                    @foreach (var cat in Categories)
                     {
                         <button class="faq-cat-btn d-block w-100 text-start btn @(_activeCategory == cat.Key ? "btn-primary" : "btn-light") rounded-pill mb-1 px-3 py-2 fw-bold small"
                                 @onclick="() => SetCategory(cat.Key)">
                             <span class="oi oi-@cat.Icon ms-2"></span>@cat.Title
+                            <span class="faq-count">@CountFor(cat.Key)</span>
                         </button>
                     }
                 </div>
             </div>
             <div class="col-lg-9">
-                <div class="accordion" id="faqAccordion">
-                    @{
-                        var items = _faqItems.Where(x => x.Category == _activeCategory || _activeCategory == "all").ToList();
-                        var idx = 0;
-                    }
-                    @foreach (var item in items)
-                    {
-                        var id = $"faq-{idx}";
-                        <div class="accordion-item border-0 shadow-sm rounded-4 mb-3 overflow-hidden">
-                            <h2 class="accordion-header">
-                                <button class="accordion-button @(idx > 0 ? "collapsed" : "") rounded-4 fw-bold py-3" type="button"
-                                        data-bs-toggle="collapse" data-bs-target="#@id">
-                                    @item.Question
-                                </button>
-                            </h2>
-                            <div id="@id" class="accordion-collapse collapse @(idx == 0 ? "show" : "")" data-bs-parent="#faqAccordion">
-                                <div class="accordion-body text-muted pt-0 px-4 pb-4">
-                                    @item.Answer
-                                </div>
-                            </div>
-                        </div>
-                        idx++;
-                    }
-                </div>
-                @if (!items.Any())
+                @if (_loading)
+                {
+                    <div class="faq-skel-list" aria-hidden="true">
+                        @for (var i = 0; i < 4; i++)
+                        {
+                            <div class="faq-skel"></div>
+                        }
+                    </div>
+                }
+                else if (_items.Count == 0)
                 {
                     <div class="text-center py-5 text-muted">
-                        <p>سوالی در این دسته‌بندی یافت نشد.</p>
+                        <span class="oi oi-question-mark faq-empty-icon"></span>
+                        <p class="mt-2">هنوز سوالی ثبت نشده است. از طریق صفحه تماس با ما سوال خود را بپرسید.</p>
+                    </div>
+                }
+                else if (VisibleItems.Count == 0)
+                {
+                    <div class="text-center py-5 text-muted">
+                        <p>سوالی با این عبارت یا در این دسته‌بندی یافت نشد.</p>
+                        <button type="button" class="btn btn-outline-primary rounded-pill px-4" @onclick="ResetFilters">نمایش همه سوالات</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="accordion" id="faqAccordion">
+                        @foreach (var item in VisibleItems)
+                        {
+                            <div class="accordion-item border-0 shadow-sm rounded-4 mb-3 overflow-hidden" id="faq-item-@item.Id">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button @(openId == item.Id ? "" : "collapsed") rounded-4 fw-bold py-3" type="button"
+                                            aria-expanded="@(openId == item.Id ? "true" : "false")"
+                                            @onclick="() => Toggle(item.Id)">
+                                        @item.Question
+                                    </button>
+                                </h2>
+                                <div class="accordion-collapse collapse @(openId == item.Id ? "show" : "")">
+                                    <div class="accordion-body text-muted pt-0 px-4 pb-4">
+                                        <div class="faq-answer">@item.Answer</div>
+                                        <div class="faq-item-actions">
+                                            <button type="button" class="faq-copy" @onclick="() => CopyLinkAsync(item)">
+                                                <span class="oi oi-link-intact" aria-hidden="true"></span>
+                                                @(copiedId == item.Id ? "لینک کپی شد" : "کپی لینک این سوال")
+                                            </button>
+                                            <span class="faq-cat-badge">@SiteFaqCatalog.TitleOf(item.CategoryKey)</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
                     </div>
                 }
             </div>
@@ -75,89 +111,263 @@
 <style>
     .max-w-600 { max-width: 600px; }
     .faq-cat-btn { transition: all 0.2s; }
+    .faq-cat-btn .faq-count {
+        float: left;
+        font-size: 0.72rem;
+        opacity: 0.8;
+        font-weight: 700;
+    }
     .accordion-button:not(.collapsed) { background: var(--bs-primary-bg-subtle, #e8f0fe); color: var(--bs-primary); box-shadow: none; }
     .accordion-button:focus { box-shadow: none; border-color: transparent; }
     .accordion-body { line-height: 1.8; }
+
+    .faq-search {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 0 .7rem;
+        background: #fff;
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .faq-search:focus-within { border-color: var(--bs-primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+    .faq-search .oi { color: #94a3b8; font-size: .85rem; }
+    .faq-search input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        padding: .62rem 0;
+        font: inherit;
+        font-size: .86rem;
+    }
+
+    .faq-answer { white-space: pre-line; }
+    .faq-item-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .6rem;
+        margin-top: .9rem;
+        padding-top: .8rem;
+        border-top: 1px dashed #e2e8f0;
+    }
+    .faq-copy {
+        border: 0;
+        background: transparent;
+        color: #2563eb;
+        font: inherit;
+        font-size: .78rem;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .2rem 0;
+        cursor: pointer;
+    }
+    .faq-copy:hover { color: #1d4ed8; }
+    .faq-cat-badge {
+        font-size: .72rem;
+        font-weight: 700;
+        color: #475569;
+        background: #f1f5f9;
+        border-radius: 999px;
+        padding: .22rem .7rem;
+    }
+    .faq-empty-icon { font-size: 2.2rem; color: #f59e0b; }
+
+    .faq-skel-list { display: flex; flex-direction: column; gap: .85rem; }
+    .faq-skel {
+        height: 58px;
+        border-radius: 16px;
+        background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
+        background-size: 400% 100%;
+        animation: faqShimmer 1.4s ease infinite;
+    }
+    @@keyframes faqShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
     @@media (max-width: 991px) {
         .faq-sidebar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
         .faq-cat-btn { width: auto !important; }
         .faq-sidebar .text-muted { display: none; }
+        .faq-search { flex: 1 1 100%; }
     }
 </style>
 
 @code {
+    private static readonly IReadOnlyList<SiteFaqCategory> Categories =
+        new List<SiteFaqCategory> { new("all", "همه موارد", "list") }
+            .Concat(SiteFaqCatalog.Categories)
+            .ToList();
+
+    private List<SiteFaqEntryDto> _items = new();
+    private bool _loading = true;
     private string _activeCategory = "all";
+    private string search = "";
+    private int? openId;
+    private int? copiedId;
     private string _faqJsonLd = "";
 
-    private readonly List<FaqCategory> _categories = new()
+    private List<SiteFaqEntryDto> VisibleItems
     {
-        new("all", "همه موارد", "list"),
-        new("shop", "خرید و سفارش", "basket"),
-        new("repair", "تعمیرات و سرویس", "wrench"),
-        new("payment", "پرداخت و هزینه", "credit-card"),
-        new("shipping", "ارسال و تحویل", "location"),
-        new("academy", "آکادمی و آموزش", "book"),
-        new("account", "حساب کاربری", "person"),
-    };
+        get
+        {
+            var q = SearchNormalizer.Normalize(search);
+            return _items.Where(x =>
+                    (_activeCategory == "all" || string.Equals(x.CategoryKey, _activeCategory, StringComparison.OrdinalIgnoreCase))
+                    && (q.Length == 0
+                        || SearchNormalizer.Normalize($"{x.Question} {x.Answer} {x.Keywords}").Contains(q)))
+                .OrderBy(x => SiteFaqCatalog.OrderOf(x.CategoryKey))
+                .ThenBy(x => x.SortOrder)
+                .ThenBy(x => x.Id)
+                .ToList();
+        }
+    }
 
-    private readonly List<FaqItem> _faqItems = new()
+    protected override async Task OnInitializedAsync()
     {
-        new("shop", "چگونه می‌توانم محصولی را خریداری کنم؟",
+        try
+        {
+            var loaded = await Http.GetFromJsonAsync<List<SiteFaqEntryDto>>("api/faq");
+            _items = loaded ?? FallbackItems();
+        }
+        catch
+        {
+            _items = FallbackItems();
+        }
+
+        _loading = false;
+        openId = VisibleItems.FirstOrDefault()?.Id;
+        BuildJsonLd();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        var fragment = Nav.ToAbsoluteUri(Nav.Uri).Fragment.TrimStart('#');
+        if (!fragment.StartsWith("faq-item-", StringComparison.Ordinal))
+            return;
+
+        if (!int.TryParse(fragment["faq-item-".Length..], out var id) || !_items.Any(x => x.Id == id))
+            return;
+
+        _activeCategory = "all";
+        search = "";
+        openId = id;
+        StateHasChanged();
+
+        try { await JS.InvokeVoidAsync("scrollToId", $"faq-item-{id}", "center"); }
+        catch { }
+    }
+
+    private int CountFor(string categoryKey)
+        => categoryKey == "all"
+            ? _items.Count
+            : _items.Count(x => string.Equals(x.CategoryKey, categoryKey, StringComparison.OrdinalIgnoreCase));
+
+    private void Toggle(int id) => openId = openId == id ? null : id;
+
+    private void SetCategory(string key)
+    {
+        _activeCategory = key;
+        openId = VisibleItems.FirstOrDefault()?.Id;
+    }
+
+    private void OnFilterChanged()
+    {
+        openId = VisibleItems.FirstOrDefault()?.Id;
+    }
+
+    private void ResetFilters()
+    {
+        _activeCategory = "all";
+        search = "";
+        openId = VisibleItems.FirstOrDefault()?.Id;
+    }
+
+    private async Task CopyLinkAsync(SiteFaqEntryDto item)
+    {
+        var url = $"{Nav.BaseUri.TrimEnd('/')}/faq#faq-item-{item.Id}";
+        try { await JS.InvokeVoidAsync("__copyToClipboard", url); }
+        catch { return; }
+
+        copiedId = item.Id;
+        StateHasChanged();
+
+        await Task.Delay(2200);
+        if (copiedId == item.Id)
+        {
+            copiedId = null;
+            StateHasChanged();
+        }
+    }
+
+    private void BuildJsonLd()
+    {
+        var faqPage = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@type"] = "FAQPage",
+            ["mainEntity"] = _items.Select(item => new Dictionary<string, object?>
+            {
+                ["@type"] = "Question",
+                ["name"] = item.Question,
+                ["acceptedAnswer"] = new Dictionary<string, object?>
+                {
+                    ["@type"] = "Answer",
+                    ["text"] = item.Answer
+                }
+            }).ToArray()
+        };
+
+        _faqJsonLd = JsonSerializer.Serialize(faqPage);
+    }
+
+    private static List<SiteFaqEntryDto> FallbackItems() => new()
+    {
+        Make(1, "shop", 1, "چگونه می‌توانم محصولی را خریداری کنم؟",
             "برای خرید کافیست محصول مورد نظر را به سبد خرید اضافه کنید. سپس از طریق گزینه \"تسویه حساب\" اطلاعات خود را وارد کرده و سفارش خود را ثبت کنید. پس از ثبت سفارش، می‌توانید رسید واریز را آپلود کنید."),
-        new("shop", "آیا امکان خرید حضوری وجود دارد؟",
+        Make(2, "shop", 2, "آیا امکان خرید حضوری وجود دارد؟",
             "بله، شما می‌توانید پس از هماهنگی با کارشناسان ما به صورت حضوری مراجعه کرده و محصول مورد نظر را خریداری کنید."),
-        new("shop", "آیا محصولات شامل گارانتی هستند؟",
+        Make(3, "shop", 3, "آیا محصولات شامل گارانتی هستند؟",
             "بله، تمامی محصولات فروشگاه ارورسرویس دارای گارانتی اصالت کالا و ضمانت بازگشت هستند."),
-
-        new("repair", "چگونه درخواست تعمیر ثبت کنم؟",
+        Make(4, "repair", 1, "چگونه درخواست تعمیر ثبت کنم؟",
             "از طریق صفحه \"درخواست تعمیر\" می‌توانید اطلاعات دستگاه و مشکل خود را ثبت کنید. کارشناسان ما در اسرع وقت با شما تماس خواهند گرفت."),
-        new("repair", "هزینه تعمیرات چگونه محاسبه می‌شود؟",
+        Make(5, "repair", 2, "هزینه تعمیرات چگونه محاسبه می‌شود؟",
             "هزینه تعمیرات پس از تشخیص اولیه مشکل توسط کارشناس فنی و با تأیید شما تعیین می‌شود."),
-        new("repair", "آیا خدمات تعمیر در منزل ارائه می‌دهید؟",
+        Make(6, "repair", 3, "آیا خدمات تعمیر در منزل ارائه می‌دهید؟",
             "بله، کارشناسان ما برای تعمیر انواع لوازم خانگی به صورت حضوری در محل حاضر می‌شوند."),
-
-        new("payment", "چه روش‌های پرداختی وجود دارد؟",
+        Make(7, "payment", 1, "چه روش‌های پرداختی وجود دارد؟",
             "روش‌های پرداخت شامل واریز به کارت و پرداخت آنلاین است. اطلاعات حساب‌های بانکی در صفحه تسویه حساب قابل مشاهده است."),
-        new("payment", "آیا امکان پرداخت در محل وجود دارد؟",
+        Make(8, "payment", 2, "آیا امکان پرداخت در محل وجود دارد؟",
             "برای سفارشات آنلاین، پرداخت از طریق واریز بانکی انجام می‌شود. برای خدمات تعمیرات می‌توانید پس از اتمام کار پرداخت کنید."),
-
-        new("shipping", "مدت زمان ارسال چقدر است؟",
+        Make(9, "shipping", 1, "مدت زمان ارسال چقدر است؟",
             "مدت زمان ارسال بسته به نوع محصول و موقعیت مکانی بین ۱ تا ۵ روز کاری متغیر است."),
-        new("shipping", "هزینه ارسال چقدر است؟",
+        Make(10, "shipping", 2, "هزینه ارسال چقدر است؟",
             "هزینه ارسال بر اساس وزن و موقعیت مکانی محاسبه شده و در صفحه تسویه به شما نمایش داده می‌شود."),
-
-        new("academy", "دوره‌های آموزشی چگونه ارائه می‌شوند؟",
+        Make(11, "academy", 1, "دوره‌های آموزشی چگونه ارائه می‌شوند؟",
             "دوره‌های آموزشی به صورت آنلاین و ویدئویی ارائه می‌شوند. پس از ثبت‌نام در دوره، به تمامی درس‌ها دسترسی خواهید داشت."),
-        new("academy", "آیا محتوای آموزشی رایگان هم دارید؟",
+        Make(12, "academy", 2, "آیا محتوای آموزشی رایگان هم دارید؟",
             "بله، مقالات و آموزش‌های رایگان زیادی در بخش آکادمی و مقالات سایت منتشر شده است."),
-
-        new("account", "چگونه در سایت ثبت‌نام کنم؟",
+        Make(13, "account", 1, "چگونه در سایت ثبت‌نام کنم؟",
             "از طریق گزینه \"ورود / ثبت‌نام\" در منوی بالای سایت می‌توانید با شماره موبایل خود ثبت‌نام کنید."),
-        new("account", "چگونه سفارشات خود را پیگیری کنم؟",
+        Make(14, "account", 2, "چگونه سفارشات خود را پیگیری کنم؟",
             "پس از ورود به حساب کاربری، از بخش \"سفارشات من\" می‌توانید وضعیت تمام سفارشات خود را مشاهده کنید."),
     };
 
-    private record FaqCategory(string Key, string Title, string Icon);
-    private record FaqItem(string Category, string Question, string Answer);
-
-    private void SetCategory(string cat) => _activeCategory = cat;
-
-    protected override void OnInitialized()
+    private static SiteFaqEntryDto Make(int id, string category, int order, string question, string answer) => new()
     {
-        var sb = new System.Text.StringBuilder();
-        sb.Append("{\"@context\":\"https://schema.org\",\"@type\":\"FAQPage\",\"mainEntity\":[");
-        for (int i = 0; i < _faqItems.Count; i++)
-        {
-            var item = _faqItems[i];
-            if (i > 0) sb.Append(",");
-            sb.Append("{\"@type\":\"Question\",\"name\":\"");
-            sb.Append(System.Net.WebUtility.HtmlEncode(item.Question));
-            sb.Append("\",\"acceptedAnswer\":{\"@type\":\"Answer\",\"text\":\"");
-            sb.Append(System.Net.WebUtility.HtmlEncode(item.Answer));
-            sb.Append("\"}}");
-        }
-        sb.Append("]}");
-        _faqJsonLd = sb.ToString();
-    }
+        Id = id,
+        CategoryKey = category,
+        SortOrder = order,
+        Question = question,
+        Answer = answer,
+        IsEnabled = true
+    };
 }

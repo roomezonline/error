@@ -7,8 +7,6 @@
 @using ErrorService.Client.Utils
 @implements IDisposable
 
-<PageTitle>@(article?.Title ?? "مشاهده آموزش") - آکادمی</PageTitle>
-
 <div class="article-viewer-page py-4 bg-light" dir="rtl">
     <div class="container">
         @if (isLoading)
@@ -19,7 +17,7 @@
         }
         else if (loadError)
         {
-            <SeoHeader Title="خطا | ارور سرویس" Description="متاسفانه در دریافت اطلاعات خطایی رخ داد." />
+            <SeoHeader Title="خطا | ارورسرویس" Description="متاسفانه در دریافت اطلاعات خطایی رخ داد." />
             <div class="alert alert-danger text-center py-5 rounded-4 shadow-sm">
                 <h3 class="fw-bold">خطا در دریافت اطلاعات</h3>
                 <p class="text-muted mb-3">امکان ارتباط با سرور وجود ندارد. لطفاً بعداً تلاش کنید.</p>
@@ -29,7 +27,7 @@
         }
         else if (article == null)
         {
-            <SeoHeader Title="مقاله یافت نشد | ارور سرویس" Description="متاسفانه مقاله مورد نظر یافت نشد." />
+            <SeoHeader Title="مقاله یافت نشد | ارورسرویس" Description="متاسفانه مقاله مورد نظر یافت نشد." />
             <div class="alert alert-warning text-center py-5 rounded-4 shadow-sm">
                 <h3 class="fw-bold">مقاله مورد نظر یافت نشد!</h3>
                 <a href="/academy" class="btn btn-primary mt-3 rounded-pill px-4">بازگشت به آکادمی</a>
@@ -38,8 +36,8 @@
         else
         {
             <SeoHeader 
-                Title="@($"{article.Title} | مقاله آموزشی | ارور سرویس")" 
-                Description="@(string.IsNullOrEmpty(article.Summary) ? $"مطالعه مقاله آموزشی {article.Title} در آکادمی ارور سرویس" : (article.Summary.Length > 160 ? article.Summary.Substring(0, 157) + "..." : article.Summary))"
+                Title="@SeoTitles.Article(article.Title)" 
+                Description="@SeoDescriptions.Article(article.Summary, article.Title)"
                 OgType="article"
                 OgImage="@(article.CoverImageUrl ?? "/images/og-default.jpg")"
                 JsonLd="@articleJsonLd" />

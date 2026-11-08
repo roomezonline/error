@@ -1,0 +1,179 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="voltage-divider" Title="تقسیم ولتاژ"
+           Subtitle="ولتاژ خروجی مقسم مقاومتی (R1 و R2)، جریان مدار و توان هر مقاومت را محاسبه می‌کند."
+           Icon="oi-resize-height"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-form">
+        <div class="calc-field calc-field--full">
+            <label class="calc-label" for="div-vin">ولتاژ ورودی (V)</label>
+            <input id="div-vin" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 12" @bind="vin" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="div-r1">مقاومت R1 (بالا)</label>
+            <input id="div-r1" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 10" @bind="r1" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="div-r2">مقاومت R2 (پایین)</label>
+            <input id="div-r2" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 4.7" @bind="r2" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field calc-field--full">
+            <label class="calc-label" for="div-unit">واحد مقاومت‌ها</label>
+            <select id="div-unit" class="calc-select" @bind="unit" @bind:after="PersistAsync">
+                <option value="Ω">اهم (Ω)</option>
+                <option value="kΩ">کیلواهم (kΩ)</option>
+                <option value="MΩ">مگااهم (MΩ)</option>
+            </select>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">ولتاژ خروجی (Vout)</span>
+                    <span class="calc-result__value" dir="ltr">@Result.VoutValue <small>V</small></span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">نسبت تقسیم</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Ratio</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">جریان مدار</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Current</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">توان R1</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Power1</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">توان R2</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Power2</span>
+                </div>
+            </div>
+            <p class="calc-note mt-2 mb-0">
+                فرمول: Vout = Vin × R2 ÷ (R1 + R2). برای R2 دقیقاً برابر با ولتاژ خروجی دلخواه، از
+                R2 = R1 × Vout ÷ (Vin − Vout) استفاده کنید.
+            </p>
+        </div>
+    }
+
+    <details class="calc-details">
+        <summary>نکته‌های عملی مقسم ولتاژ</summary>
+        <div class="calc-details__body">
+            <ul class="calc-note mb-0 ps-3">
+                <li>مقسم ولتاژ برای خواندن سنسورها، ساخت ولتاژ مرجع و کاهش سطح سیگنال کاربرد دارد.</li>
+                <li>اگر بار به خروجی وصل شود، مقاومت بار با R2 موازی می‌شود و ولتاژ خروجی افت می‌کند؛ برای بار واقعی، R2 را کوچک نگه دارید.</li>
+                <li>جریان عبوری از مقسم را در نظر بگیرید؛ مقاومت‌های بزرگ‌تر جریان کمتری می‌کشند ولی نویزپذیرتر هستند.</li>
+                <li>توان هر مقاومت را با جریان واقعی مدار و مقاومت آن حساب کنید تا از داغ شدن جلوگیری شود.</li>
+            </ul>
+        </div>
+    </details>
+</CalcShell>
+
+@code {
+    private double? vin = 12;
+    private double? r1 = 10;
+    private double? r2 = 4.7;
+    private string unit = "kΩ";
+
+    protected override string StorageKey => "voltage-divider";
+
+    private double Multiplier => unit == "MΩ" ? 1_000_000 : unit == "kΩ" ? 1_000 : 1;
+
+    private sealed class DivResult
+    {
+        public string VoutValue { get; init; } = "—";
+        public string Ratio { get; init; } = "—";
+        public string Current { get; init; } = "—";
+        public string Power1 { get; init; } = "—";
+        public string Power2 { get; init; } = "—";
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private DivResult Result => Compute();
+
+    private DivResult Compute()
+    {
+        if (vin == null || r1 == null || r2 == null)
+            return new DivResult { Hint = "ولتاژ ورودی و هر دو مقاومت R1 و R2 را وارد کنید." };
+
+        if (vin < 0)
+            return new DivResult { Error = "ولتاژ ورودی نمی‌تواند منفی باشد." };
+
+        var ohms1 = r1.Value * Multiplier;
+        var ohms2 = r2.Value * Multiplier;
+
+        if (ohms1 <= 0)
+            return new DivResult { Error = "مقاومت R1 باید بزرگ‌تر از صفر باشد." };
+
+        if (ohms2 < 0)
+            return new DivResult { Error = "مقاومت R2 نمی‌تواند منفی باشد." };
+
+        var total = ohms1 + ohms2;
+        var vout = vin.Value * ohms2 / total;
+        var current = vin.Value / total;
+        var p1 = current * current * ohms1;
+        var p2 = current * current * ohms2;
+        var ratio = ohms2 / total * 100;
+
+        var ip = CalcFormat.CurrentParts(current);
+
+        return new DivResult
+        {
+            VoutValue = CalcFormat.Num(vout),
+            Ratio = CalcFormat.Percent(ratio),
+            Current = ip.Value + " " + ip.Unit,
+            Power1 = CalcFormat.Power(p1),
+            Power2 = CalcFormat.Power(p2),
+            CopyText = $"مقسم ولتاژ — Vin={CalcFormat.Num(vin.Value)}V | Vout={CalcFormat.Num(vout)}V | نسبت {CalcFormat.Percent(ratio)} | جریان {ip.Value} {ip.Unit}"
+        };
+    }
+
+    private async Task ResetAsync()
+    {
+        vin = 12;
+        r1 = 10;
+        r2 = 4.7;
+        unit = "kΩ";
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(new State(vin, r1, r2, unit), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            vin = s.Vin;
+            r1 = s.R1;
+            r2 = s.R2;
+            unit = s.Unit is "Ω" or "kΩ" or "MΩ" ? s.Unit : "kΩ";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(double? Vin, double? R1, double? R2, string Unit);
+}

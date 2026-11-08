@@ -29,8 +29,12 @@ public sealed class TrainingCourse
     [MaxLength(500)]
     public string? CoverImageUrl { get; set; }
 
+    [MaxLength(120)]
+    public string? Category { get; set; }
+
     public bool IsPublished { get; set; } = false;
     public bool IsPremium { get; set; } = false;
+    public bool IsFeatured { get; set; } = false;
 
     public int SortOrder { get; set; }
 

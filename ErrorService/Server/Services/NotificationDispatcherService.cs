@@ -95,13 +95,42 @@ public sealed class NotificationDispatcherService : BackgroundService
         {
             delivery.LastAttemptAt = now;
 
-            var appUserId = delivery.Recipient?.AppUserId;
-            if (appUserId == null || !MessengerChannels.IsEnabled(delivery.Channel, settings))
+            var recipient = delivery.Recipient;
+            var appUserId = recipient?.AppUserId;
+            var workshopUserId = recipient?.WorkshopUserId;
+            if ((!appUserId.HasValue && !workshopUserId.HasValue)
+                || !MessengerChannels.IsEnabled(delivery.Channel, settings))
             {
                 delivery.AttemptCount++;
                 delivery.Status = NotificationDeliveryStatus.Failed;
                 delivery.ErrorMessage = "کانال اعلان پیکربندی یا فعال نشده است";
                 continue;
+            }
+
+            // گیرندهٔ کارگاهی حساب سایت ندارد؛ شماره‌اش از جدول کارگاه خوانده می‌شود
+            // و برای ارسال با ربات، اتصال بله کاربر سایتِ هم‌شماره به کار می‌رود.
+            string? phone = null;
+            if (appUserId.HasValue)
+            {
+                phone = await db.Users
+                    .Where(x => x.Id == appUserId.Value)
+                    .Select(x => x.PhoneNumber)
+                    .FirstOrDefaultAsync(ct);
+            }
+            else
+            {
+                phone = await db.WorkshopUsers
+                    .Where(x => x.Id == workshopUserId!.Value)
+                    .Select(x => x.PhoneNumber)
+                    .FirstOrDefaultAsync(ct);
+
+                if (!string.IsNullOrWhiteSpace(phone))
+                {
+                    appUserId = await db.Users
+                        .Where(x => x.PhoneNumber == phone && !x.IsDeleted)
+                        .Select(x => (int?)x.Id)
+                        .FirstOrDefaultAsync(ct);
+                }
             }
 
             MessengerSendResult result;
@@ -112,12 +141,7 @@ public sealed class NotificationDispatcherService : BackgroundService
 
             if (viaSafir)
             {
-                var userPhone = await db.Users
-                    .Where(x => x.Id == appUserId.Value)
-                    .Select(x => x.PhoneNumber)
-                    .FirstOrDefaultAsync(ct);
-
-                if (string.IsNullOrWhiteSpace(userPhone))
+                if (string.IsNullOrWhiteSpace(phone))
                 {
                     delivery.Status = NotificationDeliveryStatus.Skipped;
                     delivery.ErrorMessage = "شماره موبایل برای این کاربر ثبت نشده است";
@@ -125,10 +149,19 @@ public sealed class NotificationDispatcherService : BackgroundService
                 }
 
                 var actionUrl = BuildActionUrl(delivery.Notification, _configuration);
-                result = await safir.SendToPhoneAsync(settings, userPhone, text, actionUrl);
+                result = await safir.SendToPhoneAsync(settings, phone, text, actionUrl);
             }
             else
             {
+                if (!appUserId.HasValue)
+                {
+                    delivery.Status = NotificationDeliveryStatus.Skipped;
+                    delivery.ErrorMessage = delivery.Channel == NotificationDeliveryChannel.Bale
+                        ? "شماره این کاربر در ربات بله ثبت نشده است (پروفایل ← اتصال به بله)"
+                        : "نشانی این پیام‌رسان برای کاربر توسط مدیر ثبت نشده است";
+                    continue;
+                }
+
                 var endpoint = await db.MessengerEndpoints
                     .FirstOrDefaultAsync(x => x.Channel == delivery.Channel
                         && x.AppUserId == appUserId.Value

@@ -41,6 +41,17 @@
                             <label class="form-label fw-bold">خلاصه دوره</label>
                             <InputTextArea @bind-Value="model.Summary" class="form-control rounded-3" rows="3" placeholder="توضیح کوتاه درباره دوره..." />
                         </div>
+                        <div class="mb-0">
+                            <label class="form-label fw-bold">دسته‌بندی</label>
+                            <input class="form-control rounded-3" list="academyCategoryOptions" @bind="model.Category" placeholder="مثلاً یخچال و فریزر" />
+                            <datalist id="academyCategoryOptions">
+                                @foreach (var category in AcademyCatalog.SuggestedCategories)
+                                {
+                                    <option value="@category"></option>
+                                }
+                            </datalist>
+                            <div class="form-text">این دسته در فیلترهای صفحه آکادمی نمایش داده می‌شود.</div>
+                        </div>
                     </div>
                     <div class="col-md-4">
                         <div class="mb-4">
@@ -77,6 +88,10 @@
                                 <InputCheckbox @bind-Value="model.IsPremium" class="form-check-input" id="isPremium" />
                                 <label class="form-check-label fw-bold text-warning" for="isPremium">دوره ویژه (VIP)</label>
                             </div>
+                            <div class="form-check form-switch mt-2">
+                                <InputCheckbox @bind-Value="model.IsFeatured" class="form-check-input" id="isFeatured" />
+                                <label class="form-check-label fw-bold" for="isFeatured">نمایش در بخش «منتخب آکادمی»</label>
+                            </div>
                         </div>
 
                         <div class="mb-3">
@@ -104,6 +119,7 @@
                     <tr>
                         <th class="ps-4" style="width: 100px;">کاور</th>
                         <th>عنوان دوره</th>
+                        <th>دسته</th>
                         <th>تعداد قسمت‌ها</th>
                         <th><span class="oi oi-eye"></span> بازدید</th>
                         <th>وضعیت</th>
@@ -114,11 +130,11 @@
                 <tbody>
                     @if (courses == null)
                     {
-                        <tr><td colspan="6" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
+                        <tr><td colspan="7" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>
                     }
                     else if (!courses.Any())
                     {
-                        <tr><td colspan="6" class="text-center py-5 text-muted">هیچ دوره‌ای یافت نشد.</td></tr>
+                        <tr><td colspan="7" class="text-center py-5 text-muted">هیچ دوره‌ای یافت نشد.</td></tr>
                     }
                     else
                     {
@@ -142,6 +158,16 @@
                                 <td>
                                     <div class="fw-bold text-dark">@course.Title</div>
                                     <div class="small text-muted text-truncate" style="max-width: 300px;">@course.Summary</div>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrWhiteSpace(course.Category))
+                                    {
+                                        <span class="badge bg-primary-subtle text-primary rounded-pill px-3">@course.Category</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">—</span>
+                                    }
                                 </td>
                                 <td><span class="badge bg-light text-dark border rounded-pill px-3">@course.LessonsCount قسمت</span></td>
                                 <td><span class="text-muted">@course.ViewCount.ToString("N0")</span></td>
@@ -181,6 +207,7 @@
     .object-fit-cover { object-fit: cover; }
     .bg-success-subtle { background-color: #d1e7dd; }
     .bg-warning-subtle { background-color: #fff3cd; }
+    .bg-primary-subtle { background-color: #cfe2ff; }
     .bg-info-subtle { background-color: #cff4fc; }
     .admin-container { padding: 20px; }
 </style>
@@ -220,6 +247,8 @@
             CoverImageUrl = course.CoverImageUrl,
             IsPublished = course.IsPublished,
             IsPremium = course.IsPremium,
+            Category = course.Category,
+            IsFeatured = course.IsFeatured,
             SortOrder = course.SortOrder
         };
         showEditor = true;

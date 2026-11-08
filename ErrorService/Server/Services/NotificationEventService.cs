@@ -29,6 +29,108 @@ public sealed class NotificationEventService
     private static decimal PayableAmount(Order order)
         => order.TotalAmount - (order.DiscountAmount ?? 0);
 
+    /// <summary>
+    /// سوپر ادمین‌ها در دو جدول جدا نگهداری می‌شوند: کاربر سایت (AppUserRoles)
+    /// و کاربر کارگاه (WorkshopUserRoles). برای گیرندگان اعلان، هر دو یکسان‌اند.
+    /// </summary>
+    public async Task<(List<int> AppUserIds, List<int> WorkshopUserIds)> GetSuperAdminRecipientsAsync()
+    {
+        var appUserIds = await (
+            from ur in _db.AppUserRoles
+            join u in _db.Users on ur.UserId equals u.Id
+            where u.IsActive && !u.IsDeleted && ur.Role.Key == "super_admin"
+            select u.Id)
+            .Distinct()
+            .ToListAsync();
+
+        var workshopUserIds = await (
+            from wur in _db.WorkshopUserRoles
+            join w in _db.WorkshopUsers on wur.WorkshopUserId equals w.Id
+            join ws in _db.Workshops on w.WorkshopId equals ws.Id
+            where w.IsActive && !w.IsDeleted && !ws.IsDeleted && wur.Role.Key == "super_admin"
+            select w.Id)
+            .Distinct()
+            .ToListAsync();
+
+        return (appUserIds, workshopUserIds);
+    }
+
+    /// <summary>
+    /// اگر همان شخص در سایت هم گیرنده باشد، نسخهٔ کارگاهی حذف می‌شود
+    /// تا اعلان داخلی و پیام بله دو بار برایش ارسال نشود.
+    /// </summary>
+    public async Task<List<int>> FilterWorkshopRecipientsByPhoneAsync(
+        IReadOnlyCollection<int> workshopUserIds,
+        IReadOnlyCollection<int> appUserIds)
+    {
+        if (workshopUserIds.Count == 0)
+            return new List<int>();
+        if (appUserIds.Count == 0)
+            return workshopUserIds.ToList();
+
+        var appPhones = await _db.Users
+            .Where(x => appUserIds.Contains(x.Id))
+            .Select(x => x.PhoneNumber)
+            .ToListAsync();
+        var taken = appPhones
+            .Select(PhoneDigits)
+            .Where(x => x != null)
+            .Select(x => x!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var workshopPhones = await _db.WorkshopUsers
+            .Where(x => workshopUserIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.PhoneNumber })
+            .ToListAsync();
+
+        return workshopPhones
+            .Where(x =>
+            {
+                var key = PhoneDigits(x.PhoneNumber);
+                return key == null || !taken.Contains(key);
+            })
+            .Select(x => x.Id)
+            .ToList();
+    }
+
+    internal static string? PhoneDigits(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        var chars = raw.ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
+        {
+            var c = chars[i];
+            if (c >= '۰' && c <= '۹') chars[i] = (char)('0' + (c - '۰'));
+            else if (c >= '٠' && c <= '٩') chars[i] = (char)('0' + (c - '٠'));
+        }
+
+        var digits = new string(chars.Where(char.IsDigit).ToArray());
+        if (digits.StartsWith("0098")) digits = "0" + digits[4..];
+        else if (digits.StartsWith("98") && digits.Length >= 12) digits = "0" + digits[2..];
+        else if (digits.Length == 10 && digits[0] != '0') digits = "0" + digits;
+        return digits.Length is >= 10 and <= 15 ? digits : null;
+    }
+
+    /// <summary>
+    /// متن آزاد کاربر (نظر/پرسش) را برای پیام اعلان تمیز می‌کند:
+    /// یکدست‌سازی خطوط، حذف خطوط خالی تکراری و محدودکردن طول پیام.
+    /// </summary>
+    public static string CleanContent(string? text, int maxLength = 2500)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "—";
+
+        var value = text.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
+        while (value.Contains("\n\n\n"))
+            value = value.Replace("\n\n\n", "\n\n");
+
+        if (value.Length > maxLength)
+            value = value[..maxLength].TrimEnd() + "…";
+        return value;
+    }
+
     public Task NotifyReceiptCreatedAsync(CustomerReceipt receipt) =>
         GuardAsync("receipt.created", () => EmitAsync(
             eventType: "receipt.created",
@@ -175,6 +277,33 @@ public sealed class NotificationEventService
     }
 
     /// <summary>
+    /// سفارش جدید سایت را به همهٔ سوپر ادمین‌ها (حساب سایت و کاربر کارگاه)
+    /// در اعلان داخلی و بله اطلاع می‌دهد.
+    /// </summary>
+    public Task NotifyOrderPlacedForSuperAdminsAsync(Order order)
+    {
+        var customerName = string.IsNullOrWhiteSpace(order.FullName) ? "—" : order.FullName.Trim();
+        var phone = string.IsNullOrWhiteSpace(order.PhoneNumber) ? "—" : order.PhoneNumber.Trim();
+
+        return GuardAsync("order.created.admin", () => EmitAsync(
+            eventType: "order.created.admin",
+            values: new Dictionary<string, string?>
+            {
+                ["OrderNumber"] = order.OrderNumber,
+                ["Amount"] = PayableAmount(order).ToString("N0"),
+                ["CustomerName"] = customerName,
+                ["Phone"] = phone,
+                ["OrderId"] = order.Id.ToString()
+            },
+            idempotencyKey: $"order.created.admin:{order.Id}",
+            legacySeverity: NotificationSeverity.Info,
+            legacyTitle: "سفارش جدید ثبت شد",
+            legacyBody: $"سفارش {order.OrderNumber} به مبلغ {PayableAmount(order):N0} تومان توسط {customerName} ثبت شد.",
+            legacyUrl: "/admin/orders",
+            superAdminsOnly: true));
+    }
+
+    /// <summary>
     /// سفارشی که مدیر برای مشتری می‌سازد یا پیش‌فاکتور او را منتشر می‌کند.
     /// کانال پیش‌فرض این رویداد علاوه بر اعلان داخلی، بله است.
     /// </summary>
@@ -313,7 +442,9 @@ public sealed class NotificationEventService
         int? appUserId = null,
         int? workshopId = null,
         int? workshopUserId = null,
-        string? phone = null) =>
+        string? phone = null,
+        bool superAdminsOnly = false,
+        bool workshopOnly = false) =>
         GuardAsync(eventType, () => EmitAsync(
             eventType,
             values,
@@ -325,7 +456,9 @@ public sealed class NotificationEventService
             appUserId,
             workshopId,
             workshopUserId,
-            phone));
+            phone,
+            superAdminsOnly,
+            workshopOnly));
 
     private async Task EmitAsync(
         string eventType,
@@ -338,7 +471,9 @@ public sealed class NotificationEventService
         int? appUserId = null,
         int? workshopId = null,
         int? workshopUserId = null,
-        string? phone = null)
+        string? phone = null,
+        bool superAdminsOnly = false,
+        bool workshopOnly = false)
     {
         var rule = await GetRuleAsync(eventType);
         if (rule is { IsEnabled: false })
@@ -414,22 +549,33 @@ public sealed class NotificationEventService
             workshopUserIds.UnionWith(users);
         }
 
-        if (broadcast)
+        // هشدارهای دستگاه (هم‌زمانی، حدها و ...) فقط به کاربران همان کارگاه می‌رود؛
+        // اگر دستگاه به کارگاه متصل نباشد یا کارگاه کاربر فعالی نداشته باشد،
+        // برای گم‌نشدن هشدار به مدیران ارسال می‌شود.
+        var workshopScoped = workshopOnly && workshopId.HasValue && workshopUserIds.Count > 0;
+        if (broadcast && !workshopScoped)
         {
-            var adminIds = await (
-                from ur in _db.AppUserRoles
-                join u in _db.Users on ur.UserId equals u.Id
-                join rp in _db.RolePermissions on ur.RoleId equals rp.RoleId
-                join p in _db.Permissions on rp.PermissionId equals p.Id
-                where u.IsActive && !u.IsDeleted && p.Key == "admin.notifications.view"
-                select ur.UserId)
-                .Distinct()
-                .ToListAsync();
-            if (adminIds.Count > 0)
+            if (!superAdminsOnly)
             {
+                var adminIds = await (
+                    from ur in _db.AppUserRoles
+                    join u in _db.Users on ur.UserId equals u.Id
+                    join rp in _db.RolePermissions on ur.RoleId equals rp.RoleId
+                    join p in _db.Permissions on rp.PermissionId equals p.Id
+                    where u.IsActive && !u.IsDeleted && p.Key == "admin.notifications.view"
+                    select ur.UserId)
+                    .Distinct()
+                    .ToListAsync();
                 appUserIds.UnionWith(adminIds);
-                notification.IsBroadcast = true;
             }
+
+            // سوپر ادمین‌های کارگاه هم مثل کاربر سایت باید همین اعلان‌ها را بگیرند.
+            var (superAppIds, superWorkshopIds) = await GetSuperAdminRecipientsAsync();
+            appUserIds.UnionWith(superAppIds);
+            workshopUserIds.UnionWith(
+                await FilterWorkshopRecipientsByPhoneAsync(superWorkshopIds, appUserIds.ToList()));
+
+            notification.IsBroadcast = appUserIds.Count > 0 || workshopUserIds.Count > 0;
         }
 
         foreach (var id in appUserIds)
@@ -462,12 +608,7 @@ public sealed class NotificationEventService
             });
         }
 
-        var appUserIds = notification.Recipients
-            .Where(x => x.AppUserId.HasValue)
-            .Select(x => x.AppUserId!.Value)
-            .ToHashSet();
-
-        await QueueExternalDeliveriesAsync(notification, effectiveChannels, appUserIds);
+        await QueueExternalDeliveriesAsync(notification, effectiveChannels);
     }
 
     private static readonly (NotificationDeliveryChannel Channel, int Flag)[] ExternalChannelFlags =
@@ -477,10 +618,10 @@ public sealed class NotificationEventService
         (NotificationDeliveryChannel.Eitaa, NotificationChannelFlags.Eitaa)
     };
 
-    private async Task QueueExternalDeliveriesAsync(Notification notification, int ruleChannels, HashSet<int> appUserIds)
+    private async Task QueueExternalDeliveriesAsync(Notification notification, int ruleChannels)
     {
         var flags = ruleChannels & ~NotificationChannelFlags.Internal;
-        if (flags == 0 || appUserIds.Count == 0)
+        if (flags == 0 || notification.Recipients.Count == 0)
             return;
 
         var settings = await _db.SiteSettings.FirstOrDefaultAsync();
@@ -496,7 +637,9 @@ public sealed class NotificationEventService
 
             foreach (var recipient in notification.Recipients)
             {
-                if (!recipient.AppUserId.HasValue || !appUserIds.Contains(recipient.AppUserId.Value))
+                // گیرنده کارگاهی هم کانال بیرونی می‌گیرد؛ شمارهٔ موبایلش
+                // در سرویس تحویل (سفیر یا اتصال بله کاربر سایتِ هم‌شماره) حل می‌شود.
+                if (!recipient.AppUserId.HasValue && !recipient.WorkshopUserId.HasValue)
                     continue;
 
                 notification.Deliveries.Add(new NotificationDelivery
@@ -562,13 +705,21 @@ public sealed class NotificationEventService
         return _ruleCache.TryGetValue(eventType, out var rule) ? rule : null;
     }
 
+    private static readonly System.Text.RegularExpressions.Regex PlaceholderPattern =
+        new(@"\{([A-Za-z0-9_]+)\}", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// جایگزینی تک‌مرحله‌ای جای‌نگهدارها؛ متن کاربر (مثل نظر) ممکن است خودش
+    /// شامل آکولاد باشد و نباید دوباره به‌عنوان جای‌نگهدار تفسیر شود.
+    /// </summary>
     private static string Render(string? template, IReadOnlyDictionary<string, string?> values)
     {
         if (string.IsNullOrEmpty(template))
             return template ?? string.Empty;
-        foreach (var kv in values)
-            template = template.Replace("{" + kv.Key + "}", kv.Value ?? string.Empty, StringComparison.OrdinalIgnoreCase);
-        return template;
+
+        var map = new Dictionary<string, string?>(values, StringComparer.OrdinalIgnoreCase);
+        return PlaceholderPattern.Replace(template, match =>
+            map.TryGetValue(match.Groups[1].Value, out var value) ? value ?? string.Empty : match.Value);
     }
 
     private async Task<bool> IsDuplicateAsync(string? idempotencyKey)

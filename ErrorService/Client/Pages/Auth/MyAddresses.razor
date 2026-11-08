@@ -1,0 +1,331 @@
+@page "/my-addresses"
+@using ErrorService.Shared
+@using ErrorService.Client.Services
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject HttpClient Http
+@inject ToastService Toast
+
+<PageTitle>آدرس‌های من | ارورسرویس</PageTitle>
+
+<div class="ma-page" dir="rtl">
+    <div class="container py-4">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+            <div>
+                <h1 class="ma-title">آدرس‌های من</h1>
+                <p class="ma-sub">آدرس‌های ذخیره‌شده در تسویه‌حساب قابل انتخاب هستند و انتخاب پیش‌فرض خودکار انجام می‌شود.</p>
+            </div>
+            <a href="/profile" class="ma-btn ma-btn--ghost">بازگشت به پروفایل</a>
+        </div>
+
+        @if (!enabled)
+        {
+            <div class="ma-empty">
+                <span class="oi oi-info"></span>
+                <p>ذخیرهٔ آدرس توسط مدیر سایت غیرفعال شده است.</p>
+            </div>
+        }
+        else
+        {
+            @if (loading)
+            {
+                <div class="ma-empty"><div class="ma-spinner"></div></div>
+            }
+            else
+            {
+                <div class="row g-4">
+                    <div class="col-lg-7">
+                        @if (items.Count == 0)
+                        {
+                            <div class="ma-empty">
+                                <span class="oi oi-map-marker"></span>
+                                <p>هنوز آدرسی ذخیره نکرده‌اید. اولین آدرس را از فرم کنار ثبت کنید.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="ma-list">
+                                @foreach (var item in items)
+                                {
+                                    <div class="ma-card @(item.IsDefault ? "ma-card--default" : "")">
+                                        <div class="ma-card__head">
+                                            <strong>@(string.IsNullOrWhiteSpace(item.Title) ? item.FullName : item.Title)</strong>
+                                            @if (item.IsDefault)
+                                            {
+                                                <span class="ma-badge">پیش‌فرض</span>
+                                            }
+                                        </div>
+                                        <div class="ma-card__body">
+                                            <div>@item.FullName — <span dir="ltr">@item.PhoneNumber</span></div>
+                                            <div class="ma-card__addr">@item.ProvinceName @item.CityName — @item.Address</div>
+                                            @if (!string.IsNullOrWhiteSpace(item.PostalCode))
+                                            {
+                                                <div class="ma-card__meta">کد پستی: <span dir="ltr">@item.PostalCode</span></div>
+                                            }
+                                        </div>
+                                        <div class="ma-card__actions">
+                                            @if (!item.IsDefault)
+                                            {
+                                                <button type="button" class="ma-btn" @onclick="() => SetDefaultAsync(item.Id)">پیش‌فرض کن</button>
+                                            }
+                                            <button type="button" class="ma-btn" @onclick="() => Edit(item)">ویرایش</button>
+                                            <button type="button" class="ma-btn ma-btn--danger" @onclick="() => DeleteAsync(item.Id)">حذف</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="col-lg-5">
+                        <div class="ma-form-card">
+                            <h2 class="ma-form-title">@(editingId.HasValue ? "ویرایش آدرس" : "آدرس جدید")</h2>
+
+                            @if (items.Count >= maxAddresses && !editingId.HasValue)
+                            {
+                                <div class="ma-note">حداکثر @maxAddresses آدرس مجاز است. برای افزودن آدرس جدید یکی را حذف کنید.</div>
+                            }
+                            else
+                            {
+                                <div class="ma-form">
+                                    <label class="ma-label">عنوان <span>(اختیاری)</span></label>
+                                    <input class="ma-input" @bind="model.Title" placeholder="خانه، محل کار..." maxlength="100" />
+
+                                    <label class="ma-label">نام گیرنده</label>
+                                    <input class="ma-input" @bind="model.FullName" maxlength="200" />
+
+                                    <label class="ma-label">موبایل گیرنده</label>
+                                    <input class="ma-input" @bind="model.PhoneNumber" maxlength="11" dir="ltr" inputmode="numeric" />
+
+                                    <div class="ma-row">
+                                        <div>
+                                            <label class="ma-label">استان</label>
+                                            <select class="ma-input" value="@(model.ProvinceId?.ToString() ?? "")" @onchange="OnProvinceChanged">
+                                                <option value="">انتخاب استان</option>
+                                                @foreach (var p in provinces)
+                                                {
+                                                    <option value="@p.Id">@p.Name</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="ma-label">شهر</label>
+                                            <select class="ma-input" value="@(model.CityId?.ToString() ?? "")" @onchange="OnCityChanged" disabled="@(!model.ProvinceId.HasValue || citiesLoading)">
+                                                <option value="">@(model.ProvinceId.HasValue ? "انتخاب شهر" : "ابتدا استان")</option>
+                                                @foreach (var c in cities)
+                                                {
+                                                    <option value="@c.Id">@c.Name</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <label class="ma-label">کد پستی <span>(اختیاری)</span></label>
+                                    <input class="ma-input" @bind="model.PostalCode" maxlength="10" dir="ltr" inputmode="numeric" />
+
+                                    <label class="ma-label">آدرس کامل</label>
+                                    <textarea class="ma-input" rows="3" @bind="model.Address" maxlength="1000"></textarea>
+
+                                    <label class="ma-check">
+                                        <input type="checkbox" @bind="model.IsDefault" />
+                                        <span>این آدرس پیش‌فرض باشد</span>
+                                    </label>
+
+                                    <div class="d-flex gap-2 mt-3">
+                                        <button type="button" class="ma-btn ma-btn--primary" @onclick="SaveAsync" disabled="@saving">
+                                            @(saving ? "در حال ذخیره..." : "ذخیره آدرس")
+                                        </button>
+                                        @if (editingId.HasValue)
+                                        {
+                                            <button type="button" class="ma-btn ma-btn--ghost" @onclick="ResetForm">انصراف</button>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .ma-page { min-height: 60vh; background: #f8fafc; }
+    .ma-title { font-weight: 800; font-size: 1.4rem; margin: 0; }
+    .ma-sub { color: #64748b; font-size: 0.86rem; margin: 6px 0 0; }
+    .ma-list { display: grid; gap: 12px; }
+    .ma-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 14px 16px; }
+    .ma-card--default { border-color: #0d6efd55; box-shadow: 0 6px 18px rgba(13,110,253,.08); }
+    .ma-card__head { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; }
+    .ma-badge { background: #0d6efd; color: #fff; font-size: 0.68rem; padding: 2px 8px; border-radius: 999px; }
+    .ma-card__body { margin-top: 8px; font-size: 0.84rem; color: #334155; display: grid; gap: 4px; }
+    .ma-card__addr { color: #64748b; line-height: 1.7; }
+    .ma-card__meta { color: #94a3b8; font-size: 0.76rem; }
+    .ma-card__actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .ma-btn { border: 1px solid #e2e8f0; background: #fff; color: #334155; border-radius: 10px; padding: 7px 14px; font-size: 0.82rem; font-weight: 600; }
+    .ma-btn:hover { background: #f1f5f9; }
+    .ma-btn--primary { background: #0d6efd; border-color: #0d6efd; color: #fff; }
+    .ma-btn--primary:hover { background: #0b5ed7; }
+    .ma-btn--danger { color: #dc3545; border-color: #fecaca; }
+    .ma-btn--danger:hover { background: #fef2f2; }
+    .ma-btn--ghost { color: #475569; }
+    .ma-form-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; }
+    .ma-form-title { font-size: 1rem; font-weight: 800; margin: 0 0 12px; }
+    .ma-form { display: grid; gap: 6px; }
+    .ma-label { font-size: 0.78rem; color: #475569; font-weight: 600; margin-top: 6px; }
+    .ma-label span { color: #94a3b8; font-weight: 400; }
+    .ma-input { width: 100%; border: 1px solid #e2e8f0; border-radius: 10px; padding: 9px 12px; font-size: 0.86rem; background: #f8fafc; }
+    .ma-input:focus { outline: none; border-color: #0d6efd; background: #fff; }
+    .ma-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .ma-check { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: #475569; margin-top: 10px; }
+    .ma-empty { background: #fff; border: 1px dashed #cbd5e1; border-radius: 16px; padding: 40px 20px; text-align: center; color: #64748b; }
+    .ma-empty .oi { font-size: 2rem; color: #94a3b8; display: block; margin-bottom: 8px; }
+    .ma-note { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 12px; padding: 10px 12px; font-size: 0.8rem; }
+    .ma-spinner { width: 34px; height: 34px; border: 3px solid #e2e8f0; border-top-color: #0d6efd; border-radius: 50%; margin: 0 auto; animation: maSpin .8s linear infinite; }
+    @@keyframes maSpin { to { transform: rotate(360deg); } }
+    @@media (max-width: 575px) { .ma-row { grid-template-columns: 1fr; } }
+</style>
+
+@code {
+    private List<CustomerAddressDto> items = new();
+    private List<ProvinceDto> provinces = new();
+    private List<CityDto> cities = new();
+    private bool loading = true;
+    private bool saving;
+    private bool enabled = true;
+    private int maxAddresses = 5;
+    private bool citiesLoading;
+    private int? editingId;
+    private CustomerAddressUpsertRequest model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var settings = await Http.GetFromJsonAsync<SiteSettingsDto>("api/sitesettings");
+            enabled = settings?.EnableSavedAddresses ?? true;
+            maxAddresses = Math.Clamp(settings?.MaxSavedAddresses ?? 5, 1, 20);
+        }
+        catch { }
+
+        try { provinces = await Http.GetFromJsonAsync<List<ProvinceDto>>("api/locations/provinces") ?? new(); }
+        catch { provinces = new(); }
+
+        await LoadAsync();
+        loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        try { items = await Http.GetFromJsonAsync<List<CustomerAddressDto>>("api/addresses") ?? new(); }
+        catch { items = new(); }
+    }
+
+    private void ResetForm()
+    {
+        editingId = null;
+        model = new CustomerAddressUpsertRequest();
+        cities = new();
+    }
+
+    private async Task Edit(CustomerAddressDto item)
+    {
+        editingId = item.Id;
+        model = new CustomerAddressUpsertRequest
+        {
+            Title = item.Title,
+            FullName = item.FullName,
+            PhoneNumber = item.PhoneNumber,
+            Email = item.Email,
+            ProvinceId = item.ProvinceId,
+            CityId = item.CityId,
+            ProvinceName = item.ProvinceName,
+            CityName = item.CityName,
+            PostalCode = item.PostalCode,
+            Address = item.Address,
+            IsDefault = item.IsDefault
+        };
+
+        if (item.ProvinceId.HasValue) await LoadCitiesAsync(item.ProvinceId.Value);
+    }
+
+    private async Task OnProvinceChanged(ChangeEventArgs e)
+    {
+        model.ProvinceId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        model.ProvinceName = provinces.FirstOrDefault(p => p.Id == model.ProvinceId)?.Name;
+        model.CityId = null;
+        model.CityName = null;
+        cities = new();
+        if (model.ProvinceId.HasValue) await LoadCitiesAsync(model.ProvinceId.Value);
+    }
+
+    private void OnCityChanged(ChangeEventArgs e)
+    {
+        model.CityId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        model.CityName = cities.FirstOrDefault(c => c.Id == model.CityId)?.Name;
+    }
+
+    private async Task LoadCitiesAsync(int provinceId)
+    {
+        citiesLoading = true;
+        try { cities = await Http.GetFromJsonAsync<List<CityDto>>($"api/locations/cities/{provinceId}") ?? new(); }
+        catch { cities = new(); }
+        finally { citiesLoading = false; }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(model.FullName)) { Toast.ShowError("نام گیرنده را وارد کنید"); return; }
+        if (!System.Text.RegularExpressions.Regex.IsMatch(model.PhoneNumber ?? "", @"^09\d{9}$")) { Toast.ShowError("شماره موبایل معتبر نیست"); return; }
+        if (string.IsNullOrWhiteSpace(model.Address)) { Toast.ShowError("آدرس را وارد کنید"); return; }
+
+        saving = true;
+        try
+        {
+            using var response = editingId.HasValue
+                ? await Http.PutAsJsonAsync($"api/addresses/{editingId}", model)
+                : await Http.PostAsJsonAsync("api/addresses", model);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var message = await response.Content.ReadAsStringAsync();
+                Toast.ShowError(string.IsNullOrWhiteSpace(message) ? "ذخیره آدرس انجام نشد" : message.Trim('"'));
+                return;
+            }
+
+            items = await response.Content.ReadFromJsonAsync<List<CustomerAddressDto>>() ?? new();
+            Toast.ShowSuccess("آدرس ذخیره شد");
+            ResetForm();
+        }
+        catch { Toast.ShowError("خطای ارتباط با سرور"); }
+        finally { saving = false; }
+    }
+
+    private async Task SetDefaultAsync(int id)
+    {
+        try
+        {
+            using var response = await Http.PostAsync($"api/addresses/{id}/default", null);
+            if (response.IsSuccessStatusCode)
+                items = await response.Content.ReadFromJsonAsync<List<CustomerAddressDto>>() ?? items;
+        }
+        catch { Toast.ShowError("خطای ارتباط با سرور"); }
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        try
+        {
+            using var response = await Http.DeleteAsync($"api/addresses/{id}");
+            if (response.IsSuccessStatusCode)
+            {
+                items = await response.Content.ReadFromJsonAsync<List<CustomerAddressDto>>() ?? items;
+                if (editingId == id) ResetForm();
+                Toast.ShowSuccess("آدرس حذف شد");
+            }
+        }
+        catch { Toast.ShowError("خطای ارتباط با سرور"); }
+    }
+}

@@ -201,8 +201,54 @@
                         <input type="checkbox" class="sms-toggle" @bind="@settingsEdit.OtpEnabled" />
                         <span class="sms-toggle-track"></span>
                     </label>
-                    <small class="sms-form__hint">در صورت غیرفعال بودن، کاربران بدون نیاز به کد تایید می‌توانند درخواست ثبت کنند</small>
+                    <small class="sms-form__hint">کلید اصلی؛ با غیرفعال شدن آن، کد تایید در همه بخش‌ها خاموش می‌شود</small>
                 </div>
+
+                <div class="sms-form__group">
+                    <label class="sms-form__label">کد تایید برای هر بخش</label>
+                    <label class="sms-form__toggle-label mb-2">
+                        <span>ثبت‌نام حساب کاربری</span>
+                        <input type="checkbox" class="sms-toggle" @bind="@settingsEdit.OtpRegistrationEnabled" />
+                        <span class="sms-toggle-track"></span>
+                    </label>
+                    <label class="sms-form__toggle-label mb-2">
+                        <span>درخواست تعمیر در محل</span>
+                        <input type="checkbox" class="sms-toggle" @bind="@settingsEdit.OtpAdmissionRepairEnabled" />
+                        <span class="sms-toggle-track"></span>
+                    </label>
+                    <label class="sms-form__toggle-label mb-2">
+                        <span>درخواست کارشناسی</span>
+                        <input type="checkbox" class="sms-toggle" @bind="@settingsEdit.OtpAdmissionExpertiseEnabled" />
+                        <span class="sms-toggle-track"></span>
+                    </label>
+                    <label class="sms-form__toggle-label mb-2">
+                        <span>پیگیری درخواست پذیرش</span>
+                        <input type="checkbox" class="sms-toggle" @bind="@settingsEdit.OtpAdmissionTrackingEnabled" />
+                        <span class="sms-toggle-track"></span>
+                    </label>
+                    <label class="sms-form__toggle-label">
+                        <span>بازیابی رمز عبور</span>
+                        <input type="checkbox" class="sms-toggle" @bind="@settingsEdit.OtpPasswordResetEnabled" />
+                        <span class="sms-toggle-track"></span>
+                    </label>
+                    <small class="sms-form__hint">هر بخش مستقلاً فعال/غیرفعال می‌شود؛ کلید اصلی بالا باید روشن باشد.</small>
+                </div>
+
+                <div class="sms-form__group">
+                    <label class="sms-form__label">مدت اعتبار کد (ثانیه)</label>
+                    <input type="number" class="sms-input" @bind="@settingsEdit.OtpCodeTtlSeconds" @bind:event="oninput" min="60" max="600" step="10" />
+                </div>
+                <div class="sms-form__group">
+                    <label class="sms-form__label">فاصله ارسال مجدد (ثانیه)</label>
+                    <input type="number" class="sms-input" @bind="@settingsEdit.OtpResendCooldownSeconds" @bind:event="oninput" min="0" max="600" step="5" />
+                    <small class="sms-form__hint">صفر یعنی بدون محدودیت زمانی برای ارسال مجدد</small>
+                </div>
+                <div class="sms-form__group">
+                    <label class="sms-form__label">حداکثر تلاش اشتباه</label>
+                    <input type="number" class="sms-input" @bind="@settingsEdit.OtpMaxAttempts" @bind:event="oninput" min="1" max="20" />
+                    <small class="sms-form__hint">پس از این تعداد، کد باطل می‌شود و باید کد جدید بگیرید</small>
+                </div>
+
                 <div class="sms-form__group">
                     <label class="sms-form__label">تعرفه هر پیامک (تومان)</label>
                     <input type="number" class="sms-input" @bind="@settingsEdit.TariffPerSms" @bind:event="oninput" min="0" step="100" />
@@ -1067,6 +1113,14 @@
                 {
                     IsActive = settings.IsActive,
                     OtpEnabled = settings.OtpEnabled,
+                    OtpRegistrationEnabled = settings.OtpRegistrationEnabled,
+                    OtpAdmissionRepairEnabled = settings.OtpAdmissionRepairEnabled,
+                    OtpAdmissionExpertiseEnabled = settings.OtpAdmissionExpertiseEnabled,
+                    OtpAdmissionTrackingEnabled = settings.OtpAdmissionTrackingEnabled,
+                    OtpPasswordResetEnabled = settings.OtpPasswordResetEnabled,
+                    OtpCodeTtlSeconds = settings.OtpCodeTtlSeconds,
+                    OtpResendCooldownSeconds = settings.OtpResendCooldownSeconds,
+                    OtpMaxAttempts = settings.OtpMaxAttempts,
                     TariffPerSms = settings.TariffPerSms,
                     ApiKey = settings.ApiKey,
                     SenderNumber = settings.SenderNumber,

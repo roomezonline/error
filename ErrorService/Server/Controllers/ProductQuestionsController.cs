@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
+using ErrorService.Server.Services;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -17,11 +18,16 @@ public sealed class ProductQuestionsController : ControllerBase
 
     private readonly ErrorServiceDbContext _db;
     private readonly Microsoft.AspNetCore.OutputCaching.IOutputCacheStore _cacheStore;
+    private readonly NotificationEventService _notificationEvents;
 
-    public ProductQuestionsController(ErrorServiceDbContext db, Microsoft.AspNetCore.OutputCaching.IOutputCacheStore cacheStore)
+    public ProductQuestionsController(
+        ErrorServiceDbContext db,
+        Microsoft.AspNetCore.OutputCaching.IOutputCacheStore cacheStore,
+        NotificationEventService notificationEvents)
     {
         _db = db;
         _cacheStore = cacheStore;
+        _notificationEvents = notificationEvents;
     }
 
     private async Task<bool> IsQnaEnabledAsync()
@@ -153,6 +159,37 @@ public sealed class ProductQuestionsController : ControllerBase
         await _db.SaveChangesAsync();
         await EvictCacheAsync();
 
+        var product = await _db.Products.AsNoTracking()
+            .Where(p => p.Id == productId)
+            .Select(p => new { p.Name, p.Slug })
+            .FirstOrDefaultAsync();
+
+        var isAdminSubmitter = User.IsInRole("super_admin")
+            || User.HasClaim("perm", "admin.products.manage");
+
+        if (!isAdminSubmitter && product != null)
+        {
+            var pagePath = SeoUrl.Product(productId,
+                string.IsNullOrWhiteSpace(product.Slug) ? null : Uri.EscapeDataString(product.Slug));
+            await _notificationEvents.NotifyAsync(
+                eventType: "product.question_replied",
+                values: new Dictionary<string, string?>
+                {
+                    ["UserName"] = reply.FullName,
+                    ["ProductTitle"] = product.Name,
+                    ["Reply"] = NotificationEventService.CleanContent(reply.Body),
+                    ["Question"] = NotificationEventService.CleanContent(question.Question, 500),
+                    ["PagePath"] = pagePath
+                },
+                idempotencyKey: $"product.question_replied:{reply.Id}",
+                fallbackSeverity: NotificationSeverity.Info,
+                fallbackTitle: "پاسخ جدید به پرسش محصول",
+                fallbackBody: $"محصول: {product.Name}\n{reply.FullName}:\n{NotificationEventService.CleanContent(reply.Body)}",
+                fallbackUrl: pagePath,
+                superAdminsOnly: true);
+            await _db.SaveChangesAsync();
+        }
+
         return Ok(new
         {
             id = reply.Id,
@@ -214,6 +251,33 @@ public sealed class ProductQuestionsController : ControllerBase
         _db.ProductQuestions.Add(question);
         await _db.SaveChangesAsync();
         await EvictCacheAsync();
+
+        var isAdminSubmitter = User.IsInRole("super_admin")
+            || User.HasClaim("perm", "admin.products.manage");
+
+        if (!isAdminSubmitter)
+        {
+            var status = question.IsApproved ? "منتشر شد" : "در انتظار تأیید";
+            var pagePath = SeoUrl.Product(productId,
+                string.IsNullOrWhiteSpace(product.Slug) ? null : Uri.EscapeDataString(product.Slug));
+            await _notificationEvents.NotifyAsync(
+                eventType: "product.question_created",
+                values: new Dictionary<string, string?>
+                {
+                    ["UserName"] = question.FullName,
+                    ["ProductTitle"] = product.Name,
+                    ["Question"] = NotificationEventService.CleanContent(question.Question),
+                    ["Status"] = status,
+                    ["PagePath"] = pagePath
+                },
+                idempotencyKey: $"product.question_created:{question.Id}",
+                fallbackSeverity: NotificationSeverity.Info,
+                fallbackTitle: "پرسش جدید برای محصول",
+                fallbackBody: $"محصول: {product.Name}\n{question.FullName}:\n{NotificationEventService.CleanContent(question.Question)}",
+                fallbackUrl: pagePath,
+                superAdminsOnly: true);
+            await _db.SaveChangesAsync();
+        }
 
         return Ok(new
         {

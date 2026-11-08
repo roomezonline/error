@@ -593,7 +593,7 @@ else
                     <div class="od-form-title">ثبت مرجوعی جدید</div>
                     <div class="od-field">
                         <label>مبلغ مرجوعی (تومان) *</label>
-                        <input type="number" class="od-input" @bind="newReturn.RefundAmount" min="0" />
+                        <input class="od-input ltr" type="text" inputmode="numeric" dir="ltr" value="@refundAmountText" @oninput="OnRefundAmountInput" />
                     </div>
                     <div class="od-field-row" style="flex-wrap:wrap">
                         <div class="od-field" style="flex:1;min-width:140px">
@@ -873,12 +873,56 @@ else
                     <label>یادداشت</label>
                     <input class="od-input" @bind="markPaid.Notes" placeholder="اختیاری" />
                 </div>
+                <div class="od-field">
+                    <label>تصاویر رسید <span class="od-mp-optional">(حداکثر ۳ تصویر)</span></label>
+
+                    @if (order.ReceiptImageUrls != null && order.ReceiptImageUrls.Count > 0)
+                    {
+                        <div class="od-mp-thumbs">
+                            @foreach (var url in order.ReceiptImageUrls)
+                            {
+                                <a class="od-mp-thumb" href="@url" target="_blank" rel="noopener">
+                                    <img src="@url" alt="رسید پرداخت" loading="lazy" decoding="async" />
+                                </a>
+                            }
+                        </div>
+                    }
+
+                    @if (MarkPaidRemainingSlots > 0)
+                    {
+                        <div class="od-mp-upload">
+                            <InputFile OnChange="HandleMarkPaidFilesSelected" multiple accept="image/*" class="od-mp-upload__input" />
+                            <span class="oi oi-cloud-upload od-mp-upload__icon"></span>
+                            <span class="od-mp-upload__title">انتخاب تصویر رسید — تا @MarkPaidRemainingSlots تصویر</span>
+                            <span class="od-mp-upload__hint">PNG, JPG, WEBP</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="od-mp-hint">حداکثر ۳ تصویر رسید برای این سفارش ثبت شده است.</div>
+                    }
+
+                    @if (markPaidFiles.Count > 0)
+                    {
+                        <div class="od-mp-previews">
+                            @for (var i = 0; i < markPaidFiles.Count; i++)
+                            {
+                                var index = i;
+                                var preview = markPaidFiles[i];
+                                <div class="od-mp-preview">
+                                    <img src="@preview.PreviewUrl" alt="پیش‌نمایش رسید" decoding="async" />
+                                    <button type="button" class="od-mp-preview__remove" @onclick="() => markPaidFiles.RemoveAt(index)" title="حذف تصویر">×</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
                 <div class="od-field-row">
                     <button class="od-btn od-btn-primary" @onclick="SubmitMarkPaid" disabled="@isSaving">
                         @if (isSaving) { <span class="od-btn-spinner"></span> }
                         ثبت و تأیید پرداخت
                     </button>
-                    <button class="od-btn od-btn-ghost" @onclick="() => showMarkPaidModal = false">انصراف</button>
+                    <button class="od-btn od-btn-ghost" @onclick="() => showMarkPaidModal = false" disabled="@isSaving">انصراف</button>
                 </div>
             </div>
         </div>
@@ -1290,6 +1334,45 @@ else
         object-fit: cover;
     }
 
+    .od-mp-optional { color: #94a3b8; font-weight: 400; }
+    .od-mp-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+    .od-mp-thumb {
+        width: 64px; height: 64px; border-radius: 9px; overflow: hidden;
+        border: 1px solid #e2e8f0; display: block;
+    }
+    .od-mp-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .od-mp-upload {
+        position: relative;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 4px; padding: 14px 12px; border: 1.5px dashed #cbd5e1; border-radius: 12px;
+        background: #f8fafc; color: #2563eb; text-align: center; cursor: pointer;
+        transition: all .15s;
+    }
+    .od-mp-upload:hover { border-color: #2563eb; background: #eff6ff; }
+    .od-mp-upload__input {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        opacity: 0; cursor: pointer;
+    }
+    .od-mp-upload__icon { font-size: 1.2rem; }
+    .od-mp-upload__title { font-size: 0.8rem; font-weight: 700; }
+    .od-mp-upload__hint { font-size: 0.68rem; color: #94a3b8; font-weight: 600; }
+    .od-mp-hint {
+        font-size: 0.75rem; color: #94a3b8; background: #f8fafc;
+        border-radius: 9px; padding: 9px 12px;
+    }
+    .od-mp-previews { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .od-mp-preview {
+        position: relative; width: 72px; height: 72px; border-radius: 10px;
+        overflow: hidden; border: 1px solid #e2e8f0;
+    }
+    .od-mp-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .od-mp-preview__remove {
+        position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+        border: none; border-radius: 50%; background: rgba(15, 23, 42, 0.65);
+        color: #fff; font-size: 14px; line-height: 1; cursor: pointer;
+        display: grid; place-items: center; padding: 0;
+    }
+
     .od-customer-note {
         margin: 0 16px 8px;
         padding: 10px 14px;
@@ -1601,6 +1684,8 @@ else
         border-radius: 20px;
         width: 100%;
         max-width: 480px;
+        max-height: calc(100vh - 2rem);
+        overflow-y: auto;
         box-shadow: 0 20px 60px rgba(0,0,0,0.15);
         animation: modalIn .2s ease;
     }
@@ -1668,6 +1753,7 @@ else
 
     private bool showReturnForm = false;
     private OrderReturnCreateRequest newReturn = new();
+    private string refundAmountText = "";
     private bool showRefundModal = false;
     private OrderReturnDto? returnToRefund;
     private OrderReturnRefundRequest refundInfo = new();
@@ -1679,6 +1765,19 @@ else
 
     private bool showMarkPaidModal = false;
     private AdminOrderMarkPaidRequest markPaid = new();
+    private readonly List<MarkPaidReceiptFile> markPaidFiles = new();
+    private const int MaxMarkPaidReceipts = 3;
+    private int MarkPaidExistingCount => order?.ReceiptImageUrls?.Count ?? 0;
+    private int MarkPaidRemainingSlots => Math.Max(0, MaxMarkPaidReceipts - MarkPaidExistingCount - markPaidFiles.Count);
+
+    private sealed class MarkPaidReceiptFile
+    {
+        public string FileName { get; set; } = string.Empty;
+        public string ContentType { get; set; } = "image/jpeg";
+        public byte[] Buffer { get; set; } = Array.Empty<byte>();
+        public string PreviewUrl { get; set; } = string.Empty;
+    }
+
     private bool showExtendModal = false;
     private int extendHours = 24;
     private bool isPublishing = false;
@@ -1903,7 +2002,15 @@ else
         {
             RefundAmount = order != null ? order.TotalAmount - (order.DiscountAmount ?? 0) : 0
         };
+        refundAmountText = newReturn.RefundAmount.ToString("N0");
         showReturnForm = true;
+    }
+
+    private void OnRefundAmountInput(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        newReturn.RefundAmount = MoneyFormat.Parse(raw) ?? 0;
+        refundAmountText = MoneyFormat.Group(raw);
     }
 
     private async Task CreateReturn()
@@ -2058,7 +2165,79 @@ else
     private void OpenMarkPaid()
     {
         markPaid = new AdminOrderMarkPaidRequest { PaymentMethod = "cash" };
+        markPaidFiles.Clear();
         showMarkPaidModal = true;
+    }
+
+    private async Task HandleMarkPaidFilesSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var remaining = MarkPaidRemainingSlots;
+            var files = e.GetMultipleFiles(Math.Max(1, remaining));
+            foreach (var file in files)
+            {
+                if (MarkPaidRemainingSlots <= 0) break;
+                var buffer = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+                markPaidFiles.Add(new MarkPaidReceiptFile
+                {
+                    FileName = file.Name,
+                    ContentType = file.ContentType,
+                    Buffer = buffer,
+                    PreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(buffer)}"
+                });
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            ToastService.ShowError($"حداکثر {MarkPaidRemainingSlots} تصویر دیگر برای رسید مجاز است.");
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا در خواندن فایل: " + ex.Message); }
+    }
+
+    private async Task<bool> UploadMarkPaidReceiptsAsync()
+    {
+        if (order == null || markPaidFiles.Count == 0) return true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            foreach (var file in markPaidFiles)
+            {
+                var part = new ByteArrayContent(file.Buffer);
+                part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+                content.Add(part, "files", file.FileName);
+            }
+
+            var resp = await Http.PostAsync($"api/orders/admin/{order.Id}/receipt", content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "آپلود تصویر رسید ناموفق بود." : msg.Trim().Trim('"'));
+                return false;
+            }
+
+            var urls = await resp.Content.ReadFromJsonAsync<List<string>>();
+            if (urls == null || urls.Count == 0)
+            {
+                ToastService.ShowError("آپلود تصویر رسید ناموفق بود.");
+                return false;
+            }
+
+            markPaid.ReceiptUrls = urls;
+            markPaidFiles.Clear();
+            order.ReceiptImageUrls ??= new List<string>();
+            foreach (var url in urls)
+            {
+                if (!order.ReceiptImageUrls.Contains(url, StringComparer.OrdinalIgnoreCase))
+                    order.ReceiptImageUrls.Add(url);
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطای ارتباط با سرور: " + ex.Message);
+            return false;
+        }
     }
 
     private async Task SubmitMarkPaid()
@@ -2067,6 +2246,8 @@ else
         isSaving = true;
         try
         {
+            if (!await UploadMarkPaidReceiptsAsync()) return;
+
             var resp = await Http.PostAsJsonAsync($"api/orders/admin/{order.Id}/mark-paid", markPaid);
             if (resp.IsSuccessStatusCode)
             {

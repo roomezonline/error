@@ -1,0 +1,2978 @@
+@page "/admin/content-studio"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "perm:admin.contentstudio.view")]
+@using ErrorService.Shared
+@using System.Net.Http.Json
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using ErrorService.Client.Services
+@using ErrorService.Client.Utils
+@implements IDisposable
+@inject HttpClient Http
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<PageTitle>استودیوی محتوا | ارورسرویس</PageTitle>
+
+<ConfirmDialog IsVisible="_showSourceDeleteConfirm"
+               Title="حذف منبع"
+               Message="منبع و همه آیتم‌های در صف آن حذف می‌شوند. اخبار منتشرشده در سایت باقی می‌مانند. ادامه می‌دهید؟"
+               ConfirmText="حذف منبع"
+               OnResult="HandleSourceDelete" />
+
+<ConfirmDialog IsVisible="_showItemDeleteConfirm"
+               Title="حذف آیتم"
+               Message="این آیتم از صف استودیو حذف می‌شود. خبر منتشرشده (در صورت وجود) حذف نمی‌شود."
+               ConfirmText="حذف آیتم"
+               OnResult="HandleItemDelete" />
+
+<div class="admin-container" dir="rtl">
+
+    <div class="cs-hero">
+        <div class="cs-hero__text">
+            <h3 class="admin-page-title m-0">استودیوی محتوا</h3>
+            <p class="text-muted small m-0">دریافت از فیدهای مجاز، بازنویسی با هوش مصنوعی، کنترل تکرار و انتشار خودکار در بخش اخبار.</p>
+        </div>
+        <div class="cs-hero__actions">
+            @if (_overview != null)
+            {
+                <span class="cs-pill @(_overview.Settings.Enabled ? "cs-pill--on" : "cs-pill--off")">
+                    <span class="cs-dot"></span>
+                    @(_overview.Settings.Enabled ? "زمان‌بندی فعال" : "زمان‌بندی غیرفعال")
+                </span>
+                <span class="cs-pill @(_overview.Settings.UseAiRewrite && _overview.Ai.Configured ? "cs-pill--on" : "cs-pill--warn")" title="@_overview.Ai.Message">
+                    <span class="oi oi-lightbulb"></span>
+                    @(_overview.Settings.UseAiRewrite
+                        ? (_overview.Ai.Configured ? "AI آماده" : "AI تنظیم نشده")
+                        : "حالت پیش‌نویس دستی")
+                </span>
+            }
+            <AuthorizeView Policy="perm:admin.contentstudio.manage">
+                <button class="btn btn-primary rounded-3 shadow-sm" @onclick="RunNow" disabled="@(_overview?.Progress.IsRunning == true || _runStarting)">
+                    @if (_runStarting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    else
+                    {
+                        <span class="oi oi-media-play me-1"></span>
+                    }
+                    اجرای دستی
+                </button>
+            </AuthorizeView>
+            <a href="/admin/ai" class="btn btn-outline-secondary rounded-3">
+                <span class="oi oi-cog me-1"></span> تنظیم هوش مصنوعی
+            </a>
+        </div>
+    </div>
+
+    @if (_overview == null)
+    {
+        <div class="cs-empty">
+            <div class="spinner-border text-primary"></div>
+            <div>در حال دریافت وضعیت استودیو…</div>
+        </div>
+    }
+    else
+    {
+        @if (_overview.Progress.IsRunning)
+        {
+            <div class="cs-progress">
+                <div class="cs-progress__head">
+                    <span class="fw-bold"><span class="oi oi-loop-circular me-1"></span> اجرای در جریان</span>
+                    <span class="small text-muted">@(_overview.Progress.CurrentSource ?? "—")</span>
+                </div>
+                <div class="cs-progress__stage">@(_overview.Progress.Stage ?? "شروع…")</div>
+                <div class="cs-progress__bar">
+                    <span style="width:@(ProgressPercent)%"></span>
+                </div>
+                <div class="cs-progress__meta">
+                    <span>@_overview.Progress.Processed از @_overview.Progress.Total منبع</span>
+                    <span class="cs-status cs-status--processing">در حال پردازش</span>
+                </div>
+            </div>
+        }
+        else if (_overview.Settings.LastRunAt.HasValue)
+        {
+            <div class="cs-lastrun">
+                <div class="cs-lastrun__icon @RunStatusClass(_overview.Settings.LastRunStatus)">
+                    <span class="oi @(_overview.Settings.LastRunStatus == "success" ? "oi-check" : "oi-warning")"></span>
+                </div>
+                <div class="cs-lastrun__body">
+                    <div class="fw-bold">آخرین اجرا: @PersianDate.ToJalaliDateTime(_overview.Settings.LastRunAt.Value)</div>
+                    <div class="small text-muted">@_overview.Settings.LastRunSummary</div>
+                </div>
+                <span class="cs-status @RunStatusClass(_overview.Settings.LastRunStatus)">@RunStatusLabel(_overview.Settings.LastRunStatus)</span>
+            </div>
+        }
+
+        @if (!_overview.Ai.Configured)
+        {
+            <div class="cs-alert">
+                <span class="oi oi-info"></span>
+                <div>
+                    <div class="fw-bold">هوش مصنوعی تنظیم نشده است — استودیو در حالت پیش‌نویس دستی کار می‌کند</div>
+                    <div class="small">فیدها دریافت می‌شوند و متن منبع به‌صورت پیش‌نویس آماده در صف بازبینی قرار می‌گیرد؛ شما آن را ویرایش و منتشر می‌کنید. برای بازنویسی خودکار، در «تنظیمات هوش مصنوعی» زنجیره ارائه‌دهنده/کلید/مدل را ثبت کنید و کاربرد «استودیوی محتوا» را فعال کنید.</div>
+                </div>
+                <a href="/admin/ai" class="btn btn-sm btn-outline-primary rounded-3">رفتن به تنظیمات</a>
+            </div>
+        }
+
+        <div class="cs-tabs">
+            <button class="cs-tab @(_activeTab == "queue" ? "active" : "")" @onclick='() => SwitchTab("queue")'>
+                <span class="oi oi-inbox"></span> صف بازبینی
+                @if (QueueBadge > 0)
+                {
+                    <span class="cs-tab__count">@QueueBadge</span>
+                }
+            </button>
+            <button class="cs-tab @(_activeTab == "sources" ? "active" : "")" @onclick='() => SwitchTab("sources")'>
+                <span class="oi oi-rss"></span> منابع
+                <span class="cs-tab__count">@_overview.Stats.EnabledSources</span>
+            </button>
+            <button class="cs-tab @(_activeTab == "settings" ? "active" : "")" @onclick='() => SwitchTab("settings")'>
+                <span class="oi oi-sliders"></span> تنظیمات
+            </button>
+            <button class="cs-tab @(_activeTab == "runs" ? "active" : "")" @onclick='() => SwitchTab("runs")'>
+                <span class="oi oi-clock"></span> گزارش اجرا
+            </button>
+        </div>
+
+        <div class="cs-stats">
+            <div class="cs-stat">
+                <span class="cs-stat__num">@_overview.Stats.Ready</span>
+                <span class="cs-stat__label">آماده بازبینی</span>
+            </div>
+            <div class="cs-stat">
+                <span class="cs-stat__num">@_overview.Stats.Published</span>
+                <span class="cs-stat__label">منتشرشده</span>
+            </div>
+            <div class="cs-stat">
+                <span class="cs-stat__num">@_overview.Stats.TodayPublished</span>
+                <span class="cs-stat__label">امروز</span>
+            </div>
+            <div class="cs-stat">
+                <span class="cs-stat__num">@_overview.Stats.Duplicate</span>
+                <span class="cs-stat__label">تکراری</span>
+            </div>
+            <div class="cs-stat">
+                <span class="cs-stat__num">@_overview.Stats.Failed</span>
+                <span class="cs-stat__label">خطا</span>
+            </div>
+        </div>
+
+        @* ================= صف بازبینی ================= *@
+        @if (_activeTab == "queue")
+        {
+            <div class="cs-panel">
+                <div class="cs-toolbar">
+                    <div class="cs-chips">
+                        @foreach (var chip in QueueStatuses)
+                        {
+                            <button class="cs-chip @(_statusFilter == chip.Value ? "active" : "")" @onclick='() => FilterStatus(chip.Value)'>
+                                @chip.Label
+                                <span class="cs-chip__count">@CountFor(chip.Value)</span>
+                            </button>
+                        }
+                    </div>
+                    <div class="d-flex gap-2 align-items-center flex-wrap">
+                        <div class="input-group cs-search">
+                            <span class="input-group-text bg-white border-end-0"><span class="oi oi-magnifying-glass"></span></span>
+                            <input type="text" class="form-control border-start-0" placeholder="جستجو در عنوان…" value="@_searchQuery" @oninput="OnSearchInput" />
+                        </div>
+                        <button class="btn btn-outline-secondary rounded-3" @onclick="() => LoadItems()" title="به‌روزرسانی">
+                            <span class="oi oi-reload"></span>
+                        </button>
+                    </div>
+                </div>
+
+                @if (_loadingItems)
+                {
+                    <div class="cs-empty"><div class="spinner-border text-primary border-2"></div></div>
+                }
+                else if (_items == null || _items.Items.Count == 0)
+                {
+                    <div class="cs-empty">
+                        <span class="oi oi-inbox"></span>
+                        <div class="fw-bold">آیتمی در این وضعیت نیست</div>
+                        <div class="small text-muted">یک منبع اضافه کنید یا اجرای دستی را شروع کنید.</div>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var item in _items.Items)
+                    {
+                        <div class="cs-item">
+                            <div class="cs-item__main">
+                                <div class="cs-item__title">@(string.IsNullOrWhiteSpace(item.GeneratedTitle) ? item.OriginalTitle : item.GeneratedTitle)</div>
+                                <div class="cs-item__meta">
+                                    <span class="cs-status @StatusClass(item.Status)">@StatusLabel(item.Status)</span>
+                                    @if (item.IsManualDraft)
+                                    {
+                                        <span class="cs-tag cs-tag--muted">پیش‌نویس دستی</span>
+                                    }
+                                    <span class="cs-meta-dot"></span>
+                                    <span>@item.SourceName</span>
+                                    <span class="cs-meta-dot"></span>
+                                    <span>@CategoryLabel(item.Category)</span>
+                                    <span class="cs-meta-dot"></span>
+                                    <span>@PersianDate.ToJalaliDateTime(item.CreatedAt)</span>
+                                    @if (!string.IsNullOrWhiteSpace(item.GeneratedTags))
+                                    {
+                                        <span class="cs-meta-dot"></span>
+                                        <span>@item.GeneratedTags</span>
+                                    }
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(item.GeneratedSummary))
+                                {
+                                    <div class="cs-item__summary">@item.GeneratedSummary</div>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(item.OriginalSummary))
+                                {
+                                    <div class="cs-item__summary">@item.OriginalSummary</div>
+                                }
+
+                                <div class="cs-metrics">
+                                    @if (item.CopyOverlapPercent.HasValue)
+                                    {
+                                        <span class="cs-metric">هم‌پوشانی متن با منبع: @Math.Round(item.CopyOverlapPercent.Value)٪</span>
+                                    }
+                                    @if (item.TitleSimilarity.HasValue)
+                                    {
+                                        <span class="cs-metric">تشابه عنوان: @Math.Round(item.TitleSimilarity.Value * 100)٪</span>
+                                    }
+                                    @if (item.SourcePublishedAt.HasValue)
+                                    {
+                                        <span class="cs-metric">انتشار منبع: @PersianDate.ToJalaliDate(item.SourcePublishedAt.Value)</span>
+                                    }
+                                    @if (item.NewsId.HasValue)
+                                    {
+                                        <a class="cs-metric cs-metric--link" href="/news/@item.NewsId" target="_blank">
+                                            @(item.NewsIsPublished ? "مشاهده خبر" : "پیش‌نویس خبر")
+                                        </a>
+                                    }
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(item.StatusDetail))
+                                {
+                                    <div class="cs-item__note">@item.StatusDetail</div>
+                                }
+                            </div>
+
+                            <div class="cs-item__actions">
+                                @if (!string.IsNullOrWhiteSpace(item.GeneratedContent))
+                                {
+                                    <button class="cs-btn cs-btn--soft" @onclick="() => OpenPreview(item.Id)">
+                                        <span class="oi oi-eye"></span> پیش‌نمایش
+                                    </button>
+                                }
+                                <a class="cs-btn cs-btn--ghost" href="@item.SourceUrl" target="_blank" rel="noopener noreferrer">
+                                    <span class="oi oi-external-link"></span> منبع
+                                </a>
+
+                                <AuthorizeView Policy="perm:admin.contentstudio.manage">
+                                    @if (!item.NewsId.HasValue)
+                                    {
+                                        <button class="cs-btn cs-btn--soft" @onclick="() => OpenDraftEditor(item.Id)" disabled="@(_actionBusyId == item.Id)">
+                                            <span class="oi oi-pencil"></span> ویرایش/تکمیل دستی
+                                        </button>
+                                    }
+                                    @if (item.Status is "Pending" or "Failed" or "Rejected")
+                                    {
+                                        <button class="cs-btn cs-btn--primary" @onclick="() => RewriteItem(item.Id)" disabled="@(_overview.Progress.IsRunning || _actionBusyId == item.Id)">
+                                            <span class="oi oi-loop"></span> بازنویسی
+                                        </button>
+                                    }
+                                    @if (item.Status == "Ready")
+                                    {
+                                        <button class="cs-btn cs-btn--primary" @onclick="() => PublishItem(item.Id, false)" disabled="@(_overview.Progress.IsRunning || _actionBusyId == item.Id)">
+                                            <span class="oi oi-check"></span> انتشار
+                                        </button>
+                                        <button class="cs-btn cs-btn--soft" @onclick="() => PublishItem(item.Id, true)" disabled="@(_overview.Progress.IsRunning || _actionBusyId == item.Id)">
+                                            <span class="oi oi-document"></span> پیش‌نویس
+                                        </button>
+                                        <button class="cs-btn cs-btn--ghost" @onclick="() => RejectItem(item.Id)" disabled="@(_overview.Progress.IsRunning || _actionBusyId == item.Id)">
+                                            <span class="oi oi-x"></span> رد
+                                        </button>
+                                    }
+                                    @if (item.Status is not ("Published" or "Rejected"))
+                                    {
+                                        <button class="cs-btn cs-btn--danger" @onclick="() => AskDeleteItem(item.Id)">
+                                            <span class="oi oi-trash"></span> حذف
+                                        </button>
+                                    }
+                                </AuthorizeView>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="cs-pager">
+                        <span class="small text-muted">@_items.Total آیتم</span>
+                        <div class="d-flex gap-2 align-items-center">
+                            <button class="btn btn-sm btn-outline-secondary rounded-3" disabled="@(_page <= 1)" @onclick="PrevPage">قبلی</button>
+                            <span class="small">صفحه @_page از @TotalPages</span>
+                            <button class="btn btn-sm btn-outline-secondary rounded-3" disabled="@(_page >= TotalPages)" @onclick="NextPage">بعدی</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @* ================= منابع ================= *@
+        @if (_activeTab == "sources")
+        {
+            <div class="cs-panel">
+                <div class="cs-toolbar mb-3">
+                    <div>
+                        <div class="fw-bold">منابع فید</div>
+                        <div class="small text-muted">آدرس سایت را بدهید تا فید RSS/Atom خودکار پیدا شود؛ فید اختیاری است. محتوا با AI بازنویسی می‌شود یا (در حالت بدون AI) به پیش‌نویس دستی تبدیل می‌شود.</div>
+                    </div>
+                    <AuthorizeView Policy="perm:admin.contentstudio.manage">
+                        <button class="btn btn-primary rounded-3" @onclick="NewSource">
+                            <span class="oi oi-plus me-1"></span> منبع جدید
+                        </button>
+                    </AuthorizeView>
+                </div>
+
+                @if (_sources != null)
+                {
+                    <div class="cs-panel cs-suggest">
+                        <div class="cs-toolbar">
+                            <div>
+                                <div class="fw-bold">۱۰ منبع پیشنهادی</div>
+                                <div class="small text-muted">
+                                    منابع معتبر خبر دیجیتال، ترفند، آموزش و الکترونیک که فیدشان بررسی شده است. هر منبع را جدا یا همه را یک‌جا اضافه کنید؛ بعد از افزودن قابل ویرایش، غیرفعال‌سازی و حذف است.
+                                </div>
+                            </div>
+                            <AuthorizeView Policy="perm:admin.contentstudio.manage">
+                                <button class="btn btn-outline-primary rounded-3" @onclick="AddAllSuggested" disabled="@(_addingSuggested || MissingSuggestedCount == 0)">
+                                    @if (_addingSuggested)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                    }
+                                    else
+                                    {
+                                        <span class="oi oi-plus me-1"></span>
+                                    }
+                                    افزودن همه (@MissingSuggestedCount)
+                                </button>
+                            </AuthorizeView>
+                        </div>
+
+                        <div class="cs-suggest__grid">
+                            @foreach (var preset in SuggestedSources)
+                            {
+                                var added = IsSuggestedAdded(preset);
+                                <div class="cs-suggest__item @(added ? "is-added" : "")">
+                                    <div class="min-w-0">
+                                        <div class="cs-suggest__name">
+                                            @preset.Name
+                                            <span class="cs-tag">@CategoryLabel(preset.Category)</span>
+                                        </div>
+                                        <div class="cs-suggest__hint">@preset.Hint</div>
+                                        <div class="cs-mono" dir="ltr">@preset.FeedUrl</div>
+                                    </div>
+                                    <AuthorizeView Policy="perm:admin.contentstudio.manage">
+                                        <button class="cs-btn cs-btn--soft" @onclick="() => AddSuggested(preset)" disabled="@(added || _addingSuggested)">
+                                            @(added ? "اضافه شده" : "افزودن")
+                                        </button>
+                                    </AuthorizeView>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (_sources == null)
+                {
+                    <div class="cs-empty"><div class="spinner-border text-primary border-2"></div></div>
+                }
+                else if (_sources.Count == 0)
+                {
+                    <div class="cs-empty">
+                        <span class="oi oi-rss"></span>
+                        <div class="fw-bold">هنوز منبعی ثبت نشده است</div>
+                        <div class="small text-muted">برای شروع، آدرس فید یک سایت خبری یا فنی معتبر را اضافه کنید.</div>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var source in _sources)
+                    {
+                        <div class="cs-source">
+                            <div class="cs-source__head">
+                                <div class="min-w-0">
+                                    <div class="fw-bold d-flex align-items-center gap-2 flex-wrap">
+                                        @source.Name
+                                        <span class="cs-status @(source.Enabled ? "cs-status--published" : "cs-status--skipped")">@(source.Enabled ? "فعال" : "غیرفعال")</span>
+                                        <span class="cs-tag">@CategoryLabel(source.Category)</span>
+                                        @if (source.AutoPublishMode == "Never")
+                                        {
+                                            <span class="cs-tag cs-tag--muted">بدون انتشار خودکار</span>
+                                        }
+                                    </div>
+                                    <div class="cs-mono" dir="ltr">@source.FeedUrl</div>
+                                </div>
+                                <div class="cs-source__actions">
+                                    <AuthorizeView Policy="perm:admin.contentstudio.manage">
+                                        <button class="cs-btn cs-btn--soft" @onclick="() => FetchSourceNow(source.Id)" disabled="@(_overview.Progress.IsRunning || _sourceBusyId == source.Id)">
+                                            <span class="oi oi-cloud-download"></span> دریافت الان
+                                        </button>
+                                        <button class="cs-btn cs-btn--ghost" @onclick="() => EditSource(source)">
+                                            <span class="oi oi-pencil"></span> ویرایش
+                                        </button>
+                                        <button class="cs-btn cs-btn--danger" @onclick="() => AskDeleteSource(source)">
+                                            <span class="oi oi-trash"></span>
+                                        </button>
+                                    </AuthorizeView>
+                                </div>
+                            </div>
+
+                            <div class="cs-source__grid">
+                                <div><span class="text-muted">سهمیه روز</span><div class="fw-bold">@source.MaxItemsPerDay</div></div>
+                                <div><span class="text-muted">در صف</span><div class="fw-bold">@source.PendingCount</div></div>
+                                <div><span class="text-muted">منتشرشده</span><div class="fw-bold">@source.PublishedCount</div></div>
+                                <div><span class="text-muted">آخرین دریافت</span><div class="fw-bold">@(source.LastFetchedAt.HasValue ? PersianDate.ToJalaliDateTime(source.LastFetchedAt.Value) : "—")</div></div>
+                                <div><span class="text-muted">تصویر</span><div class="fw-bold">@ImageModeLabel(source.ImageMode)</div></div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(source.LastError))
+                            {
+                                <div class="cs-item__note cs-item__note--danger">آخرین خطا: @source.LastError</div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        }
+
+        @* ================= تنظیمات ================= *@
+        @if (_activeTab == "settings" && _settings != null)
+        {
+            <div class="cs-settings-grid">
+                <div class="cs-panel">
+                    <div class="cs-card-title">
+                        <span class="oi oi-lightbulb"></span> وضعیت هوش مصنوعی
+                    </div>
+                    <div class="cs-ai-box @(_overview.Ai.Configured ? "is-ok" : "is-warn")">
+                        <div class="fw-bold">@(_overview.Ai.Configured ? "زنجیره AI آماده است" : "زنجیره AI تنظیم نشده است")</div>
+                        <div class="small">@_overview.Ai.Message</div>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap mt-3">
+                        <AuthorizeView Policy="perm:admin.contentstudio.manage">
+                            <button class="btn btn-outline-primary rounded-3" @onclick="TestAi" disabled="@_testingAi">
+                                @if (_testingAi)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                }
+                                else
+                                {
+                                    <span class="oi oi-signal me-1"></span>
+                                }
+                                تست اتصال AI
+                            </button>
+                        </AuthorizeView>
+                        <a href="/admin/ai" class="btn btn-outline-secondary rounded-3">
+                            <span class="oi oi-cog me-1"></span> تنظیم ارائه‌دهنده/کلید/مدل
+                        </a>
+                    </div>
+                    @if (_aiTest != null)
+                    {
+                        <div class="cs-test-result @(_aiTest.Ok ? "is-ok" : "is-warn")">
+                            @if (_aiTest.Ok)
+                            {
+                                <span class="oi oi-check"></span>
+                                <span>پاسخ مدل: «@_aiTest.Reply» — @_aiTest.ElapsedMs میلی‌ثانیه</span>
+                            }
+                            else
+                            {
+                                <span class="oi oi-warning"></span>
+                                <span>@_aiTest.Error</span>
+                            }
+                        </div>
+                    }
+
+                    <div class="cs-divider"></div>
+                    <div class="cs-card-title"><span class="oi oi-shield"></span> محافظت از کپی‌رایت و تکرار</div>
+                    <ul class="cs-list">
+                        <li>متن هر خبر به‌طور کامل با AI بازنویسی می‌شود و فقط خروجی ساختاریافته (تیتر، خلاصه، بخش‌ها) منتشر می‌شود؛ HTML خام منبع هرگز درج نمی‌شود.</li>
+                        <li>اگر هم‌پوشانی عبارتی متن تولیدشده با منبع از سقف تعیین‌شده بیشتر باشد، یک بازنویسی سخت‌گیرانه دیگر انجام می‌شود و در صورت تکرار، آیتم رد می‌شود.</li>
+                        <li>عنوان‌های مشابه (حتی با الفاظ متفاوت) با مقایسه فازی شناسایی و به‌عنوان «تکراری» کنار گذاشته می‌شوند.</li>
+                        <li>لینک تکراری به‌صورت قطعی حذف می‌شود و سقف انتشار روزانه از ریزش محتوا جلوگیری می‌کند.</li>
+                        <li>تصویر منبع به‌صورت پیش‌فرض استفاده نمی‌شود؛ در حالت «تصویر اختصاصی» تصویر خودتان و در حالت «هات‌لینک با ذکر منبع» تصویر با اعتباردهی متنی نمایش داده می‌شود.</li>
+                    </ul>
+                </div>
+
+                <div class="cs-panel">
+                    <div class="cs-card-title"><span class="oi oi-sliders"></span> کنترل کلی</div>
+                    <div class="cs-switch-row">
+                        <div>
+                            <div class="fw-bold">فعال‌سازی استودیو</div>
+                            <div class="small text-muted">اجرای خودکار روزانه در ساعت مشخص. اجرای دستی همیشه ممکن است.</div>
+                        </div>
+                        <input type="checkbox" class="cs-switch" @bind="_settings.Enabled" />
+                    </div>
+                    <div class="cs-switch-row">
+                        <div>
+                            <div class="fw-bold">انتشار خودکار</div>
+                            <div class="small text-muted">اگر خاموش باشد، همه آیتم‌ها برای بازبینی در صف می‌مانند.</div>
+                        </div>
+                        <input type="checkbox" class="cs-switch" @bind="_settings.AutoPublish" />
+                    </div>
+                    <div class="cs-switch-row">
+                        <div>
+                            <div class="fw-bold">بازنویسی با هوش مصنوعی</div>
+                            <div class="small text-muted">اگر خاموش شود، متن منبع به‌صورت پیش‌نویس دستی آماده می‌شود تا خودتان ویرایش و منتشر کنید (بدون هزینه AI).</div>
+                        </div>
+                        <input type="checkbox" class="cs-switch" @bind="_settings.UseAiRewrite" />
+                    </div>
+                    <div class="cs-switch-row @(_settings.UseAiRewrite ? "" : "is-disabled")">
+                        <div>
+                            <div class="fw-bold">پیش‌نویس دستی در صورت خطای AI</div>
+                            <div class="small text-muted">اگر AI پاسخ ندهد یا خروجی‌اش رد شود، به‌جای وضعیت «ناموفق»، متن منبع برای ویرایش دستی آماده می‌شود.</div>
+                        </div>
+                        <input type="checkbox" class="cs-switch" @bind="_settings.AutoDraftOnAiFailure" disabled="@(!_settings.UseAiRewrite)" />
+                    </div>
+                    <div class="cs-switch-row">
+                        <div>
+                            <div class="fw-bold">ذکر منبع در انتهای خبر</div>
+                            <div class="small text-muted">یک خط اعتباردهی به نام و لینک منبع اضافه می‌شود.</div>
+                        </div>
+                        <input type="checkbox" class="cs-switch" @bind="_settings.IncludeSourceCredit" />
+                    </div>
+
+                    <div class="cs-divider"></div>
+                    <div class="cs-card-title"><span class="oi oi-clock"></span> زمان‌بندی و حجم</div>
+                    <div class="cs-form-grid">
+                        <div class="cs-field">
+                            <label>ساعت اجرای روزانه (به وقت تهران)</label>
+                            <input type="number" min="0" max="23" class="form-control" @bind="_settings.DailyRunHour" />
+                        </div>
+                        <div class="cs-field">
+                            <label>حداکثر آیتم در هر اجرا</label>
+                            <input type="number" min="1" max="10" class="form-control" @bind="_settings.MaxItemsPerRun" />
+                        </div>
+                        <div class="cs-field">
+                            <label>سقف انتشار روزانه</label>
+                            <input type="number" min="1" max="20" class="form-control" @bind="_settings.DailyPublishLimit" />
+                        </div>
+                        <div class="cs-field">
+                            <label>نام نویسنده خبرها</label>
+                            <input type="text" maxlength="100" class="form-control" @bind="_settings.AuthorName" />
+                        </div>
+                    </div>
+                    @if (_settings.Enabled && _overview.Settings.NextScheduledRunAt.HasValue)
+                    {
+                        <div class="cs-hint mt-2">اجرای بعدی: @PersianDate.ToJalaliDateTime(_overview.Settings.NextScheduledRunAt.Value)</div>
+                    }
+
+                    <div class="cs-divider"></div>
+                    <div class="cs-card-title"><span class="oi oi-shield"></span> آستانه‌های کیفیت</div>
+                    <div class="cs-form-grid">
+                        <div class="cs-field">
+                            <label>آستانه تکرار عنوان (۰٫۵ تا ۱)</label>
+                            <input type="number" min="0.5" max="1" step="0.01" class="form-control" @bind="_settings.DuplicateThreshold" />
+                            <div class="cs-hint">مثلاً ۰٫۸۲ یعنی تشابه ۸۲٪ یا بیشتر = تکراری.</div>
+                        </div>
+                        <div class="cs-field">
+                            <label>سقف هم‌پوشانی متن با منبع (درصد)</label>
+                            <input type="number" min="0" max="100" class="form-control" @bind="_settings.MaxCopyOverlapPercent" />
+                            <div class="cs-hint">پیشنهاد: ۳۵٪؛ بیشتر از این، بازنویسی سخت‌گیرانه انجام می‌شود.</div>
+                        </div>
+                        <div class="cs-field">
+                            <label>حداقل طول متن تولیدشده (کاراکتر)</label>
+                            <input type="number" min="200" max="5000" class="form-control" @bind="_settings.MinContentChars" />
+                        </div>
+                        <div class="cs-field">
+                            <label>حداکثر توکن خروجی AI</label>
+                            <input type="number" min="600" max="6000" class="form-control" @bind="_settings.AiMaxTokens" />
+                            <div class="cs-hint">برای مدل‌های استدلالی (reasoning) حداقل ۴۰۰۰ بگذارید تا متن وسط کار قطع نشود.</div>
+                        </div>
+                        <div class="cs-field">
+                            <label>خلاقیت مدل (Temperature)</label>
+                            <input type="number" min="0" max="2" step="0.1" class="form-control" @bind="_settings.AiTemperature" />
+                            <div class="cs-hint">پیشنهاد: ۰٫۵ برای خبر و ۰٫۷ برای آموزش.</div>
+                        </div>
+                    </div>
+
+                    <div class="cs-divider"></div>
+                    <div class="cs-card-title"><span class="oi oi-document"></span> متن کامل مقاله</div>
+                    <div class="cs-switch-row">
+                        <div>
+                            <div class="fw-bold">دریافت متن کامل از لینک منبع</div>
+                            <div class="small text-muted">اگر فید فقط خلاصه بدهد (مثل برخی سایت‌ها)، متن کامل مقاله از صفحه منبع دریافت می‌شود؛ هم برای بازنویسی AI و هم برای پیش‌نویس دستی.</div>
+                        </div>
+                        <input type="checkbox" class="cs-switch" @bind="_settings.FetchFullArticle" />
+                    </div>
+
+                    <div class="cs-divider"></div>
+                    <div class="cs-card-title"><span class="oi oi-tag"></span> تگ و کلیدواژه خودکار</div>
+                    <div class="cs-switch-row">
+                        <div>
+                            <div class="fw-bold">استخراج خودکار کلیدواژه از متن</div>
+                            <div class="small text-muted">علاوه بر تگ‌های AI و تگ‌های ثابت منبع، واژه‌های پرتکرار خبر/ترفند هم به تگ‌ها اضافه می‌شود.</div>
+                        </div>
+                        <input type="checkbox" class="cs-switch" @bind="_settings.AutoKeywordTags" />
+                    </div>
+                    <div class="cs-form-grid">
+                        <div class="cs-field">
+                            <label>حداکثر تگ هر آیتم (۳ تا ۲۰)</label>
+                            <input type="number" min="3" max="20" class="form-control" @bind="_settings.MaxTagsPerItem" />
+                            <div class="cs-hint">پیشنهاد: ۱۰؛ تگ‌های بیشتر برای جستجوی داخلی و صفحه‌های موضوعی مفید است.</div>
+                        </div>
+                    </div>
+
+                    <div class="cs-actions">
+                        <AuthorizeView Policy="perm:admin.contentstudio.manage">
+                            <button class="btn btn-primary rounded-3 px-4" @onclick="SaveSettings" disabled="@_savingSettings">
+                                @if (_savingSettings)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                }
+                                <span class="oi oi-check me-1"></span> ذخیره تنظیمات
+                            </button>
+                        </AuthorizeView>
+                    </div>
+
+                    <div class="cs-divider"></div>
+                    <div class="cs-card-title"><span class="oi oi-task"></span> راه‌اندازی یک‌باره</div>
+                    <ol class="cs-list cs-list--num">
+                        <li>در تب «منابع»، فقط آدرس سایت را بدهید و «کشف فید» را بزنید؛ فید خودکار پیدا و ثبت می‌شود.</li>
+                        <li>اگر بازنویسی خودکار می‌خواهید، در «تنظیمات هوش مصنوعی» زنجیره ارائه‌دهنده/کلید/مدل را ثبت و تست کنید؛ در غیر این صورت «بازنویسی با هوش مصنوعی» را خاموش بگذارید.</li>
+                        <li>اینجا «انتشار خودکار» و ساعت اجرا را انتخاب کنید و ذخیره بزنید؛ آیتم‌های آماده در صف بازبینی برای ویرایش و انتشار شما هستند.</li>
+                    </ol>
+                </div>
+            </div>
+        }
+
+        @* ================= گزارش اجرا ================= *@
+        @if (_activeTab == "runs")
+        {
+            <div class="cs-panel">
+                <div class="cs-toolbar mb-3">
+                    <div>
+                        <div class="fw-bold">گزارش اجراها</div>
+                        <div class="small text-muted">۳۰ اجرای آخر؛ شامل اجرای زمان‌بندی‌شده، دستی و دریافت یک منبع.</div>
+                    </div>
+                    <button class="btn btn-outline-secondary rounded-3" @onclick="() => LoadRuns()">
+                        <span class="oi oi-reload me-1"></span> به‌روزرسانی
+                    </button>
+                </div>
+
+                @if (_runs == null)
+                {
+                    <div class="cs-empty"><div class="spinner-border text-primary border-2"></div></div>
+                }
+                else if (_runs.Count == 0)
+                {
+                    <div class="cs-empty"><span class="oi oi-clock"></span><div class="small text-muted">هنوز اجرایی ثبت نشده است.</div></div>
+                }
+                else
+                {
+                    @foreach (var run in _runs)
+                    {
+                        <div class="cs-run">
+                            <div class="cs-run__head">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <span class="cs-status @RunStatusClass(run.Status)">@RunStatusLabel(run.Status)</span>
+                                    <span class="cs-tag">@TriggerLabel(run.Trigger)</span>
+                                    <span class="small text-muted">@PersianDate.ToJalaliDateTime(run.StartedAt)</span>
+                                </div>
+                                @if (run.FinishedAt.HasValue)
+                                {
+                                    <span class="small text-muted">پایان: @PersianDate.ToTime(run.FinishedAt.Value)</span>
+                                }
+                            </div>
+                            <div class="cs-run__grid">
+                                <span>منابع: <b>@run.SourcesChecked</b></span>
+                                <span>دریافت: <b>@run.Fetched</b></span>
+                                <span>تولید: <b>@run.Generated</b></span>
+                                <span>تکراری: <b>@run.Duplicates</b></span>
+                                <span>ردشده: <b>@run.Skipped</b></span>
+                                <span>منتشرشده: <b>@run.Published</b></span>
+                                <span>خطا: <b>@run.Failed</b></span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(run.Message))
+                            {
+                                <div class="cs-run__msg">@run.Message</div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        }
+    }
+</div>
+
+@* ================= مودال منبع ================= *@
+@if (_showSourceModal)
+{
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal fade show d-block" tabindex="-1" dir="rtl">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl">
+            <div class="modal-content rounded-4 border-0 shadow-lg">
+                <div class="modal-header border-0 pb-0">
+                    <div>
+                        <h5 class="modal-title fw-bold">@(_editingSourceId.HasValue ? "ویرایش منبع" : "منبع جدید")</h5>
+                        <div class="small text-muted">آدرس سایت کافی است؛ فید RSS/Atom خودکار پیدا و ثبت می‌شود. آدرس فید فقط اگر خودتان آن را می‌دانید لازم است.</div>
+                    </div>
+                    <button type="button" class="btn-close" @onclick="CloseSourceModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="cs-form-grid">
+                        <div class="cs-field">
+                            <label>نام منبع *</label>
+                            <input type="text" maxlength="150" class="form-control" @bind="_sourceForm.Name" placeholder="مثلاً: زومیت" />
+                        </div>
+                        <div class="cs-field">
+                            <label>دسته محتوا *</label>
+                            <select class="form-select" @bind="_sourceForm.Category">
+                                <option value="News">خبر</option>
+                                <option value="Tutorial">آموزش</option>
+                                <option value="Tip">ترفند</option>
+                            </select>
+                        </div>
+                        <div class="cs-field cs-field--wide">
+                            <label>آدرس سایت</label>
+                            <div class="input-group">
+                                <input type="url" class="form-control" dir="ltr" @bind="_sourceForm.SiteUrl" placeholder="https://example.com" />
+                                <button class="btn btn-outline-secondary" @onclick="DiscoverFeed" disabled="@_discovering">
+                                    @if (_discovering)
+                                    {
+                                        <span class="spinner-border spinner-border-sm"></span>
+                                    }
+                                    else
+                                    {
+                                        <span>کشف فید</span>
+                                    }
+                                </button>
+                            </div>
+                            <div class="cs-hint">آدرس سایت را بدهید؛ فید RSS/Atom به‌صورت خودکار از همان دامنه پیدا می‌شود.</div>
+                        </div>
+                        <div class="cs-field cs-field--wide">
+                            <label>آدرس فید RSS/Atom <span class="text-muted small">(اختیاری)</span></label>
+                            <div class="input-group">
+                                <input type="url" class="form-control" dir="ltr" @bind="_sourceForm.FeedUrl" placeholder="خالی بماند تا خودکار پیدا شود" />
+                                <button class="btn btn-outline-primary" @onclick="TestFeed" disabled="@_testingFeed">
+                                    @if (_testingFeed)
+                                    {
+                                        <span class="spinner-border spinner-border-sm"></span>
+                                    }
+                                    else
+                                    {
+                                        <span>تست فید</span>
+                                    }
+                                </button>
+                            </div>
+                            <div class="cs-hint">اگر خالی بماند، هنگام ذخیره بهترین فید همان سایت پیدا و ثبت می‌شود.</div>
+                        </div>
+                        <div class="cs-field cs-field--wide">
+                            <label>برچسب‌های پیش‌فرض</label>
+                            <input type="text" class="form-control" @bind="_sourceForm.DefaultTags" placeholder="مثلاً: فناوری, اخبار فناوری" />
+                        </div>
+                        <div class="cs-field">
+                            <label>کلمات الزامی (با کاما)</label>
+                            <textarea class="form-control" rows="2" @bind="_sourceForm.IncludeKeywords" placeholder="اگر خالی باشد همه مطالب پذیرفته می‌شوند"></textarea>
+                        </div>
+                        <div class="cs-field">
+                            <label>کلمات ممنوع (با کاما)</label>
+                            <textarea class="form-control" rows="2" @bind="_sourceForm.ExcludeKeywords" placeholder="مثلاً: ورزش, سینما, قیمت دلار"></textarea>
+                        </div>
+                        <div class="cs-field">
+                            <label>حالت انتشار</label>
+                            <select class="form-select" @bind="_sourceForm.AutoPublishMode">
+                                <option value="Inherit">پیروی از تنظیم کلی</option>
+                                <option value="Never">هرگز خودکار منتشر نشود</option>
+                            </select>
+                        </div>
+                        <div class="cs-field">
+                            <label>سهمیه روزانه این منبع</label>
+                            <input type="number" min="1" max="10" class="form-control" @bind="_sourceForm.MaxItemsPerDay" />
+                        </div>
+                        <div class="cs-field">
+                            <label>اولویت (عدد کمتر = زودتر)</label>
+                            <input type="number" min="1" max="1000" class="form-control" @bind="_sourceForm.Priority" />
+                        </div>
+                        <div class="cs-field">
+                            <label>سیاست تصویر</label>
+                            <select class="form-select" @bind="_sourceForm.ImageMode">
+                                <option value="None">بدون تصویر منبع (جایگزین پیش‌فرض سایت)</option>
+                                <option value="OwnFallback">تصویر اختصاصی من</option>
+                                <option value="SourceHotlink">هات‌لینک تصویر منبع با ذکر منبع</option>
+                            </select>
+                        </div>
+                        <div class="cs-switch-row cs-switch-row--inline">
+                            <div>
+                                <div class="fw-bold">منبع فعال باشد</div>
+                            </div>
+                            <input type="checkbox" class="cs-switch" @bind="_sourceForm.Enabled" />
+                        </div>
+                    </div>
+
+                    @if (_sourceForm.ImageMode == "OwnFallback")
+                    {
+                        <div class="cs-upload mt-2">
+                            <label class="small fw-bold">تصویر جایگزین (برای همه خبرهای این منبع)</label>
+                            <div class="d-flex gap-2 align-items-center flex-wrap">
+                                <label class="btn btn-outline-secondary rounded-3 m-0">
+                                    <span class="oi oi-image me-1"></span>
+                                    @(_uploadingImage ? "در حال آپلود…" : "آپلود تصویر")
+                                    <InputFile OnChange="HandleFallbackUpload" accept="image/jpeg,image/png,image/webp" hidden />
+                                </label>
+                                @if (!string.IsNullOrWhiteSpace(_sourceForm.FallbackImageUrl))
+                                {
+                                    <span class="cs-thumb"><img src="@_sourceForm.FallbackImageUrl" alt="" /></span>
+                                    <button class="btn btn-sm btn-outline-danger rounded-3" @onclick="() => _sourceForm.FallbackImageUrl = null">حذف تصویر</button>
+                                }
+                            </div>
+                            <div class="cs-hint mt-1">حداکثر ۲۰۰ کیلوبایت؛ تصویر به‌صورت خودکار فشرده می‌شود.</div>
+                        </div>
+                    }
+
+                    @if (_sourceForm.ImageMode == "SourceHotlink")
+                    {
+                        <div class="cs-hint mt-2">در این حالت تصویر اصلی منبع نمایش داده می‌شود و در متن خبر، نام و لینک منبع ذکر می‌شود. استفاده از تصاویر دارای حق نشر را خودتان بررسی کنید.</div>
+                    }
+
+                    @if (_feedTest != null)
+                    {
+                        <div class="cs-test-result @(_feedTest.Ok ? "is-ok" : "is-warn") mt-2">
+                            @if (_feedTest.Ok)
+                            {
+                                <div>
+                                    <span class="oi oi-check"></span>
+                                    فید «@_feedTest.FeedTitle» با @_feedTest.ItemCount آیتم خوانده شد
+                                    @if (_feedTest.HttpStatus.HasValue)
+                                    {
+                                        <span class="text-muted small">(HTTP @_feedTest.HttpStatus @_feedTest.ContentType)</span>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(_feedTest.LatestItemTitle))
+                                {
+                                    <div class="small text-muted mt-1">آخرین آیتم: @_feedTest.LatestItemTitle</div>
+                                }
+                                @if (_feedTest.Samples.Count > 0)
+                                {
+                                    <ul class="mb-0 mt-1 small">
+                                        @foreach (var sample in _feedTest.Samples)
+                                        {
+                                            <li>@sample</li>
+                                        }
+                                    </ul>
+                                }
+                            }
+                            else
+                            {
+                                <div><span class="oi oi-warning"></span> @_feedTest.Error</div>
+                                @if (!string.IsNullOrWhiteSpace(_feedTest.SuggestedFeedUrl))
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-primary rounded-3 mt-2" @onclick="ApplySuggestedFeed">
+                                        <span class="oi oi-check me-1"></span>
+                                        استفاده از فید پیدا‌شده (@_feedTest.ItemCount آیتم)
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+
+                    @if (_discover != null)
+                    {
+                        <div class="cs-test-result @(_discover.Ok ? "is-ok" : "is-warn") mt-2">
+                            @if (_discover.Ok && _discover.Candidates.Any(c => c.Ok))
+                            {
+                                <div class="fw-bold mb-1">
+                                    <span class="oi oi-check"></span>
+                                    فیدهای معتبر پیدا شد
+                                    @if (!string.IsNullOrWhiteSpace(_discover.SiteTitle))
+                                    {
+                                        <span class="text-muted small">— @_discover.SiteTitle</span>
+                                    }
+                                    <span class="text-muted small">(@_discover.Probed آدرس بررسی شد)</span>
+                                </div>
+                                <div class="d-flex flex-column gap-2">
+                                    @foreach (var candidate in _discover.Candidates.Where(c => c.Ok))
+                                    {
+                                        <button type="button" class="cs-feed-candidate @(candidate.Url == _discover.Best ? "is-best" : "")"
+                                                @onclick="() => UseDiscoveredFeed(candidate)">
+                                            <div class="cs-feed-candidate__main">
+                                                <span class="cs-feed-candidate__url" dir="ltr">@candidate.Url</span>
+                                                <span class="cs-feed-candidate__meta">
+                                                    <span class="cs-tag">@FeedMethodLabel(candidate.Method)</span>
+                                                    @if (!string.IsNullOrWhiteSpace(candidate.Title))
+                                                    {
+                                                        <span>@candidate.Title</span>
+                                                    }
+                                                    <span>@candidate.ItemCount آیتم</span>
+                                                    @if (candidate.LatestItemAt.HasValue)
+                                                    {
+                                                        <span>آخرین: @PersianDate.ToJalaliDate(candidate.LatestItemAt.Value)</span>
+                                                    }
+                                                </span>
+                                                @if (!string.IsNullOrWhiteSpace(candidate.LatestItemTitle))
+                                                {
+                                                    <span class="cs-feed-candidate__latest">@candidate.LatestItemTitle</span>
+                                                }
+                                            </div>
+                                            <span class="oi oi-arrow-left"></span>
+                                        </button>
+                                    }
+                                </div>
+
+                                @if (_discover.Candidates.Any(c => !c.Ok))
+                                {
+                                    <details class="mt-2">
+                                        <summary class="small text-muted">آدرس‌هایی که فید نبودند (@_discover.Candidates.Count(c => !c.Ok))</summary>
+                                        <ul class="mb-0 mt-1 small">
+                                            @foreach (var candidate in _discover.Candidates.Where(c => !c.Ok).Take(12))
+                                            {
+                                                <li>
+                                                    <span dir="ltr">@candidate.Url</span>
+                                                    <span class="text-muted">— @candidate.Error</span>
+                                                </li>
+                                            }
+                                        </ul>
+                                    </details>
+                                }
+                            }
+                            else
+                            {
+                                <div><span class="oi oi-warning"></span> @(_discover.Error ?? "فیدی روی این سایت پیدا نشد.")</div>
+                                @if (!string.IsNullOrWhiteSpace(_discover.SiteError))
+                                {
+                                    <div class="small text-muted mt-1">خطای خواندن صفحه سایت: @_discover.SiteError</div>
+                                }
+                                @if (_discover.Candidates.Count > 0)
+                                {
+                                    <details class="mt-2">
+                                        <summary class="small text-muted">گزارش بررسی @_discover.Candidates.Count آدرس</summary>
+                                        <ul class="mb-0 mt-1 small">
+                                            @foreach (var candidate in _discover.Candidates.Take(15))
+                                            {
+                                                <li>
+                                                    <span dir="ltr">@candidate.Url</span>
+                                                    <span class="text-muted">— @candidate.Error</span>
+                                                </li>
+                                            }
+                                        </ul>
+                                    </details>
+                                }
+                            }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(_sourceError))
+                    {
+                        <div class="cs-test-result is-warn mt-2"><span class="oi oi-warning"></span> @_sourceError</div>
+                    }
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-secondary rounded-3" @onclick="CloseSourceModal">انصراف</button>
+                    <button type="button" class="btn btn-primary rounded-3 px-4" @onclick="SaveSource" disabled="@_savingSource">
+                        @if (_savingSource)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        <span class="oi oi-check me-1"></span> ذخیره منبع
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ================= مودال پیش‌نمایش ================= *@
+@if (_showPreview)
+{
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal fade show d-block" tabindex="-1" dir="rtl">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl">
+            <div class="modal-content rounded-4 border-0 shadow-lg">
+                <div class="modal-header border-0 pb-0">
+                    <div class="min-w-0">
+                        <h5 class="modal-title fw-bold">پیش‌نمایش محتوای تولیدشده</h5>
+                        <div class="small text-muted">این خروجی نهایی است؛ HTML فقط از ساختار مجاز ساخته می‌شود.</div>
+                    </div>
+                    <button type="button" class="btn-close" @onclick="ClosePreview"></button>
+                </div>
+                <div class="modal-body">
+                    @if (_previewLoading || _previewItem == null)
+                    {
+                        <div class="cs-empty"><div class="spinner-border text-primary border-2"></div></div>
+                    }
+                    else
+                    {
+                        <div class="cs-preview__title">@_previewItem.GeneratedTitle</div>
+                        <div class="cs-metrics mb-2">
+                            <span class="cs-status @StatusClass(_previewItem.Status)">@StatusLabel(_previewItem.Status)</span>
+                            @if (_previewItem.IsManualDraft)
+                            {
+                                <span class="cs-tag cs-tag--muted">پیش‌نویس دستی</span>
+                            }
+                            <span class="cs-metric">منبع: @_previewItem.SourceName</span>
+                            @if (_previewItem.CopyOverlapPercent.HasValue)
+                            {
+                                <span class="cs-metric">هم‌پوشانی: @Math.Round(_previewItem.CopyOverlapPercent.Value)٪</span>
+                            }
+                            @if (_previewItem.TitleSimilarity.HasValue)
+                            {
+                                <span class="cs-metric">تشابه عنوان: @Math.Round(_previewItem.TitleSimilarity.Value * 100)٪</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_previewItem.GeneratedTags))
+                            {
+                                <span class="cs-metric">@_previewItem.GeneratedTags</span>
+                            }
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_previewItem.GeneratedSummary))
+                        {
+                            <div class="cs-preview__summary">@_previewItem.GeneratedSummary</div>
+                        }
+                        <div class="cs-preview__content cs-article">
+                            @((MarkupString)HtmlSanitizer.Sanitize(_previewItem.GeneratedContent ?? ""))
+                        </div>
+
+                        <div class="cs-divider"></div>
+                        <div class="cs-preview__source">
+                            <div class="fw-bold small">اطلاعات منبع</div>
+                            <div class="small text-muted">عنوان اصلی: @_previewItem.OriginalTitle</div>
+                            @if (!string.IsNullOrWhiteSpace(_previewItem.OriginalSummary))
+                            {
+                                <div class="small text-muted">خلاصه اصلی: @_previewItem.OriginalSummary</div>
+                            }
+                            <a href="@_previewItem.SourceUrl" target="_blank" rel="noopener noreferrer" class="small" dir="ltr">@_previewItem.SourceUrl</a>
+                        </div>
+
+                        <AuthorizeView Policy="perm:admin.contentstudio.manage">
+                            <div class="cs-modal-actions">
+                                @if (!_previewItem.NewsId.HasValue)
+                                {
+                                    <button class="btn btn-outline-primary rounded-3" @onclick="() => OpenDraftEditor(_previewItem.Id)">ویرایش دستی</button>
+                                }
+                                @if (_previewItem.Status is "Pending" or "Failed" or "Rejected")
+                                {
+                                    <button class="btn btn-primary rounded-3" @onclick="() => RewriteItem(_previewItem.Id)">بازنویسی</button>
+                                }
+                                @if (_previewItem.Status == "Ready")
+                                {
+                                    <button class="btn btn-primary rounded-3" @onclick="() => PublishItem(_previewItem.Id, false)">انتشار</button>
+                                    <button class="btn btn-outline-primary rounded-3" @onclick="() => PublishItem(_previewItem.Id, true)">ذخیره پیش‌نویس</button>
+                                    <button class="btn btn-outline-secondary rounded-3" @onclick="() => RejectItem(_previewItem.Id)">رد آیتم</button>
+                                }
+                                @if (_previewItem.NewsId.HasValue)
+                                {
+                                    <a class="btn btn-outline-success rounded-3" href="/news/@_previewItem.NewsId" target="_blank">
+                                        @(_previewItem.NewsIsPublished ? "مشاهده خبر در سایت" : "مشاهده پیش‌نویس در سایت")
+                                    </a>
+                                }
+                            </div>
+                        </AuthorizeView>
+                    }
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-secondary rounded-3" @onclick="ClosePreview">بستن</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ================= مودال ویرایش دستی ================= *@
+@if (_showDraftModal)
+{
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal fade show d-block" tabindex="-1" dir="rtl">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl">
+            <div class="modal-content rounded-4 border-0 shadow-lg">
+                <div class="modal-header border-0 pb-0">
+                    <div class="min-w-0">
+                        <h5 class="modal-title fw-bold">پیش‌نویس دستی</h5>
+                        <div class="small text-muted">
+                            متن را بنویسید یا بچسبانید؛ ستون کنار همین‌جا با استایل نهایی مقاله نشان داده می‌شود
+                            (تیتر با «##»، فهرست با «-»، نقل‌قول با «>»، درشت با «**» و لینک با «[متن](آدرس)»).
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" @onclick="CloseDraftEditor"></button>
+                </div>
+                <div class="modal-body">
+                    @if (_draftLoading)
+                    {
+                        <div class="cs-empty"><div class="spinner-border text-primary border-2"></div></div>
+                    }
+                    else
+                    {
+                        @if (_draftSource != null)
+                        {
+                            <div class="cs-preview__source mb-3">
+                                <div class="small text-muted">عنوان اصلی: @_draftSource.OriginalTitle</div>
+                                <a href="@_draftSource.SourceUrl" target="_blank" rel="noopener noreferrer" class="small" dir="ltr">@_draftSource.SourceUrl</a>
+                            </div>
+                        }
+                        <div class="cs-field mb-3">
+                            <label>عنوان</label>
+                            <input type="text" maxlength="200" class="form-control" @bind="_draftForm.Title" />
+                        </div>
+                        <div class="cs-field mb-3">
+                            <label>خلاصه</label>
+                            <textarea class="form-control" rows="2" maxlength="500" @bind="_draftForm.Summary"></textarea>
+                        </div>
+                        <div class="cs-draft-split mb-3">
+                            <div class="cs-field">
+                                <label>متن خبر</label>
+                                <textarea class="form-control cs-draft-text" rows="16" maxlength="20000"
+                                          @bind="_draftForm.Content" @bind:event="oninput"></textarea>
+                                <div class="cs-hint">
+                                    متن کپی‌شده از سایت‌ها یا ورد را همین‌جا بچسبانید؛ تیتر، فهرست، شماره‌دار، تصویر، درشت و لینکِ آن
+                                    خودکار به نشانه‌ها تبدیل می‌شود. دستی هم می‌توانید بنویسید:
+                                    <span dir="ltr">## تیتر</span>، <span dir="ltr">### زیرتیتر</span>،
+                                    <span dir="ltr">- فهرست</span>، <span dir="ltr">1. شماره‌دار</span>،
+                                    <span dir="ltr">&gt; نکته/نقل‌قول</span>، <span dir="ltr">---</span> خط،
+                                    <span dir="ltr">**درشت**</span>، <span dir="ltr">*مورب*</span>،
+                                    <span dir="ltr">[متن](لینک)</span>، <span dir="ltr">![توضیح](آدرس عکس)</span>.
+                                </div>
+                            </div>
+                            <div class="cs-field">
+                                <label>پیش‌نمایش نهایی</label>
+                                <div class="cs-draft-preview cs-article">
+                                    @if (string.IsNullOrWhiteSpace(_draftForm.Content))
+                                    {
+                                        <div class="cs-hint">متن را در ستون کنار بنویسید یا بچسبانید؛ همین‌جا با استایل نهایی مقاله نمایش داده می‌شود.</div>
+                                    }
+                                    else
+                                    {
+                                        @((MarkupString)ManualMarkup.ToHtml(_draftForm.Content))
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cs-field mb-3">
+                            <label>تگ‌ها و کلیدواژه‌ها (با کاما جدا کنید)</label>
+                            <input type="text" maxlength="500" class="form-control" @bind="_draftForm.Tags" />
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_draftError))
+                        {
+                            <div class="alert alert-warning rounded-3 small">@_draftError</div>
+                        }
+                    }
+                </div>
+                <div class="modal-footer border-0 pt-0 d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-primary rounded-3 px-4" @onclick="SaveManualDraft" disabled="@(_draftSaving || _draftLoading)">
+                        @if (_draftSaving)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        ذخیره پیش‌نویس
+                    </button>
+                    <button type="button" class="btn btn-outline-primary rounded-3" @onclick="RebuildDraftFromSource" disabled="@(_draftSaving || _draftLoading)">
+                        بازسازی از متن منبع
+                    </button>
+                    <button type="button" class="btn btn-secondary rounded-3" @onclick="CloseDraftEditor">انصراف</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .min-w-0 { min-width: 0; }
+
+    .cs-hero {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+    .cs-hero__text { max-width: 640px; }
+    .cs-hero__actions {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        flex-wrap: wrap;
+    }
+    .cs-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        border-radius: 999px;
+        padding: .35rem .75rem;
+        font-size: .75rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+    }
+    .cs-pill--on { background: #ecfdf5; color: #047857; border-color: #d1fae5; }
+    .cs-pill--off { background: #f8fafc; color: #64748b; border-color: #e2e8f0; }
+    .cs-pill--warn { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+    .cs-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+    .cs-progress,
+    .cs-lastrun,
+    .cs-alert,
+    .cs-panel,
+    .cs-source,
+    .cs-item {
+        background: #fff;
+        border: 1px solid #e9eef5;
+        border-radius: 18px;
+    }
+    .cs-progress { padding: 1rem 1.1rem; margin-bottom: 1rem; }
+    .cs-progress__head { display: flex; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+    .cs-progress__stage { font-size: .82rem; color: #475569; margin-top: .35rem; }
+    .cs-progress__bar {
+        height: 8px;
+        border-radius: 999px;
+        background: #eef2f7;
+        overflow: hidden;
+        margin: .65rem 0 .4rem;
+    }
+    .cs-progress__bar span {
+        display: block;
+        height: 100%;
+        background: #2563eb;
+        border-radius: inherit;
+        transition: width .4s ease;
+    }
+    .cs-progress__meta { display: flex; justify-content: space-between; font-size: .72rem; color: #64748b; gap: .5rem; }
+
+    .cs-lastrun {
+        display: flex;
+        align-items: center;
+        gap: .8rem;
+        padding: .85rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .cs-lastrun__icon {
+        width: 38px; height: 38px;
+        border-radius: 12px;
+        display: grid; place-items: center;
+        flex: 0 0 auto;
+        font-size: 1rem;
+    }
+    .cs-lastrun__body { flex: 1 1 auto; min-width: 0; }
+    .cs-lastrun__body > div:last-child { line-height: 1.8; }
+
+    .cs-alert {
+        display: flex;
+        gap: .75rem;
+        align-items: flex-start;
+        padding: .9rem 1rem;
+        background: #fffbeb;
+        border-color: #fde68a;
+        color: #92400e;
+        margin-bottom: 1rem;
+    }
+    .cs-alert > .btn { margin-inline-start: auto; }
+
+    .cs-tabs {
+        display: flex;
+        gap: .35rem;
+        background: #fff;
+        border: 1px solid #e9eef5;
+        border-radius: 16px;
+        padding: .3rem;
+        overflow-x: auto;
+        margin-bottom: 1rem;
+    }
+    .cs-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        border: 0;
+        background: transparent;
+        color: #64748b;
+        font-size: .82rem;
+        font-weight: 700;
+        padding: .55rem .85rem;
+        border-radius: 12px;
+        white-space: nowrap;
+    }
+    .cs-tab.active { background: #eff6ff; color: #1d4ed8; }
+    .cs-tab__count {
+        font-size: .68rem;
+        background: rgba(15, 23, 42, .08);
+        border-radius: 999px;
+        padding: .05rem .4rem;
+    }
+
+    .cs-stats {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: .6rem;
+        margin-bottom: 1rem;
+    }
+    .cs-stat {
+        background: #fff;
+        border: 1px solid #e9eef5;
+        border-radius: 14px;
+        padding: .7rem .8rem;
+        display: flex;
+        flex-direction: column;
+        gap: .15rem;
+    }
+    .cs-stat__num { font-weight: 800; font-size: 1.15rem; color: #0f172a; }
+    .cs-stat__label { font-size: .7rem; color: #64748b; }
+
+    .cs-panel { padding: 1rem; }
+    .cs-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .75rem;
+        flex-wrap: wrap;
+    }
+    .cs-chips { display: flex; gap: .35rem; flex-wrap: wrap; }
+    .cs-chip {
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #475569;
+        border-radius: 999px;
+        padding: .28rem .65rem;
+        font-size: .72rem;
+        font-weight: 700;
+    }
+    .cs-chip.active { background: #0f172a; border-color: #0f172a; color: #fff; }
+    .cs-chip__count { opacity: .65; margin-inline-start: .2rem; }
+    .cs-search { max-width: 300px; flex: 1 1 200px; }
+
+    .cs-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: .9rem 1rem;
+        margin-top: .7rem;
+    }
+    .cs-item__main { min-width: 0; flex: 1 1 auto; }
+    .cs-item__title { font-weight: 800; color: #0f172a; line-height: 1.8; }
+    .cs-item__meta {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        flex-wrap: wrap;
+        font-size: .72rem;
+        color: #64748b;
+        margin-top: .3rem;
+    }
+    .cs-meta-dot { width: 3px; height: 3px; border-radius: 50%; background: #cbd5e1; }
+    .cs-item__summary { font-size: .8rem; color: #475569; line-height: 1.9; margin-top: .45rem; }
+    .cs-item__note {
+        margin-top: .5rem;
+        font-size: .72rem;
+        color: #92400e;
+        background: #fffbeb;
+        border-radius: 10px;
+        padding: .4rem .6rem;
+        line-height: 1.8;
+    }
+    .cs-item__note--danger { color: #b91c1c; background: #fef2f2; }
+    .cs-item__actions {
+        display: flex;
+        flex-direction: column;
+        gap: .35rem;
+        flex: 0 0 auto;
+        min-width: 112px;
+    }
+
+    .cs-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .35rem;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        padding: .38rem .6rem;
+        font-size: .72rem;
+        font-weight: 700;
+        text-decoration: none;
+        line-height: 1.6;
+    }
+    .cs-btn--primary { background: #2563eb; color: #fff; }
+    .cs-btn--primary:hover { background: #1d4ed8; color: #fff; }
+    .cs-btn--soft { background: #eff6ff; color: #1d4ed8; border-color: #dbeafe; }
+    .cs-btn--soft:hover { background: #dbeafe; color: #1e40af; }
+    .cs-btn--ghost { background: #fff; color: #475569; border-color: #e2e8f0; }
+    .cs-btn--ghost:hover { background: #f8fafc; color: #0f172a; }
+    .cs-btn--danger { background: #fef2f2; color: #b91c1c; border-color: #fee2e2; }
+    .cs-btn--danger:hover { background: #fee2e2; }
+    .cs-btn:disabled { opacity: .55; }
+
+    .cs-metrics { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+    .cs-metric {
+        font-size: .68rem;
+        color: #475569;
+        background: #f8fafc;
+        border: 1px solid #eef2f7;
+        border-radius: 8px;
+        padding: .15rem .45rem;
+        text-decoration: none;
+    }
+    .cs-metric--link { color: #1d4ed8; background: #eff6ff; border-color: #dbeafe; }
+
+    .cs-status {
+        display: inline-flex;
+        align-items: center;
+        font-size: .68rem;
+        font-weight: 800;
+        border-radius: 999px;
+        padding: .18rem .55rem;
+        border: 1px solid transparent;
+        white-space: nowrap;
+    }
+    .cs-status--pending { background: #fefce8; color: #a16207; border-color: #fef08a; }
+    .cs-status--processing { background: #f5f3ff; color: #6d28d9; border-color: #ede9fe; }
+    .cs-status--ready { background: #eff6ff; color: #1d4ed8; border-color: #dbeafe; }
+    .cs-status--published { background: #ecfdf5; color: #047857; border-color: #d1fae5; }
+    .cs-status--duplicate { background: #fff7ed; color: #c2410c; border-color: #ffedd5; }
+    .cs-status--skipped { background: #f8fafc; color: #64748b; border-color: #e2e8f0; }
+    .cs-status--rejected { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+    .cs-status--failed { background: #fef2f2; color: #b91c1c; border-color: #fee2e2; }
+
+    .cs-pager {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .75rem;
+        flex-wrap: wrap;
+        padding-top: .9rem;
+    }
+
+    .cs-source { padding: .95rem 1rem; margin-top: .7rem; }
+    .cs-source__head {
+        display: flex;
+        justify-content: space-between;
+        gap: .75rem;
+        flex-wrap: wrap;
+    }
+    .cs-source__actions { display: flex; gap: .35rem; flex-wrap: wrap; align-items: flex-start; }
+    .cs-source__grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: .5rem;
+        margin-top: .7rem;
+        font-size: .72rem;
+    }
+    .cs-source__grid > div {
+        background: #f8fafc;
+        border-radius: 10px;
+        padding: .4rem .55rem;
+    }
+    .cs-mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .7rem;
+        color: #64748b;
+        margin-top: .25rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .cs-tag {
+        font-size: .66rem;
+        font-weight: 700;
+        border-radius: 999px;
+        padding: .1rem .45rem;
+        background: #f1f5f9;
+        color: #475569;
+    }
+    .cs-tag--muted { background: #fff; border: 1px dashed #cbd5e1; color: #64748b; }
+
+    .cs-suggest { margin-bottom: 1rem; }
+    .cs-suggest__grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .55rem;
+        margin-top: .8rem;
+    }
+    .cs-suggest__item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .6rem;
+        padding: .55rem .7rem;
+        border: 1px solid #e9eef5;
+        border-radius: 12px;
+        background: #f8fafc;
+    }
+    .cs-suggest__item.is-added { background: #ecfdf5; }
+    .cs-suggest__name {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        flex-wrap: wrap;
+        font-size: .8rem;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    .cs-suggest__item.is-added .cs-suggest__name { color: #065f46; }
+    .cs-suggest__hint { font-size: .7rem; color: #64748b; margin-top: .1rem; }
+    .cs-suggest__item .cs-btn { flex: 0 0 auto; }
+    @@media (max-width: 767.98px) {
+        .cs-suggest__grid { grid-template-columns: 1fr; }
+    }
+
+    .cs-settings-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+        gap: 1rem;
+        align-items: start;
+    }
+    .cs-card-title {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        font-weight: 800;
+        font-size: .88rem;
+        color: #0f172a;
+        margin-bottom: .75rem;
+    }
+    .cs-divider { height: 1px; background: #eef2f7; margin: 1rem 0; }
+    .cs-ai-box { border-radius: 12px; padding: .7rem .8rem; font-size: .78rem; line-height: 1.8; }
+    .cs-ai-box.is-ok { background: #ecfdf5; color: #065f46; }
+    .cs-ai-box.is-warn { background: #fffbeb; color: #92400e; }
+    .cs-list { margin: 0; padding-inline-start: 1.1rem; font-size: .76rem; color: #475569; line-height: 2; }
+    .cs-list li + li { margin-top: .15rem; }
+    .cs-list--num { list-style: persian; }
+
+    .cs-switch-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+        padding: .55rem 0;
+    }
+    .cs-switch-row + .cs-switch-row { border-top: 1px dashed #eef2f7; }
+    .cs-switch-row--inline { border: 0; padding: 0; }
+    .cs-switch { width: 42px; height: 22px; accent-color: #2563eb; flex: 0 0 auto; }
+
+    .cs-form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .8rem;
+    }
+    .cs-field--wide { grid-column: 1 / -1; }
+    .cs-field label { font-size: .75rem; font-weight: 700; color: #334155; margin-bottom: .3rem; display: block; }
+    .cs-hint { font-size: .68rem; color: #94a3b8; margin-top: .25rem; }
+    .cs-actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
+    .cs-test-result {
+        display: flex;
+        gap: .45rem;
+        align-items: flex-start;
+        font-size: .76rem;
+        line-height: 1.9;
+        border-radius: 10px;
+        padding: .55rem .7rem;
+        margin-top: .6rem;
+    }
+    .cs-test-result.is-ok { background: #ecfdf5; color: #065f46; }
+    .cs-test-result.is-warn { background: #fffbeb; color: #92400e; }
+    .cs-link-row {
+        display: flex;
+        justify-content: space-between;
+        gap: .75rem;
+        border: 1px solid #d1fae5;
+        background: #fff;
+        color: #065f46;
+        border-radius: 8px;
+        padding: .35rem .55rem;
+        font-size: .7rem;
+        text-align: start;
+    }
+    .cs-switch-row.is-disabled { opacity: .55; }
+    .cs-feed-candidate {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+        width: 100%;
+        background: #fff;
+        border: 1px solid #d1fae5;
+        border-radius: 12px;
+        padding: .5rem .7rem;
+        text-align: start;
+        color: inherit;
+        transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .cs-feed-candidate:hover { border-color: #10b981; box-shadow: 0 4px 14px rgba(16,185,129,.12); }
+    .cs-feed-candidate.is-best { border-color: #059669; background: #f0fdf4; }
+    .cs-feed-candidate__main { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+    .cs-feed-candidate__url {
+        direction: ltr;
+        text-align: left;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: .72rem;
+        color: #065f46;
+        overflow-wrap: anywhere;
+    }
+    .cs-feed-candidate__meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .3rem .6rem;
+        font-size: .68rem;
+        color: #475569;
+    }
+    .cs-feed-candidate__latest {
+        font-size: .68rem;
+        color: #64748b;
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .cs-upload { background: #f8fafc; border-radius: 12px; padding: .7rem; }
+    .cs-thumb img { width: 64px; height: 48px; object-fit: cover; border-radius: 8px; border: 1px solid #e2e8f0; }
+
+    .cs-run { border: 1px solid #eef2f7; border-radius: 14px; padding: .75rem .85rem; }
+    .cs-run + .cs-run { margin-top: .6rem; }
+    .cs-run__head { display: flex; justify-content: space-between; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    .cs-run__grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .35rem .9rem;
+        font-size: .72rem;
+        color: #64748b;
+        margin-top: .45rem;
+    }
+    .cs-run__grid b { color: #0f172a; }
+    .cs-run__msg { font-size: .72rem; color: #475569; line-height: 1.9; margin-top: .35rem; }
+
+    .cs-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: .45rem;
+        text-align: center;
+        padding: 2.2rem 1rem;
+        color: #94a3b8;
+    }
+    .cs-empty > .oi { font-size: 1.6rem; }
+
+    .cs-preview__title { font-size: 1.15rem; font-weight: 800; color: #0f172a; line-height: 1.9; margin-bottom: .35rem; }
+    .cs-preview__summary {
+        background: #f8fafc;
+        border-radius: 10px;
+        padding: .6rem .75rem;
+        font-size: .82rem;
+        color: #475569;
+        line-height: 1.95;
+        margin-bottom: .75rem;
+    }
+    .cs-preview__content { font-size: .86rem; color: #334155; line-height: 2.05; }
+    .cs-preview__source { font-size: .76rem; line-height: 1.9; }
+
+    /* استایل مشترک متن مقاله در پیش‌نمایش آیتم و پیش‌نویس دستی */
+    .cs-article > :first-child { margin-top: 0; }
+    .cs-article p { margin: 0 0 .85rem; }
+    .cs-article > p:first-of-type { font-size: 1.02em; color: #1e293b; font-weight: 500; }
+    .cs-article h2 {
+        margin: 1.2rem 0 .75rem;
+        padding: .62rem .85rem;
+        font-size: 1.08rem;
+        font-weight: 900;
+        line-height: 1.7;
+        color: #0f172a;
+        background: #dbeafe;
+        border-top: 1px solid #bfdbfe;
+        border-bottom: 1px solid #bfdbfe;
+        border-inline-end: 1px solid #bfdbfe;
+        border-inline-start: 5px solid #2563eb;
+        border-radius: 12px;
+        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.10);
+    }
+    .cs-article h3 {
+        margin: 1rem 0 .5rem;
+        padding: .35rem .7rem;
+        font-size: .97rem;
+        font-weight: 800;
+        line-height: 1.75;
+        color: #1d4ed8;
+        background: #eff6ff;
+        border-top: 1px solid #dbeafe;
+        border-bottom: 1px solid #dbeafe;
+        border-inline-end: 1px solid #dbeafe;
+        border-inline-start: 4px solid #2563eb;
+        border-radius: 10px;
+    }
+    .cs-article ul,
+    .cs-article ol { margin: 0 0 .85rem; padding-inline-start: 1.35rem; }
+    .cs-article li { margin-bottom: .3rem; }
+    .cs-article ul > li::marker { color: #2563eb; }
+    .cs-article ol.md-list--ordered {
+        list-style: none;
+        padding-inline-start: 0;
+        counter-reset: cs-article-ol;
+    }
+    .cs-article ol.md-list--ordered > li {
+        counter-increment: cs-article-ol;
+        position: relative;
+        padding-inline-start: 2.1rem;
+        margin-bottom: .45rem;
+    }
+    .cs-article ol.md-list--ordered > li::before {
+        content: counter(cs-article-ol);
+        position: absolute;
+        inset-inline-start: 0;
+        top: .22rem;
+        width: 1.5rem;
+        height: 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: transparent;
+        border: 1px solid #bfdbfe;
+        color: #1d4ed8;
+        font-size: .72rem;
+        font-weight: 800;
+        line-height: 1;
+    }
+    .cs-article strong { color: #0f172a; font-weight: 800; }
+    .cs-article em { color: #475569; }
+    .cs-article a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 3px; }
+    .cs-article blockquote.md-quote {
+        margin: 1rem 0;
+        padding: .8rem 1rem;
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-inline-start: 4px solid #f59e0b;
+        border-radius: 12px;
+        color: #92400e;
+        font-weight: 500;
+        font-size: .85rem;
+        line-height: 1.95;
+    }
+    .cs-article blockquote.md-quote p { margin: 0; }
+    .cs-article hr.md-divider {
+        border: 0;
+        height: 1px;
+        margin: 1.35rem 0;
+        background: linear-gradient(90deg, transparent, #cbd5e1, transparent);
+    }
+    .cs-article figure.md-figure { margin: 1rem 0; }
+    .cs-article figure.md-figure img {
+        display: block;
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid #e9eef5;
+    }
+    .cs-article figure.md-figure figcaption {
+        margin-top: .4rem;
+        font-size: .74rem;
+        color: #64748b;
+        text-align: center;
+    }
+    .cs-article img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 12px;
+        border: 1px solid #e9eef5;
+        margin: .8rem 0;
+        background: #f8fafc;
+    }
+    .cs-article figure.md-figure img { margin: 0; }
+    .cs-article table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: .82rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+    }
+    .cs-article th,
+    .cs-article td {
+        border: 1px solid #e2e8f0;
+        padding: .45rem .6rem;
+        text-align: start;
+        vertical-align: top;
+    }
+    .cs-article th { background: #f8fafc; font-weight: 800; color: #0f172a; }
+
+    .cs-draft-split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: .9rem;
+    }
+    .cs-draft-text {
+        font-size: .82rem;
+        line-height: 1.95;
+        min-height: 360px;
+    }
+    .cs-draft-preview {
+        min-height: 360px;
+        max-height: 520px;
+        overflow: auto;
+        padding: .9rem 1rem;
+        background: #fff;
+        border: 1px solid #e9eef5;
+        border-radius: 14px;
+        font-size: .86rem;
+        line-height: 2;
+        color: #334155;
+    }
+    .cs-modal-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; }
+
+    @@media (max-width: 900px) {
+        .cs-settings-grid { grid-template-columns: 1fr; }
+        .cs-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .cs-source__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .cs-draft-split { grid-template-columns: 1fr; }
+        .cs-draft-text, .cs-draft-preview { min-height: 240px; }
+    }
+    @@media (max-width: 640px) {
+        .cs-hero__actions { width: 100%; }
+        .cs-item { flex-direction: column; }
+        .cs-item__actions { flex-direction: row; flex-wrap: wrap; min-width: 0; }
+        .cs-item__actions .cs-btn { flex: 1 1 auto; }
+        .cs-form-grid { grid-template-columns: 1fr; }
+        .cs-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .cs-toolbar { align-items: stretch; }
+        .cs-search { max-width: none; }
+    }
+</style>
+
+@code {
+    private const string ApiBase = "api/admin/content-studio";
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
+
+    private static readonly (string Value, string Label)[] QueueStatuses =
+    {
+        ("all", "همه"),
+        ("Ready", "آماده"),
+        ("Pending", "در انتظار"),
+        ("Published", "منتشرشده"),
+        ("Duplicate", "تکراری"),
+        ("Failed", "خطا"),
+        ("Skipped", "فیلترشده"),
+        ("Rejected", "ردشده")
+    };
+
+    private ContentStudioOverviewDto? _overview;
+    private ContentStudioSettingsDto? _settings;
+    private ContentStudioItemListDto? _items;
+    private List<ContentStudioSourceDto>? _sources;
+    private List<ContentStudioRunDto>? _runs;
+    private ContentStudioItemDto? _previewItem;
+
+    private string _activeTab = "queue";
+    private string _statusFilter = "all";
+    private string _searchQuery = "";
+    private int _page = 1;
+    private int _pageSize = 20;
+
+    private bool _loadingItems;
+    private bool _savingSettings;
+    private bool _testingAi;
+    private bool _runStarting;
+    private int? _actionBusyId;
+    private int? _sourceBusyId;
+    private ContentStudioAiTestResultDto? _aiTest;
+
+    private bool _showSourceModal;
+    private int? _editingSourceId;
+    private ContentStudioSourceRequest _sourceForm = new();
+    private string? _sourceError;
+    private bool _savingSource;
+    private bool _addingSuggested;
+    private bool _testingFeed;
+    private bool _discovering;
+    private bool _uploadingImage;
+    private ContentStudioTestFeedResultDto? _feedTest;
+    private ContentStudioFeedDiscoverResultDto? _discover;
+
+    private bool _showPreview;
+    private bool _previewLoading;
+
+    private bool _showDraftModal;
+    private bool _draftLoading;
+    private bool _draftSaving;
+    private string? _draftError;
+    private int? _draftItemId;
+    private ContentStudioItemDto? _draftSource;
+    private ContentStudioDraftRequest _draftForm = new();
+    private DotNetObjectReference<ContentStudio>? _draftPasteRef;
+
+    private bool _showSourceDeleteConfirm;
+    private ContentStudioSourceDto? _sourceToDelete;
+    private bool _showItemDeleteConfirm;
+    private int? _itemToDelete;
+
+    private CancellationTokenSource? _searchCts;
+    private CancellationTokenSource? _pollCts;
+    private bool _polling;
+
+    private int QueueBadge => (_overview?.Stats.Ready ?? 0) + (_overview?.Stats.Pending ?? 0);
+    private int TotalPages => _items == null || _items.PageSize <= 0
+        ? 1
+        : Math.Max(1, (int)Math.Ceiling(_items.Total / (double)_items.PageSize));
+    private int ProgressPercent => _overview?.Progress is { Total: > 0 } p
+        ? Math.Clamp((int)Math.Round(p.Processed * 100d / p.Total), 0, 100)
+        : 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOverview();
+        await LoadSources();
+        await LoadItems();
+        if (_overview?.Progress.IsRunning == true) StartPolling();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        if (_overview?.Progress.IsRunning == true) StartPolling();
+
+        _draftPasteRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("csSetDraftPasteConverter", _draftPasteRef);
+    }
+
+    /// <summary>متن کپی‌شده (HTML سایت/ورد) را به نشانه‌های قابل ویرایش تبدیل می‌کند.</summary>
+    [JSInvokable]
+    public string ConvertPastedHtml(string? html)
+    {
+        var text = ManualMarkup.FromHtml(html);
+        return text.Length > 20000 ? text[..20000] : text;
+    }
+
+    public void Dispose()
+    {
+        _searchCts?.Cancel();
+        _pollCts?.Cancel();
+        _searchCts?.Dispose();
+        _pollCts?.Dispose();
+        _draftPasteRef?.Dispose();
+    }
+
+    private async Task SwitchTab(string tab)
+    {
+        _activeTab = tab;
+        if (tab == "sources" && _sources == null) await LoadSources();
+        if (tab == "runs") await LoadRuns();
+    }
+
+    // ===== بارگذاری =====
+
+    private async Task LoadOverview()
+    {
+        try
+        {
+            _overview = await Http.GetFromJsonAsync<ContentStudioOverviewDto>($"{ApiBase}/overview");
+            if (_overview != null && (_settings == null || _activeTab != "settings"))
+                _settings = _overview.Settings;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در دریافت وضعیت استودیو: " + ex.Message);
+        }
+    }
+
+    private async Task LoadSources()
+    {
+        try
+        {
+            _sources = await Http.GetFromJsonAsync<List<ContentStudioSourceDto>>($"{ApiBase}/sources");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در دریافت منابع: " + ex.Message);
+        }
+    }
+
+    private async Task LoadItems(bool silent = false)
+    {
+        if (!silent) _loadingItems = true;
+        try
+        {
+            var url = $"{ApiBase}/items?page={_page}&pageSize={_pageSize}";
+            if (!string.IsNullOrWhiteSpace(_statusFilter) && _statusFilter != "all")
+                url += $"&status={Uri.EscapeDataString(_statusFilter)}";
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+                url += $"&q={Uri.EscapeDataString(_searchQuery.Trim())}";
+
+            _items = await Http.GetFromJsonAsync<ContentStudioItemListDto>(url);
+            if (_items != null)
+            {
+                var maxPage = Math.Max(1, (int)Math.Ceiling(_items.Total / (double)_pageSize));
+                if (_page > maxPage) _page = maxPage;
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در دریافت صف بازبینی: " + ex.Message);
+        }
+        finally
+        {
+            if (!silent) _loadingItems = false;
+        }
+    }
+
+    private async Task LoadRuns()
+    {
+        try
+        {
+            _runs = await Http.GetFromJsonAsync<List<ContentStudioRunDto>>($"{ApiBase}/runs?take=30");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در دریافت گزارش اجرا: " + ex.Message);
+        }
+    }
+
+    // ===== فیلتر و صفحه =====
+
+    private async Task FilterStatus(string status)
+    {
+        _statusFilter = status;
+        _page = 1;
+        await LoadItems();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString() ?? "";
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = new CancellationTokenSource();
+        var token = _searchCts.Token;
+        try
+        {
+            await Task.Delay(400, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (token.IsCancellationRequested) return;
+        _page = 1;
+        await LoadItems();
+    }
+
+    private async Task PrevPage()
+    {
+        if (_page <= 1) return;
+        _page--;
+        await LoadItems();
+    }
+
+    private async Task NextPage()
+    {
+        if (_page >= TotalPages) return;
+        _page++;
+        await LoadItems();
+    }
+
+    private int CountFor(string status) => _items?.Counts.TryGetValue(status, out var count) == true
+        ? count
+        : status == "all" ? _items?.Counts.Values.Sum() ?? 0 : 0;
+
+    // ===== اجرا و آیتم‌ها =====
+
+    private async Task RunNow()
+    {
+        _runStarting = true;
+        try
+        {
+            var resp = await Http.PostAsync($"{ApiBase}/run", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("اجرای دستی در پس‌زمینه شروع شد.");
+                await LoadOverview();
+                StartPolling();
+            }
+            else
+            {
+                Toast.ShowWarning(await ReadErrorAsync(resp) ?? "اجرا شروع نشد.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در شروع اجرا: " + ex.Message);
+        }
+        finally
+        {
+            _runStarting = false;
+        }
+    }
+
+    private async Task RewriteItem(int id)
+    {
+        _actionBusyId = id;
+        try
+        {
+            var resp = await Http.PostAsync($"{ApiBase}/items/{id}/rewrite", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("بازنویسی در پس‌زمینه شروع شد.");
+                ClosePreview();
+                await LoadOverview();
+                StartPolling();
+            }
+            else
+            {
+                Toast.ShowWarning(await ReadErrorAsync(resp) ?? "بازنویسی شروع نشد.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در بازنویسی: " + ex.Message);
+        }
+        finally
+        {
+            _actionBusyId = null;
+        }
+    }
+
+    private async Task PublishItem(int id, bool asDraft)
+    {
+        _actionBusyId = id;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"{ApiBase}/items/{id}/publish",
+                new ContentStudioPublishRequest { AsDraft = asDraft });
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess(asDraft ? "پیش‌نویس خبر ساخته شد." : "خبر منتشر شد.");
+                ClosePreview();
+                await LoadOverview();
+                await LoadItems();
+                await LoadSources();
+            }
+            else
+            {
+                Toast.ShowWarning(await ReadErrorAsync(resp) ?? "انتشار انجام نشد.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در انتشار: " + ex.Message);
+        }
+        finally
+        {
+            _actionBusyId = null;
+        }
+    }
+
+    private async Task RejectItem(int id)
+    {
+        _actionBusyId = id;
+        try
+        {
+            var resp = await Http.PostAsync($"{ApiBase}/items/{id}/reject", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("آیتم رد شد.");
+                ClosePreview();
+                await LoadOverview();
+                await LoadItems();
+            }
+            else
+            {
+                Toast.ShowWarning(await ReadErrorAsync(resp) ?? "رد آیتم انجام نشد.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در رد آیتم: " + ex.Message);
+        }
+        finally
+        {
+            _actionBusyId = null;
+        }
+    }
+
+    private void AskDeleteItem(int id)
+    {
+        _itemToDelete = id;
+        _showItemDeleteConfirm = true;
+    }
+
+    private async Task HandleItemDelete(bool ok)
+    {
+        _showItemDeleteConfirm = false;
+        if (!ok || !_itemToDelete.HasValue) return;
+
+        try
+        {
+            var resp = await Http.DeleteAsync($"{ApiBase}/items/{_itemToDelete.Value}");
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("آیتم حذف شد.");
+                ClosePreview();
+                await LoadOverview();
+                await LoadItems();
+            }
+            else
+            {
+                Toast.ShowWarning(await ReadErrorAsync(resp) ?? "حذف انجام نشد.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در حذف آیتم: " + ex.Message);
+        }
+        finally
+        {
+            _itemToDelete = null;
+        }
+    }
+
+    private async Task OpenPreview(int id)
+    {
+        _showPreview = true;
+        _previewLoading = true;
+        _previewItem = null;
+        try
+        {
+            _previewItem = await Http.GetFromJsonAsync<ContentStudioItemDto>($"{ApiBase}/items/{id}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در دریافت پیش‌نمایش: " + ex.Message);
+            _showPreview = false;
+        }
+        finally
+        {
+            _previewLoading = false;
+        }
+    }
+
+    private void ClosePreview()
+    {
+        _showPreview = false;
+        _previewItem = null;
+    }
+
+    // ===== پیش‌نویس دستی =====
+
+    private async Task OpenDraftEditor(int id)
+    {
+        ClosePreview();
+        _showDraftModal = true;
+        _draftLoading = true;
+        _draftError = null;
+        _draftItemId = id;
+        _draftSource = null;
+        _draftForm = new ContentStudioDraftRequest();
+        try
+        {
+            var resp = await Http.PostAsync($"{ApiBase}/items/{id}/draft/prepare", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                var item = await resp.Content.ReadFromJsonAsync<ContentStudioItemDto>();
+                if (item != null) FillDraftForm(item);
+                await LoadOverview();
+                await LoadItems(true);
+            }
+            else
+            {
+                _draftError = await ReadErrorAsync(resp) ?? "آماده‌سازی پیش‌نویس انجام نشد.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _draftError = "خطا در آماده‌سازی پیش‌نویس: " + ex.Message;
+        }
+        finally
+        {
+            _draftLoading = false;
+        }
+    }
+
+    private void FillDraftForm(ContentStudioItemDto item)
+    {
+        _draftSource = item;
+        _draftForm = new ContentStudioDraftRequest
+        {
+            Title = item.GeneratedTitle ?? item.OriginalTitle,
+            Summary = item.GeneratedSummary ?? item.OriginalSummary,
+            Content = item.GeneratedContentText ?? "",
+            Tags = item.GeneratedTags
+        };
+    }
+
+    private async Task RebuildDraftFromSource()
+    {
+        if (!_draftItemId.HasValue || _draftLoading) return;
+
+        var ok = await JS.InvokeAsync<bool>("confirm", "متن فعلی با متن منبع جایگزین می‌شود. ادامه می‌دهید؟");
+        if (!ok) return;
+
+        _draftLoading = true;
+        _draftError = null;
+        try
+        {
+            var resp = await Http.PostAsync($"{ApiBase}/items/{_draftItemId.Value}/draft/prepare?overwrite=true", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                var item = await resp.Content.ReadFromJsonAsync<ContentStudioItemDto>();
+                if (item != null) FillDraftForm(item);
+            }
+            else
+            {
+                _draftError = await ReadErrorAsync(resp) ?? "بازسازی از منبع انجام نشد.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _draftError = "خطا در بازسازی پیش‌نویس: " + ex.Message;
+        }
+        finally
+        {
+            _draftLoading = false;
+        }
+    }
+
+    private async Task SaveManualDraft()
+    {
+        if (_draftSaving || !_draftItemId.HasValue) return;
+
+        _draftSaving = true;
+        _draftError = null;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"{ApiBase}/items/{_draftItemId.Value}/draft", _draftForm);
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("پیش‌نویس ذخیره شد و آماده انتشار است.");
+                CloseDraftEditor();
+                await LoadOverview();
+                await LoadItems();
+            }
+            else
+            {
+                _draftError = await ReadErrorAsync(resp) ?? "ذخیره پیش‌نویس انجام نشد.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _draftError = "خطا در ذخیره پیش‌نویس: " + ex.Message;
+        }
+        finally
+        {
+            _draftSaving = false;
+        }
+    }
+
+    private void CloseDraftEditor()
+    {
+        _showDraftModal = false;
+        _draftLoading = false;
+        _draftSaving = false;
+        _draftError = null;
+        _draftItemId = null;
+        _draftSource = null;
+        _draftForm = new ContentStudioDraftRequest();
+    }
+
+    // ===== منابع =====
+
+    private sealed record SuggestedSource(string Name, string Category, string FeedUrl, string SiteUrl, string Tags, string Hint);
+
+    private static readonly SuggestedSource[] SuggestedSources =
+    {
+        new("دیجیاتو", "News", "https://digiato.com/feed", "https://digiato.com", "فناوری, اخبار دیجیتال", "اخبار روز دنیای فناوری و دیجیتال"),
+        new("زومیت", "News", "https://www.zoomit.ir/feed/", "https://www.zoomit.ir", "فناوری, بررسی گجت", "اخبار و بررسی‌های فناوری"),
+        new("گجت‌نیوز", "News", "https://gadgetnews.net/feed/", "https://gadgetnews.net", "گجت, فناوری", "اخبار گجت و سخت‌افزار"),
+        new("تک‌فارس", "News", "https://techrasa.com/feed/", "https://techrasa.com", "فناوری, کسب‌وکار دیجیتال", "اخبار فناوری و استارتاپ"),
+        new("دیجی‌کالا مگ", "Tip", "https://www.digikala.com/mag/feed/", "https://www.digikala.com/mag/", "راهنمای خرید, لوازم خانگی", "راهنمای خرید و کاربرد کالای دیجیتال و لوازم خانگی"),
+        new("Tom's Hardware", "News", "https://www.tomshardware.com/feeds/all", "https://www.tomshardware.com", "سخت‌افزار, فناوری", "اخبار سخت‌افزار و پردازنده"),
+        new("TechRadar", "News", "https://www.techradar.com/rss", "https://www.techradar.com", "فناوری, گجت", "اخبار و بررسی گجت‌های مصرفی"),
+        new("iFixit News", "Tutorial", "https://www.ifixit.com/News/feed", "https://www.ifixit.com/News", "تعمیرات, گجت", "آموزش تعمیر و نگهداری گجت‌ها"),
+        new("Hackaday", "Tutorial", "https://hackaday.com/feed/", "https://hackaday.com", "الکترونیک, پروژه", "پروژه و آموزش الکترونیک و سخت‌افزار"),
+        new("Electronics Tutorials", "Tutorial", "https://www.electronics-tutorials.ws/feed", "https://www.electronics-tutorials.ws", "الکترونیک, آموزش", "آموزش پایه الکترونیک و قطعات")
+    };
+
+    private int MissingSuggestedCount => SuggestedSources.Count(p => !IsSuggestedAdded(p));
+
+    private bool IsSuggestedAdded(SuggestedSource preset)
+    {
+        var target = NormalizeFeedUrl(preset.FeedUrl);
+        return _sources?.Any(s => NormalizeFeedUrl(s.FeedUrl) == target) == true;
+    }
+
+    private static string NormalizeFeedUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+        var value = url.Trim().ToLowerInvariant();
+        var scheme = value.IndexOf("://", StringComparison.Ordinal);
+        if (scheme >= 0) value = value[(scheme + 3)..];
+        return value.TrimEnd('/');
+    }
+
+    private static ContentStudioSourceRequest SuggestedRequest(SuggestedSource preset, int priority) => new()
+    {
+        Name = preset.Name,
+        Category = preset.Category,
+        FeedUrl = preset.FeedUrl,
+        SiteUrl = preset.SiteUrl,
+        DefaultTags = preset.Tags,
+        Enabled = true,
+        AutoPublishMode = "Inherit",
+        MaxItemsPerDay = 2,
+        ImageMode = "None",
+        Priority = priority
+    };
+
+    private async Task AddSuggested(SuggestedSource preset)
+    {
+        if (_addingSuggested) return;
+        _addingSuggested = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"{ApiBase}/sources", SuggestedRequest(preset, 100));
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess($"منبع «{preset.Name}» اضافه شد.");
+                await LoadSources();
+                await LoadOverview();
+            }
+            else
+            {
+                Toast.ShowError(await ReadErrorAsync(resp) ?? "افزودن منبع انجام نشد.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطای سیستمی: " + ex.Message);
+        }
+        finally
+        {
+            _addingSuggested = false;
+        }
+    }
+
+    private async Task AddAllSuggested()
+    {
+        if (_addingSuggested) return;
+
+        var missing = SuggestedSources.Where(p => !IsSuggestedAdded(p)).ToList();
+        if (missing.Count == 0)
+        {
+            Toast.ShowInfo("همه منابع پیشنهادی از قبل اضافه شده‌اند.");
+            return;
+        }
+
+        _addingSuggested = true;
+        var added = 0;
+        var failures = new List<string>();
+        try
+        {
+            for (var i = 0; i < missing.Count; i++)
+            {
+                try
+                {
+                    var resp = await Http.PostAsJsonAsync($"{ApiBase}/sources", SuggestedRequest(missing[i], 100 + i * 10));
+                    if (resp.IsSuccessStatusCode) added++;
+                    else failures.Add($"{missing[i].Name}: {await ReadErrorAsync(resp) ?? "خطا"}");
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{missing[i].Name}: {ex.Message}");
+                }
+            }
+
+            await LoadSources();
+            await LoadOverview();
+        }
+        finally
+        {
+            _addingSuggested = false;
+        }
+
+        if (failures.Count == 0)
+            Toast.ShowSuccess($"{added} منبع اضافه شد.");
+        else
+            Toast.ShowWarning($"{added} منبع اضافه شد و {failures.Count} مورد ناموفق بود: " + string.Join(" | ", failures.Take(3)));
+    }
+
+    private void NewSource()
+    {
+        _editingSourceId = null;
+        _sourceForm = new ContentStudioSourceRequest();
+        _sourceError = null;
+        _feedTest = null;
+        _discover = null;
+        _showSourceModal = true;
+    }
+
+    private void EditSource(ContentStudioSourceDto source)
+    {
+        _editingSourceId = source.Id;
+        _sourceForm = new ContentStudioSourceRequest
+        {
+            Name = source.Name,
+            FeedUrl = source.FeedUrl,
+            SiteUrl = source.SiteUrl,
+            Category = source.Category,
+            DefaultTags = source.DefaultTags,
+            IncludeKeywords = source.IncludeKeywords,
+            ExcludeKeywords = source.ExcludeKeywords,
+            Enabled = source.Enabled,
+            AutoPublishMode = source.AutoPublishMode,
+            MaxItemsPerDay = source.MaxItemsPerDay,
+            ImageMode = source.ImageMode,
+            FallbackImageUrl = source.FallbackImageUrl,
+            Priority = source.Priority
+        };
+        _sourceError = null;
+        _feedTest = null;
+        _discover = null;
+        _showSourceModal = true;
+    }
+
+    private void CloseSourceModal()
+    {
+        _showSourceModal = false;
+        _sourceError = null;
+        _feedTest = null;
+        _discover = null;
+    }
+
+    private async Task SaveSource()
+    {
+        if (_savingSource) return;
+        _savingSource = true;
+        _sourceError = null;
+        try
+        {
+            HttpResponseMessage resp = _editingSourceId.HasValue
+                ? await Http.PutAsJsonAsync($"{ApiBase}/sources/{_editingSourceId.Value}", _sourceForm)
+                : await Http.PostAsJsonAsync($"{ApiBase}/sources", _sourceForm);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess(_editingSourceId.HasValue ? "منبع ذخیره شد." : "منبع اضافه شد.");
+                CloseSourceModal();
+                await LoadSources();
+                await LoadOverview();
+            }
+            else
+            {
+                _sourceError = await ReadErrorAsync(resp) ?? "ذخیره منبع انجام نشد.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _sourceError = "خطای سیستمی: " + ex.Message;
+        }
+        finally
+        {
+            _savingSource = false;
+        }
+    }
+
+    private async Task TestFeed()
+    {
+        var url = string.IsNullOrWhiteSpace(_sourceForm.FeedUrl)
+            ? _sourceForm.SiteUrl?.Trim()
+            : _sourceForm.FeedUrl.Trim();
+
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            _sourceError = "آدرس فید یا آدرس سایت را وارد کنید.";
+            return;
+        }
+
+        _testingFeed = true;
+        _feedTest = null;
+        _sourceError = null;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"{ApiBase}/sources/test",
+                new ContentStudioUrlRequest { Url = url });
+            if (resp.IsSuccessStatusCode)
+            {
+                _feedTest = await resp.Content.ReadFromJsonAsync<ContentStudioTestFeedResultDto>();
+            }
+            else
+            {
+                _sourceError = await ReadErrorAsync(resp) ?? "تست فید انجام نشد.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _sourceError = "خطا در تست فید: " + ex.Message;
+        }
+        finally
+        {
+            _testingFeed = false;
+        }
+    }
+
+    private async Task DiscoverFeed()
+    {
+        var site = string.IsNullOrWhiteSpace(_sourceForm.SiteUrl) ? null : _sourceForm.SiteUrl.Trim();
+        site ??= string.IsNullOrWhiteSpace(_sourceForm.FeedUrl) ? null : _sourceForm.FeedUrl.Trim();
+        if (site == null)
+        {
+            _sourceError = "آدرس سایت (یا آدرس فید) را وارد کنید.";
+            return;
+        }
+
+        _discovering = true;
+        _discover = null;
+        _sourceError = null;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"{ApiBase}/sources/discover",
+                new ContentStudioUrlRequest { Url = site });
+            if (resp.IsSuccessStatusCode)
+            {
+                _discover = await resp.Content.ReadFromJsonAsync<ContentStudioFeedDiscoverResultDto>();
+            }
+            else
+            {
+                _sourceError = await ReadErrorAsync(resp) ?? "کشف فید انجام نشد.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _sourceError = "خطا در کشف فید: " + ex.Message;
+        }
+        finally
+        {
+            _discovering = false;
+        }
+    }
+
+    private static string FeedMethodLabel(string method) => method switch
+    {
+        "direct" => "خود آدرس",
+        "link" => "لینک اعلام‌شده",
+        "anchor" => "لینک صفحه",
+        _ => "مسیر رایج"
+    };
+
+    private void UseDiscoveredFeed(ContentStudioFeedCandidateDto feed)
+    {
+        _sourceForm.FeedUrl = feed.Url;
+        if (string.IsNullOrWhiteSpace(_sourceForm.Name))
+            _sourceForm.Name = feed.Title ?? new Uri(feed.Url).Host;
+        _feedTest = null;
+    }
+
+    private void ApplySuggestedFeed()
+    {
+        if (_feedTest?.SuggestedFeedUrl is not { } feed) return;
+        _sourceForm.FeedUrl = feed;
+        if (string.IsNullOrWhiteSpace(_sourceForm.Name))
+            _sourceForm.Name = _feedTest.FeedTitle ?? new Uri(feed).Host;
+        _feedTest = null;
+        _sourceError = null;
+    }
+
+    private void AskDeleteSource(ContentStudioSourceDto source)
+    {
+        _sourceToDelete = source;
+        _showSourceDeleteConfirm = true;
+    }
+
+    private async Task HandleSourceDelete(bool ok)
+    {
+        _showSourceDeleteConfirm = false;
+        if (!ok || _sourceToDelete == null) return;
+
+        try
+        {
+            var resp = await Http.DeleteAsync($"{ApiBase}/sources/{_sourceToDelete.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("منبع حذف شد.");
+                await LoadSources();
+                await LoadOverview();
+                await LoadItems();
+            }
+            else
+            {
+                Toast.ShowWarning(await ReadErrorAsync(resp) ?? "حذف منبع انجام نشد.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در حذف منبع: " + ex.Message);
+        }
+        finally
+        {
+            _sourceToDelete = null;
+        }
+    }
+
+    private async Task FetchSourceNow(int id)
+    {
+        _sourceBusyId = id;
+        try
+        {
+            var resp = await Http.PostAsync($"{ApiBase}/sources/{id}/fetch", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("دریافت این منبع در پس‌زمینه شروع شد.");
+                await LoadOverview();
+                StartPolling();
+            }
+            else
+            {
+                Toast.ShowWarning(await ReadErrorAsync(resp) ?? "دریافت منبع شروع نشد.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در دریافت منبع: " + ex.Message);
+        }
+        finally
+        {
+            _sourceBusyId = null;
+        }
+    }
+
+    private async Task HandleFallbackUpload(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        _uploadingImage = true;
+        try
+        {
+            var bytes = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+            using var content = new MultipartFormDataContent();
+            var byteContent = new ByteArrayContent(bytes);
+            byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(byteContent, "file", file.Name);
+
+            var resp = await Http.PostAsync($"{ApiBase}/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var url = (await resp.Content.ReadAsStringAsync()).Trim('"');
+                _sourceForm.FallbackImageUrl = url;
+                _sourceForm.ImageMode = "OwnFallback";
+                Toast.ShowSuccess("تصویر اختصاصی آپلود شد.");
+            }
+            else
+            {
+                _sourceError = await ReadErrorAsync(resp) ?? "آپلود تصویر انجام نشد.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _sourceError = "خطا در آپلود تصویر: " + ex.Message;
+        }
+        finally
+        {
+            _uploadingImage = false;
+        }
+    }
+
+    // ===== تنظیمات =====
+
+    private async Task SaveSettings()
+    {
+        if (_settings == null || _savingSettings) return;
+        _savingSettings = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"{ApiBase}/settings", _settings);
+            if (resp.IsSuccessStatusCode)
+            {
+                Toast.ShowSuccess("تنظیمات استودیو ذخیره شد.");
+                var saved = await resp.Content.ReadFromJsonAsync<ContentStudioSettingsDto>();
+                if (_overview != null && saved != null)
+                {
+                    _overview.Settings = saved;
+                    _settings = saved;
+                }
+                await LoadOverview();
+            }
+            else
+            {
+                Toast.ShowWarning(await ReadErrorAsync(resp) ?? "ذخیره تنظیمات انجام نشد.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در ذخیره تنظیمات: " + ex.Message);
+        }
+        finally
+        {
+            _savingSettings = false;
+        }
+    }
+
+    private async Task TestAi()
+    {
+        _testingAi = true;
+        _aiTest = null;
+        try
+        {
+            var resp = await Http.PostAsync($"{ApiBase}/ai-test", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                _aiTest = await resp.Content.ReadFromJsonAsync<ContentStudioAiTestResultDto>();
+            }
+            else
+            {
+                var message = await ReadErrorAsync(resp) ?? "تست AI انجام نشد.";
+                _aiTest = new ContentStudioAiTestResultDto { Ok = false, Error = message };
+            }
+        }
+        catch (Exception ex)
+        {
+            _aiTest = new ContentStudioAiTestResultDto { Ok = false, Error = "خطا در تست AI: " + ex.Message };
+        }
+        finally
+        {
+            _testingAi = false;
+        }
+    }
+
+    // ===== پایش اجرا =====
+
+    private void StartPolling()
+    {
+        if (_polling) return;
+        _polling = true;
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = new CancellationTokenSource();
+        _ = PollLoopAsync(_pollCts.Token);
+    }
+
+    private async Task PollLoopAsync(CancellationToken token)
+    {
+        try
+        {
+            for (var i = 0; i < 400 && !token.IsCancellationRequested; i++)
+            {
+                await Task.Delay(2500, token);
+
+                var overview = await Http.GetFromJsonAsync<ContentStudioOverviewDto>($"{ApiBase}/overview", token);
+                if (overview == null) break;
+
+                _overview = overview;
+                if (_activeTab != "settings") _settings = overview.Settings;
+
+                await LoadItems(true);
+                if (_activeTab == "sources") await LoadSources();
+                if (_activeTab == "runs") await LoadRuns();
+
+                StateHasChanged();
+
+                if (!overview.Progress.IsRunning) break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("خطا در پایش اجرا: " + ex.Message);
+        }
+        finally
+        {
+            _polling = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // ===== کمکی‌ها =====
+
+    private static async Task<string?> ReadErrorAsync(HttpResponseMessage resp)
+    {
+        string body;
+        try
+        {
+            body = (await resp.Content.ReadAsStringAsync()).Trim();
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (body.Length == 0) return null;
+
+        try
+        {
+            var start = JsonSerializer.Deserialize<ContentStudioRunStartDto>(body, JsonOpts);
+            if (!string.IsNullOrWhiteSpace(start?.Message)) return start.Message;
+        }
+        catch
+        {
+            // بدنه JSON دیگری است
+        }
+
+        try
+        {
+            var item = JsonSerializer.Deserialize<ContentStudioItemDto>(body, JsonOpts);
+            if (!string.IsNullOrWhiteSpace(item?.StatusDetail)) return item.StatusDetail;
+        }
+        catch
+        {
+            // متن ساده است
+        }
+
+        return body.Trim('"');
+    }
+
+    private static string StatusLabel(string status) => status switch
+    {
+        "Pending" => "در انتظار",
+        "Processing" => "در حال بازنویسی",
+        "Ready" => "آماده بازبینی",
+        "Published" => "منتشرشده",
+        "Duplicate" => "تکراری",
+        "Skipped" => "فیلترشده",
+        "Rejected" => "ردشده",
+        "Failed" => "خطا",
+        _ => status
+    };
+
+    private static string StatusClass(string status) => status switch
+    {
+        "Pending" => "cs-status--pending",
+        "Processing" => "cs-status--processing",
+        "Ready" => "cs-status--ready",
+        "Published" => "cs-status--published",
+        "Duplicate" => "cs-status--duplicate",
+        "Skipped" => "cs-status--skipped",
+        "Rejected" => "cs-status--rejected",
+        "Failed" => "cs-status--failed",
+        _ => "cs-status--skipped"
+    };
+
+    private static string CategoryLabel(string category) => category switch
+    {
+        "Tutorial" => "آموزش",
+        "Tip" => "ترفند",
+        _ => "خبر"
+    };
+
+    private static string ImageModeLabel(string mode) => mode switch
+    {
+        "OwnFallback" => "تصویر اختصاصی",
+        "SourceHotlink" => "هات‌لینک منبع",
+        _ => "بدون تصویر منبع"
+    };
+
+    private static string TriggerLabel(string trigger) => trigger switch
+    {
+        "schedule" => "زمان‌بندی",
+        "source" => "دریافت منبع",
+        _ => "دستی"
+    };
+
+    private static string RunStatusLabel(string? status) => status switch
+    {
+        "success" => "موفق",
+        "partial" => "با خطای جزئی",
+        "failed" => "ناموفق",
+        "running" => "در حال اجرا",
+        _ => "نامشخص"
+    };
+
+    private static string RunStatusClass(string? status) => status switch
+    {
+        "success" => "cs-status--published",
+        "partial" => "cs-status--duplicate",
+        "failed" => "cs-status--failed",
+        "running" => "cs-status--processing",
+        _ => "cs-status--skipped"
+    };
+}

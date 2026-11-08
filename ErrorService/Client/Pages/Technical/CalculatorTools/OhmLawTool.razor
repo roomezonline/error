@@ -1,0 +1,229 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="ohm-law" Title="قانون اهم و توان"
+           Subtitle="دو مقدار معلوم را وارد کنید؛ ولتاژ، جریان، مقاومت و توان مصرفی محاسبه می‌شود."
+           Icon="oi-bolt" Tag="پرکاربرد"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-form">
+        <div class="calc-field">
+            <label class="calc-label" for="ohm-v">ولتاژ (V)</label>
+            <input id="ohm-v" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 12" @bind="voltage" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+
+        <div class="calc-field">
+            <label class="calc-label" for="ohm-i">جریان</label>
+            <div class="calc-input-group">
+                <input id="ohm-i" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                       placeholder="مثلاً 0.5" @bind="current" @bind:event="oninput" @bind:after="PersistAsync" />
+                <select class="calc-select calc-select--unit" aria-label="واحد جریان"
+                        @bind="currentUnit" @bind:after="PersistAsync">
+                    <option value="A">A</option>
+                    <option value="mA">mA</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="calc-field">
+            <label class="calc-label" for="ohm-r">مقاومت</label>
+            <div class="calc-input-group">
+                <input id="ohm-r" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                       placeholder="مثلاً 24" @bind="resistance" @bind:event="oninput" @bind:after="PersistAsync" />
+                <select class="calc-select calc-select--unit" aria-label="واحد مقاومت"
+                        @bind="resistanceUnit" @bind:after="PersistAsync">
+                    <option value="Ω">Ω</option>
+                    <option value="kΩ">kΩ</option>
+                    <option value="MΩ">MΩ</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="calc-field calc-field--hint">
+            <span class="calc-note">
+                برای جریان‌های کوچک، واحد mA راحت‌تر است (۱ میلی‌آمپر = ۰٫۰۰۱ آمپر).
+            </span>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item @(Result.SolvedVoltage ? "is-solved" : "")">
+                    <span class="calc-result__label">ولتاژ</span>
+                    <span class="calc-result__value" dir="ltr">@Result.VoltageValue <small>@Result.VoltageUnit</small></span>
+                </div>
+                <div class="calc-result__item @(Result.SolvedCurrent ? "is-solved" : "")">
+                    <span class="calc-result__label">جریان</span>
+                    <span class="calc-result__value" dir="ltr">@Result.CurrentValue <small>@Result.CurrentUnit</small></span>
+                </div>
+                <div class="calc-result__item @(Result.SolvedResistance ? "is-solved" : "")">
+                    <span class="calc-result__label">مقاومت</span>
+                    <span class="calc-result__value" dir="ltr">@Result.ResistanceValue <small>@Result.ResistanceUnit</small></span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">توان</span>
+                    <span class="calc-result__value" dir="ltr">@Result.PowerValue <small>@Result.PowerUnit</small></span>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(Result.Hint))
+            {
+                <p class="calc-note mt-2 mb-0">@Result.Hint</p>
+            }
+        </div>
+    }
+</CalcShell>
+
+@code {
+    private double? voltage;
+    private double? current;
+    private string currentUnit = "A";
+    private double? resistance;
+    private string resistanceUnit = "Ω";
+
+    protected override string StorageKey => "ohm-law";
+
+    private double? CurrentAmps => current * (currentUnit == "mA" ? 0.001 : 1);
+    private double? ResistanceOhms => resistance * (resistanceUnit == "kΩ" ? 1_000 : resistanceUnit == "MΩ" ? 1_000_000 : 1);
+
+    private sealed class OhmResult
+    {
+        public string VoltageValue { get; init; } = "—";
+        public string VoltageUnit { get; init; } = "V";
+        public string CurrentValue { get; init; } = "—";
+        public string CurrentUnit { get; init; } = "A";
+        public string ResistanceValue { get; init; } = "—";
+        public string ResistanceUnit { get; init; } = "Ω";
+        public string PowerValue { get; init; } = "—";
+        public string PowerUnit { get; init; } = "W";
+        public bool SolvedVoltage { get; init; }
+        public bool SolvedCurrent { get; init; }
+        public bool SolvedResistance { get; init; }
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private OhmResult Result => Compute();
+
+    private OhmResult Compute()
+    {
+        var v = voltage;
+        var i = CurrentAmps;
+        var r = ResistanceOhms;
+
+        if (v < 0 || i < 0 || r < 0)
+            return new OhmResult { Error = "مقادیر نمی‌توانند منفی باشند." };
+
+        var known = (v.HasValue ? 1 : 0) + (i.HasValue ? 1 : 0) + (r.HasValue ? 1 : 0);
+        if (known < 2)
+            return new OhmResult { Hint = "برای محاسبه، دست‌کم دو مقدار از ولتاژ، جریان یا مقاومت را وارد کنید." };
+
+        double vv, ii, rr;
+        var solvedV = false;
+        var solvedI = false;
+        var solvedR = false;
+        string? hint = null;
+
+        if (v.HasValue && i.HasValue && r.HasValue)
+        {
+            vv = v.Value;
+            ii = i.Value;
+            rr = r.Value;
+
+            var expectedV = ii * rr;
+            if (expectedV > 0 && Math.Abs(expectedV - vv) / expectedV > 0.02)
+                hint = "سه مقدار وارد شده با هم هم‌خوانی ندارند؛ توان از ولتاژ × جریان محاسبه شده است.";
+        }
+        else if (!v.HasValue)
+        {
+            ii = i ?? 0;
+            rr = r ?? 0;
+            if (ii == 0 || rr == 0)
+                return new OhmResult { Error = "با جریان یا مقاومت صفر، ولتاژ قابل محاسبه نیست." };
+            vv = ii * rr;
+            solvedV = true;
+        }
+        else if (!i.HasValue)
+        {
+            vv = v.Value;
+            rr = r ?? 0;
+            if (rr == 0)
+                return new OhmResult { Error = "مقاومت صفر باعث تقسیم بر صفر می‌شود؛ مقدار مقاومت را اصلاح کنید." };
+            ii = vv / rr;
+            solvedI = true;
+        }
+        else
+        {
+            vv = v.Value;
+            ii = i.Value;
+            if (ii == 0)
+                return new OhmResult { Error = "جریان صفر باعث تقسیم بر صفر می‌شود؛ مقدار جریان را اصلاح کنید." };
+            rr = vv / ii;
+            solvedR = true;
+        }
+
+        var watts = vv * ii;
+        var vp = CalcFormat.VoltageParts(vv);
+        var ip = CalcFormat.CurrentParts(ii);
+        var rp = CalcFormat.ResistanceParts(rr);
+        var pp = CalcFormat.PowerParts(watts);
+
+        return new OhmResult
+        {
+            VoltageValue = vp.Value,
+            VoltageUnit = vp.Unit,
+            CurrentValue = ip.Value,
+            CurrentUnit = ip.Unit,
+            ResistanceValue = rp.Value,
+            ResistanceUnit = rp.Unit,
+            PowerValue = pp.Value,
+            PowerUnit = pp.Unit,
+            SolvedVoltage = solvedV,
+            SolvedCurrent = solvedI,
+            SolvedResistance = solvedR,
+            Hint = hint,
+            CopyText = $"قانون اهم — ولتاژ: {vp.Value} {vp.Unit} | جریان: {ip.Value} {ip.Unit} | مقاومت: {rp.Value} {rp.Unit} | توان: {pp.Value} {pp.Unit}"
+        };
+    }
+
+    private async Task ResetAsync()
+    {
+        voltage = null;
+        current = null;
+        resistance = null;
+        currentUnit = "A";
+        resistanceUnit = "Ω";
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(
+            new State(voltage, current, currentUnit, resistance, resistanceUnit), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            voltage = s.Voltage;
+            current = s.Current;
+            currentUnit = s.CurrentUnit is "mA" or "A" ? s.CurrentUnit : "A";
+            resistance = s.Resistance;
+            resistanceUnit = s.ResistanceUnit is "kΩ" or "MΩ" or "Ω" ? s.ResistanceUnit : "Ω";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(double? Voltage, double? Current, string CurrentUnit, double? Resistance, string ResistanceUnit);
+}

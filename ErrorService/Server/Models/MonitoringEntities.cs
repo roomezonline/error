@@ -16,6 +16,8 @@ public sealed class MonitoringDevice
 
     public bool IsActive { get; set; } = true;
 
+    public bool DetailedChartEnabled { get; set; } = true;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

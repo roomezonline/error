@@ -1,17 +1,17 @@
 @page "/academy/{CourseId:int}/{LessonId:int}"
 @using ErrorService.Shared
 @using ErrorService.Client.Utils
+@using ErrorService.Client.Services
 @using System.Net.Http.Json
 @using System.Text.Json
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject HttpClient Http
-
-<PageTitle>@(lesson?.Title ?? "مشاهده قسمت") - آکادمی</PageTitle>
+@inject LocalStorageService LocalStorage
 
 <SeoHeader 
-    Title="@($"{lesson?.Title ?? "مشاهده قسمت"} - آکادمی ارورسرویس")"
-    Description="@($"{lesson?.Title ?? "مشاهده قسمت آموزشی"} - دوره آموزش تعمیرات لوازم خانگی ارورسرویس")"
+    Title="@(lesson == null ? "مشاهده قسمت | آکادمی ارورسرویس" : SeoTitles.Lesson(lesson.Title, lesson.CourseTitle))"
+    Description="@(lesson == null ? "مشاهده قسمت‌های آموزشی آکادمی ارورسرویس" : SeoDescriptions.Lesson(lesson.Title, lesson.CourseTitle))"
     Keywords="@($"آموزش تعمیرات, {lesson?.Title ?? "قسمت آموزشی"}")"
     OgType="video.other"
     JsonLd="@lessonJsonLd" />
@@ -63,6 +63,26 @@
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                     @lesson.ViewCount.ToString("N0") بازدید
                                 </span>
+                            </div>
+
+                            <div class="lesson-actions">
+                                <button type="button" class="lesson-action @(isCompleted ? "is-active" : "")" @onclick="ToggleCompletedAsync">
+                                    <span class="oi oi-check"></span>
+                                    @(isCompleted ? "دیده شد" : "علامت‌گذاری به‌عنوان دیده‌شده")
+                                </button>
+                                <button type="button" class="lesson-action @(isBookmarked ? "is-active" : "")" @onclick="ToggleBookmarkAsync">
+                                    <span class="oi oi-bookmark"></span>
+                                    @(isBookmarked ? "ذخیره شده" : "ذخیره درس")
+                                </button>
+                                @if (totalLessons > 0)
+                                {
+                                    <span class="lesson-progress">
+                                        <span class="lesson-progress__bar">
+                                            <span class="lesson-progress__fill" style="width:@(ProgressPercent)%"></span>
+                                        </span>
+                                        @completedCount از @totalLessons قسمت
+                                    </span>
+                                }
                             </div>
                             
                             @if (!string.IsNullOrEmpty(lesson.Summary))
@@ -248,6 +268,32 @@
                             </div>
                         </div>
                     </div>
+
+                    @if (prevLesson != null || nextLesson != null)
+                    {
+                        <nav class="lesson-nav" aria-label="جابجایی بین قسمت‌ها">
+                            @if (prevLesson != null)
+                            {
+                                <a href="@SeoUrl.Lesson(CourseId, prevLesson.Id)" class="lesson-nav__link lesson-nav__link--prev">
+                                    <span class="oi oi-chevron-right"></span>
+                                    <span class="lesson-nav__body">
+                                        <span class="lesson-nav__label">قسمت قبلی</span>
+                                        <span class="lesson-nav__title">@prevLesson.Title</span>
+                                    </span>
+                                </a>
+                            }
+                            @if (nextLesson != null)
+                            {
+                                <a href="@SeoUrl.Lesson(CourseId, nextLesson.Id)" class="lesson-nav__link lesson-nav__link--next">
+                                    <span class="lesson-nav__body">
+                                        <span class="lesson-nav__label">قسمت بعدی</span>
+                                        <span class="lesson-nav__title">@nextLesson.Title</span>
+                                    </span>
+                                    <span class="oi oi-chevron-left"></span>
+                                </a>
+                            }
+                        </nav>
+                    }
                 </div>
 
                 <div class="col-lg-3">
@@ -584,9 +630,61 @@
         font-weight: 700;
     }
     .lesson-file-tile:hover .lesson-file-tile__btn { background: #b45309; }
+
+    .lesson-actions {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+        margin-bottom: 1.5rem;
+    }
+    .lesson-action {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; border-radius: 10px; background: #f8fafc;
+        border: 1px solid #e2e8f0; color: #475569;
+        font-size: 0.8rem; font-weight: 700; font-family: inherit;
+        cursor: pointer; transition: all 0.2s ease;
+    }
+    .lesson-action:hover { border-color: #93c5fd; color: #1d4ed8; background: #eff6ff; }
+    .lesson-action.is-active { border-color: #86efac; color: #15803d; background: #f0fdf4; }
+    .lesson-progress {
+        display: inline-flex; align-items: center; gap: 8px;
+        font-size: 0.78rem; font-weight: 700; color: #64748b;
+        margin-inline-start: auto;
+    }
+    .lesson-progress__bar {
+        width: 72px; height: 6px; border-radius: 999px;
+        background: #e2e8f0; overflow: hidden;
+    }
+    .lesson-progress__fill {
+        display: block; height: 100%; border-radius: 999px;
+        background: linear-gradient(90deg, #22c55e, #4ade80);
+        transition: width 0.3s ease;
+    }
+
+    .lesson-nav {
+        display: flex; flex-wrap: wrap; gap: 12px;
+        margin-top: 1rem;
+    }
+    .lesson-nav__link {
+        flex: 1 1 220px; display: flex; align-items: center; gap: 10px;
+        padding: 14px 18px; border-radius: 14px; background: #fff;
+        border: 1px solid #e2e8f0; text-decoration: none; color: inherit;
+        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04); transition: all 0.2s ease;
+    }
+    .lesson-nav__link:hover { border-color: #bfdbfe; box-shadow: 0 6px 18px rgba(37, 99, 235, 0.1); color: inherit; }
+    .lesson-nav__link > .oi { color: #3b82f6; font-size: 0.85rem; flex-shrink: 0; }
+    .lesson-nav__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .lesson-nav__label { font-size: 0.72rem; color: #94a3b8; font-weight: 700; }
+    .lesson-nav__title {
+        font-size: 0.86rem; font-weight: 700; color: #1e293b;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .lesson-nav__link--next { justify-content: flex-end; text-align: left; }
+    .lesson-nav__link--next .lesson-nav__body { align-items: flex-end; }
 </style>
 
 @code {
+    private const string ProgressKey = "es_academy_progress";
+    private const string BookmarksKey = "es_academy_bookmarks";
+
     [Parameter] public int CourseId { get; set; }
     [Parameter] public int LessonId { get; set; }
 
@@ -597,8 +695,49 @@
     private bool plyrInitialized;
     private string? lessonJsonLd;
 
+    private TrainingLessonDto? prevLesson;
+    private TrainingLessonDto? nextLesson;
+    private bool isBookmarked;
+    private bool isCompleted;
+    private bool progressLoaded;
+    private int completedCount;
+    private int totalLessons;
+    private string? loadedKey;
+
+    private int ProgressPercent => totalLessons <= 0
+        ? 0
+        : Math.Min(100, (int)Math.Round(completedCount * 100.0 / totalLessons));
+
+    public sealed class LessonProgressEntry
+    {
+        public int LastLessonId { get; set; }
+        public string? LastLessonTitle { get; set; }
+        public long UpdatedAt { get; set; }
+        public HashSet<int> Completed { get; set; } = new();
+    }
+
+    public sealed class CourseProgress
+    {
+        public Dictionary<string, LessonProgressEntry> Courses { get; set; } = new();
+    }
+
+    public sealed record LessonBookmark(
+        int CourseId,
+        int LessonId,
+        string Title,
+        string CourseTitle,
+        string Url,
+        long SavedAt);
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (lesson != null && !isLoading && !progressLoaded)
+        {
+            progressLoaded = true;
+            await LoadLocalStateAsync();
+            StateHasChanged();
+        }
+
         if (lesson != null && !isLoading && !plyrInitialized)
         {
             await Task.Delay(500); // Give time for DOM to settle
@@ -616,13 +755,24 @@
         }
     }
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
+        var key = $"{CourseId}:{LessonId}";
+        if (loadedKey == key) return;
+        loadedKey = key;
+
         try
         {
             isLoading = true;
             plyrInitialized = false;
+            progressLoaded = false;
             isForbidden = false;
+            isBookmarked = false;
+            isCompleted = false;
+            prevLesson = null;
+            nextLesson = null;
+            completedCount = 0;
+            totalLessons = 0;
 
             var lessonResp = await Http.GetAsync($"api/trainings/lessons/{LessonId}");
             if (lessonResp.StatusCode == System.Net.HttpStatusCode.Forbidden)
@@ -639,13 +789,142 @@
             {
                 lesson = null;
             }
-            
+
             // Get course title for breadcrumb
             var course = await Http.GetFromJsonAsync<TrainingCourseDto>($"api/trainings/courses/{CourseId}");
             courseTitle = course?.Title ?? "دوره";
         }
         catch { }
         finally { isLoading = false; }
+    }
+
+    private async Task LoadLocalStateAsync()
+    {
+        try
+        {
+            var progress = await ReadProgressAsync();
+            var courseKey = CourseId.ToString();
+            if (!progress.Courses.TryGetValue(courseKey, out var entry))
+            {
+                entry = new LessonProgressEntry();
+                progress.Courses[courseKey] = entry;
+            }
+
+            isCompleted = entry.Completed.Contains(LessonId);
+            completedCount = entry.Completed.Count;
+
+            var lessons = await Http.GetFromJsonAsync<List<TrainingLessonDto>>(
+                $"api/trainings/courses/{CourseId}/lessons?onlyPublished=true") ?? new();
+
+            totalLessons = lessons.Count;
+            var index = lessons.FindIndex(l => l.Id == LessonId);
+            if (index > 0) prevLesson = lessons[index - 1];
+            if (index >= 0 && index < lessons.Count - 1) nextLesson = lessons[index + 1];
+
+            var bookmarks = await ReadBookmarksAsync();
+            isBookmarked = bookmarks.Any(b => b.CourseId == CourseId && b.LessonId == LessonId);
+
+            if (lesson != null)
+            {
+                entry.LastLessonId = LessonId;
+                entry.LastLessonTitle = lesson.Title;
+                entry.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                await LocalStorage.SetAsync(ProgressKey, JsonSerializer.Serialize(progress));
+            }
+        }
+        catch
+        {
+            // localStorage unavailable — the lesson still works, only progress is skipped.
+        }
+    }
+
+    private async Task ToggleCompletedAsync()
+    {
+        try
+        {
+            var progress = await ReadProgressAsync();
+            var courseKey = CourseId.ToString();
+            if (!progress.Courses.TryGetValue(courseKey, out var entry))
+            {
+                entry = new LessonProgressEntry();
+                progress.Courses[courseKey] = entry;
+            }
+
+            if (isCompleted)
+                entry.Completed.Remove(LessonId);
+            else
+                entry.Completed.Add(LessonId);
+
+            isCompleted = !isCompleted;
+            completedCount = entry.Completed.Count;
+            entry.LastLessonId = LessonId;
+            entry.LastLessonTitle = lesson?.Title;
+            entry.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            await LocalStorage.SetAsync(ProgressKey, JsonSerializer.Serialize(progress));
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private async Task ToggleBookmarkAsync()
+    {
+        try
+        {
+            var bookmarks = await ReadBookmarksAsync();
+            var existing = bookmarks.FirstOrDefault(b => b.CourseId == CourseId && b.LessonId == LessonId);
+
+            if (existing != null)
+            {
+                bookmarks.Remove(existing);
+                isBookmarked = false;
+            }
+            else
+            {
+                bookmarks.Add(new LessonBookmark(
+                    CourseId,
+                    LessonId,
+                    lesson?.Title ?? "",
+                    courseTitle,
+                    SeoUrl.Lesson(CourseId, LessonId),
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                isBookmarked = true;
+            }
+
+            await LocalStorage.SetAsync(BookmarksKey, JsonSerializer.Serialize(bookmarks));
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private async Task<CourseProgress> ReadProgressAsync()
+    {
+        var json = await LocalStorage.GetAsync(ProgressKey);
+        if (string.IsNullOrWhiteSpace(json)) return new();
+
+        try
+        {
+            return JsonSerializer.Deserialize<CourseProgress>(json) ?? new();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    private async Task<List<LessonBookmark>> ReadBookmarksAsync()
+    {
+        var json = await LocalStorage.GetAsync(BookmarksKey);
+        if (string.IsNullOrWhiteSpace(json)) return new();
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<LessonBookmark>>(json) ?? new();
+        }
+        catch
+        {
+            return new();
+        }
     }
 
     private string? GetPlayableUrl(string? url)

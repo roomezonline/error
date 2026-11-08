@@ -19,7 +19,7 @@
             <Found Context="routeData">
                 <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
                     <NotAuthorized>
-                        <StatusPage Type="403" Title="دسترسی غیرمجاز" Message="شما اجازه دسترسی به این بخش را ندارید. لطفاً وارد حساب کاربری خود شوید." />
+                        <NotAuthorizedRedirect />
                     </NotAuthorized>
                 </AuthorizeRouteView>
                 <FocusOnNavigate RouteData="@routeData" Selector="h1" />

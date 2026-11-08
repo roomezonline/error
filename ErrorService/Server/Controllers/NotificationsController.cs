@@ -307,14 +307,35 @@ public sealed class NotificationsController : ControllerBase
     public async Task<ActionResult<List<ChannelPreviewDto>>> PreviewChannels([FromBody] NotificationCreateRequest request)
     {
         if (request == null) return BadRequest();
-        var (appUserIds, _, resolveError) = await ResolveRecipientsAsync(request);
+        var (appUserIds, workshopUserIds, resolveError) = await ResolveRecipientsAsync(request);
         if (resolveError != null) return BadRequest(resolveError);
+
+        // گیرندهٔ کارگاهی حساب سایت ندارد؛ برای شمارش کانال، اتصال بله کاربر سایتِ هم‌شماره حساب می‌شود.
+        var channelUserIds = new HashSet<int>(appUserIds);
+        var mappedWorkshopCount = 0;
+        if (workshopUserIds.Count > 0)
+        {
+            var workshopPhones = await _db.WorkshopUsers.AsNoTracking()
+                .Where(x => workshopUserIds.Contains(x.Id))
+                .Select(x => x.PhoneNumber)
+                .ToListAsync();
+            var phones = workshopPhones.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToList();
+            if (phones.Count > 0)
+            {
+                var mappedUsers = await _db.Users.AsNoTracking()
+                    .Where(x => !x.IsDeleted && phones.Contains(x.PhoneNumber))
+                    .Select(x => new { x.Id, x.PhoneNumber })
+                    .ToListAsync();
+                channelUserIds.UnionWith(mappedUsers.Select(x => x.Id));
+                mappedWorkshopCount = workshopPhones.Count(p => mappedUsers.Any(u => u.PhoneNumber == p));
+            }
+        }
 
         var siteSettings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
         var endpoints = await _db.MessengerEndpoints.AsNoTracking()
             .Where(x => x.Status == MessengerEndpointStatus.Verified
                 && NotifiableChannels.Contains(x.Channel)
-                && appUserIds.Contains(x.AppUserId))
+                && channelUserIds.Contains(x.AppUserId))
             .Select(x => new { x.Channel, x.AppUserId })
             .ToHashSetAsync();
 
@@ -332,19 +353,20 @@ public sealed class NotificationsController : ControllerBase
                 // کلید سفیر: همه کاربرانِ دارای شماره؛ بدون کلید: فقط کاربرانی که شماره را در ربات فرستاده‌اند
                 if (!string.IsNullOrWhiteSpace(siteSettings?.BaleSafirApiKey))
                 {
-                    count = await _db.Users.CountAsync(x => appUserIds.Contains(x.Id)
+                    count = await _db.Users.CountAsync(x => channelUserIds.Contains(x.Id)
                         && x.IsActive
                         && x.PhoneNumber != null
                         && x.PhoneNumber != "");
+                    count += workshopUserIds.Count - mappedWorkshopCount;
                 }
                 else
                 {
-                    count = appUserIds.Count(uid => endpoints.Contains(new { Channel = channel, AppUserId = uid }));
+                    count = channelUserIds.Count(uid => endpoints.Contains(new { Channel = channel, AppUserId = uid }));
                 }
             }
             else
             {
-                count = appUserIds.Count(uid => endpoints.Contains(new { Channel = channel, AppUserId = uid }));
+                count = channelUserIds.Count(uid => endpoints.Contains(new { Channel = channel, AppUserId = uid }));
             }
 
             result.Add(new ChannelPreviewDto
@@ -527,6 +549,7 @@ public sealed class NotificationsController : ControllerBase
             return (new List<int>(), new List<int>(), "برای ارسال به مدیران مجاز، سوپر ادمین یا همه کاربران، دسترسی «ارسال پخشی» لازم است.");
 
         var recipientIds = new HashSet<int>();
+        var workshopIds = new HashSet<int>();
         if (request.PhoneNumbers is { Count: > 0 })
         {
             var (phoneUserIds, phoneError) = await ResolvePhoneUsersAsync(request.PhoneNumbers);
@@ -537,13 +560,9 @@ public sealed class NotificationsController : ControllerBase
 
         if (request.IncludeSuperAdmins)
         {
-            var superAdminIds = await (
-                from ur in _db.AppUserRoles
-                join u in _db.Users on ur.UserId equals u.Id
-                where u.IsActive && !u.IsDeleted && ur.Role.Key == "super_admin"
-                select u.Id)
-                .ToListAsync();
-            recipientIds.UnionWith(superAdminIds);
+            var (superAppIds, superWorkshopIds) = await _notifier.GetSuperAdminRecipientsAsync();
+            recipientIds.UnionWith(superAppIds);
+            workshopIds.UnionWith(superWorkshopIds);
         }
 
         if (request.BroadcastToAdmins)
@@ -589,13 +608,18 @@ public sealed class NotificationsController : ControllerBase
         {
             if (!request.WorkshopId.HasValue || request.WorkshopId.Value <= 0)
                 return (recipientIds.ToList(), workshopUserIds, "برای ارسال به پرسنل کارگاه، کارگاه را مشخص کنید.");
-            workshopUserIds = await _db.WorkshopUsers
+            var workshopMembers = await _db.WorkshopUsers
                 .Where(w => w.WorkshopId == request.WorkshopId.Value && w.IsActive)
                 .Select(w => w.Id)
                 .ToListAsync();
-            if (workshopUserIds.Count == 0)
+            if (workshopMembers.Count == 0)
                 return (recipientIds.ToList(), workshopUserIds, "کاربر فعالی برای این کارگاه یافت نشد.");
+            workshopIds.UnionWith(workshopMembers);
         }
+
+        // گیرنده‌ای که هم حساب سایت دارد و هم کارگاه، فقط یک بار (از سمت سایت) اعلان می‌گیرد.
+        workshopUserIds = await _notifier.FilterWorkshopRecipientsByPhoneAsync(
+            workshopIds.ToList(), recipientIds.ToList());
 
         if (recipientIds.Count == 0 && workshopUserIds.Count == 0)
             return (new List<int>(), new List<int>(), "حداقل یک گیرنده انتخاب کنید.");

@@ -1,0 +1,176 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="rc-time" Title="زمان ثابت RC"
+           Subtitle="ثابت زمانی مدار RC، فرکانس قطع فیلتر و زمان شارژ خازن تا ۶۳، ۹۵ و ۹۹ درصد را محاسبه می‌کند."
+           Icon="oi-clock"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-form">
+        <div class="calc-field">
+            <label class="calc-label" for="rc-r">مقاومت R</label>
+            <div class="calc-input-group">
+                <input id="rc-r" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                       placeholder="مثلاً 10" @bind="resistance" @bind:event="oninput" @bind:after="PersistAsync" />
+                <select class="calc-select calc-select--unit" aria-label="واحد مقاومت"
+                        @bind="resistanceUnit" @bind:after="PersistAsync">
+                    <option value="Ω">Ω</option>
+                    <option value="kΩ">kΩ</option>
+                    <option value="MΩ">MΩ</option>
+                </select>
+            </div>
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="rc-c">ظرفیت C</label>
+            <div class="calc-input-group">
+                <input id="rc-c" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                       placeholder="مثلاً 100" @bind="capacitance" @bind:event="oninput" @bind:after="PersistAsync" />
+                <select class="calc-select calc-select--unit" aria-label="واحد ظرفیت"
+                        @bind="capacitanceUnit" @bind:after="PersistAsync">
+                    <option value="pF">pF</option>
+                    <option value="nF">nF</option>
+                    <option value="µF">µF</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">ثابت زمانی (τ = R × C)</span>
+                    <span class="calc-result__value" dir="ltr">@Result.Tau</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">فرکانس قطع فیلتر</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Cutoff</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">زمان خیز (۱۰ تا ۹۰٪)</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Rise</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">شارژ تا ۶۳٪</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.T63</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">شارژ تا ۹۵٪</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.T95</span>
+                </div>
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">شارژ تا ۹۹٪ (تقریباً کامل)</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.T99</span>
+                </div>
+            </div>
+            <p class="calc-note mt-2 mb-0">
+                فرکانس قطع: fc = ۱ ÷ (۲π × R × C). هر ۱τ شارژ، خازن حدود ۶۳٪ ظرفیت خود را پر می‌کند و پس از ۵τ تقریباً کاملاً شارژ است.
+            </p>
+        </div>
+    }
+
+    <details class="calc-details">
+        <summary>کاربرد و نکته‌های مدار RC</summary>
+        <div class="calc-details__body">
+            <ul class="calc-note mb-0 ps-3">
+                <li>فیلتر پایین‌گذر RC: فرکانس‌های بالاتر از fc تضعیف می‌شوند.</li>
+                <li>دی‌باونس کلید: معمولاً R بین ۱۰ تا ۱۰۰ کیلواهم و C بین ۱۰۰ نانوفاراد تا ۱ میکروفاراد.</li>
+                <li>تأخیر روشن/خاموش، ساخت پالس و شکل‌دهی سیگنال با همین ثابت زمانی انجام می‌شود.</li>
+                <li>مقدار C را با ولتاژ کار مدار انتخاب کنید؛ برای ۳۳۰ ولت DC حداقل خازن ۴۰۰ ولت یا بالاتر مناسب است.</li>
+            </ul>
+        </div>
+    </details>
+</CalcShell>
+
+@code {
+    private double? resistance = 10;
+    private string resistanceUnit = "kΩ";
+    private double? capacitance = 100;
+    private string capacitanceUnit = "nF";
+
+    protected override string StorageKey => "rc-time";
+
+    private double? ResistanceOhms => resistance * (resistanceUnit == "MΩ" ? 1_000_000 : resistanceUnit == "kΩ" ? 1_000 : 1);
+    private double? CapacitanceFarads => capacitance * (capacitanceUnit == "µF" ? 1e-6 : capacitanceUnit == "nF" ? 1e-9 : 1e-12);
+
+    private sealed class RcResult
+    {
+        public string Tau { get; init; } = "—";
+        public string Cutoff { get; init; } = "—";
+        public string Rise { get; init; } = "—";
+        public string T63 { get; init; } = "—";
+        public string T95 { get; init; } = "—";
+        public string T99 { get; init; } = "—";
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private RcResult Result => Compute();
+
+    private RcResult Compute()
+    {
+        var r = ResistanceOhms;
+        var c = CapacitanceFarads;
+
+        if (r == null || c == null)
+            return new RcResult { Hint = "مقاومت و ظرفیت خازن را وارد کنید." };
+
+        if (r <= 0 || c <= 0)
+            return new RcResult { Error = "مقاومت و ظرفیت باید بزرگ‌تر از صفر باشند." };
+
+        var tau = r.Value * c.Value;
+        var cutoff = 1.0 / (2 * Math.PI * tau);
+
+        return new RcResult
+        {
+            Tau = CalcFormat.Time(tau),
+            Cutoff = CalcFormat.Frequency(cutoff),
+            Rise = CalcFormat.Time(2.2 * tau),
+            T63 = CalcFormat.Time(tau),
+            T95 = CalcFormat.Time(3 * tau),
+            T99 = CalcFormat.Time(5 * tau),
+            CopyText = $"زمان ثابت RC — τ={CalcFormat.Time(tau)} | فرکانس قطع {CalcFormat.Frequency(cutoff)} | شارژ ۹۵٪ در {CalcFormat.Time(3 * tau)}"
+        };
+    }
+
+    private async Task ResetAsync()
+    {
+        resistance = 10;
+        resistanceUnit = "kΩ";
+        capacitance = 100;
+        capacitanceUnit = "nF";
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(new State(resistance, resistanceUnit, capacitance, capacitanceUnit), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            resistance = s.Resistance;
+            resistanceUnit = s.ResistanceUnit is "Ω" or "kΩ" or "MΩ" ? s.ResistanceUnit : "kΩ";
+            capacitance = s.Capacitance;
+            capacitanceUnit = s.CapacitanceUnit is "pF" or "nF" or "µF" ? s.CapacitanceUnit : "nF";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(double? Resistance, string ResistanceUnit, double? Capacitance, string CapacitanceUnit);
+}

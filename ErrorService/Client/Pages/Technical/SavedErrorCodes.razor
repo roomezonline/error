@@ -1,0 +1,203 @@
+@page "/technical/error-codes/saved"
+@using System.Text.Json
+@using ErrorService.Client.Services
+@inject LocalStorageService LocalStorage
+
+<HeadContent>
+    <meta name="robots" content="noindex, nofollow" />
+</HeadContent>
+
+<SeoHeader Title="کدهای خطای ذخیره‌شده | ارورسرویس"
+           Description="فهرست کدهای خطایی که برای مطالعه بعدی در این مرورگر ذخیره کرده‌اید." />
+
+<div class="saved-page" dir="rtl">
+    <nav class="saved-breadcrumb">
+        <a href="/" class="saved-bc-link">خانه</a>
+        <span class="saved-bc-sep">/</span>
+        <a href="/technical/error-codes" class="saved-bc-link">بانک کدهای خطا</a>
+        <span class="saved-bc-sep">/</span>
+        <span class="saved-bc-current">ذخیره‌شده‌ها</span>
+    </nav>
+
+    <div class="saved-head">
+        <h1 class="saved-title">کدهای خطای ذخیره‌شده</h1>
+        @if (items.Any())
+        {
+            <button type="button" class="saved-clear" @onclick="ClearAllAsync">پاک کردن همه</button>
+        }
+    </div>
+
+    @if (!loaded)
+    {
+        <div class="saved-skeleton"></div>
+        <div class="saved-skeleton"></div>
+    }
+    else if (!items.Any())
+    {
+        <div class="saved-empty">
+            <span class="oi oi-bookmark"></span>
+            <h2>هنوز چیزی ذخیره نکرده‌اید</h2>
+            <p>در صفحه هر کد خطا دکمه «ذخیره» را بزنید تا اینجا نگه داشته شود.</p>
+            <a href="/technical/error-codes" class="saved-btn">رفتن به بانک کدهای خطا</a>
+        </div>
+    }
+    else
+    {
+        <div class="saved-list">
+            @foreach (var item in items)
+            {
+                <div class="saved-item">
+                    <a class="saved-item__link" href="@item.Url">
+                        <div class="saved-item__top">
+                            <span class="saved-item__code">@item.Code</span>
+                            <span class="saved-item__badge">@item.Brand</span>
+                            <span class="saved-item__badge saved-item__badge--device">@item.DeviceType</span>
+                        </div>
+                        <div class="saved-item__desc">@item.Description</div>
+                    </a>
+                    <button type="button" class="saved-item__remove" @onclick="() => RemoveAsync(item)" title="حذف از ذخیره‌ها" aria-label="حذف">
+                        <span class="oi oi-trash"></span>
+                    </button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .saved-page { max-width: 800px; margin: 0 auto; padding: 20px 16px 48px; }
+
+    .saved-breadcrumb {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+        padding: 12px 0; margin-bottom: 12px;
+        font-size: 0.8rem; color: #94a3b8;
+    }
+    .saved-bc-link { color: #6366f1; text-decoration: none; font-weight: 600; }
+    .saved-bc-link:hover { text-decoration: underline; }
+    .saved-bc-sep { color: #cbd5e1; }
+    .saved-bc-current { color: #475569; font-weight: 700; }
+
+    .saved-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+    .saved-title { font-size: 1.2rem; font-weight: 800; color: #1e293b; margin: 0; }
+    .saved-clear {
+        padding: 8px 14px; border-radius: 10px; border: 1px solid #fecaca;
+        background: #fef2f2; color: #b91c1c; font-size: 0.78rem; font-weight: 700;
+        font-family: inherit; cursor: pointer; transition: all 0.2s;
+    }
+    .saved-clear:hover { background: #fee2e2; }
+
+    .saved-list { display: flex; flex-direction: column; gap: 10px; }
+    .saved-item {
+        display: flex; align-items: stretch; gap: 8px;
+        background: #fff; border: 1px solid rgba(0,0,0,0.06); border-radius: 14px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04); transition: all 0.2s;
+    }
+    .saved-item:hover { border-color: #c7d2fe; box-shadow: 0 4px 14px rgba(99,102,241,0.1); }
+    .saved-item__link {
+        flex: 1; display: flex; flex-direction: column; gap: 6px;
+        padding: 14px 16px; text-decoration: none; color: inherit; min-width: 0;
+    }
+    .saved-item__top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .saved-item__code { font-family: monospace; font-size: 1.1rem; font-weight: 900; color: #6366f1; }
+    .saved-item__badge {
+        padding: 2px 9px; border-radius: 7px; font-size: 0.7rem; font-weight: 700;
+        background: #eef2ff; color: #4f46e5;
+    }
+    .saved-item__badge--device { background: #ecfdf5; color: #047857; }
+    .saved-item__desc {
+        font-size: 0.82rem; color: #64748b; line-height: 1.6;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .saved-item__remove {
+        display: flex; align-items: center; justify-content: center;
+        width: 46px; border: none; background: transparent; color: #cbd5e1;
+        cursor: pointer; border-radius: 0 14px 14px 0; transition: all 0.2s;
+    }
+    .saved-item__remove:hover { color: #dc2626; background: #fef2f2; }
+
+    .saved-empty { text-align: center; padding: 56px 20px; }
+    .saved-empty .oi { font-size: 2.6rem; color: #cbd5e1; display: block; margin-bottom: 12px; }
+    .saved-empty h2 { font-size: 1.05rem; font-weight: 800; color: #475569; margin: 0 0 6px; }
+    .saved-empty p { font-size: 0.85rem; color: #94a3b8; margin: 0 0 18px; }
+    .saved-btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 12px 22px; border-radius: 12px; text-decoration: none;
+        background: linear-gradient(135deg, #6366f1, #818cf8); color: #fff;
+        font-size: 0.85rem; font-weight: 700;
+    }
+
+    .saved-skeleton {
+        height: 72px; border-radius: 14px; margin-bottom: 10px;
+        background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+        background-size: 200% 100%; animation: saved-shimmer 1.4s infinite;
+    }
+    @@keyframes saved-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+    @@media (min-width: 768px) {
+        .saved-page { padding: 32px 24px 60px; }
+    }
+</style>
+
+@code {
+    private const string SavedCodesKey = "es_saved_error_codes";
+
+    public sealed record SavedErrorCode(
+        string Url,
+        string Code,
+        string Brand,
+        string DeviceType,
+        string Description,
+        long SavedAt);
+
+    private List<SavedErrorCode> items = new();
+    private bool loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var json = await LocalStorage.GetAsync(SavedCodesKey);
+            items = string.IsNullOrWhiteSpace(json)
+                ? new()
+                : (JsonSerializer.Deserialize<List<SavedErrorCode>>(json) ?? new())
+                    .OrderByDescending(x => x.SavedAt)
+                    .ToList();
+        }
+        catch
+        {
+            items = new();
+        }
+
+        loaded = true;
+        StateHasChanged();
+    }
+
+    private async Task RemoveAsync(SavedErrorCode item)
+    {
+        items = items.Where(x => !string.Equals(x.Url, item.Url, StringComparison.OrdinalIgnoreCase)).ToList();
+        await PersistAsync();
+    }
+
+    private async Task ClearAllAsync()
+    {
+        items = new();
+        await PersistAsync();
+    }
+
+    private async Task PersistAsync()
+    {
+        try
+        {
+            await LocalStorage.SetAsync(SavedCodesKey, JsonSerializer.Serialize(items));
+        }
+        catch
+        {
+        }
+    }
+}

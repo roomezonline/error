@@ -1,115 +1,347 @@
 @page "/academy"
-@using ErrorService.Shared
 @using System.Net.Http.Json
+@using System.Text.Json
+@using ErrorService.Shared
+@using ErrorService.Client.Services
 @inject HttpClient Http
+@inject NavigationManager Nav
+@inject LocalStorageService LocalStorage
 
-<PageTitle>آکادمی آموزش - ارورسرویس</PageTitle>
-
-<SeoHeader 
+<SeoHeader
     Title="آکادمی آموزش تعمیر لوازم خانگی و الکترونیک | ارورسرویس"
-    Description="دوره‌های تخصصی آموزش تعمیر لوازم خانگی، بردهای الکترونیکی، مقالات فنی و ویدیوهای آموزشی عیب‌یابی و تعمیر"
-    Keywords="آموزش تعمیر لوازم خانگی, تعمیر بردهای الکترونیک, دوره تعمیرات, آموزش تعمیر یخچال, آموزش تعمیر لباسشویی"
+    Description="دوره‌های گام‌به‌گام و آموزش‌های تخصصی تعمیر لوازم خانگی، بردهای الکترونیک و عیب‌یابی؛ دسته‌بندی‌شده بر اساس نوع دستگاه با جستجوی سریع."
+    Keywords="آموزش تعمیر لوازم خانگی, دوره تعمیرات, تعمیر بردهای الکترونیک, آموزش تعمیر یخچال, آموزش تعمیر لباسشویی, عیب‌یابی لوازم خانگی"
     OgType="website"
-    JsonLd="@academyJsonLd" />
+    JsonLd="@jsonLd" />
 
-<div class="academy-page py-5 bg-light" dir="rtl">
+<div class="academy-page" dir="rtl">
+    <section class="ac-hero">
+        <div class="container ac-hero__inner">
+            <nav class="ac-crumbs" aria-label="مسیر صفحه">
+                <a href="/">خانه</a>
+                <span aria-hidden="true">/</span>
+                <span aria-current="page">آکادمی آموزش</span>
+            </nav>
+            <h1>آکادمی آموزش ارورسرویس</h1>
+            <p>دوره‌ها و آموزش‌های تخصصی تعمیر لوازم خانگی و بردهای الکترونیکی؛ دسته‌بندی‌شده بر اساس نوع دستگاه تا سریع به آنچه می‌خواهید برسید.</p>
+
+            @if (items != null)
+            {
+                <div class="ac-hero__stats">
+                    <span class="ac-hero__stat"><span class="oi oi-book" aria-hidden="true"></span> @TotalCount.ToString("N0") محتوای آموزشی</span>
+                    <span class="ac-hero__stat"><span class="oi oi-layers" aria-hidden="true"></span> @CourseCount.ToString("N0") دوره</span>
+                    <span class="ac-hero__stat"><span class="oi oi-document" aria-hidden="true"></span> @ArticleCount.ToString("N0") آموزش</span>
+                    @if (NamedCategoryCount > 0)
+                    {
+                        <span class="ac-hero__stat"><span class="oi oi-tags" aria-hidden="true"></span> @NamedCategoryCount دسته‌بندی</span>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
     <div class="container">
-        <div class="text-center mb-5">
-            <h1 class="fw-bold mb-2">آکادمی آموزش</h1>
-            <p class="text-muted">دوره های تخصصی برای ارتقای مهارت های شما</p>
+        @if (continueItems.Any() || bookmarks.Any())
+        {
+            <section class="ac-mine" aria-label="میز مطالعه من">
+                @if (continueItems.Any())
+                {
+                    <div class="ac-mine__block">
+                        <div class="ac-mine__head">
+                            <h2 class="ac-mine__title"><span class="oi oi-media-play" aria-hidden="true"></span> ادامه یادگیری</h2>
+                        </div>
+                        <div class="ac-mine__row">
+                            @foreach (var item in continueItems)
+                            {
+                                <a class="ac-continue" href="@item.Url">
+                                    <span class="ac-continue__body">
+                                        <span class="ac-continue__course">@item.CourseTitle</span>
+                                        <span class="ac-continue__lesson">@item.LessonTitle</span>
+                                        <span class="ac-continue__bar"><span style="width:@(item.Percent)%"></span></span>
+                                    </span>
+                                    <span class="ac-continue__percent">@item.Percent٪</span>
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (bookmarks.Any())
+                {
+                    <div class="ac-mine__block">
+                        <div class="ac-mine__head">
+                            <h2 class="ac-mine__title"><span class="oi oi-bookmark" aria-hidden="true"></span> درس‌های ذخیره‌شده</h2>
+                            <button type="button" class="ac-mine__clear" @onclick="ClearBookmarksAsync">پاک کردن</button>
+                        </div>
+                        <div class="ac-mine__chips">
+                            @foreach (var item in bookmarks)
+                            {
+                                <a class="ac-bookmark" href="@item.Url">
+                                    <span class="ac-bookmark__course">@item.CourseTitle</span>
+                                    <span class="ac-bookmark__title">@item.Title</span>
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+            </section>
+        }
+
+        <div class="ac-toolbar">
+            <div class="ac-toolbar__top">
+                <div class="ac-search">
+                    <span class="ac-search__icon oi oi-magnifying-glass" aria-hidden="true"></span>
+                    <input type="search"
+                           aria-label="جستجو در دوره‌ها و آموزش‌ها"
+                           placeholder="جستجو: تعمیر یخچال، برد، کمپرسور، خطای E1..."
+                           @bind="search" @bind:event="oninput" @bind:after="OnSearchChanged" />
+                </div>
+
+                <div class="ac-seg" role="group" aria-label="نوع محتوا">
+                    <button type="button" aria-pressed="@(activeType == "all" ? "true" : "false")"
+                            class="ac-seg__btn @(activeType == "all" ? "is-active" : "")"
+                            @onclick='() => SelectType("all")'>
+                        همه <span class="ac-seg__count">@TotalCount</span>
+                    </button>
+                    <button type="button" aria-pressed="@(activeType == "courses" ? "true" : "false")"
+                            class="ac-seg__btn @(activeType == "courses" ? "is-active" : "")"
+                            @onclick='() => SelectType("courses")'>
+                        دوره‌ها <span class="ac-seg__count">@CourseCount</span>
+                    </button>
+                    <button type="button" aria-pressed="@(activeType == "articles" ? "true" : "false")"
+                            class="ac-seg__btn @(activeType == "articles" ? "is-active" : "")"
+                            @onclick='() => SelectType("articles")'>
+                        آموزش‌ها <span class="ac-seg__count">@ArticleCount</span>
+                    </button>
+                </div>
+            </div>
+
+            @if (items != null && CategoryChips().Count > 0)
+            {
+                <div class="ac-chips" role="group" aria-label="دسته‌بندی محتوا">
+                    <span class="ac-chips__label">دسته:</span>
+                    <button type="button" class="ac-chip @(activeCategory == "all" ? "is-active" : "")"
+                            aria-pressed="@(activeCategory == "all")"
+                            @onclick='() => SelectCategory("all")'>همه</button>
+                    @foreach (var chip in CategoryChips())
+                    {
+                        <button type="button" class="ac-chip @(activeCategory == chip.Key ? "is-active" : "")"
+                                aria-pressed="@(activeCategory == chip.Key)"
+                                @onclick="() => SelectCategory(chip.Key)">
+                            @chip.Label <span class="ac-chip__count">@chip.Count</span>
+                        </button>
+                    }
+                </div>
+            }
         </div>
 
-        @if (combinedContent == null)
+        @if (items == null)
         {
-            <div class="row g-4">
-                @for (int i = 0; i < 3; i++)
+            <div class="ac-grid ac-grid--loading" aria-hidden="true">
+                @for (var i = 0; i < 8; i++)
                 {
-                    <div class="col-md-4">
-                        <div class="card border-0 shadow-sm rounded-4 overflow-hidden animate-pulse">
-                            <div style="height: 200px; background: #e5e7eb;"></div>
-                            <div class="card-body p-4">
-                                <div style="height: 20px; background: #e5e7eb; width: 70%;" class="mb-2 rounded"></div>
-                                <div style="height: 15px; background: #e5e7eb; width: 90%;" class="mb-3 rounded"></div>
-                                <div style="height: 35px; background: #e5e7eb;" class="rounded-pill"></div>
-                            </div>
+                    <div class="ac-card ac-card--skeleton">
+                        <div class="ac-skel ac-skel--thumb"></div>
+                        <div class="ac-skel-body">
+                            <div class="ac-skel ac-skel--line"></div>
+                            <div class="ac-skel ac-skel--line ac-skel--short"></div>
+                            <div class="ac-skel ac-skel--line ac-skel--short"></div>
                         </div>
                     </div>
                 }
             </div>
         }
-        else if (!combinedContent.Any())
+        else if (items.Count == 0)
         {
-            <div class="text-center py-5">
-                <div class="mb-3">
-                    <span class="oi oi-book display-1 text-muted opacity-25"></span>
-                </div>
-                <h3 class="text-muted">هنوز محتوایی منتشر نشده است.</h3>
+            <div class="ac-empty">
+                <span class="oi oi-book" aria-hidden="true"></span>
+                <h2>هنوز محتوایی منتشر نشده است</h2>
+                <p>به‌زودی دوره‌ها و آموزش‌های تخصصی آکادمی در همین صفحه منتشر می‌شوند.</p>
             </div>
         }
         else
         {
-            <div class="row g-4">
-                @foreach (var item in combinedContent)
-                {
-                    <div class="col-md-4">
-                        <div class="course-card card border-0 shadow-sm rounded-4 overflow-hidden h-100">
-                            <div class="course-card__img-wrap position-relative">
-                                <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-product.svg" : item.ImageUrl)" loading="lazy" class="card-img-top" alt="@item.Title" />
-                                
-                                <div class="position-absolute top-0 start-0 m-3">
-                                    @if (item.IsCourse)
-                                    {
-                                        <span class="badge bg-primary text-white rounded-pill px-3 shadow-sm">دوره</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="badge bg-success text-white rounded-pill px-3 shadow-sm">آموزش</span>
-                                    }
-                                </div>
-
-                                @if (item.IsPremium)
-                                {
-                                    <div class="position-absolute top-0 end-0 m-3">
-                                        <span class="badge bg-warning text-dark rounded-pill px-3 shadow-sm">ویژه</span>
-                                    </div>
-                                }
-                            </div>
-                            <div class="card-body p-4 d-flex flex-column">
-                                <h3 class="h5 fw-bold text-dark mb-2">@item.Title</h3>
-                                <p class="text-muted small mb-4 flex-grow-1">@item.Summary</p>
-                                <div class="d-flex justify-content-between align-items-center pt-3 border-top">
-                                    @if (item.IsCourse)
-                                    {
-                                        <span class="text-muted small"><span class="oi oi-list me-1"></span> @item.SubItemsCount قسمت</span>
-                                        <a href="@SeoUrl.Course(item.Id, item.Slug)" class="btn btn-primary rounded-pill px-4 btn-sm">شروع یادگیری</a>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted small"><span class="oi oi-document me-1"></span> مطالعه</span>
-                                        <a href="@SeoUrl.Article(item.Id, item.Slug)" class="btn btn-outline-primary rounded-pill px-4 btn-sm">مشاهده آموزش</a>
-                                    }
-                                </div>
-                            </div>
-                        </div>
+            @if (ShowFeatured)
+            {
+                <section class="ac-featured" aria-labelledby="ac-featured-title">
+                    <div class="ac-featured__head">
+                        <h2 class="ac-featured__title" id="ac-featured-title">
+                            <span class="oi oi-star" aria-hidden="true"></span>
+                            منتخب آکادمی
+                        </h2>
+                        <span class="ac-featured__hint">پیشنهاد تیم ارورسرویس برای شروع</span>
                     </div>
+                    <div class="ac-featured__grid">
+                        @foreach (var item in FeaturedItems())
+                        {
+                            <a class="ac-spot" href="@item.Href">
+                                <span class="ac-spot__thumb">
+                                    @if (!string.IsNullOrWhiteSpace(item.ImageUrl))
+                                    {
+                                        <img src="@ImageUrlHelper.Thumb(item.ImageUrl, 200)" alt="@item.Title" loading="lazy" decoding="async" />
+                                    }
+                                    else
+                                    {
+                                        <span class="oi oi-book" aria-hidden="true"></span>
+                                    }
+                                </span>
+                                <span class="ac-spot__body">
+                                    <span class="ac-spot__type">@(item.IsCourse ? "دوره آموزشی" : "آموزش تخصصی")</span>
+                                    <span class="ac-spot__title">@item.Title</span>
+                                    <span class="ac-spot__meta">
+                                        @(item.IsCourse ? $"{item.LessonsCount} قسمت" : "مطالعه")
+                                        <span class="oi oi-arrow-left" aria-hidden="true"></span>
+                                    </span>
+                                </span>
+                            </a>
+                        }
+                    </div>
+                </section>
+            }
+
+            <div class="ac-results">
+                <div class="ac-results__head">
+                    <h2 class="ac-results__title">
+                        @ResultsTitle
+                        <span class="ac-results__count">@ResultsTotal.ToString("N0") مورد</span>
+                    </h2>
+                    <div class="ac-sort" role="group" aria-label="ترتیب نمایش">
+                        <button type="button" class="ac-sort__btn @(sort == "newest" ? "is-active" : "")"
+                                aria-pressed="@(sort == "newest")" @onclick='() => SetSort("newest")'>جدیدترین</button>
+                        <button type="button" class="ac-sort__btn @(sort == "views" ? "is-active" : "")"
+                                aria-pressed="@(sort == "views")" @onclick='() => SetSort("views")'>پربازدیدترین</button>
+                    </div>
+                </div>
+
+                @if (VisibleGrid.Count == 0)
+                {
+                    <div class="ac-empty">
+                        <span class="oi oi-warning" aria-hidden="true"></span>
+                        @if (HasActiveFilters)
+                        {
+                            <h2>موردی با این فیلتر پیدا نشد</h2>
+                            <p>عبارت کوتاه‌تری جستجو کنید یا فیلترها را پاک کنید تا همه محتوا نمایش داده شود.</p>
+                            <button type="button" class="btn btn-outline-primary rounded-pill px-4" @onclick="ClearFilters">پاک کردن فیلترها</button>
+                        }
+                        else
+                        {
+                            <h2>همه موارد این بخش در «منتخب آکادمی» بالاست</h2>
+                            <p>برای دیدن فهرست کامل، دسته دیگری را انتخاب کنید.</p>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="ac-grid">
+                        @foreach (var item in VisibleGrid)
+                        {
+                            <article class="ac-card">
+                                <a class="ac-card__link" href="@item.Href">
+                                    <div class="ac-card__thumb">
+                                        @if (!string.IsNullOrWhiteSpace(item.ImageUrl))
+                                        {
+                                            <img src="@ImageUrlHelper.Thumb(item.ImageUrl, 400)"
+                                                 srcset="@ImageUrlHelper.SrcSet(item.ImageUrl)"
+                                                 sizes="(max-width: 575.98px) 46vw, 280px"
+                                                 alt="@item.Title" loading="lazy" decoding="async" />
+                                        }
+                                        else
+                                        {
+                                            <span class="ac-card__thumb-empty"><span class="oi oi-book" aria-hidden="true"></span></span>
+                                        }
+                                        <span class="ac-card__badge @(item.IsCourse ? "ac-card__badge--course" : "ac-card__badge--article")">
+                                            @(item.IsCourse ? "دوره" : "آموزش")
+                                        </span>
+                                        @if (item.IsPremium)
+                                        {
+                                            <span class="ac-card__premium"><span class="oi oi-star" aria-hidden="true"></span> ویژه</span>
+                                        }
+                                    </div>
+                                    <div class="ac-card__body">
+                                        @if (!string.IsNullOrEmpty(item.Category))
+                                        {
+                                            <span class="ac-card__cat">@item.Category</span>
+                                        }
+                                        <h3 class="ac-card__title">@item.Title</h3>
+                                        @if (!string.IsNullOrWhiteSpace(item.Summary))
+                                        {
+                                            <p class="ac-card__desc">@item.Summary</p>
+                                        }
+                                        <div class="ac-card__meta">
+                                            <span>@(item.IsCourse ? $"{item.LessonsCount} قسمت" : "آموزش")</span>
+                                            <span class="ac-card__cta">
+                                                @(item.IsCourse ? "شروع یادگیری" : "مطالعه")
+                                                <span class="oi oi-arrow-left" aria-hidden="true"></span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </a>
+                            </article>
+                        }
+                    </div>
+
+                    @if (GridTotal > visibleCount)
+                    {
+                        <div class="ac-more">
+                            <button type="button" class="ac-more__btn" @onclick="LoadMore">
+                                نمایش بیشتر
+                                <span class="ac-more__count">@((GridTotal - visibleCount).ToString("N0")) مورد دیگر</span>
+                            </button>
+                        </div>
+                    }
                 }
             </div>
         }
     </div>
 </div>
 
-<style>
-    .course-card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
-    .course-card:hover { transform: translateY(-5px); box-shadow: 0 15px 35px rgba(0,0,0,0.1) !important; }
-    .course-card__img-wrap { height: 200px; overflow: hidden; }
-    .course-card__img-wrap img { width: 100%; height: 100%; object-fit: cover; }
-    .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-    @@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-</style>
-
 @code {
-    private List<AcademyItem>? combinedContent;
-    private string academyJsonLd = @"{""@context"":""https://schema.org"",""@type"":""CollectionPage"",""name"":""آکادمی آموزش تعمیرات لوازم خانگی"",""description"":""دوره‌های تخصصی آموزش تعمیرات لوازم خانگی، مقالات فنی و ویدیوهای آموزشی"",""url"":""https://errorservice.ir/academy""}";
+    private const int PageSize = 12;
+    private const string UncategorizedKey = "__none__";
+    private const string ProgressKey = "es_academy_progress";
+    private const string BookmarksKey = "es_academy_bookmarks";
+
+    private List<AcademyItem>? items;
+    private string search = "";
+    private string activeType = "all";
+    private string activeCategory = "all";
+    private string sort = "newest";
+    private int visibleCount = PageSize;
+    private string jsonLd = "";
+
+    private List<ContinueItem> continueItems = new();
+    private List<LessonBookmark> bookmarks = new();
+
+    public sealed class LessonProgressEntry
+    {
+        public int LastLessonId { get; set; }
+        public string? LastLessonTitle { get; set; }
+        public long UpdatedAt { get; set; }
+        public HashSet<int> Completed { get; set; } = new();
+    }
+
+    public sealed class CourseProgress
+    {
+        public Dictionary<string, LessonProgressEntry> Courses { get; set; } = new();
+    }
+
+    public sealed record LessonBookmark(
+        int CourseId,
+        int LessonId,
+        string Title,
+        string CourseTitle,
+        string Url,
+        long SavedAt);
+
+    public sealed record ContinueItem(
+        string CourseTitle,
+        string LessonTitle,
+        string Url,
+        int Completed,
+        int Total,
+        long UpdatedAt)
+    {
+        public int Percent => Total <= 0 ? 0 : Math.Min(100, (int)Math.Round(Completed * 100.0 / Total));
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -117,62 +349,358 @@
         {
             var coursesTask = Http.GetFromJsonAsync<List<TrainingCourseDto>>("api/trainings/courses?onlyPublished=true");
             var articlesTask = Http.GetFromJsonAsync<List<TrainingArticleDto>>("api/trainingarticles?onlyPublished=true");
-            
             await Task.WhenAll(coursesTask, articlesTask);
-            
-            var courses = await coursesTask;
-            var articles = await articlesTask;
 
-            combinedContent = new List<AcademyItem>();
+            items = new List<AcademyItem>();
 
-            if (courses != null)
+            foreach (var c in coursesTask.Result ?? new())
             {
-                combinedContent.AddRange(courses.Select(c => new AcademyItem 
-                { 
-                    Id = c.Id, 
-                    Title = c.Title, 
-                    Slug = c.Slug, 
-                    Summary = c.Summary, 
-                    ImageUrl = c.CoverImageUrl, 
-                    IsCourse = true, 
-                    IsPremium = c.IsPremium, 
+                items.Add(new AcademyItem
+                {
+                    Id = c.Id,
+                    Slug = c.Slug,
+                    Title = c.Title,
+                    Summary = c.Summary,
+                    ImageUrl = c.CoverImageUrl,
+                    IsCourse = true,
+                    IsPremium = c.IsPremium,
+                    Category = CleanCategory(c.Category),
+                    IsFeatured = c.IsFeatured,
                     CreatedAt = c.CreatedAt,
-                    SubItemsCount = c.LessonsCount
-                }));
+                    ViewCount = c.ViewCount,
+                    LessonsCount = c.LessonsCount,
+                    SortOrder = c.SortOrder,
+                    Href = SeoUrl.Course(c.Id, c.Slug)
+                });
             }
 
-            if (articles != null)
+            foreach (var a in articlesTask.Result ?? new())
             {
-                combinedContent.AddRange(articles.Select(a => new AcademyItem 
-                { 
-                    Id = a.Id, 
-                    Title = a.Title, 
-                    Slug = a.Slug, 
-                    Summary = a.Summary, 
-                    ImageUrl = a.CoverImageUrl, 
-                    IsCourse = false, 
-                    IsPremium = a.IsPremium, 
-                    CreatedAt = a.CreatedAt 
-                }));
+                items.Add(new AcademyItem
+                {
+                    Id = a.Id,
+                    Slug = a.Slug,
+                    Title = a.Title,
+                    Summary = a.Summary,
+                    ImageUrl = a.CoverImageUrl,
+                    IsCourse = false,
+                    IsPremium = a.IsPremium,
+                    Category = CleanCategory(a.Category),
+                    IsFeatured = a.IsFeatured,
+                    CreatedAt = a.CreatedAt,
+                    ViewCount = a.ViewCount,
+                    Href = SeoUrl.Article(a.Id, a.Slug)
+                });
+            }
+        }
+        catch
+        {
+            items = new();
+        }
+
+        BuildJsonLd();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadLocalProgressAsync();
+    }
+
+    private async Task LoadLocalProgressAsync()
+    {
+        try
+        {
+            var courses = items?.Where(i => i.IsCourse).ToDictionary(i => i.Id) ?? new();
+
+            var progressJson = await LocalStorage.GetAsync(ProgressKey);
+            if (!string.IsNullOrWhiteSpace(progressJson))
+            {
+                var progress = JsonSerializer.Deserialize<CourseProgress>(progressJson) ?? new();
+                foreach (var pair in progress.Courses)
+                {
+                    if (!int.TryParse(pair.Key, out var courseId) || !courses.TryGetValue(courseId, out var course))
+                        continue;
+
+                    var entry = pair.Value;
+                    var completed = entry.Completed ?? new HashSet<int>();
+                    if (completed.Count == 0 && entry.LastLessonId <= 0)
+                        continue;
+
+                    var url = entry.LastLessonId > 0
+                        ? SeoUrl.Lesson(courseId, entry.LastLessonId)
+                        : course.Href;
+
+                    continueItems.Add(new ContinueItem(
+                        course.Title,
+                        string.IsNullOrWhiteSpace(entry.LastLessonTitle) ? "ادامه دوره" : entry.LastLessonTitle,
+                        url,
+                        completed.Count,
+                        course.LessonsCount,
+                        entry.UpdatedAt));
+                }
+
+                continueItems = continueItems
+                    .OrderByDescending(x => x.UpdatedAt)
+                    .Take(4)
+                    .ToList();
             }
 
-            combinedContent = combinedContent.OrderByDescending(x => x.CreatedAt).ToList();
+            var bookmarksJson = await LocalStorage.GetAsync(BookmarksKey);
+            if (!string.IsNullOrWhiteSpace(bookmarksJson))
+            {
+                bookmarks = (JsonSerializer.Deserialize<List<LessonBookmark>>(bookmarksJson) ?? new())
+                    .OrderByDescending(b => b.SavedAt)
+                    .Take(8)
+                    .ToList();
+            }
         }
-        catch { 
-            combinedContent = new();
+        catch
+        {
+            continueItems = new();
+            bookmarks = new();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ClearBookmarksAsync()
+    {
+        bookmarks = new();
+        try
+        {
+            await LocalStorage.RemoveAsync(BookmarksKey);
+        }
+        catch
+        {
         }
     }
 
-    private class AcademyItem
+    private static string? CleanCategory(string? category)
+        => string.IsNullOrWhiteSpace(category) ? null : category.Trim();
+
+    private int TotalCount => items?.Count ?? 0;
+    private int CourseCount => items?.Count(i => i.IsCourse) ?? 0;
+    private int ArticleCount => items?.Count(i => !i.IsCourse) ?? 0;
+    private int NamedCategoryCount => items == null
+        ? 0
+        : items.Where(i => i.Category != null).Select(i => i.Category!).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+
+    private IEnumerable<AcademyItem> TypeFiltered()
+    {
+        if (items == null) return Enumerable.Empty<AcademyItem>();
+        return activeType switch
+        {
+            "courses" => items.Where(i => i.IsCourse),
+            "articles" => items.Where(i => !i.IsCourse),
+            _ => items
+        };
+    }
+
+    private List<CategoryChip> CategoryChips()
+    {
+        var list = TypeFiltered().ToList();
+        if (list.Count == 0) return new();
+
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in list.Where(i => i.Category != null))
+            counts[item.Category!] = counts.GetValueOrDefault(item.Category!) + 1;
+
+        var chips = AcademyCatalog.Order(counts.Keys)
+            .Select(name => new CategoryChip(name, name, counts[name]))
+            .ToList();
+
+        var uncategorized = list.Count(i => i.Category == null);
+        if (uncategorized > 0)
+            chips.Add(new CategoryChip(UncategorizedKey, "سایر", uncategorized));
+
+        return chips;
+    }
+
+    private List<AcademyItem> FilteredItems()
+    {
+        var query = TypeFiltered();
+
+        if (activeCategory == UncategorizedKey)
+            query = query.Where(i => i.Category == null);
+        else if (activeCategory != "all")
+            query = query.Where(i => string.Equals(i.Category, activeCategory, StringComparison.OrdinalIgnoreCase));
+
+        var term = SearchNormalizer.Normalize(search);
+        if (term.Length > 0)
+        {
+            query = query.Where(i =>
+                SearchNormalizer.Normalize($"{i.Title} {i.Summary} {i.Category}")
+                    .Contains(term, StringComparison.Ordinal));
+        }
+
+        return (sort == "views"
+            ? query.OrderByDescending(i => i.ViewCount).ThenByDescending(i => i.CreatedAt)
+            : query.OrderByDescending(i => i.CreatedAt)).ToList();
+    }
+
+    private List<AcademyItem> FeaturedItems()
+        => items == null
+            ? new()
+            : items.Where(i => i.IsFeatured)
+                .OrderBy(i => i.SortOrder)
+                .ThenByDescending(i => i.CreatedAt)
+                .Take(3)
+                .ToList();
+
+    private bool HasActiveFilters => activeType != "all" || activeCategory != "all" || !string.IsNullOrWhiteSpace(search);
+
+    private bool ShowFeatured => items is { Count: > 0 }
+        && activeType == "all"
+        && activeCategory == "all"
+        && string.IsNullOrWhiteSpace(search)
+        && FeaturedItems().Count > 0;
+
+    private List<AcademyItem> GridItems()
+    {
+        var list = FilteredItems();
+        return ShowFeatured ? list.Where(i => !i.IsFeatured).ToList() : list;
+    }
+
+    private int GridTotal => GridItems().Count;
+    private List<AcademyItem> VisibleGrid => GridItems().Take(visibleCount).ToList();
+
+    private int ResultsTotal => ShowFeatured ? FilteredItems().Count : GridTotal;
+
+    private string ResultsTitle
+    {
+        get
+        {
+            var baseTitle = activeType switch
+            {
+                "courses" => "دوره‌های آموزشی",
+                "articles" => "آموزش‌های تخصصی",
+                _ => "همه محتوای آکادمی"
+            };
+
+            if (activeCategory == "all") return baseTitle;
+
+            var label = activeCategory == UncategorizedKey ? "سایر" : activeCategory;
+            return $"{baseTitle} · {label}";
+        }
+    }
+
+    private void SelectType(string type)
+    {
+        if (activeType == type) return;
+        activeType = type;
+        activeCategory = "all";
+        visibleCount = PageSize;
+    }
+
+    private void SelectCategory(string key)
+    {
+        if (activeCategory == key) return;
+        activeCategory = key;
+        visibleCount = PageSize;
+    }
+
+    private void SetSort(string value)
+    {
+        if (sort == value) return;
+        sort = value;
+        visibleCount = PageSize;
+    }
+
+    private void OnSearchChanged() => visibleCount = PageSize;
+
+    private void ClearFilters()
+    {
+        search = "";
+        activeType = "all";
+        activeCategory = "all";
+        visibleCount = PageSize;
+    }
+
+    private void LoadMore() => visibleCount += PageSize;
+
+    private void BuildJsonLd()
+    {
+        var baseUrl = Nav.BaseUri.TrimEnd('/');
+        var graph = new List<object>
+        {
+            new Dictionary<string, object?>
+            {
+                ["@type"] = "CollectionPage",
+                ["name"] = "آکادمی آموزش تعمیرات لوازم خانگی و الکترونیک",
+                ["description"] = "دوره‌ها و آموزش‌های تخصصی تعمیر لوازم خانگی، بردهای الکترونیک و عیب‌یابی",
+                ["url"] = baseUrl + "/academy",
+                ["inLanguage"] = "fa-IR",
+                ["isPartOf"] = new Dictionary<string, object?>
+                {
+                    ["@type"] = "WebSite",
+                    ["name"] = "ارورسرویس",
+                    ["url"] = baseUrl + "/"
+                }
+            },
+            new Dictionary<string, object?>
+            {
+                ["@type"] = "BreadcrumbList",
+                ["itemListElement"] = new object[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["@type"] = "ListItem",
+                        ["position"] = 1,
+                        ["name"] = "خانه",
+                        ["item"] = baseUrl + "/"
+                    },
+                    new Dictionary<string, object?>
+                    {
+                        ["@type"] = "ListItem",
+                        ["position"] = 2,
+                        ["name"] = "آکادمی آموزش",
+                        ["item"] = baseUrl + "/academy"
+                    }
+                }
+            }
+        };
+
+        if (items is { Count: > 0 })
+        {
+            graph.Add(new Dictionary<string, object?>
+            {
+                ["@type"] = "ItemList",
+                ["name"] = "دوره‌ها و آموزش‌های آکادمی",
+                ["itemListElement"] = items.Take(24).Select((item, index) => new Dictionary<string, object?>
+                {
+                    ["@type"] = "ListItem",
+                    ["position"] = index + 1,
+                    ["name"] = item.Title,
+                    ["url"] = baseUrl + item.Href
+                }).ToList()
+            });
+        }
+
+        jsonLd = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@graph"] = graph
+        });
+    }
+
+    private sealed record CategoryChip(string Key, string Label, int Count);
+
+    private sealed class AcademyItem
     {
         public int Id { get; set; }
         public string? Slug { get; set; }
         public string Title { get; set; } = "";
         public string? Summary { get; set; }
         public string? ImageUrl { get; set; }
+        public string? Category { get; set; }
         public bool IsCourse { get; set; }
         public bool IsPremium { get; set; }
+        public bool IsFeatured { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
-        public int SubItemsCount { get; set; }
+        public int ViewCount { get; set; }
+        public int LessonsCount { get; set; }
+        public int SortOrder { get; set; }
+        public string Href { get; set; } = "";
     }
 }

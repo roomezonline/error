@@ -8,6 +8,7 @@ public sealed class MonitoringDeviceDto
     public string Title { get; set; } = string.Empty;
     public string DeviceNumber { get; set; } = string.Empty;
     public bool IsActive { get; set; }
+    public bool DetailedChartEnabled { get; set; }
 
     public bool IsOnline { get; set; }
     public DateTimeOffset? LastDataTime { get; set; }
@@ -28,6 +29,8 @@ public sealed class MonitoringDeviceUpsertRequest
     public string DeviceNumber { get; set; } = string.Empty;
 
     public bool IsActive { get; set; } = true;
+
+    public bool DetailedChartEnabled { get; set; }
 }
 
 public sealed class MonitoringDeviceAssignmentDto

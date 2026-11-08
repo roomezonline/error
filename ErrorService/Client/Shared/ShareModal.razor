@@ -256,19 +256,18 @@
     @@media (max-width: 576px) {
         .share-modal-options { grid-template-columns: repeat(2, 1fr); }
     }
-    @@media (prefers-color-scheme: dark) {
-        .share-modal { background: #1e293b; }
-        .share-modal-header { border-bottom-color: #334155; }
-        .share-modal-header h3 { color: #f1f5f9; }
-        .share-modal-close { background: #334155; color: #94a3b8; }
-        .share-modal-preview { background: #0f172a; }
-        .share-modal-preview-title { color: #f1f5f9; }
-        .share-modal-preview-desc { color: #94a3b8; }
-        .share-modal-option { background: #1e293b; border-color: #334155; color: #94a3b8; }
-        .share-modal-option:hover { background: #334155; border-color: #475569; }
-        .share-modal-url-row { background: #0f172a; border-color: #334155; }
-        .share-modal-url-text { color: #94a3b8; }
-    }
+    /* تم تاریک اپ (نه ترجیح سیستم‌عامل) */
+    html[data-theme="dark"] .share-modal { background: #1e293b; }
+    html[data-theme="dark"] .share-modal-header { border-bottom-color: #334155; }
+    html[data-theme="dark"] .share-modal-header h3 { color: #f1f5f9; }
+    html[data-theme="dark"] .share-modal-close { background: #334155; color: #94a3b8; }
+    html[data-theme="dark"] .share-modal-preview { background: #0f172a; }
+    html[data-theme="dark"] .share-modal-preview-title { color: #f1f5f9; }
+    html[data-theme="dark"] .share-modal-preview-desc { color: #94a3b8; }
+    html[data-theme="dark"] .share-modal-option { background: #1e293b; border-color: #334155; color: #94a3b8; }
+    html[data-theme="dark"] .share-modal-option:hover { background: #334155; border-color: #475569; }
+    html[data-theme="dark"] .share-modal-url-row { background: #0f172a; border-color: #334155; }
+    html[data-theme="dark"] .share-modal-url-text { color: #94a3b8; }
     @@media (prefers-reduced-motion: reduce) {
         .share-modal { animation: none; }
     }

@@ -12,6 +12,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Logging.SetMinimumLevel(LogLevel.Debug);
 
 builder.Services.AddScoped<AuthHttpHandler>();
+builder.Services.AddSingleton<SessionExpiryNotifier>();
 builder.Services.AddScoped<MethodOverrideHandler>();
 builder.Services.AddScoped<ClientCachingHandler>();
 builder.Services.AddScoped(sp =>

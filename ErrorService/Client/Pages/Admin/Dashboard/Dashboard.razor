@@ -79,6 +79,7 @@
             user.HasClaim("perm", "admin.monitoring.connections.manage");
 
         CanSeeShopSection =
+            IsSuperAdmin ||
             user.HasClaim("perm", "admin.products.manage") ||
             user.HasClaim("perm", "admin.categories.view") ||
             user.HasClaim("perm", "admin.orders.view") ||
@@ -86,19 +87,25 @@
             user.HasClaim("perm", "admin.bankaccounts.manage");
 
         CanSeeProjectsSection =
+            IsSuperAdmin ||
             user.HasClaim("perm", "admin.projects.view") ||
             user.HasClaim("perm", "admin.projects.manage");
 
         CanSeeContentSection =
+            IsSuperAdmin ||
             user.HasClaim("perm", "admin.academy.view") ||
             user.HasClaim("perm", "admin.news.view") ||
+            user.HasClaim("perm", "admin.contentstudio.view") ||
             user.HasClaim("perm", "admin.stories.view") ||
             user.HasClaim("perm", "admin.sliders.view") ||
             user.HasClaim("perm", "admin.popularbrands.manage") ||
             user.HasClaim("perm", "admin.team.view") ||
-            user.HasClaim("perm", "admin.trust.view");
+            user.HasClaim("perm", "admin.faq.manage") ||
+            user.HasClaim("perm", "admin.trust.view") ||
+            user.HasClaim("perm", "admin.about.manage");
 
         CanSeeTechnicalAndUsersSection =
+            IsSuperAdmin ||
             user.HasClaim("perm", "admin.users.manage") ||
             user.HasClaim("perm", "admin.technical.devices.view") ||
             user.HasClaim("perm", "admin.technical.brands.view") ||
@@ -109,6 +116,7 @@
             user.HasClaim("perm", "admin.notifications.manage");
 
         CanSeeSecurityAndSettingsSection =
+            IsSuperAdmin ||
             user.HasClaim("perm", "security.roles.manage") ||
             user.HasClaim("perm", "admin.settings.manage");
 
@@ -974,6 +982,35 @@
                 </div>
             }
 
+            @if (IsSuperAdmin)
+            {
+                <div class="apps-section">
+                    <div class="apps-section__head">پایش انرژی</div>
+                    <div class="apps-grid">
+                        <a class="app-item shadow-sm" href="https://energy.aysad.ir/" target="_blank" rel="noopener noreferrer" title="باز شدن در تب جدید">
+                            <div class="app-icon-box bg-warning-subtle text-warning">
+                                <span class="oi oi-flash"></span>
+                            </div>
+                            <span class="app-name">پایش انرژی</span>
+                        </a>
+                    </div>
+                </div>
+            }
+
+            <AuthorizeView Policy="perm:admin.servicevoices.manage">
+                <div class="apps-section">
+                    <div class="apps-section__head">آوای ارورسرویس</div>
+                    <div class="apps-grid">
+                        <a class="app-item shadow-sm" href="/admin/service-voices">
+                            <div class="app-icon-box bg-primary-subtle text-primary">
+                                <span class="oi oi-audio"></span>
+                            </div>
+                            <span class="app-name">مدیریت اکشن‌های صوتی</span>
+                        </a>
+                    </div>
+                </div>
+            </AuthorizeView>
+
             <AuthorizeView Policy="perm:admin.analytics.view">
                 <div class="apps-section">
                     <div class="apps-section__head">آمار و پایش</div>
@@ -1158,7 +1195,43 @@
                             <div class="app-icon-box bg-danger-subtle text-danger">
                                 <span class="oi oi-list"></span>
                             </div>
-                            <span class="app-name">اخبار</span>
+                            <span class="app-name">مرکز محتوا</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.news.manage">
+                        <a class="app-item shadow-sm" href="/admin/content-categories">
+                            <div class="app-icon-box bg-warning-subtle text-warning">
+                                <span class="oi oi-tags"></span>
+                            </div>
+                            <span class="app-name">دسته‌بندی محتوا</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.news.manage">
+                        <a class="app-item shadow-sm" href="/admin/content-tags">
+                            <div class="app-icon-box bg-info-subtle text-info">
+                                <span class="oi oi-tag"></span>
+                            </div>
+                            <span class="app-name">برچسب‌های محتوا</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.news.settings.manage">
+                        <a class="app-item shadow-sm" href="/admin/content-settings">
+                            <div class="app-icon-box bg-secondary-subtle text-secondary">
+                                <span class="oi oi-cog"></span>
+                            </div>
+                            <span class="app-name">تنظیمات محتوا</span>
+                        </a>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.contentstudio.view">
+                        <a class="app-item shadow-sm" href="/admin/content-studio">
+                            <div class="app-icon-box bg-success-subtle text-success">
+                                <span class="oi oi-lightbulb"></span>
+                            </div>
+                            <span class="app-name">استودیوی محتوا</span>
                         </a>
                     </AuthorizeView>
 
@@ -1207,6 +1280,15 @@
                             </a>
                         </AuthorizeView>
 
+                        <AuthorizeView Policy="perm:admin.faq.manage">
+                            <a class="app-item shadow-sm" href="/admin/faq">
+                                <div class="app-icon-box bg-warning-subtle text-warning">
+                                    <span class="oi oi-question-mark"></span>
+                                </div>
+                                <span class="app-name">سوالات متداول</span>
+                            </a>
+                        </AuthorizeView>
+
                         <AuthorizeView Policy="perm:admin.settings.manage">
                             <a class="app-item shadow-sm" href="/admin/contact-messages">
                                 <div class="app-icon-box bg-danger-subtle text-danger">
@@ -1231,6 +1313,15 @@
                                     <span class="oi oi-layers"></span>
                                 </div>
                                 <span class="app-name">مدیریت فوتر</span>
+                            </a>
+                        </AuthorizeView>
+
+                        <AuthorizeView Policy="perm:admin.about.manage">
+                            <a class="app-item shadow-sm" href="/admin/about">
+                                <div class="app-icon-box bg-success-subtle text-success">
+                                    <span class="oi oi-info"></span>
+                                </div>
+                                <span class="app-name">درباره ما</span>
                             </a>
                         </AuthorizeView>
 
@@ -1284,6 +1375,20 @@
                                 <span class="oi oi-envelope-closed"></span>
                             </div>
                             <span class="app-name">پیام‌های تماس</span>
+                        </a>
+                    </div>
+                </div>
+            </AuthorizeView>
+
+            <AuthorizeView Policy="perm:admin.ai.view">
+                <div class="apps-section">
+                    <div class="apps-section__head">هوش مصنوعی</div>
+                    <div class="apps-grid">
+                        <a class="app-item shadow-sm" href="/admin/ai">
+                            <div class="app-icon-box bg-success-subtle text-success">
+                                <span class="oi oi-cog"></span>
+                            </div>
+                            <span class="app-name">تنظیمات هوش مصنوعی</span>
                         </a>
                     </div>
                 </div>

@@ -17,6 +17,7 @@
 @implements IDisposable
 
 <div class="app-wrapper">
+    <SessionExpiryWatcher />
     <a href="#main-content" class="skip-link visually-hidden-focusable">پرش به محتوای اصلی</a>
     @if (!_isOnline && !_dismissedOfflineBanner)
     {
@@ -1125,6 +1126,15 @@
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         isNavigating = true;
+
+        // منو/پنل‌های باز باید با تغییر صفحه بسته شوند؛ چیدمان در ناوبری SPA
+        // از بین نمی‌رود و در غیر این صورت پنل روی صفحه‌ی جدید باز می‌ماند.
+        showUserMenu = false;
+        showNotifPanel = false;
+        showDrawer = false;
+        HideSuggestions();
+        _ = SafeRemoveUserMenuHandlerAsync();
+
         StateHasChanged();
         _ = InvokeAsync(Notif.RefreshAsync);
         if (Recovery.Resume.HasAny)
@@ -1138,6 +1148,11 @@
                 try { await JS.InvokeVoidAsync("initScrollReveal"); } catch { }
             });
         });
+    }
+
+    private async Task SafeRemoveUserMenuHandlerAsync()
+    {
+        try { await JS.InvokeVoidAsync("__um_removeHandler"); } catch { }
     }
 
     public void Dispose()

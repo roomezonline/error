@@ -1,0 +1,170 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="inverter-rpm" Title="دور موتور با اینورتر"
+           Subtitle="دور همگام و دور واقعی موتور را از فرکانس اینورتر، تعداد قطب و درصد لغزش محاسبه می‌کند."
+           Icon="oi-loop-circular"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-form">
+        <div class="calc-field">
+            <label class="calc-label" for="irp-f">فرکانس اینورتر (Hz)</label>
+            <input id="irp-f" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 50" @bind="frequency" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="irp-poles">تعداد قطب موتور</label>
+            <select id="irp-poles" class="calc-select" @bind="poles" @bind:after="PersistAsync">
+                <option value="2">۲ قطب</option>
+                <option value="4">۴ قطب</option>
+                <option value="6">۶ قطب</option>
+                <option value="8">۸ قطب</option>
+            </select>
+        </div>
+        <div class="calc-field calc-field--full">
+            <label class="calc-label" for="irp-slip">لغزش موتور (٪)</label>
+            <input id="irp-slip" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   @bind="slip" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">دور واقعی (تقریبی)</span>
+                    <span class="calc-result__value" dir="ltr">@Result.ActualRpm <small>RPM</small></span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">دور همگام</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.SyncRpm RPM</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">اختلاف لغزش</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.SlipRpm RPM</span>
+                </div>
+            </div>
+            <p class="calc-note mt-2 mb-0">
+                دور همگام = ۱۲۰ × فرکانس ÷ تعداد قطب. لغزش موتورهای القایی معمولاً ۱ تا ۵ درصد است؛
+                در اینورتر با کاهش فرکانس، دور کم می‌شود و باید نسبت ولتاژ به فرکانس (V/f) حفظ شود.
+            </p>
+        </div>
+    }
+
+    <details class="calc-details">
+        <summary>دور تقریبی همه قطب‌ها در این فرکانس</summary>
+        <div class="calc-details__body">
+            <table class="calc-table">
+                <thead>
+                    <tr><th>تعداد قطب</th><th>دور همگام</th><th>دور با لغزش @CalcFormat.Num(slip ?? 0, "0.#")٪</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in Result.Table)
+                    {
+                        <tr class="@(row.IsCurrent ? "is-recommended" : "")">
+                            <td>@row.Poles</td>
+                            <td dir="ltr">@row.Sync RPM</td>
+                            <td dir="ltr">@row.Actual RPM</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </details>
+</CalcShell>
+
+@code {
+    private double? frequency = 50;
+    private int poles = 4;
+    private double? slip = 3;
+
+    protected override string StorageKey => "inverter-rpm";
+
+    private sealed record RpmRow(int Poles, string Sync, string Actual, bool IsCurrent);
+
+    private sealed class RpmResult
+    {
+        public string ActualRpm { get; init; } = "—";
+        public string SyncRpm { get; init; } = "—";
+        public string SlipRpm { get; init; } = "—";
+        public List<RpmRow> Table { get; init; } = new();
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private RpmResult Result => Compute();
+
+    private RpmResult Compute()
+    {
+        if (frequency == null || slip == null)
+            return new RpmResult { Hint = "فرکانس اینورتر و درصد لغزش را وارد کنید." };
+
+        if (frequency <= 0 || frequency > 400)
+            return new RpmResult { Error = "فرکانس باید بین ۰ تا ۴۰۰ هرتز باشد." };
+
+        if (slip is < 0 or >= 100)
+            return new RpmResult { Error = "درصد لغزش باید بین ۰ تا ۱۰۰ باشد." };
+
+        double Sync(int p) => 120.0 * frequency.Value / p;
+        double Actual(int p) => Sync(p) * (1 - slip.Value / 100);
+
+        var rows = new[] { 2, 4, 6, 8 }
+            .Select(p => new RpmRow(
+                p,
+                CalcFormat.Num(Sync(p), "0"),
+                CalcFormat.Num(Actual(p), "0"),
+                p == poles))
+            .ToList();
+
+        var sync = Sync(poles);
+        var actual = Actual(poles);
+
+        return new RpmResult
+        {
+            SyncRpm = CalcFormat.Num(sync, "0"),
+            ActualRpm = CalcFormat.Num(actual, "0"),
+            SlipRpm = CalcFormat.Num(sync - actual, "0"),
+            Table = rows,
+            CopyText = $"دور موتور — فرکانس {CalcFormat.Num(frequency.Value)}Hz | {poles} قطب | همگام {CalcFormat.Num(sync, "0")} RPM | واقعی {CalcFormat.Num(actual, "0")} RPM"
+        };
+    }
+
+    private async Task ResetAsync()
+    {
+        frequency = 50;
+        poles = 4;
+        slip = 3;
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(new State(frequency, poles, slip), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            frequency = s.Frequency;
+            poles = s.Poles is 2 or 4 or 6 or 8 ? s.Poles : 4;
+            slip = s.Slip;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(double? Frequency, int Poles, double? Slip);
+}

@@ -184,23 +184,33 @@ public sealed class AdminCartsController : ControllerBase
         request ??= new();
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
         if (user == null) return NotFound("مشتری یافت نشد.");
-        if (string.IsNullOrWhiteSpace(user.Address))
+
+        // اطلاعات گیرندهٔ واردشده در فرم ادمین اولویت دارد؛ در غیر این صورت از پروفایل مشتری پر می‌شود.
+        var fullName = string.IsNullOrWhiteSpace(request.FullName) ? user.FullName : request.FullName.Trim();
+        var phone = string.IsNullOrWhiteSpace(request.PhoneNumber) ? user.PhoneNumber : request.PhoneNumber.Trim();
+        var address = string.IsNullOrWhiteSpace(request.Address) ? user.Address : request.Address.Trim();
+        if (string.IsNullOrWhiteSpace(address))
             return BadRequest("آدرس مشتری ثبت نشده است؛ ابتدا پروفایل مشتری را تکمیل کنید.");
+        if (!string.IsNullOrWhiteSpace(request.FullName) && fullName.Trim().Length < 3)
+            return BadRequest("نام گیرنده را کامل وارد کنید.");
+        if (!string.IsNullOrWhiteSpace(request.PhoneNumber)
+            && !System.Text.RegularExpressions.Regex.IsMatch(phone, @"^09\d{9}$"))
+            return BadRequest("فرمت موبایل گیرنده صحیح نیست.");
 
         var cart = await _db.CartItems.AsNoTracking().Where(c => c.UserId == userId).ToListAsync();
         if (cart.Count == 0) return BadRequest("سبد خرید مشتری خالی است.");
 
         var input = new AdminOrderInput(
             user.Id,
-            user.FullName,
-            user.PhoneNumber,
-            user.Email,
-            user.Address,
-            null,
-            null,
-            null,
-            null,
-            user.PostalCode,
+            fullName,
+            phone,
+            string.IsNullOrWhiteSpace(request.Email) ? user.Email : request.Email.Trim(),
+            address,
+            request.ProvinceId,
+            request.CityId,
+            request.ProvinceName,
+            request.CityName,
+            string.IsNullOrWhiteSpace(request.PostalCode) ? user.PostalCode : request.PostalCode.Trim(),
             cart.Select(c => new AdminOrderLine(c.ProductId, c.Quantity)).ToList(),
             request.CouponCode,
             request.ManualDiscountAmount,

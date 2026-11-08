@@ -44,7 +44,7 @@
         <!-- Hero -->
         <div class="sd-hero">
             <div class="sd-hero__badge">@record.DeviceName</div>
-            <h1 class="sd-hero__title">@record.SensorName</h1>
+            <h1 class="sd-hero__title">@seoInfo.CoreName</h1>
             @if (!string.IsNullOrEmpty(record.SensorType))
             {
                 <div class="sd-hero__type">@record.SensorType</div>
@@ -67,7 +67,7 @@
                     <span class="sd-spec-value">@(record.SensorType ?? "-")</span>
                 </div>
                 <div class="sd-spec-row">
-                    <span class="sd-spec-label">اندازه</span>
+                    <span class="sd-spec-label">مقدار / اندازه</span>
                     <span class="sd-spec-value">@(record.SizeText ?? "-")</span>
                 </div>
                 <div class="sd-spec-row">
@@ -241,6 +241,7 @@
 
     private SensorFinderRecordDto? record;
     private bool isLoading = true;
+    private SensorSeoInfo seoInfo;
     private string pageTitle = "سنسور یاب | ارورسرویس";
     private string pageDescription = "";
     private string pageKeywords = "";
@@ -271,9 +272,10 @@
 
             firstImageUrl = record.Images?.FirstOrDefault()?.Url;
 
-            pageTitle = $"سنسور {record.SensorName} - {record.DeviceName} | ارورسرویس";
-            pageDescription = $"مشخصات فنی سنسور {record.SensorName} ({record.SensorType ?? ""}) مربوط به {record.DeviceName}. {(string.IsNullOrEmpty(record.SizeText) ? "" : $"اندازه: {record.SizeText}. ")}{(string.IsNullOrEmpty(record.Notes) ? "" : Truncate(record.Notes, 120))}";
-            pageKeywords = $"سنسور {record.SensorName}, {record.SensorType}, {record.DeviceName}, سنسور لوازم خانگی";
+            seoInfo = SensorSeoText.Build(record.SensorName, record.SensorType, record.SizeText, record.DeviceName, record.Notes);
+            pageTitle = seoInfo.Title;
+            pageDescription = seoInfo.Description;
+            pageKeywords = seoInfo.Keywords;
 
             BuildJsonLd();
         }
@@ -295,8 +297,8 @@
         {
             ["@context"] = "https://schema.org",
             ["@type"] = "Product",
-            ["name"] = $"سنسور {record.SensorName}",
-            ["description"] = record.Notes ?? $"سنسور {record.SensorName} مربوط به {record.DeviceName}",
+            ["name"] = seoInfo.FullName,
+            ["description"] = seoInfo.Description,
             ["url"] = url,
             ["brand"] = new Dictionary<string, string?> { ["@type"] = "Brand", ["name"] = record.DeviceName },
             ["category"] = record.SensorType ?? "سنسور لوازم خانگی"
@@ -328,10 +330,4 @@
     }
 
     private void CloseImage() => showImageModal = false;
-
-    private string Truncate(string? text, int max)
-    {
-        if (string.IsNullOrEmpty(text)) return "";
-        return text.Length <= max ? text : text[..max] + "...";
-    }
 }

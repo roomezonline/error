@@ -1,4 +1,4 @@
-using ErrorService.Server.Data;
+﻿using ErrorService.Server.Data;
 using ErrorService.Server.Models;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
@@ -31,6 +31,7 @@ public class ShippingMethodsController : ControllerBase
                 Description = s.Description,
                 Price = s.Price,
                 EstimatedDays = s.EstimatedDays,
+                TrackingUrlTemplate = s.TrackingUrlTemplate,
                 IsActive = s.IsActive,
                 IsFree = s.IsFree,
                 SortOrder = s.SortOrder
@@ -51,6 +52,7 @@ public class ShippingMethodsController : ControllerBase
                 Description = s.Description,
                 Price = s.Price,
                 EstimatedDays = s.EstimatedDays,
+                TrackingUrlTemplate = s.TrackingUrlTemplate,
                 IsActive = s.IsActive,
                 IsFree = s.IsFree,
                 SortOrder = s.SortOrder
@@ -68,6 +70,7 @@ public class ShippingMethodsController : ControllerBase
             Description = request.Description,
             Price = request.Price,
             EstimatedDays = request.EstimatedDays,
+            TrackingUrlTemplate = string.IsNullOrWhiteSpace(request.TrackingUrlTemplate) ? null : request.TrackingUrlTemplate.Trim(),
             IsActive = request.IsActive,
             IsFree = request.IsFree,
             SortOrder = request.SortOrder
@@ -83,6 +86,7 @@ public class ShippingMethodsController : ControllerBase
             Description = method.Description,
             Price = method.Price,
             EstimatedDays = method.EstimatedDays,
+            TrackingUrlTemplate = method.TrackingUrlTemplate,
             IsActive = method.IsActive,
             IsFree = method.IsFree,
             SortOrder = method.SortOrder
@@ -101,6 +105,7 @@ public class ShippingMethodsController : ControllerBase
         method.Description = request.Description;
         method.Price = request.Price;
         method.EstimatedDays = request.EstimatedDays;
+        method.TrackingUrlTemplate = string.IsNullOrWhiteSpace(request.TrackingUrlTemplate) ? null : request.TrackingUrlTemplate.Trim();
         method.IsActive = request.IsActive;
         method.IsFree = request.IsFree;
         method.SortOrder = request.SortOrder;
@@ -114,6 +119,7 @@ public class ShippingMethodsController : ControllerBase
             Description = method.Description,
             Price = method.Price,
             EstimatedDays = method.EstimatedDays,
+            TrackingUrlTemplate = method.TrackingUrlTemplate,
             IsActive = method.IsActive,
             IsFree = method.IsFree,
             SortOrder = method.SortOrder

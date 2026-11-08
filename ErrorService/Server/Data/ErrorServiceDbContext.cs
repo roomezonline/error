@@ -23,6 +23,8 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<Product> Products { get; set; }
     public DbSet<Category> Categories { get; set; }
     public DbSet<News> News { get; set; }
+    public DbSet<ContentCategory> ContentCategories { get; set; }
+    public DbSet<ContentSettings> ContentSettings { get; set; }
     public DbSet<TrainingCourse> TrainingCourses { get; set; }
     public DbSet<TrainingLesson> TrainingLessons { get; set; }
     public DbSet<TrainingBlock> TrainingBlocks { get; set; }
@@ -33,6 +35,7 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<TrainingArticleComment> TrainingArticleComments { get; set; }
     public DbSet<SiteSettings> SiteSettings { get; set; }
     public DbSet<SiteHomeModuleSetting> SiteHomeModuleSettings { get; set; }
+    public DbSet<SiteFaqEntry> SiteFaqEntries { get; set; }
     public DbSet<BankAccount> BankAccounts { get; set; }
     public DbSet<Order> Orders { get; set; }
     public DbSet<OrderItem> OrderItems { get; set; }
@@ -55,6 +58,7 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<FooterSettings> FooterSettings { get; set; }
     public DbSet<FooterLinkGroup> FooterLinkGroups { get; set; }
     public DbSet<FooterLink> FooterLinks { get; set; }
+    public DbSet<AboutPageContent> AboutPageContents { get; set; }
     public DbSet<SystemEventLog> SystemEventLogs { get; set; }
     public DbSet<ContactMessage> ContactMessages { get; set; }
 
@@ -115,6 +119,7 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<ChatAiProvider> ChatAiProviders { get; set; }
     public DbSet<ChatAiApiKey> ChatAiApiKeys { get; set; }
     public DbSet<ChatAiModel> ChatAiModels { get; set; }
+    public DbSet<ChatAiProxy> ChatAiProxies { get; set; }
     public DbSet<BannedVisitor> BannedVisitors { get; set; }
     public DbSet<CannedResponse> CannedResponses { get; set; }
     public DbSet<ChatFaqEntry> ChatFaqEntries { get; set; }
@@ -143,6 +148,8 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<VisitLog> VisitLogs { get; set; }
     public DbSet<VisitSession> VisitSessions { get; set; }
     public DbSet<DailyVisitStat> DailyVisitStats { get; set; }
+
+    public DbSet<ServiceVoiceAction> ServiceVoiceActions { get; set; }
     public DbSet<DailyPagePathStat> DailyPagePathStats { get; set; }
 
     public DbSet<Notification> Notifications { get; set; }
@@ -151,6 +158,13 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<NotificationRule> NotificationRules { get; set; }
     public DbSet<MessengerEndpoint> MessengerEndpoints { get; set; }
     public DbSet<StockAlert> StockAlerts { get; set; }
+    public DbSet<PriceDropAlert> PriceDropAlerts { get; set; }
+    public DbSet<CustomerAddress> CustomerAddresses { get; set; }
+
+    public DbSet<ContentStudioSettings> ContentStudioSettings { get; set; }
+    public DbSet<ContentStudioSource> ContentStudioSources { get; set; }
+    public DbSet<ContentStudioItem> ContentStudioItems { get; set; }
+    public DbSet<ContentStudioRun> ContentStudioRuns { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -227,6 +241,31 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasOne(x => x.Product)
                 .WithMany()
                 .HasForeignKey(x => x.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PriceDropAlert>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.AppUserId, x.ProductId }).IsUnique();
+            entity.HasIndex(x => new { x.ProductId, x.Status });
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.AppUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Product)
+                .WithMany()
+                .HasForeignKey(x => x.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CustomerAddress>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.AppUserId, x.IsDefault });
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.AppUserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -358,6 +397,9 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasIndex(x => x.Timestamp);
             entity.HasIndex(x => new { x.DeviceCode, x.Timestamp });
             entity.HasIndex(x => x.MonitoringId);
+            // کوئری‌های «اولین/آخرین رکورد یک اتصال» بر اساس Timestamp مرتب می‌شوند؛
+            // بدون این ایندکس ترکیبی، SQL کل ایندکس Timestamp را scan می‌کرد.
+            entity.HasIndex(x => new { x.MonitoringId, x.Timestamp });
             entity.HasIndex(x => x.CustomerReceiptId);
 
             entity.HasOne(x => x.CustomerReceipt)
@@ -900,10 +942,40 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasIndex(p => p.IsPublished);
             entity.HasIndex(p => p.CreatedAt);
             entity.HasIndex(p => p.Slug).IsUnique().HasFilter("[Slug] IS NOT NULL");
+            entity.HasIndex(p => new { p.ContentType, p.IsPublished, p.CreatedAt });
+            entity.HasIndex(p => new { p.CategoryId, p.IsPublished });
+            entity.HasIndex(p => p.PublishAt);
+
+            // رکوردهای قدیمی هنگام افزودن ستون مقدار «خبر» بگیرند.
+            entity.Property(p => p.ContentType).HasDefaultValue(ContentType.News);
+
+            entity.HasOne(p => p.Category)
+                .WithMany(c => c.Contents)
+                .HasForeignKey(p => p.CategoryId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ContentCategory>(entity =>
+        {
+            entity.Property(x => x.Title).IsRequired().HasMaxLength(120);
+            entity.Property(x => x.Slug).HasMaxLength(120);
+            entity.HasIndex(x => x.Slug).IsUnique().HasFilter("[Slug] IS NOT NULL");
+            entity.HasIndex(x => new { x.ContentType, x.IsActive, x.SortOrder });
+        });
+
+        modelBuilder.Entity<ContentSettings>(entity =>
+        {
+            entity.Property(x => x.HomeTitle).HasMaxLength(200);
+            entity.Property(x => x.HomeTypes).HasMaxLength(200);
+            entity.Property(x => x.DefaultAuthorName).HasMaxLength(100);
         });
 
         modelBuilder.Entity<TrainingCourse>(entity =>
         {
+            entity.Property(x => x.Title).IsRequired().HasMaxLength(200);
+            entity.Property(x => x.Summary).HasMaxLength(1000);
+            entity.Property(x => x.CoverImageUrl).HasMaxLength(500);
+            entity.Property(x => x.Category).HasMaxLength(120);
             entity.HasIndex(x => new { x.IsPublished, x.SortOrder });
             entity.HasIndex(x => x.CreatedAt);
             entity.HasIndex(x => x.Slug).IsUnique().HasFilter("[Slug] IS NOT NULL");
@@ -957,6 +1029,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.Title).IsRequired().HasMaxLength(300);
             entity.Property(x => x.Summary).HasMaxLength(1000);
             entity.Property(x => x.CoverImageUrl).HasMaxLength(500);
+            entity.Property(x => x.Category).HasMaxLength(120);
             entity.HasIndex(x => new { x.IsPublished, x.CreatedAt });
             entity.HasIndex(x => x.Slug).IsUnique().HasFilter("[Slug] IS NOT NULL");
         });
@@ -1211,6 +1284,32 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasIndex(x => new { x.FooterLinkGroupId, x.SortOrder });
         });
 
+        modelBuilder.Entity<AboutPageContent>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.HeroBadge).HasMaxLength(120);
+            entity.Property(x => x.HeroTitle).HasMaxLength(200);
+            entity.Property(x => x.HeroSubtitle).HasMaxLength(600);
+            entity.Property(x => x.HeroImageUrl).HasMaxLength(500);
+            entity.Property(x => x.StoryTitle).HasMaxLength(120);
+            entity.Property(x => x.StoryText).HasMaxLength(6000);
+            entity.Property(x => x.MissionTitle).HasMaxLength(120);
+            entity.Property(x => x.MissionText).HasMaxLength(600);
+            entity.Property(x => x.VisionTitle).HasMaxLength(120);
+            entity.Property(x => x.VisionText).HasMaxLength(600);
+            entity.Property(x => x.ValuesTitle).HasMaxLength(120);
+            entity.Property(x => x.ValuesText).HasMaxLength(600);
+            entity.Property(x => x.FeaturesTitle).HasMaxLength(160);
+            entity.Property(x => x.FeaturesSubtitle).HasMaxLength(400);
+            entity.Property(x => x.CtaTitle).HasMaxLength(200);
+            entity.Property(x => x.CtaText).HasMaxLength(600);
+            entity.Property(x => x.CtaButtonText).HasMaxLength(80);
+            entity.Property(x => x.CtaButtonUrl).HasMaxLength(300);
+            entity.Property(x => x.SeoTitle).HasMaxLength(200);
+            entity.Property(x => x.SeoDescription).HasMaxLength(500);
+            entity.Property(x => x.SeoKeywords).HasMaxLength(500);
+        });
+
         // SystemEventLog Configuration - چشمانی قوی مانیتورینگ
         modelBuilder.Entity<SystemEventLog>(entity =>
         {
@@ -1310,6 +1409,11 @@ public sealed class ErrorServiceDbContext : DbContext
                 .WithOne(x => x.Provider)
                 .HasForeignKey(x => x.ProviderId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(x => x.Proxies)
+                .WithOne(x => x.Provider)
+                .HasForeignKey(x => x.ProviderId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ChatAiApiKey>(entity =>
@@ -1331,6 +1435,16 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasIndex(x => x.ProviderId);
             entity.HasIndex(x => new { x.ProviderId, x.Priority });
             entity.HasIndex(x => new { x.ProviderId, x.ModelId }).IsUnique();
+        });
+
+        modelBuilder.Entity<ChatAiProxy>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Url).IsRequired().HasMaxLength(500);
+            entity.Property(x => x.Label).HasMaxLength(100);
+            entity.Property(x => x.LastError).HasMaxLength(500);
+            entity.HasIndex(x => x.ProviderId);
+            entity.HasIndex(x => new { x.ProviderId, x.Priority });
         });
 
         modelBuilder.Entity<SmsSettings>(entity =>
@@ -1580,6 +1694,78 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.HasIndex(x => x.VisitorId);
             entity.HasIndex(x => x.StartedAtUtc);
             entity.HasIndex(x => x.EndedAtUtc);
+        });
+
+        modelBuilder.Entity<ContentStudioSettings>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.AuthorName).HasMaxLength(150);
+            entity.Property(x => x.LastRunStatus).HasMaxLength(20);
+            entity.Property(x => x.LastRunSummary).HasMaxLength(1000);
+            entity.Property(x => x.LastScheduledRunDate).HasMaxLength(10);
+        });
+
+        modelBuilder.Entity<ContentStudioSource>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            entity.Property(x => x.FeedUrl).IsRequired().HasMaxLength(1000);
+            entity.Property(x => x.SiteUrl).HasMaxLength(1000);
+            entity.Property(x => x.Category).IsRequired().HasMaxLength(20);
+            entity.Property(x => x.DefaultTags).HasMaxLength(500);
+            entity.Property(x => x.IncludeKeywords).HasMaxLength(1000);
+            entity.Property(x => x.ExcludeKeywords).HasMaxLength(1000);
+            entity.Property(x => x.AutoPublishMode).IsRequired().HasMaxLength(20);
+            entity.Property(x => x.ImageMode).IsRequired().HasMaxLength(20);
+            entity.Property(x => x.FallbackImageUrl).HasMaxLength(1000);
+            entity.Property(x => x.LastStatus).HasMaxLength(20);
+            entity.Property(x => x.LastError).HasMaxLength(1000);
+            entity.HasIndex(x => x.Enabled);
+            entity.HasIndex(x => x.Priority);
+        });
+
+        modelBuilder.Entity<ContentStudioItem>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ExternalId).HasMaxLength(500);
+            entity.Property(x => x.SourceUrl).IsRequired().HasMaxLength(1000);
+            entity.Property(x => x.SourceUrlHash).IsRequired().HasMaxLength(64);
+            entity.Property(x => x.OriginalTitle).IsRequired().HasMaxLength(500);
+            entity.Property(x => x.OriginalSummary).HasMaxLength(2000);
+            entity.Property(x => x.OriginalImageUrl).HasMaxLength(1000);
+            entity.Property(x => x.GeneratedTitle).HasMaxLength(250);
+            entity.Property(x => x.GeneratedSummary).HasMaxLength(600);
+            entity.Property(x => x.GeneratedTags).HasMaxLength(600);
+            entity.Property(x => x.ImageUrl).HasMaxLength(1000);
+            entity.Property(x => x.Status).IsRequired().HasMaxLength(20);
+            entity.Property(x => x.StatusDetail).HasMaxLength(1000);
+            entity.HasIndex(x => x.SourceUrlHash).IsUnique();
+            entity.HasIndex(x => new { x.Status, x.CreatedAt });
+            entity.HasIndex(x => x.SourceId);
+            entity.HasIndex(x => x.NewsId);
+            entity.HasOne(x => x.Source)
+                .WithMany()
+                .HasForeignKey(x => x.SourceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ContentStudioRun>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Trigger).IsRequired().HasMaxLength(20);
+            entity.Property(x => x.Status).IsRequired().HasMaxLength(20);
+            entity.Property(x => x.Message).HasMaxLength(2000);
+            entity.HasIndex(x => x.StartedAt);
+        });
+
+        modelBuilder.Entity<ServiceVoiceAction>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Key).IsRequired().HasMaxLength(40);
+            entity.Property(x => x.TitleFa).IsRequired().HasMaxLength(120);
+            entity.Property(x => x.AudioUrl).HasMaxLength(500);
+            entity.HasIndex(x => x.Key).IsUnique();
+            entity.HasIndex(x => x.Priority);
         });
     }
 }

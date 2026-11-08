@@ -265,8 +265,8 @@
                     <div class="settings-card accent">
                         <div class="switch-row">
                             <div class="switch-text">
-                                <div class="switch-title">فعال بودن دستیار هوشمند</div>
-                                <div class="switch-desc">دستیار همیشه در ابتدای گفتگو فعال است و تا زمان پاسخ انسان به کاربر کمک می‌کند؛ با اولین پاسخ اپراتور یا درخواست اپراتور انسانی کنار می‌رود.</div>
+                                <div class="switch-title">فعال بودن دستیار هوشمند در چت</div>
+                                <div class="switch-desc">دستیار همیشه در ابتدای گفتگو فعال است و تا زمان پاسخ انسان به کاربر کمک می‌کند؛ با اولین پاسخ اپراتور یا درخواست اپراتور انسانی کنار می‌رود. این گزینه فقط چت را کنترل می‌کند و روی استودیوی محتوا اثری ندارد.</div>
                             </div>
                             <label class="chat-switch">
                                 <input type="checkbox" @bind="_siteEnableAi" />
@@ -275,7 +275,12 @@
                         </div>
 
                         <div class="info-chip">
-                            بدون تنظیم URL و کلید، فقط به سوالات پرتکرار (FAQ) پاسخ داده می‌شود.
+                            تنظیمات سرویس‌دهنده‌ها، کلیدها، مدل‌ها و انتخاب کاربرد (چت / استودیوی محتوا) در صفحه «تنظیمات هوش مصنوعی» انجام می‌شود. این صفحه فقط رفتار دستیار در چت را کنترل می‌کند.
+                        </div>
+                        <div class="mt-2">
+                            <a href="/admin/ai" class="btn btn-outline-primary btn-sm">
+                                <span class="oi oi-cog me-1"></span> رفتن به تنظیمات هوش مصنوعی
+                            </a>
                         </div>
                     </div>
 
@@ -315,41 +320,6 @@
                                     </div>
                                 </div>
                             }
-
-                            <div class="ai-credits @(_aiCreditsLoading ? "loading" : "")">
-                                <div class="ai-credits-head">
-                                    <span><span class="oi oi-credit-card"></span> اعتبار API</span>
-                                    <button class="mini-btn" @onclick="LoadAiCredits" disabled="@_aiCreditsLoading">
-                                        @(_aiCreditsLoading ? "در حال استعلام..." : "استعلام")
-                                    </button>
-                                </div>
-
-                                @if (_aiCreditsLoading)
-                                {
-                                    <div class="ai-credits-note"><span class="spinner-border spinner-border-sm"></span> در حال استعلام اعتبار از سرویس‌دهنده...</div>
-                                }
-                                else if (_aiCredits == null)
-                                {
-                                    <div class="ai-credits-note">هنوز استعلام نشده است. برای دیدن اعتبار باقی‌مانده دکمه «استعلام» را بزنید.</div>
-                                }
-                                else if (!_aiCredits.ok)
-                                {
-                                    <div class="ai-credits-note warn">@(_aiCredits.message ?? "استعلام انجام نشد.")</div>
-                                }
-                                else
-                                {
-                                    <div class="ai-credits-grid">
-                                        <div class="ai-credit ok"><b dir="ltr">@_aiCredits.remaining.ToString("0.####")</b><span>باقی‌مانده (@_aiCredits.currency)</span></div>
-                                        <div class="ai-credit used"><b dir="ltr">@_aiCredits.totalUsage.ToString("0.####")</b><span>مصرف‌شده (@_aiCredits.currency)</span></div>
-                                        <div class="ai-credit"><b dir="ltr">@_aiCredits.totalCredits.ToString("0.####")</b><span>کل شارژ (@_aiCredits.currency)</span></div>
-                                    </div>
-                                    <div class="ai-credits-bar"><div class="ai-credits-bar__fill" style="width:@(CreditsPercent)%"></div></div>
-                                    @if (_aiCredits.limit is > 0)
-                                    {
-                                        <div class="ai-credits-note ok">سقف مجاز ماهانه: @_aiCredits.limit.Value.ToString("0.####") @_aiCredits.currency</div>
-                                    }
-                                }
-                            </div>
                         </div>
 
                         <div class="settings-card">
@@ -396,6 +366,12 @@
                             </div>
 
                             <div class="field-block">
+                                <label class="field-label">دستور سیستم دستیار چت (Prompt)</label>
+                                <textarea class="form-control form-control-sm" rows="3" @bind="_siteAiSystemPrompt" placeholder="تو دستیار پشتیبانی رسمی سایت هستی..."></textarea>
+                                <div class="form-text small">این متن فقط برای پاسخ‌های چت استفاده می‌شود؛ استودیوی محتوا دستور خودش را دارد.</div>
+                            </div>
+
+                            <div class="field-block">
                                 <label class="field-label">کلمات ممنوعه (جداسازی با کاما)</label>
                                 <input type="text" class="form-control form-control-sm" @bind="_siteAiBlockKeywords" placeholder="قیمت قطعی, زمان تحویل قطعی, شماره حساب" />
                                 <div class="form-text small">اگر سوال کاربر شامل یکی از این کلمات باشد، دستیار پاسخ نمی‌دهد و اپراتور انسانی وارد گفتگو می‌شود.</div>
@@ -408,298 +384,14 @@
                                 <div class="form-text small">این موضوعات به‌صورت دکمه بالای فیلد چت به کاربر نمایش داده می‌شود و در پیام خوش‌آمد دستیار هم فهرست می‌شود.</div>
                             </div>
                         </div>
+                    }
 
-                        <div class="settings-card">
-                            <div class="settings-card-title ai-title-row">
-                                <span><span class="oi oi-layers"></span> مدل فعال</span>
-                                <span class="model-active-chip" dir="ltr">@(ResolveModelValue() is { Length: > 0 } v ? v : "—")</span>
-                            </div>
-
-                            <div class="model-grid">
-                                @foreach (var m in AiModelOptions)
-                                {
-                                    var id = m.Id;
-                                    <div class="model-card @(_siteAiModelChoice == id ? "sel" : "")" role="button" tabindex="0" @onclick="() => SelectModel(id)">
-                                        <span class="model-check"><span class="oi oi-check"></span></span>
-                                        <span class="model-name" dir="ltr">@m.Label</span>
-                                        <span class="model-desc">@m.Desc</span>
-                                        <span class="model-tags">
-                                            <span class="model-tag">@m.Tier</span>
-                                            <span class="model-tag tag-speed">@m.Speed</span>
-                                        </span>
-                                        <span class="model-test-row" @onclick:stopPropagation>
-                                            <button type="button" class="model-test-btn" @onclick="() => TestModel(id)"
-                                                    disabled="@(_modelTests.TryGetValue(id, out var t) && t.Busy)"
-                                                    title="تست این مدل بدون ذخیره تنظیمات">
-                                                @if (_modelTests.TryGetValue(id, out var tb) && tb.Busy)
-                                                {
-                                                    <span class="spinner-border spinner-border-sm"></span>
-                                                    <span>در حال تست…</span>
-                                                }
-                                                else
-                                                {
-                                                    <span class="oi oi-media-play"></span>
-                                                    <span>تست مدل</span>
-                                                }
-                                            </button>
-                                            @if (_modelTests.TryGetValue(id, out var tr) && !tr.Busy && tr.Ok != null)
-                                            {
-                                                <span class="model-test-result @(tr.Ok == true ? "ok" : "fail")" title="@(tr.Reply ?? tr.Message)">
-                                                    @(tr.Ok == true
-                                                        ? $"✓ سالم ({ToFaNum(tr.Ms)}ms)"
-                                                        : $"✗ {(tr.Message?.Length > 110 ? tr.Message[..110] + "…" : tr.Message)}")
-                                                </span>
-                                            }
-                                        </span>
-                                    </div>
-                                }
-                                <div class="model-card @(_siteAiModelChoice == "__custom__" ? "sel" : "")" role="button" tabindex="0" @onclick='() => SelectModel("__custom__")'>
-                                    <span class="model-check"><span class="oi oi-check"></span></span>
-                                    <span class="model-name" dir="ltr">custom</span>
-                                    <span class="model-desc">نام دلخواه خود را وارد کنید (مثلاً از فهرست ارائه‌دهنده).</span>
-                                    <span class="model-tags"><span class="model-tag">سفارشی</span></span>
-                                    <span class="model-test-row" @onclick:stopPropagation>
-                                        <button type="button" class="model-test-btn" @onclick='() => TestModel("__custom__")'
-                                                disabled="@(_modelTests.TryGetValue("__custom__", out var tc) && tc.Busy)"
-                                                title="تست مدل سفارشی بدون ذخیره تنظیمات">
-                                            @if (_modelTests.TryGetValue("__custom__", out var tcb) && tcb.Busy)
-                                            {
-                                                <span class="spinner-border spinner-border-sm"></span>
-                                                <span>در حال تست…</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="oi oi-media-play"></span>
-                                                <span>تست مدل</span>
-                                            }
-                                        </button>
-                                        @if (_modelTests.TryGetValue("__custom__", out var tcr) && !tcr.Busy && tcr.Ok != null)
-                                        {
-                                            <span class="model-test-result @(tcr.Ok == true ? "ok" : "fail")" title="@(tcr.Reply ?? tcr.Message)">
-                                                @(tcr.Ok == true
-                                                    ? $"✓ سالم ({ToFaNum(tcr.Ms)}ms)"
-                                                    : $"✗ {(tcr.Message?.Length > 110 ? tcr.Message[..110] + "…" : tcr.Message)}")
-                                            </span>
-                                        }
-                                    </span>
-                                </div>
-                            </div>
-
-                            @if (_siteAiModelChoice == "__custom__")
-                            {
-                                <div class="field-block">
-                                    <label class="field-label">نام مدل سفارشی</label>
-                                    <input type="text" class="form-control form-control-sm" dir="ltr" @bind="_siteAiModel" placeholder="gpt-4o-mini / llama-3.1-8b / ..." />
-                                </div>
-                            }
-                        </div>
-
-                        <div class="settings-card">
-                            <div class="settings-card-title ai-title-row">
-                                <span><span class="oi oi-circle-check"></span> سرویس‌دهنده‌ها و زنجیره خودکار</span>
-                                <span class="d-flex gap-2">
-                                    <button type="button" class="mini-btn" @onclick="TestChainAsync" disabled="@(_aiProvidersLoading || _chainTesting)">
-                                        @(_chainTesting ? "در حال تست زنجیره…" : "تست زنجیره")
-                                    </button>
-                                    <button type="button" class="mini-btn" @onclick="SaveAiProvidersAsync" disabled="@(_aiProvidersLoading || _aiProvidersSaving)">
-                                        @(_aiProvidersSaving ? "در حال ذخیره…" : "ذخیره سرویس‌دهنده‌ها")
-                                    </button>
-                                </span>
-                            </div>
-
-                            <div class="form-text small mb-2">
-                                در صورت خطا یا اتمام سقف، زنجیره به‌صورت خودکار و بی‌صدا از سرویس‌دهنده ← کلید ← مدل بعدی استفاده می‌کند و کاربر فقط پاسخ نهایی را می‌بیند.
-                            </div>
-
-                            @if (_aiProvidersLoading)
-                            {
-                                <div class="text-muted small py-2"><span class="spinner-border spinner-border-sm"></span> در حال بارگذاری…</div>
-                            }
-                            else
-                            {
-                                @if (_aiProviders.Count == 0 && !string.IsNullOrWhiteSpace(_siteAiApiUrl))
-                                {
-                                    <div class="alert alert-info py-2 small d-flex justify-content-between align-items-center mb-2">
-                                        <span>تنظیمات قدیمی (تک‌کلیدی) به‌عنوان fallback استفاده می‌شود. می‌توانید آن را به سرویس‌دهنده تبدیل کنید.</span>
-                                        <button type="button" class="btn btn-outline-primary btn-sm" @onclick="SeedFromLegacyAsync" disabled="@_aiProvidersSaving">تبدیل به سرویس‌دهنده</button>
-                                    </div>
-                                }
-
-                                @foreach (var p in _aiProviders)
-                                {
-                                    var pRef = p;
-                                    <div class="ai-provider-box @(pRef.Enabled ? "" : "off")">
-                                        <div class="ai-provider-head">
-                                            <label class="chat-switch mb-0" title="فعال/غیرفعال">
-                                                <input type="checkbox" @bind="pRef.Enabled" />
-                                                <span class="chat-slider"></span>
-                                            </label>
-                                            <input type="text" class="form-control form-control-sm" placeholder="نام سرویس‌دهنده" @bind="pRef.Name" />
-                                            <input type="text" class="form-control form-control-sm" dir="ltr" placeholder="https://openrouter.ai/api/v1" @bind="pRef.BaseUrl" />
-                                            <select class="form-select form-select-sm" style="max-width:130px" @bind="pRef.Kind">
-                                                <option value="openrouter">OpenRouter</option>
-                                                <option value="openai">OpenAI</option>
-                                                <option value="custom">سازگار OpenAI</option>
-                                            </select>
-                                            <span class="d-flex gap-1">
-                                                <button type="button" class="icon-btn-sm" title="بالا" @onclick="() => MoveProvider(pRef, -1)"><span class="oi oi-arrow-top"></span></button>
-                                                <button type="button" class="icon-btn-sm" title="پایین" @onclick="() => MoveProvider(pRef, 1)"><span class="oi oi-arrow-bottom"></span></button>
-                                                <button type="button" class="icon-btn-sm text-danger" title="حذف سرویس‌دهنده" @onclick="() => RemoveProvider(pRef)"><span class="oi oi-trash"></span></button>
-                                            </span>
-                                        </div>
-
-                                        @if (pRef.Kind == "openrouter")
-                                        {
-                                            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="() => LoadCatalogAsync(pRef)" disabled="@(pRef.CatalogLoading)">
-                                                    @(pRef.CatalogLoading ? "در حال دریافت…" : "دریافت مدل‌های رایگان OpenRouter")
-                                                </button>
-                                                @if (pRef.CatalogMessage != null)
-                                                {
-                                                    <small class="text-muted">@pRef.CatalogMessage</small>
-                                                }
-                                            </div>
-                                            @if (pRef.Catalog is { Count: > 0 })
-                                            {
-                                                <div class="ai-catalog">
-                                                    @foreach (var c in pRef.Catalog.Take(60))
-                                                    {
-                                                        var cat = c;
-                                                        <label class="ai-catalog-item">
-                                                            <input type="checkbox" @bind="cat.Selected" />
-                                                            <span dir="ltr">@cat.Id</span>
-                                                            <small class="text-muted">@cat.Name</small>
-                                                        </label>
-                                                    }
-                                                    <button type="button" class="btn btn-primary btn-sm mt-1" @onclick="() => AddSelectedCatalog(pRef)">
-                                                        افزودن مدل‌های انتخاب‌شده (@pRef.Catalog.Count(x => x.Selected))
-                                                    </button>
-                                                </div>
-                                            }
-                                        }
-
-                                        <div class="ai-sub-title">کلیدها (API Key)</div>
-                                        @foreach (var k in pRef.Keys)
-                                        {
-                                            var kRef = k;
-                                            <div class="ai-row @(kRef.Enabled ? "" : "off")">
-                                                <input type="checkbox" @bind="kRef.Enabled" title="فعال" />
-                                                <input type="password" class="form-control form-control-sm" dir="ltr" placeholder="sk-..." @bind="kRef.KeyValue" />
-                                                <input type="text" class="form-control form-control-sm" style="max-width:130px" placeholder="برچسب (اختیاری)" @bind="kRef.Label" />
-                                                <span class="ai-status-chip @(kRef.InCooldown ? "warn" : kRef.FailureCount > kRef.SuccessCount ? "bad" : "ok")"
-                                                      title="@(kRef.LastError ?? "")">
-                                                    @(kRef.InCooldown
-                                                        ? $"کول‌داون تا {kRef.CooldownUntil:HH:mm}"
-                                                        : $"✓{ToFaNum(kRef.SuccessCount)} ✗{ToFaNum(kRef.FailureCount)}")
-                                                </span>
-                                                <button type="button" class="icon-btn-sm text-danger" @onclick="() => pRef.Keys.Remove(kRef)"><span class="oi oi-trash"></span></button>
-                                            </div>
-                                        }
-                                        <button type="button" class="btn btn-outline-secondary btn-sm mt-1" @onclick="() => pRef.Keys.Add(new AiKeyUi())">+ افزودن کلید</button>
-
-                                        <div class="ai-sub-title mt-2">مدل‌ها</div>
-                                        @foreach (var m in pRef.Models)
-                                        {
-                                            var mRef = m;
-                                            <div class="ai-row @(mRef.Enabled ? "" : "off")">
-                                                <input type="checkbox" @bind="mRef.Enabled" title="فعال" />
-                                                <input type="text" class="form-control form-control-sm" dir="ltr" placeholder="provider/model:free" @bind="mRef.ModelId" />
-                                                <input type="text" class="form-control form-control-sm" style="max-width:130px" placeholder="نام نمایشی" @bind="mRef.Label" />
-                                                <span class="ai-status-chip @(mRef.InCooldown ? "warn" : mRef.FailureCount > mRef.SuccessCount ? "bad" : "ok")"
-                                                      title="@(mRef.LastError ?? "")">
-                                                    @(mRef.InCooldown
-                                                        ? $"کول‌داون تا {mRef.CooldownUntil:HH:mm}"
-                                                        : $"✓{ToFaNum(mRef.SuccessCount)} ✗{ToFaNum(mRef.FailureCount)}")
-                                                </span>
-                                                <button type="button" class="icon-btn-sm text-danger" @onclick="() => pRef.Models.Remove(mRef)"><span class="oi oi-trash"></span></button>
-                                            </div>
-                                        }
-                                        <button type="button" class="btn btn-outline-secondary btn-sm mt-1" @onclick="() => pRef.Models.Add(new AiModelUi())">+ افزودن مدل</button>
-                                    </div>
-                                }
-
-                                <button type="button" class="btn btn-outline-primary btn-sm mt-2" @onclick="AddProvider">
-                                    <span class="oi oi-plus"></span> افزودن سرویس‌دهنده
-                                </button>
-                            }
-
-                            @if (_chainTesting)
-                            {
-                                <div class="text-muted small mt-2"><span class="spinner-border spinner-border-sm"></span> در حال تست کاندیدها (تا ۳۰ ثانیه)…</div>
-                            }
-                            @if (_chainMessage != null)
-                            {
-                                <div class="alert @(_chainOk == true ? "alert-success" : _chainOk == false ? "alert-danger" : "alert-info") py-2 small mt-2 mb-0">@_chainMessage</div>
-                            }
-                            @if (_chainResults is { Count: > 0 })
-                            {
-                                <div class="ai-chain-results mt-2">
-                                    @foreach (var r in _chainResults)
-                                    {
-                                        <div class="ai-chain-row @(r.Ok ? "ok" : "fail")">
-                                            <span class="chain-provider">@r.Provider</span>
-                                            <span class="chain-model" dir="ltr">@r.Model</span>
-                                            <span class="chain-key" dir="ltr">@r.Key</span>
-                                            <span class="chain-status">@r.Message</span>
-                                            <span class="chain-ms">@ToFaNum(r.Ms)ms</span>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                            @if (!string.IsNullOrEmpty(_aiProvidersMessage))
-                            {
-                                <div class="alert @(_aiProvidersOk == true ? "alert-success" : "alert-danger") py-2 small mt-2 mb-0">@_aiProvidersMessage</div>
-                            }
-                        </div>
-
-                        <div class="settings-card">
-                            <div class="settings-card-title">اتصال به مدل (fallback تک‌کلیدی)</div>
-
-                            <div class="form-text small mb-2">
-                                اگر سرویس‌دهنده‌ای در بخش بالا ثبت نشده باشد، از این پیکربندی استفاده می‌شود.
-                            </div>
-
-                            <div class="field-block">
-                                <label class="field-label">ارائه‌دهنده</label>
-                                <input type="text" class="form-control form-control-sm" @bind="_siteAiProvider" placeholder="مثلاً: openai / openrouter / سرویس ایرانی" />
-                                <div class="form-text small">برای OpenRouter می‌توانید خالی بگذارید؛ از روی آدرس API تشخیص داده می‌شود.</div>
-                            </div>
-                            <div class="field-block">
-                                <label class="field-label">آدرس API (پایانه: /chat/completions)</label>
-                                <input type="text" class="form-control form-control-sm" dir="ltr" @bind="_siteAiApiUrl" placeholder="https://openrouter.ai/api/v1" />
-                                @if (_siteAiApiUrl.Contains("openrouter.ai", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    <div class="form-text small text-success">OpenRouter شناسایی شد — استعلام اعتبار و مدل‌های رایگان فعال است.</div>
-                                }
-                            </div>
-
-                            <div class="field-block">
-                                <label class="field-label">کلید API</label>
-                                <input type="password" class="form-control form-control-sm" @bind="_siteAiApiKey" placeholder="sk-..." />
-                            </div>
-                            <div class="field-block">
-                                <label class="field-label">دستور سیستم (Prompt)</label>
-                                <textarea class="form-control form-control-sm" rows="3" @bind="_siteAiSystemPrompt" placeholder="شما پشتیبان فروشگاه هستید..."></textarea>
-                            </div>
-
-                            <div class="btn-row">
-                                <button class="btn btn-outline-primary btn-sm" @onclick="TestAiConnection" disabled="@_aiTestBusy">
-                                    @(_aiTestBusy ? "در حال تست..." : "تست مدل انتخابی (با تنظیمات فعلی فرم)")
-                                </button>
-                            </div>
-                            @if (_aiTestMessage != null)
-                            {
-                                <div class="alert @(_aiTestOk == true ? "alert-success" : "alert-danger") py-2 small mb-0" style="white-space:pre-line">@_aiTestMessage</div>
-                            }
-                        </div>
-
-                        <div class="settings-actions">
+                    <div class="settings-actions">
                             <button class="btn btn-success btn-sm" @onclick="SaveAllSettings" disabled="@(_settingsLoading || _savingSiteSettings || _savingSettings)">
                                 @if (_savingSiteSettings || _savingSettings) { <span class="spinner-border spinner-border-sm me-1"></span> }
                                 ذخیره تنظیمات
                             </button>
                         </div>
-                    }
                 }
 
                 @if (_settingsLoading)
@@ -1360,6 +1052,12 @@
     .ai-provider-box.off { opacity:.55; }
     .ai-provider-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
     .ai-provider-head .form-control { max-width:200px; }
+    .ai-scope-row { display:flex; align-items:center; gap:7px; flex-wrap:wrap; padding:7px 0 9px; margin-bottom:6px; border-bottom:1px dashed #e5e7eb; }
+    .ai-scope-title { font-size:.7rem; font-weight:700; color:#6b7280; }
+    .ai-scope { display:inline-flex; align-items:center; gap:5px; border:1px solid #d1d5db; background:#fff; color:#6b7280; border-radius:999px; padding:3px 10px; font-size:.68rem; font-weight:700; cursor:pointer; margin:0; transition:.15s; }
+    .ai-scope.on { border-color:#4f46e5; background:#eef2ff; color:#4338ca; }
+    .ai-scope input { width:13px; height:13px; margin:0; accent-color:#4f46e5; }
+    .ai-scope-warn { font-size:.65rem; color:#b45309; background:#fffbeb; border-radius:6px; padding:2px 7px; }
     .ai-sub-title { font-size:.72rem; font-weight:700; color:#4338ca; margin-bottom:5px; }
     .ai-row { display:flex; align-items:center; gap:7px; padding:5px 0; flex-wrap:wrap; }
     .ai-row.off { opacity:.5; }
@@ -1904,6 +1602,8 @@
         public string BaseUrl { get; set; } = "";
         public string Kind { get; set; } = "openrouter";
         public bool Enabled { get; set; } = true;
+        public bool UseForChat { get; set; } = true;
+        public bool UseForContentStudio { get; set; } = true;
         public List<AiKeyUi> Keys { get; set; } = new();
         public List<AiModelUi> Models { get; set; } = new();
         public List<CatalogItemUi>? Catalog { get; set; }
@@ -1972,7 +1672,9 @@
                         Name = p.TryGetProperty("name", out var pn) ? pn.GetString() ?? "" : "",
                         BaseUrl = p.TryGetProperty("baseUrl", out var pb) ? pb.GetString() ?? "" : "",
                         Kind = p.TryGetProperty("kind", out var pk) ? pk.GetString() ?? "custom" : "custom",
-                        Enabled = !p.TryGetProperty("enabled", out var pe) || pe.GetBoolean()
+                        Enabled = !p.TryGetProperty("enabled", out var pe) || pe.GetBoolean(),
+                        UseForChat = !p.TryGetProperty("useForChat", out var puc) || puc.GetBoolean(),
+                        UseForContentStudio = !p.TryGetProperty("useForContentStudio", out var pucs) || pucs.GetBoolean()
                     };
                     if (p.TryGetProperty("keys", out var keys) && keys.ValueKind == JsonValueKind.Array)
                         foreach (var k in keys.EnumerateArray())
@@ -2077,6 +1779,8 @@
                 Kind = p.Kind,
                 Enabled = p.Enabled,
                 Priority = i + 1,
+                UseForChat = p.UseForChat,
+                UseForContentStudio = p.UseForContentStudio,
                 Keys = p.Keys.Select((k, ki) => new ChatAiKeyPayload
                 {
                     Id = k.Id,
@@ -2168,6 +1872,8 @@
                 Kind = p.Kind,
                 Enabled = p.Enabled,
                 Priority = i + 1,
+                UseForChat = p.UseForChat,
+                UseForContentStudio = p.UseForContentStudio,
                 Keys = p.Keys.Select((k, ki) => new ChatAiKeyPayload
                 {
                     Id = k.Id,
@@ -2222,8 +1928,6 @@
         if (tab == "ai")
         {
             _ = LoadAiStats();
-            _ = LoadAiCredits();
-            _ = LoadAiProvidersAsync();
         }
     }
     private bool _aiTestBusy;
@@ -3098,10 +2802,6 @@
             _siteAutoMessageSeconds = s.TryGetProperty("autoMessageSeconds", out var aSec) ? aSec.GetInt32() : 60;
             _sitePhoneRequired = s.TryGetProperty("phoneRequired", out var pr) && pr.GetBoolean();
             _siteEnableAi = s.TryGetProperty("enableAiAssistant", out var ai) && ai.GetBoolean();
-            _siteAiProvider = s.TryGetProperty("aiProvider", out var aip) ? aip.GetString() ?? "" : "";
-            _siteAiApiUrl = s.TryGetProperty("aiApiUrl", out var aiu) ? aiu.GetString() ?? "" : "";
-            _siteAiModel = s.TryGetProperty("aiModel", out var aim) ? aim.GetString() ?? "" : "";
-            _siteAiApiKey = s.TryGetProperty("aiApiKey", out var aik) ? aik.GetString() ?? "" : "";
             _siteAiSystemPrompt = s.TryGetProperty("aiSystemPrompt", out var asp) ? asp.GetString() ?? "" : "";
             _siteAiTopics = s.TryGetProperty("aiSuggestedTopics", out var ait) ? ait.GetString() ?? "" : "";
             _siteAiGuestEnabled = s.TryGetProperty("aiGuestEnabled", out var ag) && ag.GetBoolean();
@@ -3145,10 +2845,6 @@
                 autoMessageSeconds = _siteAutoMessageSeconds,
                 phoneRequired = _sitePhoneRequired,
                 enableAiAssistant = _siteEnableAi,
-                aiProvider = _siteAiProvider,
-                aiApiUrl = _siteAiApiUrl,
-                aiModel = ResolveModelValue(),
-                aiApiKey = _siteAiApiKey,
                 aiSystemPrompt = _siteAiSystemPrompt,
                 aiSuggestedTopics = _siteAiTopics,
                 aiGuestEnabled = _siteAiGuestEnabled,

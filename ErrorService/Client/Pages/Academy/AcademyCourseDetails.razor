@@ -5,8 +5,6 @@
 @using System.Text.Json
 @inject NavigationManager NavigationManager
 
-<PageTitle>@(course?.Title ?? "دوره آموزشی") - ارورسرویس</PageTitle>
-
 <div class="course-details-page py-5 bg-white" dir="rtl">
     <div class="container">
         @if (course == null)
@@ -18,8 +16,8 @@
         else
         {
             <SeoHeader 
-                Title="@($"{course.Title} | دوره آموزشی | ارور سرویس")" 
-                Description="@(string.IsNullOrEmpty(course.Summary) ? $"شرکت در دوره آموزشی {course.Title} در آکادمی ارور سرویس" : (course.Summary.Length > 160 ? course.Summary.Substring(0, 157) + "..." : course.Summary))"
+                Title="@SeoTitles.Course(course.Title)" 
+                Description="@SeoDescriptions.Course(course.Summary, course.Title)"
                 OgType="video.movie"
                 OgImage="@(course.CoverImageUrl ?? "/images/og-default.jpg")"
                 JsonLd="@courseJsonLd" />

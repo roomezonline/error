@@ -8,6 +8,7 @@
 @using System.Globalization
 @inject HttpClient Http
 @inject ErrorService.Client.Services.ToastService ToastService
+@inject AuthenticationStateProvider AuthState
 @inject IJSRuntime JS
 
 <PageTitle>مدیریت دستگاه‌های مانیتورینگ</PageTitle>
@@ -83,6 +84,19 @@
                                 </label>
                             </div>
 
+                            @if (isSuperAdmin)
+                            {
+                                <div class="md-field md-field--row">
+                                    <label class="md-check">
+                                        <InputCheckbox class="md-check__box" @bind-Value="deviceModel.DetailedChartEnabled" />
+                                        <span class="md-check__text">چارت با جزییات</span>
+                                    </label>
+                                </div>
+                                <div class="md-hint">
+                                    با روشن‌بودن این گزینه، داده لحظه‌ای دستگاه در جدول چارت با جزییات ذخیره و نمودار آن نمایش داده می‌شود.
+                                </div>
+                            }
+
                             <div class="md-actions">
                                 <button type="submit" class="md-btn md-btn--primary" disabled="@isSavingDevice">
                                     @(isSavingDevice ? "در حال ذخیره..." : "ذخیره")
@@ -118,6 +132,10 @@
                                             <div class="md-item__top">
                                                 <div class="md-item__title">
                                                     <span class="md-item__device">@d.Title</span>
+                                                    @if (isSuperAdmin && !d.DetailedChartEnabled)
+                                                    {
+                                                        <span class="md-badge md-badge--off" title="داده لحظه‌ای برای چارت با جزییات ثبت نمی‌شود">چارت جزییات خاموش</span>
+                                                    }
                                                 </div>
                                                 <div class="md-item__actions">
                                                     <button type="button" class="md-act md-act--toggle @(d.IsActive ? "on" : "off")" @onclick="() => ToggleDeviceStatus(d.Id)" title="@(d.IsActive ? "غیرفعال کردن دستگاه" : "فعال کردن دستگاه")">
@@ -365,6 +383,7 @@
     .md-loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 0; }
     .md-loading__text { font-weight: 900; color: rgba(100,116,139,0.95); }
     .md-note { margin-top: 12px; font-weight: 800; color: #64748b; }
+    .md-hint { margin-top: 4px; font-size: 0.72rem; font-weight: 700; line-height: 1.7; color: #94a3b8; }
 
     .md-pill {
         min-width: 30px;
@@ -585,6 +604,7 @@
 
 @code {
     private bool isLoading = true;
+    private bool isSuperAdmin;
     private int activeTab = 0;
 
     private void SetTab(int tab) => activeTab = tab;
@@ -705,6 +725,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var state = await AuthState.GetAuthenticationStateAsync();
+        isSuperAdmin = state.User.IsInRole("super_admin");
         await Reload();
     }
 
@@ -758,7 +780,8 @@
         {
             Title = d.Title,
             DeviceNumber = d.DeviceNumber,
-            IsActive = d.IsActive
+            IsActive = d.IsActive,
+            DetailedChartEnabled = d.DetailedChartEnabled
         };
     }
 

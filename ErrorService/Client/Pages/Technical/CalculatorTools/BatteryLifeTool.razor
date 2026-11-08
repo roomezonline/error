@@ -1,0 +1,165 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="battery-life" Title="عمر باتری"
+           Subtitle="مدت کارکرد باتری را بر اساس ظرفیت، جریان مصرفی و درصد ظرفیت قابل استفاده محاسبه می‌کند."
+           Icon="oi-battery-full"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-form">
+        <div class="calc-field">
+            <label class="calc-label" for="bat-cap">ظرفیت باتری</label>
+            <div class="calc-input-group">
+                <input id="bat-cap" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                       placeholder="مثلاً 2000" @bind="capacity" @bind:event="oninput" @bind:after="PersistAsync" />
+                <select class="calc-select calc-select--unit" aria-label="واحد ظرفیت"
+                        @bind="capacityUnit" @bind:after="PersistAsync">
+                    <option value="mAh">mAh</option>
+                    <option value="Ah">Ah</option>
+                </select>
+            </div>
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="bat-load">جریان مصرفی</label>
+            <div class="calc-input-group">
+                <input id="bat-load" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                       placeholder="مثلاً 500" @bind="load" @bind:event="oninput" @bind:after="PersistAsync" />
+                <select class="calc-select calc-select--unit" aria-label="واحد جریان"
+                        @bind="loadUnit" @bind:after="PersistAsync">
+                    <option value="mA">mA</option>
+                    <option value="A">A</option>
+                </select>
+            </div>
+        </div>
+        <div class="calc-field calc-field--full">
+            <label class="calc-label" for="bat-usable">ظرفیت قابل استفاده (٪)</label>
+            <input id="bat-usable" class="calc-input" type="number" inputmode="decimal" step="any" min="1" max="100" dir="ltr"
+                   @bind="usablePercent" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">مدت کارکرد تقریبی</span>
+                    <span class="calc-result__value">@Result.Duration</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">ظرفیت قابل استفاده</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.UsableCapacity</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">جریان مصرفی</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.LoadCurrent</span>
+                </div>
+            </div>
+            <p class="calc-note mt-2 mb-0">
+                فرمول: زمان (ساعت) = ظرفیت (میلی‌آمپر‌ساعت) × درصد قابل استفاده ÷ جریان مصرفی (میلی‌آمپر).
+                در عمل، دمای پایین، جریان‌های بالا و افت ولتاژ نزدیک پایان کار، این زمان را کمتر می‌کنند.
+            </p>
+        </div>
+    }
+
+    <details class="calc-details">
+        <summary>نکته‌های انتخاب باتری</summary>
+        <div class="calc-details__body">
+            <ul class="calc-note mb-0 ps-3">
+                <li>برای کارکرد طولانی، معمولاً فقط ۸۰٪ ظرفیت باتری را قابل استفاده در نظر بگیرید تا عمر باتری حفظ شود.</li>
+                <li>باتری‌های لیتیومی در مقایسه با سرب-اسید افت ولتاژ و خوددشارژی کمتری دارند.</li>
+                <li>جریان بالای مصرف، ظرفیت مؤثر را کم می‌کند؛ برای وسایل پرمصرف از باتری با جریان تخلیه بالاتر استفاده کنید.</li>
+            </ul>
+        </div>
+    </details>
+</CalcShell>
+
+@code {
+    private double? capacity = 2000;
+    private string capacityUnit = "mAh";
+    private double? load = 500;
+    private string loadUnit = "mA";
+    private double? usablePercent = 80;
+
+    protected override string StorageKey => "battery-life";
+
+    private sealed class BatteryResult
+    {
+        public string Duration { get; init; } = "—";
+        public string UsableCapacity { get; init; } = "—";
+        public string LoadCurrent { get; init; } = "—";
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private BatteryResult Result => Compute();
+
+    private BatteryResult Compute()
+    {
+        if (capacity == null || load == null || usablePercent == null)
+            return new BatteryResult { Hint = "ظرفیت باتری، جریان مصرفی و درصد ظرفیت قابل استفاده را وارد کنید." };
+
+        if (capacity <= 0 || load <= 0)
+            return new BatteryResult { Error = "ظرفیت باتری و جریان مصرفی باید بزرگ‌تر از صفر باشند." };
+
+        if (usablePercent is <= 0 or > 100)
+            return new BatteryResult { Error = "درصد ظرفیت قابل استفاده باید بین ۱ تا ۱۰۰ باشد." };
+
+        var capacityMah = capacityUnit == "Ah" ? capacity.Value * 1000 : capacity.Value;
+        var loadMa = loadUnit == "A" ? load.Value * 1000 : load.Value;
+        var usableMah = capacityMah * usablePercent.Value / 100;
+
+        var hours = usableMah / loadMa;
+
+        return new BatteryResult
+        {
+            Duration = CalcFormat.Duration(hours),
+            UsableCapacity = CalcFormat.Num(usableMah, "0.#") + " mAh",
+            LoadCurrent = CalcFormat.Num(loadMa, "0.#") + " mA",
+            CopyText = $"عمر باتری — {CalcFormat.Duration(hours)} با مصرف {CalcFormat.Num(loadMa, "0.#")}mA از ظرفیت {CalcFormat.Num(usableMah, "0.#")}mAh"
+        };
+    }
+
+    private async Task ResetAsync()
+    {
+        capacity = 2000;
+        capacityUnit = "mAh";
+        load = 500;
+        loadUnit = "mA";
+        usablePercent = 80;
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(
+            new State(capacity, capacityUnit, load, loadUnit, usablePercent), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            capacity = s.Capacity;
+            capacityUnit = s.CapacityUnit is "mAh" or "Ah" ? s.CapacityUnit : "mAh";
+            load = s.Load;
+            loadUnit = s.LoadUnit is "mA" or "A" ? s.LoadUnit : "mA";
+            usablePercent = s.UsablePercent;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(double? Capacity, string CapacityUnit, double? Load, string LoadUnit, double? UsablePercent);
+}

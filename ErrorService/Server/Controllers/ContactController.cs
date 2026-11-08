@@ -42,12 +42,13 @@ public sealed class ContactController : ControllerBase
             {
                 ["FullName"] = msg.FullName,
                 ["Subject"] = msg.Subject,
-                ["Phone"] = msg.PhoneNumber
+                ["Phone"] = msg.PhoneNumber,
+                ["Content"] = NotificationEventService.CleanContent(msg.Message)
             },
             idempotencyKey: $"contact.created:{msg.CreatedAt.UtcTicks}",
             fallbackSeverity: NotificationSeverity.Info,
             fallbackTitle: "پیام جدید تماس با ما",
-            fallbackBody: $"{msg.FullName} با موضوع «{msg.Subject}» پیامی ثبت کرده است. تلفن: {msg.PhoneNumber}",
+            fallbackBody: $"{msg.FullName} با موضوع «{msg.Subject}» نوشت:\n{NotificationEventService.CleanContent(msg.Message)}",
             fallbackUrl: "/admin/contact-messages");
 
         await _db.SaveChangesAsync();

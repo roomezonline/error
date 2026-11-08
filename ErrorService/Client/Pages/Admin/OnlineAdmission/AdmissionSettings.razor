@@ -54,6 +54,26 @@
             </div>
 
             <div class="col-lg-4">
+                <div class="card shadow-sm border-0 rounded-4 p-4 mb-3">
+                    <h6 class="fw-black mb-3 text-primary"><span class="oi oi-lock-locked me-1"></span> کد تایید (OTP)</h6>
+                    <div class="d-flex justify-content-between align-items-center small py-1">
+                        <span>درخواست تعمیر در محل</span>
+                        <span class="badge @(settings.OtpRepairEnabled ? "bg-success" : "bg-secondary")">@(settings.OtpRepairEnabled ? "فعال" : "غیرفعال")</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center small py-1">
+                        <span>درخواست کارشناسی</span>
+                        <span class="badge @(settings.OtpExpertiseEnabled ? "bg-success" : "bg-secondary")">@(settings.OtpExpertiseEnabled ? "فعال" : "غیرفعال")</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center small py-1">
+                        <span>پیگیری درخواست</span>
+                        <span class="badge @(settings.OtpTrackingEnabled ? "bg-success" : "bg-secondary")">@(settings.OtpTrackingEnabled ? "فعال" : "غیرفعال")</span>
+                    </div>
+                    <div class="text-muted small mt-2">مدت اعتبار هر کد: @settings.OtpCodeTtlSeconds ثانیه</div>
+                    <a href="/admin/sms" class="btn btn-outline-primary btn-sm w-100 rounded-pill mt-3">
+                        تنظیم در پنل پیامک
+                    </a>
+                </div>
+
                 <div class="card shadow-sm border-0 rounded-4 p-4 bg-light">
                     <h6 class="fw-black mb-3 text-primary"><span class="oi oi-credit-card me-1"></span> حساب‌های فعال</h6>
                     <p class="small text-muted mb-4">شماره حساب‌هایی که در این بخش مشاهده می‌کنید از بخش «مدیریت حساب‌های بانکی» سیستم لود می‌شوند.</p>

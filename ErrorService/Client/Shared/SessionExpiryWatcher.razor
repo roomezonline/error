@@ -1,0 +1,76 @@
+@using ErrorService.Client.Services
+@inject AuthService Auth
+@inject SessionExpiryNotifier ExpiryNotifier
+@inject NavigationManager Nav
+@inject ToastService Toast
+@implements IDisposable
+
+@*
+    نگهبان انقضای نشست: هم با رویداد AuthHttpHandler (تشخیص آنی) و هم با
+    بررسی دوره‌ای کار می‌کند. اگر کاربر روی صفحه‌ای باشد که ورود لازم دارد،
+    به صفحه ورود با پیام «نشست منقضی شده» هدایت می‌شود؛ روی صفحات عمومی فقط
+    خارج شده و پیام می‌بیند تا خواندن صفحه قطع نشود.
+*@
+
+@code {
+    private System.Threading.Timer? _timer;
+    private DateTimeOffset _lastHandled = DateTimeOffset.MinValue;
+
+    protected override void OnInitialized()
+    {
+        ExpiryNotifier.Expired += OnExpiredNotification;
+        _ = CheckAsync();
+        _timer = new System.Threading.Timer(_ => _ = CheckAsync(), null,
+            TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20));
+    }
+
+    private void OnExpiredNotification() => _ = InvokeAsync(HandleExpiredAsync);
+
+    private async Task CheckAsync()
+    {
+        try
+        {
+            if (!await Auth.HasExpiredSessionAsync()) return;
+            await InvokeAsync(HandleExpiredAsync);
+        }
+        catch
+        {
+            // بررسی دوره‌ای هرگز نباید صفحه را بشکند
+        }
+    }
+
+    private async Task HandleExpiredAsync()
+    {
+        if ((DateTimeOffset.UtcNow - _lastHandled).TotalSeconds < 5) return;
+        _lastHandled = DateTimeOffset.UtcNow;
+
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        var path = "/" + relative.Split('?', '#')[0].TrimStart('/');
+        var onLoginPage = path.StartsWith("/auth/login", StringComparison.OrdinalIgnoreCase);
+
+        await Auth.LogoutAsync();
+
+        if (onLoginPage) return;
+
+        Toast.ShowWarning("نشست شما منقضی شده است. لطفاً دوباره وارد شوید.");
+
+        if (RequiresSignIn(path))
+        {
+            var returnUrl = Uri.EscapeDataString(relative);
+            Nav.NavigateTo($"/auth/login?expired=1&returnUrl={returnUrl}");
+        }
+    }
+
+    private static bool RequiresSignIn(string path)
+        => path.StartsWith("/admin", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/profile", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/my-orders", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/my-addresses", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/checkout", StringComparison.OrdinalIgnoreCase);
+
+    public void Dispose()
+    {
+        ExpiryNotifier.Expired -= OnExpiredNotification;
+        _timer?.Dispose();
+    }
+}

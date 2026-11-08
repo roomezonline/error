@@ -458,43 +458,34 @@
                 font-size: 18px;
             }
         }
-        
-        /* دارک مود */
-        @@media (prefers-color-scheme: dark) {
-            .rl-search-box {
-                background: rgba(15, 23, 42, 0.96) !important;
-            }
-            
-            .modern-search-input {
-                background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-                border-color: #334155;
-                color: #f1f5f9;
-            }
-            
-            .modern-search-input::placeholder {
-                color: #64748b;
-            }
-            
-            .modern-search-input:hover {
-                border-color: #64748b;
-                background: #1e293b;
-            }
-            
-            .modern-search-input:focus {
-                border-color: #3b82f6;
-                background: #1e293b;
-            }
-            
-            .modern-search-icon svg path {
-                stroke: #94a3b8;
-            }
-            
-            .modern-search-input::before {
-                background: linear-gradient(90deg, 
-                    transparent, 
-                    rgba(255, 255, 255, 0.1), 
-                    transparent);
-            }
+
+        /* دارک مود — فقط با تم تاریک اپ، نه ترجیح سیستم‌عامل */
+        html[data-theme="dark"] .rl-search-box {
+            background: rgba(15, 23, 42, 0.96) !important;
+        }
+
+        html[data-theme="dark"] .modern-search-input {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-color: #334155;
+            color: #f1f5f9;
+        }
+
+        html[data-theme="dark"] .modern-search-input::placeholder {
+            color: #94a3b8;
+        }
+
+        html[data-theme="dark"] .modern-search-input:hover {
+            border-color: #64748b;
+            background: #1e293b;
+        }
+
+        html[data-theme="dark"] .modern-search-input:focus {
+            border-color: #3b82f6;
+            background: #1e293b;
+        }
+
+        html[data-theme="dark"] .modern-search-icon svg path {
+            stroke: #94a3b8;
         }
     </style>
     

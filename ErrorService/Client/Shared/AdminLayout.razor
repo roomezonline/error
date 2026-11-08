@@ -10,6 +10,7 @@
 @inject AdminWorkshopSelectionService AdminWorkshopSelection
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
 @inject NotificationCenterService Notif
+@inject ThemeService Theme
 
 <PageTitle>پنل مدیریت | ارورسرویس</PageTitle>
 
@@ -123,11 +124,36 @@
             return;
         }
 
+        // توکن منقضی یعنی نشست تمام شده؛ پنل نباید با ظاهر سالم باز بماند
+        // در حالی که هیچ درخواستی مجاز نیست.
+        var siteValid = !string.IsNullOrEmpty(authToken) && !JwtParser.IsExpired(authToken);
+        var workshopValid = !string.IsNullOrEmpty(workshopToken) && !JwtParser.IsExpired(workshopToken);
+        if (!siteValid && !workshopValid)
+        {
+            var relative = Nav.ToBaseRelativePath(Nav.Uri);
+            Nav.NavigateTo($"/auth/login?expired=1&returnUrl={Uri.EscapeDataString(relative)}");
+            return;
+        }
+
         await AdminWorkshopSelection.InitializeAsync();
         await LoadWorkshopContext();
 
         Notif.OnChange += StateHasChanged;
+        await Theme.InitializeAsync();
+        Theme.OnChange += StateHasChanged;
+        await Theme.EnsureAdminCssAsync();
+        Nav.LocationChanged += HandleLocationChanged;
         _ = RefreshNotifsIfAuthenticatedAsync();
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        // چیدمان ادمین بین صفحات باقی می‌ماند؛ منوی باز باید با ناوبری بسته شود.
+        showUserMenu = false;
+        showNotifPanel = false;
+        showNavDrawer = false;
+        try { _ = JSRuntime.InvokeVoidAsync("__um_removeHandler"); } catch { }
+        _ = InvokeAsync(StateHasChanged);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -425,9 +451,17 @@
         Nav.NavigateTo("/");
     }
 
+    private async Task ToggleThemeAsync()
+    {
+        await Theme.ToggleThemeAsync();
+        await Theme.EnsureAdminCssAsync();
+    }
+
     public void Dispose()
     {
         Notif.OnChange -= StateHasChanged;
+        Theme.OnChange -= StateHasChanged;
+        Nav.LocationChanged -= HandleLocationChanged;
         _notifTimer?.Dispose();
         _dotNetRef?.Dispose();
         try { JSRuntime.InvokeVoidAsync("__um_removeHandler"); } catch { }
@@ -435,6 +469,7 @@
 }
 
 <div class="admin-shell" dir="rtl">
+    <SessionExpiryWatcher />
     <header class="admin-header">
         <div class="admin-header-wrapper shadow-sm">
             <div class="container-fluid admin-header__inner px-3">
@@ -464,6 +499,19 @@
                         <span class="admin-brand fw-black text-dark">پنل مدیریت</span>
                     </div>
                     <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="admin-theme-toggle" @onclick="ToggleThemeAsync"
+                                aria-label="@(Theme.IsDarkMode ? "حالت روشن" : "حالت تاریک")"
+                                aria-pressed="@Theme.IsDarkMode"
+                                title="@(Theme.IsDarkMode ? "حالت روشن" : "حالت تاریک")">
+                            @if (Theme.IsDarkMode)
+                            {
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                            }
+                            else
+                            {
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                            }
+                        </button>
                         <div class="hdr-bell-wrap">
                             <button type="button" class="hdr-bell" @onclick="ToggleNotifPanel" @onclick:stopPropagation aria-label="اعلان‌ها">
                                 <span class="oi oi-bell"></span>
@@ -755,6 +803,16 @@
                         </div>
                     </AuthorizeView>
 
+                    <AuthorizeView Policy="perm:admin.ai.view">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">هوش مصنوعی</div>
+                            <a href="/admin/ai" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-cog"></span>
+                                <span>تنظیمات هوش مصنوعی</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
                     <AuthorizeView Policy="perm:admin.receipts.view">
                         <div class="admin-drawer__section">
                             <div class="admin-drawer__title">رسیدها و مشتریان</div>
@@ -800,6 +858,16 @@
                                     <span>جزییات مانیتورینگ</span>
                                 </a>
                             </AuthorizeView>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.servicevoices.manage" Context="voiceCtx">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">آوای ارورسرویس</div>
+                            <a href="/admin/service-voices" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-audio"></span>
+                                <span>مدیریت اکشن‌های صوتی</span>
+                            </a>
                         </div>
                     </AuthorizeView>
 
@@ -903,8 +971,22 @@
                             </AuthorizeView>
                             <a href="/admin/news" class="admin-drawer__item" @onclick="ToggleNavDrawer">
                                 <span class="oi oi-list"></span>
-                                <span>اخبار</span>
+                                <span>مرکز محتوا</span>
                             </a>
+                            <a href="/admin/content-categories" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-tags"></span>
+                                <span>دسته‌بندی محتوا</span>
+                            </a>
+                            <a href="/admin/content-tags" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-tag"></span>
+                                <span>برچسب‌های محتوا</span>
+                            </a>
+                            <AuthorizeView Policy="perm:admin.news.settings.manage" Context="contentSettingsCtx">
+                                <a href="/admin/content-settings" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                    <span class="oi oi-cog"></span>
+                                    <span>تنظیمات محتوا</span>
+                                </a>
+                            </AuthorizeView>
                             <a href="/admin/sliders" class="admin-drawer__item" @onclick="ToggleNavDrawer">
                                 <span class="oi oi-image"></span>
                                 <span>اسلایدرها</span>
@@ -940,6 +1022,36 @@
                             <a href="/admin/footer" class="admin-drawer__item" @onclick="ToggleNavDrawer">
                                 <span class="oi oi-menu"></span>
                                 <span>فوتر سایت</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.about.manage">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">درباره ما</div>
+                            <a href="/admin/about" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-info"></span>
+                                <span>محتوای درباره ما</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.faq.manage">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">پرسش‌های متداول</div>
+                            <a href="/admin/faq" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-question-mark"></span>
+                                <span>مدیریت سوالات متداول</span>
+                            </a>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Policy="perm:admin.contentstudio.view">
+                        <div class="admin-drawer__section">
+                            <div class="admin-drawer__title">استودیوی محتوا</div>
+                            <a href="/admin/content-studio" class="admin-drawer__item" @onclick="ToggleNavDrawer">
+                                <span class="oi oi-lightbulb"></span>
+                                <span>تولید خودکار محتوا</span>
                             </a>
                         </div>
                     </AuthorizeView>
@@ -1622,5 +1734,122 @@
             border: 1px solid rgba(255,255,255,0.3);
             padding: 0 20px;
         }
+    }
+
+    /* ── دکمهٔ تغییر تم ── */
+    .admin-theme-toggle {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        background: #fff;
+        color: #475569;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        transition: background .15s ease, color .15s ease, border-color .15s ease;
+        flex-shrink: 0;
+    }
+
+    .admin-theme-toggle:hover {
+        background: #f1f5f9;
+        color: #2563eb;
+        border-color: rgba(37, 99, 235, 0.25);
+    }
+
+    /* ── پوستهٔ ادمین در حالت تاریک ── */
+    html[data-theme="dark"] {
+        color-scheme: dark;
+    }
+
+    html[data-theme="dark"] body {
+        background-color: #0f172a;
+        color: #e2e8f0;
+    }
+
+    html[data-theme="dark"] .admin-shell {
+        background-color: #0f172a;
+        color: #e2e8f0;
+    }
+
+    html[data-theme="dark"] .admin-header-wrapper {
+        background: rgba(15, 23, 42, 0.88);
+        border-bottom-color: rgba(255, 255, 255, 0.08);
+    }
+
+    html[data-theme="dark"] .admin-header__bottom {
+        background: rgba(30, 41, 59, 0.78);
+        border-color: rgba(255, 255, 255, 0.08);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    html[data-theme="dark"] .admin-brand {
+        color: #f1f5f9 !important;
+    }
+
+    html[data-theme="dark"] .admin-logo-circle {
+        background-color: #1e293b;
+    }
+
+    html[data-theme="dark"] .admin-theme-toggle {
+        background: #1e293b;
+        border-color: rgba(255, 255, 255, 0.12);
+        color: #cbd5e1;
+    }
+
+    html[data-theme="dark"] .admin-theme-toggle:hover {
+        background: #334155;
+        color: #fbbf24;
+        border-color: rgba(251, 191, 36, 0.4);
+    }
+
+    html[data-theme="dark"] .admin-bottom-nav {
+        background: rgba(15, 23, 42, 0.94);
+        border-color: rgba(255, 255, 255, 0.08);
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.45);
+    }
+
+    html[data-theme="dark"] .admin-drawer {
+        background: #0f172a;
+        border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    html[data-theme="dark"] .admin-drawer-overlay {
+        background: rgba(0, 0, 0, 0.65);
+    }
+
+    html[data-theme="dark"] .admin-drawer__head {
+        border-bottom-color: rgba(255, 255, 255, 0.08);
+    }
+
+    html[data-theme="dark"] .admin-drawer__title {
+        color: #94a3b8;
+    }
+
+    html[data-theme="dark"] .admin-drawer__item {
+        color: #cbd5e1;
+    }
+
+    html[data-theme="dark"] .admin-drawer__item:hover {
+        background: rgba(96, 165, 250, 0.12);
+        color: #93c5fd;
+    }
+
+    html[data-theme="dark"] .user-dropdown-menu {
+        background: #1e293b;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    }
+
+    html[data-theme="dark"] .admin-header__top .hdr-bell {
+        color: #cbd5e1;
+    }
+
+    html[data-theme="dark"] .admin-header__top .hdr-bell:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: #f1f5f9;
+    }
+
+    html[data-theme="dark"] .notif-mini__item:hover {
+        background: rgba(255, 255, 255, 0.05);
     }
 </style>

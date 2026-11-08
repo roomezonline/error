@@ -1,4 +1,6 @@
-using ErrorService.Server.Data;
+﻿using ErrorService.Server.Data;
+using ErrorService.Server.Models;
+using ErrorService.Shared;
 using ErrorService.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -64,8 +66,14 @@ public sealed class SeoController : ControllerBase
         
         var root = new XElement(ns + "urlset");
 
+        var contentSettings = await GetContentSettingsAsync();
+
         // 1. Static Pages (no lastmod - no reliable change date available; omit rather than lie)
-        var staticPages = new[] { "/", "/products", "/academy", "/technical/error-codes", "/workshops", "/contact", "/about", "/faq", "/privacy", "/terms", "/news", "/technical/sensor-finder", "/technical/calculators", "/trust/portfolio", "/admission/repair", "/admission/expertise", "/technical/consultation", "/commitment" };
+        var staticPages = new List<string> { "/", "/products", "/academy", "/technical/error-codes", "/workshops", "/contact", "/about", "/faq", "/privacy", "/terms", "/news", "/technical/sensor-finder", "/technical/calculators", "/trust/portfolio", "/admission/repair", "/admission/expertise", "/technical/consultation", "/commitment" };
+        // فقط نوع‌هایی که مدیر در تنظیمات محتوا فعال کرده در سایت‌مپ می‌آیند.
+        if (contentSettings.TipsEnabled) staticPages.Add(ContentTypeCatalog.Route(ContentType.Tip));
+        if (contentSettings.AnnouncementsEnabled) staticPages.Add(ContentTypeCatalog.Route(ContentType.Announcement));
+
         foreach (var page in staticPages)
         {
             root.Add(CreateUrlElement(ns, baseUrl + page, null, "weekly", page is "/" or "/products" or "/academy" or "/technical/error-codes" ? 0.9 : 0.6));
@@ -79,12 +87,46 @@ public sealed class SeoController : ControllerBase
             root.Add(CreateUrlElement(ns, $"{baseUrl}/products/{EncodeSegment(p.Slug ?? p.Id.ToString())}", lastMod, "weekly", 0.8));
         }
 
-        // 3. News
-        var news = await _db.News.Where(n => n.IsPublished).Select(n => new { n.Id, n.Slug, n.UpdatedAt }).ToListAsync();
-        foreach (var n in news)
+        // 3. Content hub (news / tips / announcements) — only currently visible items.
+        var now = DateTimeOffset.UtcNow;
+        var contents = await _db.News.AsNoTracking()
+            .Where(n => n.IsPublished
+                && (n.PublishAt == null || n.PublishAt <= now)
+                && (n.ExpireAt == null || n.ExpireAt > now))
+            .Select(n => new { n.Id, n.Slug, n.ContentType, n.UpdatedAt })
+            .ToListAsync();
+        foreach (var n in contents)
         {
+            if (!contentSettings.IsTypeEnabled(n.ContentType)) continue;
             var lastMod = n.UpdatedAt.UtcDateTime;
-            root.Add(CreateUrlElement(ns, $"{baseUrl}/news/{EncodeSegment(n.Slug ?? n.Id.ToString())}", lastMod, "monthly", 0.7));
+            root.Add(CreateUrlElement(ns, baseUrl + ContentTypeCatalog.DetailRoute(n.ContentType, n.Id, n.Slug), lastMod, "monthly", 0.7));
+        }
+
+        // 3b. Category landing pages that actually contain visible content.
+        var categoryCounts = await _db.News.AsNoTracking()
+            .Where(n => n.CategoryId != null
+                && n.IsPublished
+                && (n.PublishAt == null || n.PublishAt <= now)
+                && (n.ExpireAt == null || n.ExpireAt > now))
+            .GroupBy(n => new { n.CategoryId, n.ContentType })
+            .Select(g => new { g.Key.CategoryId, g.Key.ContentType, Count = g.Count() })
+            .ToListAsync();
+        var categories = await _db.ContentCategories.AsNoTracking()
+            .Where(c => c.IsActive)
+            .Select(c => new { c.Id, c.Slug, c.ContentType })
+            .ToListAsync();
+        foreach (var c in categories)
+        {
+            foreach (var group in categoryCounts)
+            {
+                if (group.CategoryId != c.Id) continue;
+                if (!contentSettings.IsTypeEnabled(group.ContentType)) continue;
+                if (c.ContentType.HasValue && c.ContentType != group.ContentType) continue;
+                var categorySlug = string.IsNullOrWhiteSpace(c.Slug) ? c.Id.ToString() : c.Slug;
+                var loc = baseUrl + ContentTypeCatalog.CategoryRoute(group.ContentType, categorySlug);
+                if (root.Elements(ns + "url").Any(u => (string?)u.Element(ns + "loc") == loc)) continue;
+                root.Add(CreateUrlElement(ns, loc, null, "weekly", 0.5));
+            }
         }
 
         // 4. Academy (Courses)
@@ -123,11 +165,11 @@ public sealed class SeoController : ControllerBase
 
         // 7. Sensor Finder - individual pages
         var sensorRecords = await _db.SensorFinderRecords
-            .Select(s => new { s.Id, s.CreatedAt })
+            .Select(s => new { s.Id, s.UpdatedAt })
             .ToListAsync();
         foreach (var s in sensorRecords)
         {
-            root.Add(CreateUrlElement(ns, $"{baseUrl}/technical/sensor-finder/{s.Id}", s.CreatedAt, "monthly", 0.6));
+            root.Add(CreateUrlElement(ns, $"{baseUrl}/technical/sensor-finder/{s.Id}", s.UpdatedAt, "monthly", 0.6));
         }
 
         // 8) Workshops - all partner profiles (active and inactive), excluding soft-deleted
@@ -144,6 +186,113 @@ public sealed class SeoController : ControllerBase
         return XmlResult(doc);
     }
 
+    /// <summary>
+    /// فید محصولات برای Google Merchant Center / RSS؛ فقط وقتی مدیر آن را
+    /// از تنظیمات فروشگاه فعال کرده باشد در دسترس است.
+    /// </summary>
+    [HttpGet("feed/google.xml")]
+    [HttpHead("feed/google.xml")]
+    public async Task<IActionResult> GetProductFeed()
+    {
+        var settings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
+        if (settings is { EnableProductFeed: false })
+            return NotFound();
+
+        var baseUrl = GetBaseUrl();
+        XNamespace g = "http://base.google.com/ns/1.0";
+        var root = new XElement("rss",
+            new XAttribute("version", "2.0"),
+            new XAttribute(XNamespace.Xmlns + "g", g));
+
+        var channel = new XElement("channel",
+            new XElement("title", "ErrorService محصولات"),
+            new XElement("link", baseUrl),
+            new XElement("description", "فید محصولات فروشگاه ارورسرویس"));
+
+        var now = DateTimeOffset.Now;
+        var products = await _db.Products.AsNoTracking()
+            .Where(p => !p.IsDraft && p.Price > 0)
+            .Select(p => new
+            {
+                p.Id,
+                p.Name,
+                p.Slug,
+                p.Description,
+                p.Price,
+                p.DiscountPrice,
+                p.DiscountStartDate,
+                p.DiscountExpiryDate,
+                p.MainImageUrl,
+                p.StockQuantity,
+                p.IsAvailable,
+                p.Sku,
+                CategoryName = p.Category.Name,
+                p.UpdatedAt
+            })
+            .ToListAsync();
+
+        foreach (var p in products)
+        {
+            var discountActive = p.DiscountPrice.HasValue
+                && (!p.DiscountStartDate.HasValue || p.DiscountStartDate <= now)
+                && (!p.DiscountExpiryDate.HasValue || p.DiscountExpiryDate > now);
+            var price = discountActive ? p.DiscountPrice!.Value : p.Price;
+            if (price <= 0) continue;
+
+            var link = $"{baseUrl}/products/{EncodeSegment(p.Slug ?? p.Id.ToString())}";
+            var image = ToAbsoluteUrl(baseUrl, p.MainImageUrl);
+            var description = TruncateText(StripHtml(p.Description), 4000);
+
+            var item = new XElement("item",
+                new XElement("title", p.Name),
+                new XElement("link", link),
+                new XElement("description", description),
+                new XElement(g + "id", p.Id.ToString(CultureInfo.InvariantCulture)),
+                new XElement(g + "title", p.Name),
+                new XElement(g + "description", description),
+                new XElement(g + "link", link),
+                new XElement(g + "availability",
+                    p.IsAvailable && p.StockQuantity > 0 ? "in_stock" : "out_of_stock"),
+                new XElement(g + "condition", "new"),
+                // مبالغ در سایت به تومان ذخیره می‌شوند؛ فید استاندارد ریال (IRR) است.
+                new XElement(g + "price", $"{(price * 10).ToString("F2", CultureInfo.InvariantCulture)} IRR"),
+                new XElement(g + "brand", "ErrorService"),
+                new XElement(g + "product_type", p.CategoryName ?? "قطعات یدکی"));
+
+            if (!string.IsNullOrWhiteSpace(p.Sku))
+                item.Add(new XElement(g + "mpn", p.Sku));
+            if (!string.IsNullOrWhiteSpace(image))
+                item.Add(new XElement(g + "image_link", image));
+
+            channel.Add(item);
+        }
+
+        root.Add(channel);
+        var doc = new XDocument(new XDeclaration("1.0", "utf-8", "yes"), root);
+        return XmlResult(doc);
+    }
+
+    private static string ToAbsoluteUrl(string baseUrl, string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return url;
+        return $"{baseUrl}/{url.TrimStart('/')}";
+    }
+
+    private static string StripHtml(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        return System.Text.RegularExpressions.Regex.Replace(value, "<.*?>", " ");
+    }
+
+    private static string TruncateText(string value, int max)
+    {
+        if (value.Length <= max) return value;
+        return value[..max];
+    }
+
     [HttpGet("news-sitemap.xml")]
     [HttpHead("news-sitemap.xml")]
     public async Task<IActionResult> GetNewsSitemap()
@@ -157,21 +306,26 @@ public sealed class SeoController : ControllerBase
         // Google only accepts news entries from the last 48 hours, and it rejects
         // an empty <urlset>. Fall back to the latest articles so the sitemap
         // stays parseable while no fresh article has been published.
-        var since = DateTimeOffset.UtcNow.AddDays(-2);
-        var published = _db.News.AsNoTracking().Where(n => n.IsPublished);
+        // این سایت‌مپ مخصوص اخبار است؛ ترفندها و اطلاعیه‌ها در سایت‌مپ اصلی می‌آیند.
+        var now = DateTimeOffset.UtcNow;
+        var since = now.AddDays(-2);
+        var published = _db.News.AsNoTracking().Where(n => n.IsPublished
+            && n.ContentType == ContentType.News
+            && (n.PublishAt == null || n.PublishAt <= now)
+            && (n.ExpireAt == null || n.ExpireAt > now));
         var items = await published
-            .Where(n => n.CreatedAt >= since)
-            .OrderByDescending(n => n.CreatedAt)
+            .Where(n => (n.PublishAt ?? n.CreatedAt) >= since)
+            .OrderByDescending(n => n.PublishAt ?? n.CreatedAt)
             .Take(1000)
-            .Select(n => new { n.Id, n.Slug, n.Title, n.Tags, n.CreatedAt })
+            .Select(n => new { n.Id, n.Slug, n.Title, n.Tags, PublishedAt = n.PublishAt ?? n.CreatedAt })
             .ToListAsync();
 
         if (items.Count == 0)
         {
             items = await published
-                .OrderByDescending(n => n.CreatedAt)
+                .OrderByDescending(n => n.PublishAt ?? n.CreatedAt)
                 .Take(20)
-                .Select(n => new { n.Id, n.Slug, n.Title, n.Tags, n.CreatedAt })
+                .Select(n => new { n.Id, n.Slug, n.Title, n.Tags, PublishedAt = n.PublishAt ?? n.CreatedAt })
                 .ToListAsync();
         }
 
@@ -185,7 +339,7 @@ public sealed class SeoController : ControllerBase
                 new XElement(newsNs + "publication",
                     new XElement(newsNs + "name", "ارورسرویس"),
                     new XElement(newsNs + "language", "fa")),
-                new XElement(newsNs + "publication_date", n.CreatedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)),
+                new XElement(newsNs + "publication_date", n.PublishedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)),
                 new XElement(newsNs + "title", n.Title));
 
             if (!string.IsNullOrWhiteSpace(n.Tags))
@@ -247,13 +401,20 @@ public sealed class SeoController : ControllerBase
             AddEntry($"{baseUrl}/products/{EncodeSegment(p.Slug ?? p.Id.ToString())}", p.UpdatedAt, "weekly", 0.8, p.Name,
                 p.MainImageUrl, p.ImageUrl2, p.ImageUrl3, p.ImageUrl4);
 
-        // 2) اخبار
-        var news = await _db.News.AsNoTracking()
-            .Where(n => n.IsPublished)
-            .Select(n => new { n.Id, n.Slug, n.Title, n.ImageUrl, n.UpdatedAt })
+        // 2) مرکز محتوا (اخبار / ترفندها / اطلاعیه‌ها) — فقط اقلام قابل‌نمایش در صفحهٔ عمومی
+        var contentSettings = await GetContentSettingsAsync();
+        var now = DateTimeOffset.UtcNow;
+        var contents = await _db.News.AsNoTracking()
+            .Where(n => n.IsPublished
+                && (n.PublishAt == null || n.PublishAt <= now)
+                && (n.ExpireAt == null || n.ExpireAt > now))
+            .Select(n => new { n.Id, n.Slug, n.Title, n.ImageUrl, n.UpdatedAt, n.ContentType })
             .ToListAsync();
-        foreach (var n in news)
-            AddEntry($"{baseUrl}/news/{EncodeSegment(n.Slug ?? n.Id.ToString())}", n.UpdatedAt, "monthly", 0.7, n.Title, n.ImageUrl);
+        foreach (var n in contents)
+        {
+            if (!contentSettings.IsTypeEnabled(n.ContentType)) continue;
+            AddEntry(baseUrl + ContentTypeCatalog.DetailRoute(n.ContentType, n.Id, n.Slug), n.UpdatedAt, "monthly", 0.7, n.Title, n.ImageUrl);
+        }
 
         // 3) آکادمی — دوره‌ها (کاور در صفحهٔ دوره رندر می‌شود)
         var courses = await _db.TrainingCourses.AsNoTracking()
@@ -366,6 +527,12 @@ public sealed class SeoController : ControllerBase
             return configured.TrimEnd('/');
 
         return $"{Request.Scheme}://{Request.Host}".TrimEnd('/');
+    }
+
+    private async Task<ContentSettingsDto> GetContentSettingsAsync()
+    {
+        var settings = await _db.ContentSettings.AsNoTracking().FirstOrDefaultAsync();
+        return settings == null ? new ContentSettingsDto() : ContentSettingsMapper.ToDto(settings);
     }
 
     private static string EncodeSegment(string value) => Uri.EscapeDataString(value.Trim());

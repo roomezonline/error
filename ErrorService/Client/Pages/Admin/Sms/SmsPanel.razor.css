@@ -308,7 +308,7 @@
 }
 
 /* ─── Responsive ─── */
-@@media (min-width: 768px) {
+@media (min-width: 768px) {
     .sms-stat-grid { grid-template-columns: repeat(4, 1fr); }
     .sms-credit-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
     .sms-form { max-width: 600px; }

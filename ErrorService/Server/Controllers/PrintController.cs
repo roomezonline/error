@@ -13,6 +13,7 @@ public class PrintController : ControllerBase
 {
     private readonly ErrorServiceDbContext _db;
     private readonly IWebHostEnvironment _env;
+    private readonly ILogger<PrintController> _logger;
 
 
     public class PrintPreviewResponse
@@ -23,10 +24,26 @@ public class PrintController : ControllerBase
         public string CustomerName { get; set; } = "";
     }
 
-    public PrintController(ErrorServiceDbContext db, IWebHostEnvironment env)
+    public PrintController(ErrorServiceDbContext db, IWebHostEnvironment env, ILogger<PrintController> logger)
     {
         _db = db;
         _env = env;
+        _logger = logger;
+    }
+
+    private bool IsSuperAdmin => User.IsInRole("super_admin");
+
+    private bool TryGetWorkshopId(out int workshopId)
+    {
+        var raw = User.FindFirst("workshop_id")?.Value;
+        return int.TryParse(raw, out workshopId);
+    }
+
+    /// <summary>فاکتور فقط برای مدیر کل یا همان کارگاه رسید قابل چاپ است.</summary>
+    private bool CanAccessReceipt(CustomerReceipt receipt)
+    {
+        if (IsSuperAdmin) return true;
+        return TryGetWorkshopId(out var workshopId) && workshopId == receipt.WorkshopId;
     }
 
     [HttpGet("settings")]
@@ -102,7 +119,8 @@ public class PrintController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, $"خطا در آپلود فایل: {ex.Message}");
+            _logger.LogError(ex, "Print logo upload failed");
+            return StatusCode(500, "خطا در آپلود فایل. لطفاً دوباره تلاش کنید.");
         }
     }
 
@@ -123,6 +141,9 @@ public class PrintController : ControllerBase
             if (receipt == null)
                 return NotFound("رسید یافت نشد");
 
+            if (!CanAccessReceipt(receipt))
+                return Forbid();
+
             var html = GenerateInvoiceHtml(receipt, receipt.Billing, request);
 
             return Ok(new PrintPreviewResponse
@@ -135,7 +156,8 @@ public class PrintController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, $"خطا در تولید فاکتور: {ex.Message}");
+            _logger.LogError(ex, "Invoice generation failed. ReceiptId={ReceiptId}", request.ReceiptId);
+            return StatusCode(500, "خطا در تولید فاکتور. لطفاً دوباره تلاش کنید.");
         }
     }
 
@@ -145,13 +167,23 @@ public class PrintController : ControllerBase
     {
         try
         {
-            var receipts = await _db.CustomerReceipts
+            var query = _db.CustomerReceipts
+                .Where(r => r.Customer.Mobile == request.CustomerMobile);
+
+            if (!IsSuperAdmin)
+            {
+                if (!TryGetWorkshopId(out var workshopId))
+                    return Forbid();
+
+                query = query.Where(r => r.WorkshopId == workshopId);
+            }
+
+            var receipts = await query
                 .Include(r => r.Customer)
                 .Include(r => r.DeviceType)
                 .Include(r => r.DeviceBrand)
                 .Include(r => r.Billing)
                 .ThenInclude(b => b.Items)
-                .Where(r => r.Customer.Mobile == request.CustomerMobile)
                 .OrderByDescending(r => r.RegisteredAt)
                 .ToListAsync();
 
@@ -171,7 +203,8 @@ public class PrintController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, $"خطا در تولید فاکتورها: {ex.Message}");
+            _logger.LogError(ex, "Bulk invoice generation failed.");
+            return StatusCode(500, "خطا در تولید فاکتورها. لطفاً دوباره تلاش کنید.");
         }
     }
 

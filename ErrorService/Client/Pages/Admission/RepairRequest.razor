@@ -6,8 +6,6 @@
 @inject ErrorService.Client.Services.ToastService ToastService
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>درخواست تعمیر آنلاین</PageTitle>
-
 <SeoHeader 
     Title="درخواست تعمیر آنلاین لوازم خانگی | ارورسرویس"
     Description="ثبت درخواست تعمیر آنلاین لوازم خانگی با مشاوره رایگان. تعمیر ماشین لباسشویی، یخچال، ظرفشویی و ماکروفر"
@@ -33,6 +31,11 @@
                                 <h1 class="h3 fw-black m-0 text-gradient">درخواست تعمیر تخصصی</h1>
                                 <p class="text-muted small m-0 fw-bold">ثبت سریع درخواست و اعزام نزدیک‌ترین تکنسین به محل شما</p>
                             </div>
+                        </div>
+                        <div class="text-center text-md-start mt-2">
+                            <a href="/admission/track" class="small fw-bold text-primary text-decoration-none">
+                                <span class="oi oi-magnifying-glass me-1"></span>قبلاً درخواست داده‌اید؟ وضعیت را پیگیری کنید
+                            </a>
                         </div>
                     </div>
 
@@ -262,7 +265,7 @@
                                     </div>
                                     <h5 class="fw-black mb-3 text-success">تایید نهایی درخواست</h5>
 
-                                    @if (settings?.OtpEnabled != false)
+                                    @if (OtpRequired)
                                     {
                                         <p class="text-muted small mb-4">کد تایید ۶ رقمی به شماره @request.CustomerMobile ارسال شد. لطفاً کد را وارد کنید.</p>
 
@@ -894,6 +897,9 @@
     private bool isSubmitting;
 
     private OnlineAdmissionCreateRequest request = new() { Type = OnlineAdmissionTypes.Repair };
+
+    [SupplyParameterFromQuery(Name = "problem")]
+    public string? Problem { get; set; }
     private AdmissionExpertiseSettingsDto? settings;
     private List<DeviceTypeDto>? deviceTypes;
     private List<DeviceBrandDto>? deviceBrands;
@@ -902,6 +908,8 @@
 
     private string[] otpDigits = new string[6];
     private int otpTimerSeconds = 120;
+    private bool OtpRequired => settings?.OtpRepairEnabled != false;
+    private int OtpTtlSeconds => settings?.OtpCodeTtlSeconds > 0 ? settings.OtpCodeTtlSeconds : 120;
     private System.Timers.Timer? otpTimer;
     private string otpStatusClass = "";
     private string otpStatusMessage = "";
@@ -913,7 +921,7 @@
     {
         otpTimer?.Stop();
         otpTimer?.Dispose();
-        otpTimerSeconds = 120;
+        otpTimerSeconds = OtpTtlSeconds;
         otpStatusClass = "";
         otpStatusMessage = "";
         isOtpVerified = false;
@@ -946,7 +954,7 @@
     {
         try
         {
-            var result = await Http.PostAsJsonAsync("api/online-admission/send-otp", new { mobile = request.CustomerMobile });
+            var result = await Http.PostAsJsonAsync("api/online-admission/send-otp", new { mobile = request.CustomerMobile, type = OnlineAdmissionTypes.Repair });
             var data = await result.Content.ReadFromJsonAsync<OtpResultDto>();
             if (data?.Success == true)
             {
@@ -1000,7 +1008,7 @@
         {
             try
             {
-                var result = await Http.PostAsJsonAsync("api/online-admission/verify-otp", new { mobile = request.CustomerMobile, code = request.VerificationCode });
+                var result = await Http.PostAsJsonAsync("api/online-admission/verify-otp", new { mobile = request.CustomerMobile, code = request.VerificationCode, type = OnlineAdmissionTypes.Repair });
                 var data = await result.Content.ReadFromJsonAsync<OtpResultDto>();
                 if (data?.Success == true)
                 {
@@ -1091,7 +1099,17 @@
     {
         await LoadInitialData();
         await PreFillUserInfo();
+        ApplyPrefilledProblem();
         isLoading = false;
+    }
+
+    private void ApplyPrefilledProblem()
+    {
+        if (string.IsNullOrWhiteSpace(Problem)) return;
+
+        var text = Problem.Trim();
+        if (text.Length > 3000) text = text[..3000];
+        request.ProblemDescription = text;
     }
 
     private async Task LoadInitialData()
@@ -1199,7 +1217,7 @@
 
         if (step < 4) {
             step++;
-            if (step == 4 && settings?.OtpEnabled != false) _ = ResendOtp();
+            if (step == 4 && OtpRequired) _ = ResendOtp();
         }
     }
     private void HandlePrev() { if (step > 1) step--; }
@@ -1229,7 +1247,7 @@
 
     private async Task SubmitFinal()
     {
-        if (settings?.OtpEnabled != false && string.IsNullOrEmpty(request.VerificationCode))
+        if (OtpRequired && string.IsNullOrEmpty(request.VerificationCode))
         {
             ToastService.ShowWarning("لطفاً کد تایید را وارد کنید");
             return;
@@ -1241,8 +1259,11 @@
             var resp = await Http.PostAsJsonAsync("api/online-admission/submit", request);
             if (resp.IsSuccessStatusCode)
             {
-                ToastService.ShowSuccess("درخواست تعمیر شما ثبت شد. کارشناسان ما به زودی با شما تماس می‌گیرند.");
-                Nav.NavigateTo("/");
+                var created = await resp.Content.ReadFromJsonAsync<AdmissionCreatedDto>();
+                ToastService.ShowSuccess("درخواست تعمیر شما ثبت شد. وضعیت آن را می‌توانید از همین صفحه پیگیری کنید.");
+                Nav.NavigateTo(created != null
+                    ? $"/admission/track?id={created.Id}&phone={request.CustomerMobile}"
+                    : "/admission/track");
             }
             else
             {

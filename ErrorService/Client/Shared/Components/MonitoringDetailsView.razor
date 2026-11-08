@@ -254,6 +254,8 @@
                         <polyline points="15 18 9 12 15 6"/>
                     </svg>
                 </div>
+                @if (_detailedChartEnabled)
+                {
                 <div class="md-drawer-item" @onclick="GoToProgressiveChart">
                     <div class="md-drawer-item-icon md-drawer-item-icon--zoom">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18">
@@ -268,6 +270,7 @@
                         <polyline points="15 18 9 12 15 6"/>
                     </svg>
                 </div>
+                }
                 @if (!IsReadOnly)
                 {
                 <div class="md-drawer-divider"></div>
@@ -1545,6 +1548,22 @@
                         @if (log.Id == _expandedLogId && !string.IsNullOrEmpty(log.DataSnapshot))
                         {
                             <div class="md-log-detail">
+                                @if (runtime is { } runtimeInfo)
+                                {
+                                    <div class="md-log-runtime-box" title="@runtimeInfo.title">
+                                        <span class="md-log-runtime-box__icon">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true">
+                                                <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>
+                                            </svg>
+                                        </span>
+                                        <span class="md-log-runtime-box__label">@GetRuntimeSubject(log.ChangeType)</span>
+                                        <strong class="md-log-runtime-box__value">@FormatRuntime(runtimeInfo.seconds)</strong>
+                                        @if (!string.IsNullOrWhiteSpace(runtimeInfo.range))
+                                        {
+                                            <span class="md-log-runtime-box__range">@runtimeInfo.range</span>
+                                        }
+                                    </div>
+                                }
                                 @{
                                     var snapshot = ParseSnapshot(log.DataSnapshot);
                                 }
@@ -2847,6 +2866,29 @@
         white-space: nowrap;
     }
     .md-log-runtime svg { flex-shrink: 0; }
+    .md-log-runtime-box {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        margin-bottom: 10px; padding: 8px 12px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(13,148,136,0.08), rgba(37,99,235,0.05));
+        border: 1px dashed rgba(13,148,136,0.3);
+    }
+    .md-log-runtime-box__icon {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 24px; height: 24px; border-radius: 8px; flex-shrink: 0;
+        background: rgba(13,148,136,0.13); color: #0d9488;
+    }
+    .md-log-runtime-box__label {
+        font-size: 11px; font-weight: 700; color: #475569;
+    }
+    .md-log-runtime-box__value {
+        font-size: 14px; font-weight: 800; color: #0f766e;
+    }
+    .md-log-runtime-box__range {
+        margin-inline-start: auto;
+        font-size: 10px; font-weight: 600; color: #64748b;
+        unicode-bidi: plaintext;
+    }
     .md-log-time {
         flex-shrink: 0;
         margin-inline-start: auto;
@@ -3680,6 +3722,16 @@
             font-size: 9px; padding: 2px 7px; gap: 3px;
             order: 4;
         }
+        .md-log-runtime-box {
+            padding: 7px 10px; gap: 6px;
+        }
+        .md-log-runtime-box__value {
+            font-size: 13px;
+        }
+        .md-log-runtime-box__range {
+            margin-inline-start: 0;
+            width: 100%;
+        }
         .md-log-time {
             font-size: 9px;
             order: 5;
@@ -4175,33 +4227,59 @@
     };
 
     /// <summary>
-    /// مدت کارکردِ ثبت‌شده روی رکورد توقف را از DataSnapshot می‌خواند؛
-    /// فقط رکوردهای خاموش‌شدن این مقدار را دارند.
+    /// مدت کارکردِ تجهیز تا لحظه توقف. مقدار محاسبه‌شدهٔ سرور اولویت دارد و
+    /// برای رکوردهای قدیمی‌تر که این فیلد را ندارند از DataSnapshot خوانده می‌شود.
     /// </summary>
-    private static (string label, string title)? GetRuntimeInfo(ChangeLogItem log)
+    private static (string label, string title, long seconds, string range)? GetRuntimeInfo(ChangeLogItem log)
     {
-        if (string.IsNullOrEmpty(log.DataSnapshot)) return null;
-        try
+        long seconds = 0;
+        string? startedAtFa = null;
+
+        if (log.RuntimeSeconds is > 0)
         {
-            using var doc = JsonDocument.Parse(log.DataSnapshot);
-            if (!doc.RootElement.TryGetProperty("RuntimeSeconds", out var el)) return null;
-            if (el.ValueKind != JsonValueKind.Number || !el.TryGetInt64(out var seconds) || seconds <= 0) return null;
-
-            var kind = log.ChangeType.Equals("Priz", StringComparison.OrdinalIgnoreCase) ? "روشن" : "کارکرد";
-            var label = $"{kind} {FormatRuntime(seconds)}";
-
-            var title = "مدت روشن‌بودن تا لحظه توقف";
-            if (doc.RootElement.TryGetProperty("RuntimeStartedAtFa", out var startEl)
-                && startEl.ValueKind == JsonValueKind.String
-                && !string.IsNullOrWhiteSpace(startEl.GetString()))
-            {
-                title = $"شروع {SwapDateTime(startEl.GetString()!)} — توقف {SwapDateTime(log.CreatedAtFa)}";
-            }
-
-            return (label, title);
+            seconds = log.RuntimeSeconds.Value;
+            startedAtFa = log.RuntimeStartedAtFa;
         }
-        catch { return null; }
+        else if (!string.IsNullOrEmpty(log.DataSnapshot))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(log.DataSnapshot);
+                if (doc.RootElement.TryGetProperty("RuntimeSeconds", out var el)
+                    && el.ValueKind == JsonValueKind.Number
+                    && el.TryGetInt64(out var snapshotSeconds))
+                    seconds = snapshotSeconds;
+
+                if (doc.RootElement.TryGetProperty("RuntimeStartedAtFa", out var startEl)
+                    && startEl.ValueKind == JsonValueKind.String)
+                    startedAtFa = startEl.GetString();
+            }
+            catch { }
+        }
+
+        if (seconds <= 0) return null;
+
+        var kind = log.ChangeType.Equals("Priz", StringComparison.OrdinalIgnoreCase) ? "روشن" : "کارکرد";
+        var label = $"{kind} {FormatRuntime(seconds)}";
+
+        var hasStart = !string.IsNullOrWhiteSpace(startedAtFa);
+        var range = !hasStart
+            ? ""
+            : seconds >= 86400
+                ? $"{SwapDateTime(startedAtFa!)} تا {SwapDateTime(log.CreatedAtFa)}"
+                : $"{TimeOf(startedAtFa!)} تا {TimeOf(log.CreatedAtFa)}";
+
+        var title = hasStart
+            ? $"شروع {SwapDateTime(startedAtFa!)} — توقف {SwapDateTime(log.CreatedAtFa)}"
+            : "مدت روشن‌بودن تا لحظه توقف";
+
+        return (label, title, seconds, range);
     }
+
+    private static string GetRuntimeSubject(string changeType) =>
+        changeType.Equals("Priz", StringComparison.OrdinalIgnoreCase)
+            ? "مدت روشن‌بودن برق"
+            : $"مدت کارکرد {GetChangeTypeLabel(changeType)}";
 
     private static string FormatRuntime(long seconds)
     {
@@ -4229,6 +4307,12 @@
         if (string.IsNullOrEmpty(fa)) return fa;
         var parts = fa.Split(' ', 2);
         return parts.Length == 2 ? $"{parts[1]} {parts[0]}" : fa;
+    }
+
+    private static string TimeOf(string faDateTime)
+    {
+        var parts = faDateTime.Split(' ', 2);
+        return parts.Length == 2 ? parts[1] : faDateTime;
     }
 
     private static (string text, string cssClass) GetChangeStatus(ChangeLogItem log)
@@ -4396,6 +4480,8 @@
         public string ChangeDescription { get; set; } = "";
         public string? DataSnapshot { get; set; }
         public string CreatedAtFa { get; set; } = "";
+        public long? RuntimeSeconds { get; set; }
+        public string? RuntimeStartedAtFa { get; set; }
     }
 
     private class ChangeLogResponse
@@ -4424,6 +4510,7 @@
     private string? _chartBaseUrl;
     private string _endReason = "";
     private bool _isPoweredOn;
+    private bool _detailedChartEnabled = true;
     private bool _showDeleteHistoryConfirm;
     private bool _monitoringEnded;
     private string? _monitoringEndedAtFa;
@@ -4529,6 +4616,12 @@
 
     private async Task OpenChartOverlay(string mode)
     {
+        if (mode == "progressive" && !_detailedChartEnabled)
+        {
+            _showMenu = false;
+            ToastService.ShowWarning("چارت با جزییات برای این دستگاه فعال نیست");
+            return;
+        }
         if (_chartOverlay != null) return;
         _showMenu = false;
         _chartOverlay = mode;
@@ -4624,11 +4717,32 @@
         _csvDiagnostics = null;
     }
 
-    private async Task CheckSettings()
+    private async Task ResolveCodeFromConnectionAsync(int monitoringId)
     {
         try
         {
-            var resp = await Http.GetFromJsonAsync<System.Text.Json.JsonElement>($"api/monitoring/server/setting?code={Code}");
+            var info = await Http.GetFromJsonAsync<System.Text.Json.JsonElement>(
+                $"api/monitoring/chart/{monitoringId}/connection-info");
+            if (info.ValueKind == System.Text.Json.JsonValueKind.Object
+                && info.TryGetProperty("deviceCode", out var dc)
+                && dc.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                Code = dc.GetString() ?? "";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Resolve device code error: {ex.Message}");
+        }
+    }
+
+    private async Task<bool> CheckSettings()
+    {
+        if (string.IsNullOrWhiteSpace(Code)) return false;
+
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<System.Text.Json.JsonElement>($"api/monitoring/server/setting?code={Uri.EscapeDataString(Code)}");
             var exists = resp.GetProperty("exists").GetBoolean();
             _settingsMissing = !exists;
             _motorMax = resp.GetProperty("motorMax").GetInt32();
@@ -4645,13 +4759,14 @@
                 _showSettings = true;
                 StartWarningCountdown();
             }
+            return true;
         }
-        catch
+        catch (Exception ex)
         {
-            _settingsMissing = true;
-            _motorMax = 5; _motorMin = 0; _elementMax = 5; _elementMin = 0; _simultaneity = true; _timeoutMinutes = 2; _ambientTempAlarmEnabled = true; _ambientTempThreshold = 35;
-            _showSettings = true;
-            StartWarningCountdown();
+            // خطای موقت شبکه/سرور یا خالی بودن کد دستگاه به معنی نبود تنظیمات نیست؛
+            // نباید مقادیر ذخیره‌شده با پیش‌فرض بازنویسی شوند.
+            Console.Error.WriteLine($"Load settings error: {ex.Message}");
+            return false;
         }
     }
 
@@ -4714,6 +4829,9 @@
                 _isPoweredOn = true;
             else
                 _isPoweredOn = false;
+
+            if (resp.TryGetProperty("detailedChartEnabled", out var dce))
+                _detailedChartEnabled = dce.ValueKind == System.Text.Json.JsonValueKind.True;
 
             if (resp.TryGetProperty("gracePeriodEndAt", out var gpe) && gpe.ValueKind == System.Text.Json.JsonValueKind.String)
             {
@@ -4802,8 +4920,12 @@
 
     private async Task OpenSettings()
     {
-        await CheckSettings();
-        if (!_settingsMissing) _showSettings = true;
+        if (!await CheckSettings())
+        {
+            ToastService.ShowError("دریافت تنظیمات دستگاه انجام نشد. دوباره تلاش کنید.");
+            return;
+        }
+        _showSettings = true;
     }
 
     private async Task SaveSettings()
@@ -4825,7 +4947,6 @@
             if (!resp.IsSuccessStatusCode)
             {
                 ToastService.ShowError(await ReadApiMessageAsync(resp, "ذخیره تنظیمات انجام نشد."));
-                _showSettings = false;
                 return;
             }
             _settingsMissing = false;
@@ -4833,6 +4954,8 @@
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Save settings error: {ex.Message}");
+            ToastService.ShowError("ذخیره تنظیمات انجام نشد. اتصال را بررسی کنید.");
+            return;
         }
         _showSettings = false;
     }
@@ -5107,6 +5230,10 @@
                     _maxDurationHours = mdhProp.GetInt32();
                 else if (info.TryGetProperty("MonitoringDurationHours", out var mdhProp2) && mdhProp2.ValueKind == System.Text.Json.JsonValueKind.Number)
                     _maxDurationHours = mdhProp2.GetInt32();
+                if (info.TryGetProperty("detailedChartEnabled", out var dceProp))
+                    _detailedChartEnabled = dceProp.ValueKind == System.Text.Json.JsonValueKind.True;
+                else if (info.TryGetProperty("DetailedChartEnabled", out var dceProp2))
+                    _detailedChartEnabled = dceProp2.ValueKind == System.Text.Json.JsonValueKind.True;
             }
             catch
             {
@@ -5122,6 +5249,11 @@
                 Navigation.NavigateTo("/admin/monitoring/active-receipts", replace: true);
                 return;
             }
+
+            // بعضی لینک‌ها (مثل بازگشت از چارت) فقط Id را می‌آورند. بدون کد دستگاه،
+            // تنظیمات ذخیره‌شده خوانده نمی‌شود و مقادیر پیش‌فرض جای داده واقعی می‌نشیند.
+            if (string.IsNullOrWhiteSpace(Code) && Id > 0)
+                await ResolveCodeFromConnectionAsync(Id);
         }
 
         // Initialize flow chart with flat baseline

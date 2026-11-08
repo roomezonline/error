@@ -3,12 +3,48 @@
 
 <head>
     <meta charset="utf-8" />
+    <base href="/" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ws: wss: https://www.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com; media-src 'self' blob: https:; frame-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
         window.esApplyThemeColor = function (dark) {
             var meta = document.querySelector('meta[name="theme-color"]');
             if (meta) meta.setAttribute('content', dark ? '#0f172a' : '#2563eb');
+        };
+
+        // Dark layers load on demand: public pages in dark mode get dark-site.css,
+        // admin pages additionally get dark-admin.css (injected by AdminLayout).
+        window.esLoadCssOnce = function (href) {
+            try {
+                if (document.querySelector('link[data-es-css="' + href + '"]')) return;
+                var link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.setAttribute('data-es-css', href);
+                link.href = href;
+                document.head.appendChild(link);
+            } catch (e) { }
+        };
+
+        window.esApplyTheme = function (dark) {
+            try {
+                var root = document.documentElement;
+                var next = dark ? 'dark' : 'light';
+                var prev = root.getAttribute('data-theme');
+                if (prev && prev !== next && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    root.classList.add('theme-anim');
+                    clearTimeout(window.__esThemeAnim);
+                    window.__esThemeAnim = setTimeout(function () {
+                        root.classList.remove('theme-anim');
+                    }, 320);
+                }
+                root.setAttribute('data-theme', next);
+                root.classList.toggle('app-dark', !!dark);
+                window.esApplyThemeColor(!!dark);
+                if (dark) {
+                    window.esLoadCssOnce('/css/dark-site.css');
+                    if (location.pathname.indexOf('/admin') === 0) window.esLoadCssOnce('/css/dark-admin.css');
+                }
+            } catch (e) { }
         };
 
         // ── Modal helpers (scroll lock + Escape) with owner-based reference counting ──
@@ -52,6 +88,8 @@
                 if (theme === 'dark') {
                     document.documentElement.setAttribute('data-theme', 'dark');
                     document.documentElement.classList.add('app-dark');
+                    window.esLoadCssOnce('/css/dark-site.css');
+                    if (location.pathname.indexOf('/admin') === 0) window.esLoadCssOnce('/css/dark-admin.css');
                 } else if (theme === 'light') {
                     document.documentElement.setAttribute('data-theme', 'light');
                 }
@@ -93,12 +131,14 @@
     <meta name="twitter:title" content="ارورسرویس | مرجع تخصصی کد خطا و تعمیرات لوازم خانگی" />
     <meta name="twitter:description" content="ارورسرویس، بانک جامع کدهای خطای لوازم خانگی، آموزش تعمیرات و قطعات یدکی" />
     <meta name="twitter:image" content="https://errorservice.ir/images/og-default.jpg" />
-    <base href="/" />
     <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <link href="css/app.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <link href="css/theme.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <link href="css/dropdown.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <link href="css/components.css" rel="stylesheet" media="print" onload="this.media='all'" />
+    <link href="css/calculators.css" rel="stylesheet" media="print" onload="this.media='all'" />
+    <link href="css/academy.css" rel="stylesheet" media="print" onload="this.media='all'" />
+    <link href="css/sensors.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <link href="vendor/jalalidatepicker/jalalidatepicker.min.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <noscript>
         <style>
@@ -110,6 +150,9 @@
         <link href="css/theme.css" rel="stylesheet" />
         <link href="css/dropdown.css" rel="stylesheet" />
         <link href="css/components.css" rel="stylesheet" />
+        <link href="css/calculators.css" rel="stylesheet" />
+        <link href="css/academy.css" rel="stylesheet" />
+        <link href="css/sensors.css" rel="stylesheet" />
         <link href="vendor/jalalidatepicker/jalalidatepicker.min.css" rel="stylesheet" />
         <link href="ErrorService.Client.styles.css" rel="stylesheet" />
     </noscript>
@@ -259,6 +302,24 @@
             line-height: 1.9;
             color: #475569;
         }
+        .seo-shell__h2 {
+            margin: 16px 0 6px;
+            font-size: 1.02rem;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .seo-shell__list {
+            margin: 0;
+            padding: 0 18px 0 0;
+            font-size: .92rem;
+            line-height: 2;
+            color: #475569;
+        }
+        .seo-shell__list a,
+        .seo-shell__desc a {
+            color: #2563eb;
+            text-decoration: none;
+        }
         @media (min-width: 900px) {
             .seo-shell { padding: 18px 24px 28px; }
             .seo-shell__title { font-size: 1.6rem; }
@@ -308,6 +369,7 @@
         .seo-prerender { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 .75rem; color: #0f172a; }
         .seo-prerender-desc { color: #334155; line-height: 1.9; margin-bottom: .75rem; }
         .seo-prerender-h2 { font-size: 1.15rem; font-weight: 700; margin: 1.25rem 0 .75rem; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: .4rem; }
+        .seo-prerender-h3 { font-size: 1rem; font-weight: 700; margin: 1rem 0 .35rem; color: #0f172a; }
         .seo-prerender-list { padding-right: 1.25rem; color: #334155; line-height: 2; }
         .seo-prerender-list a { color: #2563eb; }
         .seo-prerender-article { color: #1e293b; line-height: 2; }
@@ -319,6 +381,40 @@
         .seo-prerender-review-body { color: #334155; line-height: 1.9; white-space: pre-wrap; }
         .seo-prerender-review-replies { margin-top: .6rem; padding-right: .85rem; border-right: 3px solid #2563eb; }
         .seo-prerender-review-reply { color: #1e293b; font-size: .9rem; line-height: 1.8; margin-top: .35rem; background: #eff6ff; border-radius: 8px; padding: .5rem .7rem; }
+
+        /* ── دارک مود: اسپلش و پوستهٔ پیش‌رندر (پیش از بوت Blazor) ── */
+        html[data-theme="dark"] .app-splash {
+            background: radial-gradient(1100px 700px at 75% 20%, rgba(37,99,235,0.22), rgba(15,23,42,0) 60%),
+                        radial-gradient(900px 600px at 15% 80%, rgba(16,185,129,0.16), rgba(15,23,42,0) 55%),
+                        linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+        }
+        html[data-theme="dark"] .app-splash__card {
+            background: rgba(30, 41, 59, 0.72);
+            border-color: rgba(255,255,255,0.08);
+            box-shadow: 0 18px 50px rgba(0,0,0,0.5);
+        }
+        html[data-theme="dark"] .app-splash__brand { color: #f1f5f9; }
+        html[data-theme="dark"] .app-splash__subtitle { color: #94a3b8; }
+
+        html[data-theme="dark"] .seo-shell { background: #0f172a; }
+        html[data-theme="dark"] .seo-shell__hero { background: #1e293b; }
+        html[data-theme="dark"] .seo-shell__top,
+        html[data-theme="dark"] .seo-shell__title,
+        html[data-theme="dark"] .seo-shell__h2,
+        html[data-theme="dark"] .seo-prerender,
+        html[data-theme="dark"] .seo-prerender-h2,
+        html[data-theme="dark"] .seo-prerender-h3,
+        html[data-theme="dark"] .seo-prerender-review-author { color: #f1f5f9; }
+        html[data-theme="dark"] .seo-shell__desc,
+        html[data-theme="dark"] .seo-shell__list,
+        html[data-theme="dark"] .seo-prerender-desc,
+        html[data-theme="dark"] .seo-prerender-list,
+        html[data-theme="dark"] .seo-prerender-review-body { color: #cbd5e1; }
+        html[data-theme="dark"] .seo-prerender-article { color: #e2e8f0; }
+        html[data-theme="dark"] .seo-prerender-h2 { border-bottom-color: rgba(255,255,255,0.1); }
+        html[data-theme="dark"] .seo-prerender-review { background: #1e293b; border-color: rgba(255,255,255,0.1); }
+        html[data-theme="dark"] .seo-prerender-review-replies { border-right-color: #3b82f6; }
+        html[data-theme="dark"] .seo-prerender-review-reply { background: rgba(59,130,246,0.16); color: #e2e8f0; }
     </style>
     <script>
         window.seoHelper = {
@@ -369,7 +465,7 @@
     <div id="app-splash" class="app-splash" aria-label="Loading">
         <div class="app-splash__card">
             <div class="app-splash__logo" aria-hidden="true">
-                <img class="app-splash__logo-img" src="images/branding/logo.svg" alt="لوگوی ارورسرویس" width="66" height="66" />
+                <img class="app-splash__logo-img" src="images/branding/logo.svg" alt="ارورسرویس" width="66" height="66" />
             </div>
             <div class="app-splash__brand">ارورسرویس</div>
             <div class="app-splash__subtitle">در حال بارگذاری…</div>
@@ -537,6 +633,8 @@
     <script src="js/inline.js?v=1" defer></script>
     <script src="vendor/jalalidatepicker/jalalidatepicker.min.js" defer></script>
     <script src="js/site.js?v=8" defer></script>
+    <script src="js/draft-paste.js?v=1" defer></script>
+    <script src="js/service-voice-recorder.js?v=2" defer></script>
     <script src="_framework/blazor.webassembly.js" defer></script>
     <script>
         document.addEventListener('error', function(e) {
@@ -551,12 +649,13 @@
             });
         });
 
-        // Mega menu: after a link inside a panel is chosen, SPA navigation keeps
-        // the pointer/focus over the item, so the CSS :hover panel stays open.
-        // Close it explicitly until the pointer leaves or re-enters the trigger.
+        // Mega menu: after a link (trigger or panel link) is chosen, SPA navigation
+        // keeps the pointer/focus over the item, so the CSS :hover/:focus-within
+        // panel stays open. Close it explicitly until the pointer leaves the item
+        // and re-enters it from outside.
         (function () {
             document.addEventListener('click', function (e) {
-                var link = e.target && e.target.closest ? e.target.closest('.mega-panel a') : null;
+                var link = e.target && e.target.closest ? e.target.closest('.mega-panel a, .mega-trigger') : null;
                 var item = link && link.closest ? link.closest('.mega-item') : null;
                 if (!item) return;
                 item.classList.add('mega-item--closed');
@@ -565,9 +664,11 @@
             }, true);
 
             document.addEventListener('mouseover', function (e) {
-                var trigger = e.target && e.target.closest ? e.target.closest('.mega-item--closed .mega-trigger') : null;
-                var item = trigger && trigger.closest ? trigger.closest('.mega-item') : null;
-                if (item) item.classList.remove('mega-item--closed');
+                var item = e.target && e.target.closest ? e.target.closest('.mega-item--closed') : null;
+                if (!item) return;
+                // Moving between children of the same item is not a real re-entry.
+                if (e.relatedTarget && item.contains(e.relatedTarget)) return;
+                item.classList.remove('mega-item--closed');
             }, true);
 
             document.addEventListener('mouseout', function (e) {
@@ -611,6 +712,13 @@
         window.scrollToElement = function(element, block) {
             if (element) {
                 element.scrollIntoView({ behavior: 'smooth', block: block || 'center' });
+            }
+        };
+
+        window.scrollToId = function(id, block) {
+            var el = document.getElementById(id);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: block || 'start' });
             }
         };
 
@@ -771,7 +879,7 @@
 
     <div id="lesson-lightbox" class="lesson-lightbox" aria-hidden="true">
         <div id="lesson-lightbox-close" class="lesson-lightbox__close">×</div>
-        <img id="lesson-lightbox-img" class="lesson-lightbox__img" alt="تصویر آموزشی دوره" width="1100" height="740" />
+        <img id="lesson-lightbox-img" class="lesson-lightbox__img" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1100' height='740'/%3E" alt="تصویر آموزشی دوره" width="1100" height="740" />
     </div>
 
 
@@ -812,7 +920,7 @@
                 var card = splash.querySelector('.app-splash__card');
                 if (card) {
                     card.innerHTML =
-                        '<div class="app-splash__logo"><img class="app-splash__logo-img" src="images/branding/logo.svg" alt="لوگوی ارورسرویس" width="66" height="66" /></div>' +
+                        '<div class="app-splash__logo"><img class="app-splash__logo-img" src="images/branding/logo.svg" alt="ارورسرویس" width="66" height="66" /></div>' +
                         '<div class="app-splash__brand">ارورسرویس</div>' +
                         '<div style="color:#dc3545;font-size:14px;margin:8px 0;">بارگذاری سایت با خطا مواجه شد</div>' +
                         '<div style="color:#64748b;font-size:12px;margin-bottom:12px;">لطفاً اتصال اینترنت خود را بررسی کنید</div>' +

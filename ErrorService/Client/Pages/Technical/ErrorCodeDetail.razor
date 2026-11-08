@@ -3,8 +3,11 @@
 @using ErrorService.Shared.Models
 @using System.Text.Json
 @using System.Text.RegularExpressions
+@using ErrorService.Client.Services
 @inject HttpClient Http
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject LocalStorageService LocalStorage
 
 <SeoHeader
     Title="@pageTitle"
@@ -47,6 +50,7 @@
     }
     else
     {
+        <article class="ecd-article" id="ecd-article">
         <!-- Hero -->
         <div class="ecd-hero">
             <div class="ecd-hero__badges">
@@ -55,6 +59,27 @@
             </div>
             <div class="ecd-hero__code">@errorCode.Code</div>
             <h1 class="ecd-hero__title">@errorCode.Description</h1>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="ecd-actions ecd-no-print">
+            <button type="button" class="ecd-action" @onclick="OpenShare" title="اشتراک‌گذاری این کد خطا">
+                <span class="oi oi-share"></span>
+                اشتراک‌گذاری
+            </button>
+            <button type="button" class="ecd-action" @onclick="PrintAsync" title="چاپ این صفحه">
+                <span class="oi oi-print"></span>
+                چاپ
+            </button>
+            <button type="button" class="ecd-action @(isSaved ? "is-saved" : "")" @onclick="ToggleSavedAsync" title="ذخیره برای مطالعه بعد">
+                <span class="oi oi-bookmark"></span>
+                @(isSaved ? "ذخیره شد" : "ذخیره")
+            </button>
+            @if (!string.IsNullOrEmpty(actionMessage))
+            {
+                <span class="ecd-action-toast" role="status">@actionMessage</span>
+            }
+            <a class="ecd-action-link" href="/technical/error-codes/saved">ذخیره‌های من</a>
         </div>
 
         <!-- Image -->
@@ -267,7 +292,7 @@
                 <span class="oi oi-magnifying-glass"></span>
                 جستجوی کد خطا
             </a>
-            <a href="/admission/repair" class="ecd-btn ecd-btn--secondary">
+            <a href="@RepairRequestUrl" class="ecd-btn ecd-btn--secondary">
                 <span class="oi oi-wrench"></span>
                 درخواست تعمیر
             </a>
@@ -276,6 +301,17 @@
                 کارگاه‌های نزدیک
             </a>
         </div>
+        </article>
+
+        <ShareModal Visible="showShareModal"
+                    OnClose="CloseShare"
+                    HeaderTitle="اشتراک‌گذاری کد خطا"
+                    LinkLabel="کد خطا"
+                    ImageUrl="@errorCode.ImageUrl"
+                    PreviewTitle="@ShareTitle"
+                    PreviewDescription="@errorCode.Description"
+                    ShareUrl="@(ShareUrl ?? "")"
+                    GetShareText="@(() => ShareText)" />
     }
 </div>
 
@@ -307,6 +343,30 @@
         letter-spacing: 2px; margin-bottom: 8px;
     }
     .ecd-hero__title { font-size: 1.1rem; font-weight: 600; line-height: 1.6; opacity: 0.9; margin: 0; }
+
+    .ecd-actions {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+        margin: -8px 0 20px;
+    }
+    .ecd-action {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 9px 16px; border-radius: 12px; background: #fff;
+        border: 1px solid #e2e8f0; color: #475569;
+        font-size: 0.8rem; font-weight: 700; font-family: inherit;
+        cursor: pointer; transition: all 0.2s;
+    }
+    .ecd-action:hover { border-color: #a5b4fc; color: #4f46e5; background: #eef2ff; }
+    .ecd-action.is-saved { border-color: #a5b4fc; color: #4f46e5; background: #eef2ff; }
+    .ecd-action-toast {
+        font-size: 0.78rem; font-weight: 700; color: #047857;
+        background: #ecfdf5; border: 1px solid #a7f3d0;
+        padding: 6px 12px; border-radius: 10px;
+    }
+    .ecd-action-link {
+        margin-inline-start: auto; font-size: 0.78rem; font-weight: 700;
+        color: #6366f1; text-decoration: none;
+    }
+    .ecd-action-link:hover { text-decoration: underline; }
 
     .ecd-image-section {
         margin-bottom: 20px; border-radius: 16px; overflow: hidden;
@@ -468,6 +528,8 @@
 
 @code {
     private static readonly Regex NoteUrlRegex = new(@"https?://[^\s<>""']+", RegexOptions.IgnoreCase);
+    private const string SavedCodesKey = "es_saved_error_codes";
+    private const int SavedCodesLimit = 50;
 
     [Parameter] public string Brand { get; set; } = "";
     [Parameter] public string DeviceType { get; set; } = "";
@@ -479,6 +541,20 @@
     private bool isLoading = true;
     private string? videoEmbedUrl;
     private string? videoExternalUrl;
+
+    private bool isSaved;
+    private string? actionMessage;
+    private bool showShareModal;
+    private string? _savedStateKey;
+    private CancellationTokenSource? _messageCts;
+
+    public sealed record SavedErrorCode(
+        string Url,
+        string Code,
+        string Brand,
+        string DeviceType,
+        string Description,
+        long SavedAt);
 
     private List<ErrorCodeFaq> publishedFaqs => errorCode?.Faqs?
         .Where(f => !string.IsNullOrWhiteSpace(f.Question) && !string.IsNullOrWhiteSpace(f.Answer))
@@ -515,9 +591,9 @@
                 return;
             }
 
-            pageTitle = $"کد خطای {errorCode.Code} {errorCode.Brand} {errorCode.DeviceType} - {errorCode.Description} | ارورسرویس";
-            pageDescription = $"کد خطای {errorCode.Code} مربوط به {errorCode.DeviceType} برند {errorCode.Brand}: {errorCode.Description}. راه حل: {Truncate(errorCode.Solution, 150)}";
-            pageKeywords = $"کد خطا {errorCode.Code}, ارور {errorCode.Brand}, {errorCode.DeviceType}, {errorCode.Description}, تعمیرات {errorCode.Brand}";
+            pageTitle = SeoTitles.ErrorCode(errorCode.Code, errorCode.Brand, errorCode.DeviceType);
+            pageDescription = SeoDescriptions.ErrorCode(errorCode.Code, errorCode.Brand, errorCode.DeviceType, errorCode.Description, errorCode.Solution);
+            pageKeywords = $"کد خطای {errorCode.Code}, {errorCode.Brand}, {errorCode.DeviceType}, عیب‌یابی, تعمیرات";
 
             ParseVideo(errorCode.VideoUrl);
             BuildJsonLd();
@@ -541,6 +617,135 @@
             errorCode = null;
         }
         isLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (errorCode == null) return;
+
+        var stateKey = $"{errorCode.Id}:{errorCode.Code}";
+        if (_savedStateKey == stateKey) return;
+        _savedStateKey = stateKey;
+
+        try
+        {
+            var saved = await ReadSavedAsync();
+            isSaved = saved.Any(x => string.Equals(x.Url, ShareUrl, StringComparison.OrdinalIgnoreCase));
+            StateHasChanged();
+        }
+        catch
+        {
+            // localStorage unavailable (private mode / SSR) — keep default state.
+        }
+    }
+
+    private string ShareUrl => canonicalUrl ?? "";
+
+    private string ShareTitle => errorCode == null
+        ? "کد خطا"
+        : $"کد خطای {errorCode.Code} - {errorCode.Brand} {errorCode.DeviceType}";
+
+    private string ShareText => errorCode == null
+        ? ShareUrl
+        : $"{ShareTitle}\n{errorCode.Description}\n{ShareUrl}";
+
+    private string RepairRequestUrl
+    {
+        get
+        {
+            if (errorCode == null) return "/admission/repair";
+            var problem = $"{errorCode.Description} (کد خطای {errorCode.Code} - {errorCode.Brand} {errorCode.DeviceType})";
+            return $"/admission/repair?problem={Uri.EscapeDataString(problem)}";
+        }
+    }
+
+    private void OpenShare() => showShareModal = true;
+
+    private void CloseShare() => showShareModal = false;
+
+    private async Task PrintAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("__printArticle", "#ecd-article", pageTitle);
+        }
+        catch
+        {
+            await ShowMessageAsync("چاپ در این مرورگر ممکن نیست");
+        }
+    }
+
+    private async Task ToggleSavedAsync()
+    {
+        try
+        {
+            var saved = await ReadSavedAsync();
+            var existing = saved.FirstOrDefault(x => string.Equals(x.Url, ShareUrl, StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null)
+            {
+                saved.Remove(existing);
+                isSaved = false;
+                await ShowMessageAsync("از ذخیره‌ها حذف شد");
+            }
+            else if (errorCode != null)
+            {
+                if (saved.Count >= SavedCodesLimit)
+                    saved.Remove(saved.MinBy(x => x.SavedAt)!);
+
+                saved.Add(new SavedErrorCode(
+                    ShareUrl,
+                    errorCode.Code,
+                    errorCode.Brand,
+                    errorCode.DeviceType,
+                    errorCode.Description,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                isSaved = true;
+                await ShowMessageAsync("ذخیره شد");
+            }
+
+            await LocalStorage.SetAsync(SavedCodesKey, JsonSerializer.Serialize(saved));
+        }
+        catch
+        {
+            await ShowMessageAsync("ذخیره در این مرورگر ممکن نیست");
+        }
+    }
+
+    private async Task<List<SavedErrorCode>> ReadSavedAsync()
+    {
+        var json = await LocalStorage.GetAsync(SavedCodesKey);
+        if (string.IsNullOrWhiteSpace(json)) return new();
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<SavedErrorCode>>(json) ?? new();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    private async Task ShowMessageAsync(string message)
+    {
+        _messageCts?.Cancel();
+        _messageCts?.Dispose();
+        _messageCts = new CancellationTokenSource();
+        var token = _messageCts.Token;
+
+        actionMessage = message;
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(2500, token);
+            actionMessage = null;
+            StateHasChanged();
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private void BuildJsonLd()
@@ -610,7 +815,40 @@
             jsonParts.Add(JsonSerializer.Serialize(faqPage));
         }
 
+        var solutionSteps = BuildSolutionSteps(errorCode.Solution);
+        if (solutionSteps.Count >= 2)
+        {
+            var howTo = new Dictionary<string, object?>
+            {
+                ["@context"] = "https://schema.org",
+                ["@type"] = "HowTo",
+                ["name"] = $"رفع کد خطای {errorCode.Code} - {errorCode.Brand} {errorCode.DeviceType}",
+                ["description"] = errorCode.Description,
+                ["totalTime"] = "PT10M",
+                ["step"] = solutionSteps.Select((text, index) => new Dictionary<string, object?>
+                {
+                    ["@type"] = "HowToStep",
+                    ["position"] = index + 1,
+                    ["name"] = $"مرحله {index + 1}",
+                    ["text"] = text
+                }).ToArray()
+            };
+            jsonParts.Add(JsonSerializer.Serialize(howTo));
+        }
+
         jsonLd = $"[{string.Join(",", jsonParts)}]";
+    }
+
+    private static List<string> BuildSolutionSteps(string? solution)
+    {
+        if (string.IsNullOrWhiteSpace(solution)) return new();
+
+        var normalized = solution.Replace("\r\n", "\n");
+        return Regex.Split(normalized, @"\n+|[•●▪]")
+            .Select(part => Regex.Replace(part.Trim(), @"^\s*\d+\s*[\.\)\-–]\s*", "").Trim())
+            .Where(part => part.Length >= 3)
+            .Take(15)
+            .ToList();
     }
 
     private async Task LoadRelatedProductsAsync(string? relatedProductIds)

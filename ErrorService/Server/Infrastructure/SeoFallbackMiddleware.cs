@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using ErrorService.Server.Data;
+using ErrorService.Server.Models;
+using ErrorService.Shared;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -34,17 +36,22 @@ public sealed class SeoFallbackMiddleware
                 "ارورسرویس، مرجع تخصصی کدهای خطای لوازم خانگی، آموزش تعمیرات، قطعات یدکی و سرویس در منزل. بانک جامع ارور ماشین لباسشویی، یخچال، ظرفشویی و ماکروفر.",
                 "کد خطای لوازم خانگی, تعمیر لوازم خانگی, قطعات یدکی, سرویس لوازم خانگی, ارور ماشین لباسشویی, ارور یخچال, تعمیرات لوازم خانگی",
                 "Organization"),
-        ["/products"] = ("فروشگاه قطعات یدکی | ارورسرویس",
-                         "خرید قطعات یدکی اصل لوازم خانگی سامسونگ، ال‌جی، بوش و... با ارسال سریع و ضمانت اصالت",
-                         "قطعات یدکی لوازم خانگی, خرید قطعات یدکی, لوازم یدکی سامسونگ, لوازم یدکی ال جی, بوش",
-                         "CollectionPage"),
-        ["/news"] = ("اخبار و مقالات تعمیرات لوازم خانگی | ارورسرویس",
-                     "جدیدترین اخبار، مقالات آموزشی و راهنمای تعمیرات لوازم خانگی در ارورسرویس",
-                     "اخبار لوازم خانگی, مقالات تعمیرات, آموزش تعمیر لوازم خانگی",
+        // متاتگ /products به‌صورت داده‌محور از ShopListingSeo ساخته می‌شود (دسته/صفحه).
+        ["/news"] = ("اخبار و مقالات لوازم الکترونیک و تعمیر لوازم خانگی | ارورسرویس",
+                     "آخرین اخبار، مقالات و راهنمای خرید لوازم الکترونیکی، قطعات الکترونیک، تجهیزات ابزار دقیق و نکات فنی تعمیر لوازم خانگی و بردهای الکترونیکی",
+                     "اخبار الکترونیک, مقالات لوازم الکترونیک, راهنمای خرید قطعات, تعمیر لوازم خانگی, تعمیر بردها, ابزار دقیق",
                      "CollectionPage"),
-        ["/academy"] = ("آکادمی تعمیرات لوازم خانگی | ارورسرویس",
-                        "دوره‌های آموزشی تعمیرات لوازم خانگی، مقالات تخصصی و ویدیوهای آموزشی",
-                        "آموزش تعمیرات لوازم خانگی, دوره تعمیر یخچال, دوره تعمیر لباسشویی, آکادمی تعمیرات",
+        ["/tips"] = ("ترفندهای تعمیر و نگهداری لوازم خانگی و الکترونیک | ارورسرویس",
+                     "ترفندهای کاربردی، نکات نگهداری و راهکارهای سریع برای تعمیر و افزایش عمر لوازم خانگی و تجهیزات الکترونیکی.",
+                     "ترفند لوازم خانگی, نکات نگهداری, تعمیر سریع, راهکار عملی, ارورسرویس",
+                     "CollectionPage"),
+        ["/announcements"] = ("اطلاعیه‌ها و اخبار رسمی ارورسرویس",
+                              "اطلاعیه‌های رسمی ارورسرویس درباره خدمات، تغییرات سرویس‌ها، رویدادها و شرایط فروشگاه.",
+                              "اطلاعیه ارورسرویس, اخبار رسمی, اطلاع‌رسانی خدمات, ارورسرویس",
+                              "CollectionPage"),
+        ["/academy"] = ("آکادمی آموزش تعمیر لوازم خانگی و الکترونیک | ارورسرویس",
+                        "دوره‌های گام‌به‌گام و آموزش‌های تخصصی تعمیر لوازم خانگی، بردهای الکترونیک و عیب‌یابی؛ دسته‌بندی‌شده بر اساس نوع دستگاه با جستجوی سریع.",
+                        "آموزش تعمیر لوازم خانگی, دوره تعمیرات, تعمیر بردهای الکترونیک, آموزش تعمیر یخچال, آموزش تعمیر لباسشویی, عیب‌یابی لوازم خانگی",
                         "CollectionPage"),
         ["/technical/error-codes"] = ("بانک کدهای خطا | عیب‌یابی هوشمند لوازم خانگی",
                                       "جستجو و مشاهده لیست کامل کدهای خطای یخچال، ماشین لباسشویی، ظرفشویی و پکیج برندهای سامسونگ، ال‌جی، بوش و...",
@@ -54,51 +61,51 @@ public sealed class SeoFallbackMiddleware
                                        "سنسور یاب هوشمند ارورسرویس، جستجو و شناسایی سنسورهای لوازم خانگی با مشخصات فنی کامل",
                                        "سنسور لوازم خانگی, سنسور یاب, شناسایی سنسور, سنسور ماشین لباسشویی, سنسور یخچال",
                                        "CollectionPage"),
-        ["/technical/calculators"] = ("ماشین‌حساب تعمیرات | ارورسرویس",
-                                      "ابزارهای محاسباتی برای تعمیرکاران لوازم خانگی",
-                                      "ماشین حساب تعمیرات, محاسبه هزینه تعمیر",
-                                      "WebPage"),
-        ["/technical/consultation"] = ("مشاوره تعمیرات لوازم خانگی | ارورسرویس",
-                                      "دریافت مشاوره تخصصی تعمیرات لوازم خانگی از کارشناسان ارورسرویس",
-                                      "مشاوره تعمیرات, راهنمای تعمیر لوازم خانگی",
+        ["/technical/calculators"] = ("ماشین‌حساب تعمیرکاران: ۱۳ ابزار محاسبه برق و الکترونیک | ارورسرویس",
+                                      "۱۳ ماشین‌حساب رایگان برای تعمیرکاران و تکنسین‌ها: کد رنگ مقاومت، قانون اهم، مقاومت LED، افت ولتاژ کابل، جریان و خازن موتور، مصرف برق و عمر باتری. بدون نصب و مناسب موبایل.",
+                                      "ماشین حساب تعمیرات, محاسبه قانون اهم, کد رنگ مقاومت, افت ولتاژ کابل, محاسبه سطح مقطع سیم, جریان موتور, خازن موتور تک فاز, محاسبه مصرف برق, ابزار تعمیرکار",
+                                      "WebApplication"),
+        ["/technical/consultation"] = ("سیستم مشاوره فنی تعمیرات لوازم خانگی | ارورسرویس",
+                                      "ارسال سوال فنی و دریافت پاسخ از متخصصین تعمیرات لوازم خانگی. مشاوره رایگان عیب‌یابی",
+                                      "مشاوره فنی, مشاوره تعمیرات, سوال فنی لوازم خانگی",
                                       "ContactPage"),
-        ["/contact"] = ("تماس با ما | ارورسرویس",
-                        "اطلاعات تماس، آدرس و شماره تلفن‌های ارورسرویس",
-                        "تماس با ارورسرویس, آدرس ارورسرویس, شماره تلفن ارورسرویس",
+        ["/contact"] = ("تماس با ارورسرویس | مشاوره لوازم الکترونیک و درخواست تعمیر لوازم خانگی",
+                        "تماس با ارورسرویس برای مشاوره خرید لوازم الکترونیکی و تجهیزات ابزار دقیق، درخواست تعمیر لوازم خانگی و بردهای الکترونیکی. پاسخگویی سریع",
+                        "تماس ارورسرویس, شماره تماس, تعمیر لوازم خانگی, تعمیر بردهای الکترونیک, خرید لوازم الکترونیک",
                         "ContactPage"),
-        ["/about"] = ("درباره ما | ارورسرویس",
-                      "آشنایی با تیم ارورسرویس، خدمات و سوابق ما در زمینه تعمیرات لوازم خانگی",
-                      "درباره ارورسرویس, تیم تعمیرات لوازم خانگی, تاریخچه ارورسرویس",
+        ["/about"] = ("درباره ارورسرویس | فروشگاه قطعات، تعمیرات و آموزش لوازم خانگی",
+                      "ارورسرویس؛ بانک کدهای خطا، فروشگاه قطعات یدکی و خدمات تعمیر تخصصی لوازم خانگی با تیمی از کارشناسان فنی.",
+                      "درباره ارورسرویس, تعمیر لوازم خانگی, کدهای خطا, فروشگاه قطعات الکترونیک, آموزش تعمیرات",
                       "AboutPage"),
-        ["/faq"] = ("سوالات متداول | ارورسرویس",
-                    "پاسخ به سوالات متداول شما درباره خدمات تعمیرات لوازم خانگی ارورسرویس",
-                    "سوالات متداول, پشتیبانی ارورسرویس, راهنمای استفاده",
+        ["/faq"] = ("سوالات متداول | خرید لوازم الکترونیک و تعمیر لوازم خانگی | ارورسرویس",
+                    "پاسخ به سوالات متداول درباره خرید لوازم الکترونیکی، شرایط ارسال، ضمانت اصالت کالا، تعمیر لوازم خانگی، مرجوعی و پشتیبانی ارورسرویس",
+                    "سوالات متداول, FAQ, راهنمای خرید, لوازم الکترونیک, تعمیر لوازم خانگی, ضمانت اصالت",
                     "WebPage"),
         ["/privacy"] = ("حریم خصوصی | ارورسرویس",
-                        "سیاست حفظ حریم خصوصی کاربران در ارورسرویس",
-                        "حریم خصوصی, سیاست حفاظت از داده ها",
+                        "قوانین حریم خصوصی ارورسرویس - نحوه جمع‌آوری و استفاده از اطلاعات کاربران",
+                        "حریم خصوصی, قوانین سایت, ارورسرویس",
                         "WebPage"),
-        ["/terms"] = ("شرایط استفاده | ارورسرویس",
-                      "شرایط و قوانین استفاده از خدمات ارورسرویس",
-                      "شرایط استفاده, قوانین سایت, ضوابط استفاده",
+        ["/terms"] = ("قوانین و مقررات | ارورسرویس",
+                      "قوانین و مقررات استفاده از خدمات ارورسرویس",
+                      "قوانین, مقررات, شرایط استفاده, ارورسرویس",
                       "WebPage"),
-        ["/trust/portfolio"] = ("نمونه کارها | ارورسرویس",
-                                "نمونه کارهای انجام شده توسط تیم ارورسرویس در زمینه تعمیرات لوازم خانگی",
-                                "نمونه کار تعمیرات, پروژه های ارورسرویس",
+        ["/trust/portfolio"] = ("نمونه کارهای تعمیر لوازم خانگی و بردهای الکترونیک | ارورسرویس",
+                                "گزارش تصویری از تعمیرات تخصصی لوازم خانگی، بردهای الکترونیکی و تجهیزات صنعتی انجام شده در کارگاه ارورسرویس",
+                                "نمونه کار تعمیرات, تعمیر لوازم خانگی, تعمیر بردهای الکترونیک, نمونه کار تعمیر یخچال, تعمیر لباسشویی",
                                 "CollectionPage"),
-        ["/admission/repair"] = ("درخواست تعمیر | ارورسرویس",
-                                 "ثبت درخواست تعمیر لوازم خانگی در ارورسرویس",
-                                 "درخواست تعمیر, ثبت سفارش تعمیر, تعمیر لوازم خانگی در منزل",
+        ["/admission/repair"] = ("درخواست تعمیر آنلاین لوازم خانگی | ارورسرویس",
+                                 "ثبت درخواست تعمیر آنلاین لوازم خانگی با مشاوره رایگان. تعمیر ماشین لباسشویی، یخچال، ظرفشویی و ماکروفر",
+                                 "تعمیر آنلاین, درخواست تعمیر لوازم خانگی, تعمیر در منزل",
                                  "WebPage"),
-        ["/admission/expertise"] = ("درخواست کارشناسی | ارورسرویس",
-                                    "ثبت درخواست کارشناسی و عیب‌یابی لوازم خانگی",
-                                    "کارشناسی لوازم خانگی, عیب‌یابی, بررسی فنی",
+        ["/admission/expertise"] = ("درخواست کارشناسی آنلاین لوازم خانگی | ارورسرویس",
+                                    "ثبت درخواست کارشناسی و عیب‌یابی آنلاین لوازم خانگی. بررسی تخصصی و اعلام هزینه تعمیر",
+                                    "کارشناسی لوازم خانگی, عیب‌یابی آنلاین, بررسی تعمیرات",
                                     "WebPage"),
         ["/commitment"] = ("تعهدنامه دیجیتال | ارورسرویس",
                            "تعهدنامه و اصول ارائه خدمات تعمیرات ارورسرویس",
                            "تعهدنامه ارورسرویس, اصول خدمات تعمیرات, ضمانت خدمات",
                            "WebPage"),
-        ["/workshops"] = ("همکاران ما | تعمیرکاران لوازم خانگی همکار ارورسرویس",
+        ["/workshops"] = ("همکاران ارورسرویس | تعمیرکاران لوازم خانگی در شهرهای مختلف",
                           "فهرست همکاران و تعمیرکاران همکار ارورسرویس در سراسر کشور؛ آدرس، شماره تماس و پروفایل هر مجموعه را مشاهده کنید.",
                           "همکاران ارورسرویس, تعمیرکار لوازم خانگی, تعمیرگاه لوازم خانگی, سرویس در منزل, تعمیر ماشین لباسشویی, تعمیر یخچال",
                           "CollectionPage"),
@@ -158,7 +165,10 @@ public sealed class SeoFallbackMiddleware
             return;
         }
 
-        var seoQuery = BuildSeoQuery(context.Request.QueryString.Value);
+        // فقط فهرست فروشگاه پارامتر معنادار (دسته/صفحه) در canonical دارد؛ بقیه
+        // صفحات با پارامترهای اضافی (مثل ?page= یا فیلترهای جستجو) یک URL تکراری نسازند.
+        var isShopListing = string.Equals(path.Trim('/'), "products", StringComparison.OrdinalIgnoreCase);
+        var seoQuery = isShopListing ? BuildSeoQuery(context.Request.QueryString.Value) : "";
         var (html, statusCode) = await GetSeoHtml(path, seoQuery, db, IsCrawler(context));
         if (html != null)
         {
@@ -171,17 +181,17 @@ public sealed class SeoFallbackMiddleware
         await _next(context);
     }
 
-    // فقط پارامترهای معنادار فروشگاه در canonical و کلید کش می‌آیند؛
-    // جستجو و پارامترهای ردیابی (utm و...) حذف می‌شوند تا canonical تکراری
-    // و رشد بی‌انتهای کش رخ ندهد.
-    private static readonly string[] SeoQueryKeys =
-        ["categoryId", "sort", "minPrice", "maxPrice", "onlyAvailable", "onlyDiscounted", "page"];
+    // فقط دسته و شماره صفحه در canonical و کلید کش می‌آیند؛ مرتب‌سازی، بازه قیمت،
+    // فیلترهای موجودی، جستجو و پارامترهای ردیابی (utm و...) حذف می‌شوند تا
+    // ده‌ها URL تقریباً یکسان با یک کپشن در گوگل ایندکس نشوند.
+    private static readonly string[] SeoQueryKeys = ["categoryId", "page"];
 
     private static string BuildSeoQuery(string? rawQuery)
     {
         if (string.IsNullOrWhiteSpace(rawQuery)) return "";
 
-        var parts = new List<string>();
+        string? categoryId = null;
+        string? page = null;
         foreach (var pair in rawQuery.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
         {
             var eq = pair.IndexOf('=');
@@ -190,22 +200,56 @@ public sealed class SeoFallbackMiddleware
 
             if (!SeoQueryKeys.Contains(key, StringComparer.OrdinalIgnoreCase) || value.Length == 0) continue;
 
-            if (string.Equals(key, "page", StringComparison.OrdinalIgnoreCase) && (value == "1" || value == "0")) continue;
-            if ((string.Equals(key, "onlyAvailable", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(key, "onlyDiscounted", StringComparison.OrdinalIgnoreCase))
-                && !string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)) continue;
-
-            parts.Add($"{key}={Uri.EscapeDataString(value)}");
+            if (string.Equals(key, "page", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(value, out var pageNumber) && pageNumber > 1)
+            {
+                page = pageNumber.ToString();
+            }
+            else if (string.Equals(key, "categoryId", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(value, out var cid) && cid > 0)
+            {
+                categoryId = cid.ToString();
+            }
         }
 
+        // ترتیب ثابت تا کلاینت و خزنده یک canonical یکسان بسازند.
+        var parts = new List<string>();
+        if (categoryId != null) parts.Add($"categoryId={categoryId}");
+        if (page != null) parts.Add($"page={page}");
         return parts.Count == 0 ? "" : "?" + string.Join("&", parts);
+    }
+
+    private static (int? CategoryId, int Page) ParseShopListingQuery(string seoQuery)
+    {
+        int? categoryId = null;
+        var page = 1;
+        if (seoQuery.Length == 0) return (categoryId, page);
+
+        foreach (var pair in seoQuery.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=');
+            var key = Uri.UnescapeDataString(eq >= 0 ? pair[..eq] : pair);
+            var value = Uri.UnescapeDataString(eq >= 0 ? pair[(eq + 1)..] : "");
+
+            if (key.Equals("categoryId", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(value, out var parsedCategoryId) && parsedCategoryId > 0)
+                categoryId = parsedCategoryId;
+            else if (key.Equals("page", StringComparison.OrdinalIgnoreCase)
+                     && int.TryParse(value, out var parsedPage) && parsedPage > 1)
+                page = parsedPage;
+        }
+
+        return (categoryId, page);
     }
 
     private static bool IsPrivateAppPage(string cleanPath) =>
         cleanPath == "cart" ||
         cleanPath == "checkout" ||
         cleanPath == "wishlist" ||
+        cleanPath == "compare" ||
         cleanPath == "order-tracking" ||
+        cleanPath == "admission/track" ||
+        cleanPath == "technical/error-codes/saved" ||
         cleanPath == "search" ||
         cleanPath == "my-orders" || cleanPath.StartsWith("my-orders/") ||
         cleanPath == "monitoring/shared" || cleanPath.StartsWith("monitoring/shared/") ||
@@ -225,6 +269,18 @@ public sealed class SeoFallbackMiddleware
             return ("علاقه‌مندی‌ها | ارورسرویس",
                     "فهرست محصولات مورد علاقه شما در ارورسرویس",
                     "علاقه مندی, لیست خرید, ارورسرویس");
+        if (cleanPath == "compare")
+            return ("مقایسه محصولات | ارورسرویس",
+                    "محصولات انتخابی خود را از نظر قیمت، موجودی و مشخصات فنی کنار هم مقایسه کنید.",
+                    "مقایسه محصولات, مقایسه قیمت, مشخصات فنی, ارورسرویس");
+        if (cleanPath == "admission/track")
+            return ("پیگیری درخواست پذیرش | ارورسرویس",
+                    "پیگیری وضعیت درخواست تعمیر یا کارشناسی ثبت‌شده در ارورسرویس",
+                    "پیگیری درخواست, وضعیت تعمیر, ارورسرویس");
+        if (cleanPath == "technical/error-codes/saved")
+            return ("کدهای خطای ذخیره‌شده | ارورسرویس",
+                    "فهرست کدهای خطایی که برای مطالعه بعدی در این مرورگر ذخیره کرده‌اید.",
+                    "کد خطای ذخیره شده, کدهای خطا, ارورسرویس");
         if (cleanPath == "order-tracking")
             return ("پیگیری سفارش | ارورسرویس",
                     "پیگیری وضعیت سفارش با شماره سفارش و شماره تلفن",
@@ -237,7 +293,11 @@ public sealed class SeoFallbackMiddleware
             return ("مشاهده پایش | ارورسرویس",
                     "مشاهده گزارش پایش اشتراک‌گذاری‌شده در ارورسرویس",
                     "پایش, گزارش, ارورسرویس");
-        if (cleanPath == "my-orders" || cleanPath.StartsWith("my-orders/"))
+        if (cleanPath.StartsWith("my-orders/"))
+            return ("جزئیات سفارش | ارورسرویس",
+                    "مشاهده جزئیات و وضعیت سفارش شما در ارورسرویس",
+                    "جزئیات سفارش, وضعیت سفارش, ارورسرویس");
+        if (cleanPath == "my-orders")
             return ("سفارش‌های من | ارورسرویس",
                     "مشاهده تاریخچه و جزئیات سفارش‌های شما در ارورسرویس",
                     "سفارش های من, تاریخچه سفارش, ارورسرویس");
@@ -293,6 +353,10 @@ public sealed class SeoFallbackMiddleware
         // Normalize: remove trailing slash
         if (cleanPath.EndsWith('/'))
             cleanPath = cleanPath.TrimEnd('/');
+
+        // /help/faq مسیر جایگزین صفحه سوالات متداول است؛ برای جلوگیری از محتوای
+        // تکراری، متاتگ و canonical هر دو مسیر به /faq اشاره می‌کنند.
+        if (cleanPath == "help/faq") cleanPath = "faq";
 
         var canonicalPath = string.Join("/", cleanPath.Split('/').Select(Uri.EscapeDataString));
         var canonical = $"{_baseUrl}/{(canonicalPath == "" ? "" : canonicalPath)}{seoQuery}";
@@ -353,7 +417,88 @@ public sealed class SeoFallbackMiddleware
         else
         {
             var staticKey = cleanPath == "" ? "" : "/" + cleanPath;
-            if (StaticPages.TryGetValue(staticKey, out var staticMeta))
+            if (staticKey == "")
+            {
+                // متاتگ‌های صفحه اصلی از تنظیمات ادمین خوانده می‌شوند تا با
+                // خروجی کلاینت (SiteSettingsService) یکی باشند.
+                var site = await db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
+                (title, description, keywords, _) = StaticPages[""];
+                if (!string.IsNullOrWhiteSpace(site?.SeoTitle)) title = site!.SeoTitle!.Trim();
+                if (!string.IsNullOrWhiteSpace(site?.SeoDescription)) description = site!.SeoDescription!.Trim();
+                if (!string.IsNullOrWhiteSpace(site?.SeoKeywords)) keywords = site!.SeoKeywords!.Trim();
+                if (!string.IsNullOrWhiteSpace(site?.DefaultOgImage)) ogImage = AbsUrl(site.DefaultOgImage) ?? "";
+                jsonLd = BuildOrganizationJsonLd(canonical, title, description, await LoadContactDataAsync(db));
+            }
+            else if (staticKey == "/products")
+            {
+                var (categoryId, page) = ParseShopListingQuery(seoQuery);
+                var category = categoryId is int cid
+                    ? await db.Categories.AsNoTracking()
+                        .Where(c => c.Id == cid)
+                        .Select(c => new { c.Name, c.SeoTitle, c.SeoDescription })
+                        .FirstOrDefaultAsync()
+                    : null;
+                var listing = ShopListingSeo.Build(category?.Name, page, category?.SeoTitle, category?.SeoDescription);
+                (title, description, keywords) = (listing.Title, listing.Description, listing.Keywords);
+                jsonLd = BuildStaticJsonLd("CollectionPage", canonical, title, description);
+            }
+            else if (staticKey == "/about")
+            {
+                // متاتگ صفحه درباره ما از محتوای قابل ویرایش ادمین خوانده می‌شود.
+                var about = await db.AboutPageContents.AsNoTracking()
+                    .Select(a => new { a.SeoTitle, a.SeoDescription, a.SeoKeywords, a.HeroImageUrl })
+                    .FirstOrDefaultAsync();
+                (title, description, keywords, _) = StaticPages["/about"];
+                if (!string.IsNullOrWhiteSpace(about?.SeoTitle)) title = about!.SeoTitle!.Trim();
+                if (!string.IsNullOrWhiteSpace(about?.SeoDescription)) description = about!.SeoDescription!.Trim();
+                if (!string.IsNullOrWhiteSpace(about?.SeoKeywords)) keywords = about!.SeoKeywords!.Trim();
+                if (!string.IsNullOrWhiteSpace(about?.HeroImageUrl)) ogImage = AbsUrl(about.HeroImageUrl) ?? "";
+                jsonLd = BuildStaticJsonLd("AboutPage", canonical, title, description);
+            }
+            else if (TryGetContentListingSegment(cleanPath, out var listingType, out var listingKind, out var listingSlug))
+            {
+                var settingsEntity = await db.ContentSettings.AsNoTracking().FirstOrDefaultAsync();
+                var contentSettings = settingsEntity == null ? new ContentSettingsDto() : ContentSettingsMapper.ToDto(settingsEntity);
+                var typePlural = ContentTypeCatalog.PluralLabel(listingType);
+
+                if (!contentSettings.IsTypeEnabled(listingType))
+                {
+                    statusCode = 404;
+                    title = "صفحه مورد نظر یافت نشد | ارورسرویس";
+                    description = "متاسفانه صفحه مورد نظر شما وجود ندارد یا حذف شده است.";
+                    keywords = "404, صفحه یافت نشد, ارورسرویس";
+                    jsonLd = BuildWebPageJsonLd(canonical, title, description);
+                }
+                else
+                {
+                    var label = listingKind == "category"
+                        ? await db.ContentCategories.AsNoTracking()
+                            .Where(c => c.IsActive && c.Slug != null && c.Slug.ToLower() == listingSlug)
+                            .Select(c => c.Title)
+                            .FirstOrDefaultAsync()
+                        : listingSlug.Replace('-', ' ');
+
+                    if (string.IsNullOrWhiteSpace(label) && listingKind == "category")
+                    {
+                        statusCode = 404;
+                        title = "دسته مورد نظر یافت نشد | ارورسرویس";
+                        description = "متاسفانه دسته مورد نظر شما وجود ندارد یا حذف شده است.";
+                        keywords = "404, دسته یافت نشد, ارورسرویس";
+                        jsonLd = BuildWebPageJsonLd(canonical, title, description);
+                    }
+                    else
+                    {
+                        label = string.IsNullOrWhiteSpace(label) ? typePlural : label.Trim();
+                        title = listingKind == "category"
+                            ? $"{label} | {typePlural} | ارورسرویس"
+                            : $"برچسب {label} | {typePlural} | ارورسرویس";
+                        description = $"آخرین {typePlural} با موضوع {label} در ارورسرویس؛ مطالب تخصصی، راهنما و اخبار مرتبط.";
+                        keywords = $"{label}, {typePlural}, ارورسرویس";
+                        jsonLd = BuildStaticJsonLd("CollectionPage", canonical, title, description);
+                    }
+                }
+            }
+            else if (StaticPages.TryGetValue(staticKey, out var staticMeta))
             {
                 (title, description, keywords, _) = staticMeta;
                 jsonLd = staticMeta.jsonLdType == "Organization"
@@ -422,6 +567,16 @@ public sealed class SeoFallbackMiddleware
                     crawlerContent = await BuildWorkshopsHubContent(db);
                 }
 
+                if (cleanPath == "technical/calculators")
+                {
+                    crawlerContent = await BuildCalculatorsContentAsync(db);
+                }
+
+                if (cleanPath == "academy")
+                {
+                    crawlerContent = await BuildAcademyHubContentAsync(db);
+                }
+
                 if (string.IsNullOrEmpty(crawlerContent))
                 {
                     if (cleanPath == "")
@@ -439,6 +594,18 @@ public sealed class SeoFallbackMiddleware
             {
                 crawlerContent = BuildHomeShell(title, description, preloadImage, preloadImageMobile, preloadSlideTitle);
             }
+        }
+
+        // صفحه ابزارهای محاسباتی: ساختار داده غنی‌تر (WebApplication + FAQ + Breadcrumb)
+        if (cleanPath == "technical/calculators" && statusCode == 200)
+        {
+            jsonLd = BuildCalculatorsJsonLd(canonical);
+        }
+
+        // صفحه آکادمی: CollectionPage + Breadcrumb + ItemList محتوا
+        if (cleanPath == "academy" && statusCode == 200)
+        {
+            jsonLd = await BuildAcademyJsonLdAsync(db, canonical);
         }
 
         // Inject product review structured data for crawlers (rich results)
@@ -513,6 +680,292 @@ public sealed class SeoFallbackMiddleware
         return sb.ToString();
     }
 
+    private async Task<string> BuildCalculatorsContentAsync(ErrorServiceDbContext db)
+    {
+        HashSet<string> disabled;
+        try
+        {
+            var raw = await db.SiteSettings.Select(s => s.CalculatorsDisabled).FirstOrDefaultAsync();
+            disabled = CalculatorCatalog.ParseDisabled(raw);
+        }
+        catch
+        {
+            disabled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var sb = new StringBuilder();
+        sb.Append("<h1 class=\"seo-prerender\">ابزارهای محاسباتی تعمیرکاران</h1>\n");
+        sb.Append("<p class=\"seo-prerender-desc\">۱۳ ماشین‌حساب رایگان و بدون نصب برای برق، الکترونیک و لوازم خانگی: کد رنگ مقاومت، قانون اهم، مقاومت LED، افت ولتاژ کابل، جریان و خازن موتور، مصرف برق و عمر باتری. ورودی‌ها در مرورگر ذخیره می‌شوند.</p>\n");
+
+        foreach (var category in CalculatorCatalog.Categories)
+        {
+            var tools = CalculatorCatalog.InCategory(category.Key)
+                .Where(t => !disabled.Contains(t.Key))
+                .ToList();
+
+            if (tools.Count == 0)
+                continue;
+
+            sb.Append($"<h2 class=\"seo-prerender-h2\">{EscapeHtml(category.Title)}</h2>\n");
+            sb.Append("<ul class=\"seo-prerender-list\">");
+
+            foreach (var tool in tools)
+            {
+                var url = $"{_baseUrl}/technical/calculators#{tool.Key}";
+                sb.Append($"<li><a href=\"{EscapeHtml(url)}\">{EscapeHtml(tool.Title)}</a> — {EscapeHtml(tool.ShortDescription)}</li>");
+            }
+
+            sb.Append("</ul>\n");
+        }
+
+        sb.Append("<h2 class=\"seo-prerender-h2\">سوالات متداول ابزارهای محاسباتی</h2>\n");
+        foreach (var item in CalculatorCatalog.Faq)
+        {
+            sb.Append($"<h3 class=\"seo-prerender-h3\">{EscapeHtml(item.Question)}</h3>\n");
+            sb.Append($"<p>{EscapeHtml(item.Answer)}</p>\n");
+        }
+
+        return sb.ToString();
+    }
+
+    private string BuildCalculatorsJsonLd(string canonical)
+    {
+        var faqEntities = CalculatorCatalog.Faq
+            .Select(item => new Dictionary<string, object?>
+            {
+                ["@type"] = "Question",
+                ["name"] = item.Question,
+                ["acceptedAnswer"] = new Dictionary<string, object?>
+                {
+                    ["@type"] = "Answer",
+                    ["text"] = item.Answer
+                }
+            })
+            .ToArray();
+
+        var graph = new object[]
+        {
+            new Dictionary<string, object?>
+            {
+                ["@type"] = "WebApplication",
+                ["name"] = "ماشین‌حساب تعمیرکاران ارورسرویس",
+                ["url"] = canonical,
+                ["applicationCategory"] = "UtilitiesApplication",
+                ["operatingSystem"] = "Web",
+                ["inLanguage"] = "fa-IR",
+                ["offers"] = new Dictionary<string, object?>
+                {
+                    ["@type"] = "Offer",
+                    ["price"] = "0",
+                    ["priceCurrency"] = "IRR"
+                }
+            },
+            new Dictionary<string, object?>
+            {
+                ["@type"] = "BreadcrumbList",
+                ["itemListElement"] = new object[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["@type"] = "ListItem",
+                        ["position"] = 1,
+                        ["name"] = "خانه",
+                        ["item"] = $"{_baseUrl}/"
+                    },
+                    new Dictionary<string, object?>
+                    {
+                        ["@type"] = "ListItem",
+                        ["position"] = 2,
+                        ["name"] = "ابزارهای محاسباتی",
+                        ["item"] = canonical
+                    }
+                }
+            },
+            new Dictionary<string, object?>
+            {
+                ["@type"] = "FAQPage",
+                ["mainEntity"] = faqEntities
+            }
+        };
+
+        return JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["@context"] = "https://schema.org",
+            ["@graph"] = graph
+        });
+    }
+
+    private async Task<string> BuildAcademyHubContentAsync(ErrorServiceDbContext db)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<h1 class=\"seo-prerender\">آکادمی آموزش تعمیر لوازم خانگی و الکترونیک</h1>\n");
+        sb.Append("<p class=\"seo-prerender-desc\">دوره‌ها و آموزش‌های تخصصی تعمیر لوازم خانگی، بردهای الکترونیک و عیب‌یابی؛ دسته‌بندی‌شده بر اساس نوع دستگاه تا سریع به محتوای موردنظر برسید.</p>\n");
+
+        try
+        {
+            var courses = await db.TrainingCourses
+                .AsNoTracking()
+                .Where(c => c.IsPublished)
+                .OrderBy(c => c.SortOrder)
+                .ThenByDescending(c => c.CreatedAt)
+                .Take(100)
+                .Select(c => new { c.Id, c.Title, c.Slug, c.Category })
+                .ToListAsync();
+
+            var articles = await db.TrainingArticles
+                .AsNoTracking()
+                .Where(a => a.IsPublished)
+                .OrderByDescending(a => a.CreatedAt)
+                .Take(100)
+                .Select(a => new { a.Id, a.Title, a.Slug, a.Category })
+                .ToListAsync();
+
+            if (courses.Count > 0)
+            {
+                sb.Append("<h2 class=\"seo-prerender-h2\">دوره‌های آموزشی</h2>\n<ul class=\"seo-prerender-list\">");
+                foreach (var c in courses)
+                {
+                    var label = string.IsNullOrWhiteSpace(c.Category) ? c.Title : $"{c.Title} — {c.Category}";
+                    sb.Append($"<li><a href=\"{EscapeHtml(AcademyCourseUrl(c.Id, c.Slug))}\">{EscapeHtml(label)}</a></li>");
+                }
+                sb.Append("</ul>\n");
+            }
+
+            if (articles.Count > 0)
+            {
+                sb.Append("<h2 class=\"seo-prerender-h2\">آموزش‌های تخصصی</h2>\n<ul class=\"seo-prerender-list\">");
+                foreach (var a in articles)
+                {
+                    var label = string.IsNullOrWhiteSpace(a.Category) ? a.Title : $"{a.Title} — {a.Category}";
+                    sb.Append($"<li><a href=\"{EscapeHtml(AcademyArticleUrl(a.Id, a.Slug))}\">{EscapeHtml(label)}</a></li>");
+                }
+                sb.Append("</ul>\n");
+            }
+
+            if (courses.Count == 0 && articles.Count == 0)
+            {
+                sb.Append("<p class=\"seo-prerender-desc\">به‌زودی دوره‌ها و آموزش‌های آکادمی منتشر می‌شوند.</p>\n");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SEO middleware: failed to build academy hub content");
+        }
+
+        return sb.ToString();
+    }
+
+    private string AcademyCourseUrl(int id, string? slug)
+        => string.IsNullOrWhiteSpace(slug) ? $"{_baseUrl}/academy/{id}" : $"{_baseUrl}/academy/{slug}";
+
+    private string AcademyArticleUrl(int id, string? slug)
+        => string.IsNullOrWhiteSpace(slug) ? $"{_baseUrl}/academy/articles/{id}" : $"{_baseUrl}/academy/articles/{slug}";
+
+    private async Task<string> BuildAcademyJsonLdAsync(ErrorServiceDbContext db, string canonical)
+    {
+        const string title = "آکادمی آموزش تعمیر لوازم خانگی و الکترونیک | ارورسرویس";
+        const string description = "دوره‌ها و آموزش‌های تخصصی تعمیر لوازم خانگی، بردهای الکترونیک و عیب‌یابی";
+
+        try
+        {
+            var courses = await db.TrainingCourses
+                .AsNoTracking()
+                .Where(c => c.IsPublished)
+                .OrderBy(c => c.SortOrder)
+                .ThenByDescending(c => c.CreatedAt)
+                .Take(30)
+                .Select(c => new { c.Id, c.Title, c.Slug })
+                .ToListAsync();
+
+            var articles = await db.TrainingArticles
+                .AsNoTracking()
+                .Where(a => a.IsPublished)
+                .OrderByDescending(a => a.CreatedAt)
+                .Take(30)
+                .Select(a => new { a.Id, a.Title, a.Slug })
+                .ToListAsync();
+
+            var listItems = courses
+                .Select(c => new Dictionary<string, object?>
+                {
+                    ["name"] = c.Title,
+                    ["url"] = AcademyCourseUrl(c.Id, c.Slug)
+                })
+                .Concat(articles.Select(a => new Dictionary<string, object?>
+                {
+                    ["name"] = a.Title,
+                    ["url"] = AcademyArticleUrl(a.Id, a.Slug)
+                }))
+                .Select((item, index) =>
+                {
+                    item["@type"] = "ListItem";
+                    item["position"] = index + 1;
+                    return (object)item;
+                })
+                .ToList();
+
+            var graph = new List<object>
+            {
+                new Dictionary<string, object?>
+                {
+                    ["@type"] = "CollectionPage",
+                    ["name"] = "آکادمی آموزش تعمیرات لوازم خانگی و الکترونیک",
+                    ["description"] = description,
+                    ["url"] = canonical,
+                    ["inLanguage"] = "fa-IR",
+                    ["isPartOf"] = new Dictionary<string, object?>
+                    {
+                        ["@type"] = "WebSite",
+                        ["name"] = "ارورسرویس",
+                        ["url"] = _baseUrl + "/"
+                    }
+                },
+                new Dictionary<string, object?>
+                {
+                    ["@type"] = "BreadcrumbList",
+                    ["itemListElement"] = new object[]
+                    {
+                        new Dictionary<string, object?>
+                        {
+                            ["@type"] = "ListItem",
+                            ["position"] = 1,
+                            ["name"] = "خانه",
+                            ["item"] = _baseUrl + "/"
+                        },
+                        new Dictionary<string, object?>
+                        {
+                            ["@type"] = "ListItem",
+                            ["position"] = 2,
+                            ["name"] = "آکادمی آموزش",
+                            ["item"] = canonical
+                        }
+                    }
+                }
+            };
+
+            if (listItems.Count > 0)
+            {
+                graph.Add(new Dictionary<string, object?>
+                {
+                    ["@type"] = "ItemList",
+                    ["name"] = "دوره‌ها و آموزش‌های آکادمی",
+                    ["itemListElement"] = listItems
+                });
+            }
+
+            return JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["@context"] = "https://schema.org",
+                ["@graph"] = graph
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SEO middleware: failed to build academy json-ld");
+            return BuildStaticJsonLd("CollectionPage", canonical, title, description);
+        }
+    }
+
     private string BuildHomeShell(string title, string description, string? slideImageUrl, string? slideImageMobileUrl, string? slideTitle)
     {
         var sb = new StringBuilder();
@@ -533,9 +986,25 @@ public sealed class SeoFallbackMiddleware
             sb.Append("</div>");
         }
 
+        // H1 مستقل از <title> است تا عنوان SERP (قابل‌ویرایش ادمین) تکراری نشود؛
+        // عنوان صفحات موتور جستجو برندمحور است و H1 موضوع اصلی صفحه را می‌گوید.
+        const string homeHeading = "مرجع تخصصی تعمیر لوازم خانگی، بانک کد خطای دستگاه‌ها و قطعات یدکی";
+        var desc = EscapeHtml(description).Replace("ارورسرویس", "<strong>ارورسرویس</strong>");
+
         sb.Append("<div class=\"seo-shell__text\">");
-        sb.Append($"<h1 class=\"seo-shell__title\">{EscapeHtml(title)}</h1>");
-        sb.Append($"<p class=\"seo-shell__desc\">{EscapeHtml(description)}</p>");
+        sb.Append($"<h1 class=\"seo-shell__title\">{homeHeading}</h1>");
+        sb.Append($"<p class=\"seo-shell__desc\">{desc}</p>");
+
+        sb.Append("<h2 class=\"seo-shell__h2\">خدمات ارورسرویس</h2>");
+        sb.Append("<ul class=\"seo-shell__list\">");
+        sb.Append("<li><a href=\"/technical/error-codes\">بانک کدهای خطا</a>: جستجوی <strong>کد خطای یخچال، ماشین لباسشویی و ظرفشویی</strong> بر اساس برند و نوع دستگاه.</li>");
+        sb.Append("<li><a href=\"/products\">فروشگاه قطعات یدکی</a>: خرید <strong>قطعات اصل لوازم خانگی</strong> با مشخصات فنی، قیمت به‌روز و ضمانت اصالت.</li>");
+        sb.Append("<li><a href=\"/admission/repair\">درخواست تعمیر آنلاین</a>: ثبت درخواست، بررسی کارشناس و پیگیری شفاف وضعیت.</li>");
+        sb.Append("<li><a href=\"/technical/consultation\">مشاوره فنی</a>: پرسش از کارشناسان تعمیرات و عیب‌یابی اولیه دستگاه.</li>");
+        sb.Append("</ul>");
+
+        sb.Append("<h2 class=\"seo-shell__h2\">آموزش و همکاران</h2>");
+        sb.Append("<p class=\"seo-shell__desc\">در <a href=\"/academy\">آکادمی ارورسرویس</a> دوره‌ها و مقاله‌های گام‌به‌گام تعمیرات را ببینید و از <a href=\"/workshops\">فهرست همکاران</a> تعمیرکار نزدیک خود را پیدا کنید.</p>");
         sb.Append("</div>");
         sb.Append("</div>");
         return sb.ToString();
@@ -628,7 +1097,7 @@ public sealed class SeoFallbackMiddleware
                     showRating: true);
             }
 
-            if (cleanPath.StartsWith("news/"))
+            if (TryGetContentDetailSegment(cleanPath, out _, out _))
             {
                 var node = JsonSerializer.SerializeToNode(entity);
                 var nid = node?["Id"]?.GetValue<int>() ?? 0;
@@ -839,12 +1308,15 @@ public sealed class SeoFallbackMiddleware
             return sb.ToString();
         }
 
-        if (cleanPath.StartsWith("news/"))
+        if (TryGetContentDetailSegment(cleanPath, out var contentType, out _))
         {
-            var newsTitle = J(node, "Title") ?? "خبر";
+            var contentTitle = J(node, "Title") ?? ContentTypeCatalog.Label(contentType);
             var summary = J(node, "Summary") ?? "";
             var content = J(node, "Content") ?? "";
-            sb.Append($"<h1 class=\"seo-prerender\">{EscapeHtml(newsTitle)}</h1>\n");
+            var categoryTitle = J(node, "CategoryTitle");
+            sb.Append($"<h1 class=\"seo-prerender\">{EscapeHtml(contentTitle)}</h1>\n");
+            if (!string.IsNullOrEmpty(categoryTitle))
+                sb.Append($"<p class=\"seo-prerender-desc\">دسته: {EscapeHtml(categoryTitle)}</p>\n");
             if (!string.IsNullOrEmpty(summary))
                 sb.Append(TextToParagraphs(summary, "seo-prerender-desc"));
             if (!string.IsNullOrEmpty(content))
@@ -935,14 +1407,17 @@ public sealed class SeoFallbackMiddleware
 
         if (cleanPath.StartsWith("technical/sensor-finder/"))
         {
-            var sensorName = J(node, "SensorName") ?? "سنسور";
+            var sensorName = J(node, "SensorName");
             var sensorType = J(node, "SensorType") ?? "";
             var size = J(node, "SizeText") ?? "";
             var notes = J(node, "Notes") ?? "";
-            sb.Append($"<h1 class=\"seo-prerender\">سنسور {EscapeHtml(sensorName)}</h1>\n");
+            var seo = SensorSeoText.Build(sensorName, sensorType, size, J(node, "DeviceName"), notes);
+            sb.Append($"<h1 class=\"seo-prerender\">{EscapeHtml(seo.FullName)}</h1>\n");
             sb.Append("<ul class=\"seo-prerender-list\">");
+            var deviceName = J(node, "DeviceName") ?? "";
+            if (!string.IsNullOrEmpty(deviceName)) sb.Append($"<li>دستگاه: {EscapeHtml(deviceName)}</li>");
             if (!string.IsNullOrEmpty(sensorType)) sb.Append($"<li>نوع: {EscapeHtml(sensorType)}</li>");
-            if (!string.IsNullOrEmpty(size)) sb.Append($"<li>سایز: {EscapeHtml(size)}</li>");
+            if (!string.IsNullOrEmpty(size)) sb.Append($"<li>مقدار / سایز: {EscapeHtml(size)}</li>");
             sb.Append("</ul>\n");
             if (!string.IsNullOrEmpty(notes))
                 sb.Append(TextToParagraphs(notes, "seo-prerender-desc"));
@@ -1045,6 +1520,60 @@ public sealed class SeoFallbackMiddleware
     private static string? J(JsonNode? node, string prop) =>
         node?[prop]?.GetValue<string>();
 
+    /// <summary>مسیرهای جزئیات مرکز محتوا (news/tips/announcements) را تشخیص می‌دهد.</summary>
+    /// <summary>مسیرهای دسته/برچسب مرکز محتوا را تشخیص می‌دهد.</summary>
+    private static bool TryGetContentListingSegment(string cleanPath, out ContentType type, out string kind, out string slug)
+    {
+        foreach (var candidate in ContentTypeCatalog.All)
+        {
+            var route = ContentTypeCatalog.Slug(candidate);
+            if (cleanPath == route
+                || (cleanPath.StartsWith(route + "/", StringComparison.Ordinal)
+                    && (cleanPath.StartsWith(route + "/category/", StringComparison.Ordinal)
+                        || cleanPath.StartsWith(route + "/tag/", StringComparison.Ordinal))))
+            {
+                var rest = cleanPath.Length == route.Length ? "" : cleanPath[(route.Length + 1)..];
+                if (rest.StartsWith("category/", StringComparison.Ordinal))
+                {
+                    type = candidate;
+                    kind = "category";
+                    slug = Uri.UnescapeDataString(rest["category/".Length..].Split('/')[0]);
+                    return true;
+                }
+                if (rest.StartsWith("tag/", StringComparison.Ordinal))
+                {
+                    type = candidate;
+                    kind = "tag";
+                    slug = Uri.UnescapeDataString(rest["tag/".Length..].Split('/')[0]);
+                    return true;
+                }
+            }
+        }
+
+        type = ContentType.News;
+        kind = "";
+        slug = "";
+        return false;
+    }
+
+    private static bool TryGetContentDetailSegment(string cleanPath, out ContentType type, out string segment)
+    {
+        foreach (var candidate in ContentTypeCatalog.All)
+        {
+            var prefix = ContentTypeCatalog.Slug(candidate) + "/";
+            if (cleanPath.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                type = candidate;
+                segment = cleanPath[prefix.Length..].Split('/')[0];
+                return true;
+            }
+        }
+
+        type = ContentType.News;
+        segment = "";
+        return false;
+    }
+
     private async Task<string?> TryResolveRedirect(string cleanPath, ErrorServiceDbContext db)
     {
         try
@@ -1057,7 +1586,7 @@ public sealed class SeoFallbackMiddleware
                 if (int.TryParse(seg, out var pid))
                 {
                     var slug = await db.Products
-                        .Where(p => p.Id == pid && p.IsAvailable)
+                        .Where(p => p.Id == pid && p.IsAvailable && !p.IsDraft)
                         .Select(p => p.Slug)
                         .FirstOrDefaultAsync();
                     if (!string.IsNullOrEmpty(slug)) return $"/products/{slug}";
@@ -1065,16 +1594,16 @@ public sealed class SeoFallbackMiddleware
                 return null;
             }
 
-            if (cleanPath.StartsWith("news/"))
+            if (TryGetContentDetailSegment(cleanPath, out var contentType, out var contentSegment))
             {
-                var seg = cleanPath["news/".Length..].Split('/')[0];
-                if (int.TryParse(seg, out var nid))
+                if (int.TryParse(contentSegment, out var nid))
                 {
                     var slug = await db.News
-                        .Where(n => n.Id == nid && n.IsPublished)
+                        .Where(n => n.Id == nid && n.ContentType == contentType && n.IsPublished)
                         .Select(n => n.Slug)
                         .FirstOrDefaultAsync();
-                    if (!string.IsNullOrEmpty(slug)) return $"/news/{slug}";
+                    if (!string.IsNullOrEmpty(slug))
+                        return $"{ContentTypeCatalog.Route(contentType)}/{slug}";
                 }
                 return null;
             }
@@ -1122,18 +1651,27 @@ public sealed class SeoFallbackMiddleware
             {
                 var seg = cleanPath["products/".Length..].Split('/')[0];
                 if (int.TryParse(seg, out var pid))
-                    return await db.Products.Where(p => p.Id == pid && p.IsAvailable && !p.IsDraft).Select(p => new { p.Id, p.Name, p.Description, p.Price, p.DiscountPrice, p.MainImageUrl, p.CompatibilityInfo, p.FailureSymptoms, p.UpdatedAt }).FirstOrDefaultAsync();
+                    return await db.Products.Where(p => p.Id == pid && p.IsAvailable && !p.IsDraft).Select(p => new { p.Id, p.Name, p.Description, p.Price, p.DiscountPrice, p.MainImageUrl, p.CompatibilityInfo, p.FailureSymptoms, p.UpdatedAt, CategoryName = p.Category.Name }).FirstOrDefaultAsync();
 
-                return await db.Products.Where(p => p.Slug == seg && p.IsAvailable && !p.IsDraft).Select(p => new { p.Id, p.Name, p.Description, p.Price, p.DiscountPrice, p.MainImageUrl, p.CompatibilityInfo, p.FailureSymptoms, p.UpdatedAt }).FirstOrDefaultAsync();
+                return await db.Products.Where(p => p.Slug == seg && p.IsAvailable && !p.IsDraft).Select(p => new { p.Id, p.Name, p.Description, p.Price, p.DiscountPrice, p.MainImageUrl, p.CompatibilityInfo, p.FailureSymptoms, p.UpdatedAt, CategoryName = p.Category.Name }).FirstOrDefaultAsync();
             }
 
-            if (cleanPath.StartsWith("news/"))
+            if (TryGetContentDetailSegment(cleanPath, out var contentType, out var contentSegment))
             {
-                var seg = cleanPath["news/".Length..].Split('/')[0];
-                if (int.TryParse(seg, out var nid))
-                    return await db.News.Where(n => n.Id == nid && n.IsPublished).Select(n => new { n.Id, n.Title, n.Summary, n.Content, n.ImageUrl, n.CreatedAt, n.UpdatedAt }).FirstOrDefaultAsync();
+                var now = DateTimeOffset.UtcNow;
+                var visible = db.News.Where(n => n.ContentType == contentType
+                    && n.IsPublished
+                    && (n.PublishAt == null || n.PublishAt <= now)
+                    && (n.ExpireAt == null || n.ExpireAt > now));
 
-                return await db.News.Where(n => n.Slug == seg && n.IsPublished).Select(n => new { n.Id, n.Title, n.Summary, n.Content, n.ImageUrl, n.CreatedAt, n.UpdatedAt }).FirstOrDefaultAsync();
+                if (int.TryParse(contentSegment, out var nid))
+                    return await visible.Where(n => n.Id == nid)
+                        .Select(n => new { n.Id, n.Title, n.Summary, n.Content, n.ImageUrl, n.CreatedAt, n.UpdatedAt, PublishedAt = n.PublishAt ?? n.CreatedAt, n.ContentType, CategoryTitle = n.Category != null ? n.Category.Title : null, CategorySlug = n.Category != null ? n.Category.Slug : null, n.SourceName, n.SourceUrl })
+                        .FirstOrDefaultAsync();
+
+                return await visible.Where(n => n.Slug == contentSegment)
+                    .Select(n => new { n.Id, n.Title, n.Summary, n.Content, n.ImageUrl, n.CreatedAt, n.UpdatedAt, PublishedAt = n.PublishAt ?? n.CreatedAt, n.ContentType, CategoryTitle = n.Category != null ? n.Category.Title : null, CategorySlug = n.Category != null ? n.Category.Slug : null, n.SourceName, n.SourceUrl })
+                    .FirstOrDefaultAsync();
             }
 
             if (cleanPath.StartsWith("academy/articles/"))
@@ -1210,7 +1748,16 @@ public sealed class SeoFallbackMiddleware
             }
 
             if (cleanPath.StartsWith("technical/sensor-finder/") && int.TryParse(cleanPath.Replace("technical/sensor-finder/", "").Split('/')[0], out var sid))
-                return await db.SensorFinderRecords.Where(s => s.Id == sid).Select(s => new { s.Id, s.SensorName, s.SensorType, s.SizeText, s.Notes }).FirstOrDefaultAsync();
+                return await db.SensorFinderRecords.Where(s => s.Id == sid).Select(s => new
+                {
+                    s.Id,
+                    s.SensorName,
+                    s.SensorType,
+                    s.SizeText,
+                    s.Notes,
+                    DeviceName = s.Device.Name,
+                    FirstImageUrl = s.Images.OrderBy(i => i.SortOrder).Select(i => i.Url).FirstOrDefault()
+                }).FirstOrDefaultAsync();
         }
         catch (Exception ex)
         {
@@ -1231,35 +1778,51 @@ public sealed class SeoFallbackMiddleware
         {
             var p = JsonSerializer.SerializeToNode(entity)!;
             var pName = p["Name"]?.GetValue<string>() ?? "محصول";
-            var pDesc = StripHtml(p["Description"]?.GetValue<string>());
             var priceToman = p["DiscountPrice"]?.GetValue<decimal?>() ?? p["Price"]?.GetValue<decimal>() ?? 0;
             // Display prices are Toman; schema.org requires ISO 4217 currency (IRR = Rial).
             var priceRial = (priceToman * 10).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
             var img = AbsUrl(p["MainImageUrl"]?.GetValue<string>() ?? "");
             var updated = p["UpdatedAt"]?.GetValue<DateTime>() ?? DateTime.UtcNow;
-            var pTitle = $"{pName} | ارورسرویس";
-            var pDescription = string.IsNullOrEmpty(pDesc) ? $"خرید {pName} با ضمانت اصالت کالا" : pDesc.Length > 150 ? pDesc[..150] + "..." : pDesc;
+            var pTitle = SeoTitles.Product(pName);
+            var pDescription = SeoDescriptions.Product(p["Description"]?.GetValue<string>(), pName, p["CategoryName"]?.GetValue<string>());
             var pKeywords = $"خرید {pName}, قطعات یدکی, {pName}";
             var pBreadcrumb = $@"{{""@type"":""BreadcrumbList"",""itemListElement"":[{{""@type"":""ListItem"",""position"":1,""name"":""فروشگاه"",""item"":""{_baseUrl}/products""}},{{""@type"":""ListItem"",""position"":2,""name"":""{EscapeJson(pName)}"",""item"":""{_baseUrl}/{cleanPath}""}}]}}";
             var pSku = p["Id"]?.GetValue<int>() ?? 0;
-            var pJsonLd = $@"[{{""@context"":""https://schema.org"",""@type"":""Product"",""name"":""{EscapeJson(pName)}"",""description"":""{EscapeJson(pDescription)}"",""image"":[""{img}""],""sku"":""{pSku}"",""offers"":{{""@type"":""Offer"",""price"":{priceRial},""priceCurrency"":""IRR"",""itemCondition"":""https://schema.org/NewCondition"",""availability"":""https://schema.org/InStock"",""url"":""{_baseUrl}/{cleanPath}""}},""url"":""{_baseUrl}/{cleanPath}""}},{pBreadcrumb}]";
+            var pJsonLd = $@"[{{""@context"":""https://schema.org"",""@type"":""Product"",""name"":""{EscapeJson(pName)}"",""description"":""{EscapeJson(pDescription)}"",""image"":[""{img}""],""sku"":""{pSku}"",""brand"":{{""@type"":""Brand"",""name"":""ErrorService""}},""offers"":{{""@type"":""Offer"",""price"":{priceRial},""priceCurrency"":""IRR"",""itemCondition"":""https://schema.org/NewCondition"",""availability"":""https://schema.org/InStock"",""url"":""{_baseUrl}/{cleanPath}""}},""url"":""{_baseUrl}/{cleanPath}""}},{pBreadcrumb}]";
             meta = (pTitle, pDescription, pKeywords, pJsonLd, img, "product");
             return true;
         }
 
-        if (cleanPath.StartsWith("news/"))
+        if (TryGetContentDetailSegment(cleanPath, out var contentType, out _))
         {
             var n = JsonSerializer.SerializeToNode(entity)!;
-            var nTitleText = n["Title"]?.GetValue<string>() ?? "خبر";
-            var summary = StripHtml(n["Summary"]?.GetValue<string>());
+            var typeLabel = ContentTypeCatalog.Label(contentType);
+            var typePlural = ContentTypeCatalog.PluralLabel(contentType);
+            var contentRoute = _baseUrl + ContentTypeCatalog.Route(contentType);
+            var nTitleText = n["Title"]?.GetValue<string>() ?? typeLabel;
             var img = AbsUrl(n["ImageUrl"]?.GetValue<string>() ?? "");
-            var created = n["CreatedAt"]?.GetValue<DateTime>() ?? DateTime.UtcNow;
-            var updated = n["UpdatedAt"]?.GetValue<DateTime>() ?? created;
-            var nTitle = $"{nTitleText} | ارورسرویس";
-            var nDesc = string.IsNullOrEmpty(summary) ? $"مطالعه خبر {nTitleText}" : summary.Length > 150 ? summary[..150] + "..." : summary;
-            var nKeywords = $"خبر, {nTitleText}, اخبار لوازم خانگی";
-            var nBreadcrumb = $@"{{""@type"":""BreadcrumbList"",""itemListElement"":[{{""@type"":""ListItem"",""position"":1,""name"":""اخبار"",""item"":""{_baseUrl}/news""}},{{""@type"":""ListItem"",""position"":2,""name"":""{EscapeJson(nTitleText)}"",""item"":""{_baseUrl}/{cleanPath}""}}]}}";
-            var nJsonLd = $@"[{{""@context"":""https://schema.org"",""@type"":""NewsArticle"",""mainEntityOfPage"":{{""@type"":""WebPage"",""@id"":""{_baseUrl}/{cleanPath}""}},""headline"":""{EscapeJson(nTitleText)}"",""description"":""{EscapeJson(nDesc)}"",""image"":[""{img}""],""datePublished"":""{created:yyyy-MM-dd}"",""dateModified"":""{updated:yyyy-MM-dd}"",""inLanguage"":""fa-IR"",""articleSection"":""اخبار"",""author"":{{""@type"":""Organization"",""name"":""ارورسرویس"",""url"":""{_baseUrl}""}},""publisher"":{{""@type"":""Organization"",""name"":""ارورسرویس"",""logo"":{{""@type"":""ImageObject"",""url"":""{_baseUrl}/icon-512.png"",""width"":512,""height"":512}}}},""url"":""{_baseUrl}/{cleanPath}""}},{nBreadcrumb}]";
+            var published = n["PublishedAt"]?.GetValue<DateTime>() ?? n["CreatedAt"]?.GetValue<DateTime>() ?? DateTime.UtcNow;
+            var updated = n["UpdatedAt"]?.GetValue<DateTime>() ?? published;
+            var nTitle = SeoTitles.News(nTitleText);
+            var nDesc = SeoDescriptions.News(n["Summary"]?.GetValue<string>(), nTitleText);
+            var nKeywords = $"{typeLabel}, {nTitleText}, {typePlural}, ارورسرویس";
+
+            var breadcrumbItems = new List<string>
+            {
+                $@"{{""@type"":""ListItem"",""position"":1,""name"":""{EscapeJson(typePlural)}"",""item"":""{contentRoute}""}}"
+            };
+            var categoryTitle = J(n, "CategoryTitle");
+            if (!string.IsNullOrWhiteSpace(categoryTitle))
+            {
+                var categorySlug = J(n, "CategorySlug") ?? "";
+                var categoryUrl = contentRoute + "/category/" + Uri.EscapeDataString(categorySlug);
+                breadcrumbItems.Add($@"{{""@type"":""ListItem"",""position"":2,""name"":""{EscapeJson(categoryTitle)}"",""item"":""{categoryUrl}""}}");
+            }
+            breadcrumbItems.Add($@"{{""@type"":""ListItem"",""position"":{breadcrumbItems.Count + 1},""name"":""{EscapeJson(nTitleText)}"",""item"":""{_baseUrl}/{cleanPath}""}}");
+
+            var nBreadcrumb = $@"{{""@type"":""BreadcrumbList"",""itemListElement"":[{string.Join(",", breadcrumbItems)}]}}";
+            var schemaType = ContentTypeCatalog.ArticleSchemaType(contentType);
+            var nJsonLd = $@"[{{""@context"":""https://schema.org"",""@type"":""{schemaType}"",""mainEntityOfPage"":{{""@type"":""WebPage"",""@id"":""{_baseUrl}/{cleanPath}""}},""headline"":""{EscapeJson(nTitleText)}"",""description"":""{EscapeJson(nDesc)}"",""image"":[""{img}""],""datePublished"":""{published:yyyy-MM-dd}"",""dateModified"":""{updated:yyyy-MM-dd}"",""inLanguage"":""fa-IR"",""articleSection"":""{EscapeJson(typePlural)}"",""author"":{{""@type"":""Organization"",""name"":""ارورسرویس"",""url"":""{_baseUrl}""}},""publisher"":{{""@type"":""Organization"",""name"":""ارورسرویس"",""logo"":{{""@type"":""ImageObject"",""url"":""{_baseUrl}/icon-512.png"",""width"":512,""height"":512}}}},""url"":""{_baseUrl}/{cleanPath}""}},{nBreadcrumb}]";
             meta = (nTitle, nDesc, nKeywords, nJsonLd, img, "article");
             return true;
         }
@@ -1268,12 +1831,11 @@ public sealed class SeoFallbackMiddleware
         {
             var a = JsonSerializer.SerializeToNode(entity)!;
             var aTitleText = a["Title"]?.GetValue<string>() ?? "مقاله آموزشی";
-            var summary = StripHtml(a["Summary"]?.GetValue<string>());
             var img = AbsUrl(a["CoverImageUrl"]?.GetValue<string>() ?? "");
             var created = a["CreatedAt"]?.GetValue<DateTime>() ?? DateTime.UtcNow;
             var updated = a["UpdatedAt"]?.GetValue<DateTime>() ?? created;
-            var aTitle = $"{aTitleText} | آکادمی ارورسرویس";
-            var aDesc = string.IsNullOrEmpty(summary) ? $"مطالعه مقاله آموزشی {aTitleText}" : summary.Length > 150 ? summary[..150] + "..." : summary;
+            var aTitle = SeoTitles.Article(aTitleText);
+            var aDesc = SeoDescriptions.Article(a["Summary"]?.GetValue<string>(), aTitleText);
             var aKeywords = $"مقاله آموزشی, {aTitleText}, آموزش تعمیرات";
             var aBreadcrumb = $@"{{""@type"":""BreadcrumbList"",""itemListElement"":[{{""@type"":""ListItem"",""position"":1,""name"":""آکادمی"",""item"":""{_baseUrl}/academy""}},{{""@type"":""ListItem"",""position"":2,""name"":""{EscapeJson(aTitleText)}"",""item"":""{_baseUrl}/{cleanPath}""}}]}}";
             var aJsonLd = $@"[{{""@context"":""https://schema.org"",""@type"":""Article"",""mainEntityOfPage"":{{""@type"":""WebPage"",""@id"":""{_baseUrl}/{cleanPath}""}},""headline"":""{EscapeJson(aTitleText)}"",""description"":""{EscapeJson(aDesc)}"",""image"":[""{img}""],""datePublished"":""{created:yyyy-MM-dd}"",""dateModified"":""{updated:yyyy-MM-dd}"",""inLanguage"":""fa-IR"",""articleSection"":""آکادمی"",""author"":{{""@type"":""Organization"",""name"":""ارورسرویس"",""url"":""{_baseUrl}""}},""publisher"":{{""@type"":""Organization"",""name"":""ارورسرویس"",""logo"":{{""@type"":""ImageObject"",""url"":""{_baseUrl}/icon-512.png"",""width"":512,""height"":512}}}},""url"":""{_baseUrl}/{cleanPath}""}},{aBreadcrumb}]";
@@ -1291,8 +1853,8 @@ public sealed class SeoFallbackMiddleware
                     var l = JsonSerializer.SerializeToNode(entity)!;
                     var titleText = l["Title"]?.GetValue<string>() ?? "قسمت آموزشی";
                     var courseTitle = l["CourseTitle"]?.GetValue<string>() ?? "";
-                    var lTitle = $"{titleText} - {courseTitle} | آکادمی ارورسرویس";
-                    var lDesc = $"مشاهده قسمت {titleText} از دوره {courseTitle} در آکادمی ارورسرویس";
+                    var lTitle = SeoTitles.Lesson(titleText, courseTitle);
+                    var lDesc = SeoDescriptions.Lesson(titleText, courseTitle);
                     var lKeywords = $"آموزش تعمیرات, {titleText}, {courseTitle}";
                     var lBreadcrumb = $@"{{""@type"":""BreadcrumbList"",""itemListElement"":[{{""@type"":""ListItem"",""position"":1,""name"":""آکادمی"",""item"":""{_baseUrl}/academy""}},{{""@type"":""ListItem"",""position"":2,""name"":""{EscapeJson(courseTitle)}"",""item"":""{_baseUrl}/academy/{parts[0]}""}},{{""@type"":""ListItem"",""position"":3,""name"":""{EscapeJson(titleText)}"",""item"":""{_baseUrl}/{cleanPath}""}}]}}";
                     var lJsonLd = $@"[{{""@context"":""https://schema.org"",""@type"":""LearningResource"",""name"":""{EscapeJson(titleText)}"",""description"":""{EscapeJson(lDesc)}"",""learningResourceType"":""Lesson"",""url"":""{_baseUrl}/{cleanPath}""}},{lBreadcrumb}]";
@@ -1303,12 +1865,11 @@ public sealed class SeoFallbackMiddleware
 
             var c = JsonSerializer.SerializeToNode(entity)!;
             var courseName = c["Title"]?.GetValue<string>() ?? "دوره آموزشی";
-            var courseSummary = c["Summary"]?.GetValue<string>() ?? "";
             var courseImg = AbsUrl(c["CoverImageUrl"]?.GetValue<string>() ?? "");
             var cCreated = c["CreatedAt"]?.GetValue<DateTime>() ?? DateTime.UtcNow;
             var cUpdated = c["UpdatedAt"]?.GetValue<DateTime>() ?? cCreated;
-            var cTitle = $"{courseName} | آکادمی ارورسرویس";
-            var cDesc = string.IsNullOrEmpty(courseSummary) ? $"دوره آموزشی {courseName}" : courseSummary.Length > 150 ? courseSummary[..150] + "..." : courseSummary;
+            var cTitle = SeoTitles.Course(courseName);
+            var cDesc = SeoDescriptions.Course(c["Summary"]?.GetValue<string>(), courseName);
             var cKeywords = $"دوره آموزشی, {courseName}, آموزش تعمیرات";
             var cBreadcrumb = $@"{{""@type"":""BreadcrumbList"",""itemListElement"":[{{""@type"":""ListItem"",""position"":1,""name"":""آکادمی"",""item"":""{_baseUrl}/academy""}},{{""@type"":""ListItem"",""position"":2,""name"":""{EscapeJson(courseName)}"",""item"":""{_baseUrl}/{cleanPath}""}}]}}";
             var cJsonLd = $@"[{{""@context"":""https://schema.org"",""@type"":""Course"",""name"":""{EscapeJson(courseName)}"",""description"":""{EscapeJson(cDesc)}"",""image"":""{courseImg}"",""datePublished"":""{cCreated:yyyy-MM-dd}"",""dateModified"":""{cUpdated:yyyy-MM-dd}"",""inLanguage"":""fa-IR"",""provider"":{{""@type"":""Organization"",""name"":""ارورسرویس"",""url"":""{_baseUrl}"",""logo"":{{""@type"":""ImageObject"",""url"":""{_baseUrl}/icon-512.png"",""width"":512,""height"":512}}}},""url"":""{_baseUrl}/{cleanPath}""}},{cBreadcrumb}]";
@@ -1322,11 +1883,10 @@ public sealed class SeoFallbackMiddleware
             var brand = e["Brand"]?.GetValue<string>() ?? "";
             var device = e["DeviceType"]?.GetValue<string>() ?? "";
             var code = e["Code"]?.GetValue<string>() ?? "";
-            var eDesc = StripHtml(e["Description"]?.GetValue<string>());
-            var solution = e["Solution"]?.GetValue<string>() ?? "";
             var img = AbsUrl(e["ImageUrl"]?.GetValue<string>() ?? "");
-            var eTitle = $"کد خطای {code} {brand} {device} | ارورسرویس";
-            var eDescription = string.IsNullOrEmpty(eDesc) ? $"کد خطای {code} {brand} {device} و راه حل تعمیر" : eDesc.Length > 150 ? eDesc[..150] + "..." : eDesc;
+            var eTitle = SeoTitles.ErrorCode(code, brand, device);
+            var eDescription = SeoDescriptions.ErrorCode(code, brand, device,
+                e["Description"]?.GetValue<string>(), e["Solution"]?.GetValue<string>());
             var eKeywords = $"کد خطای {code}, {brand}, {device}, عیب‌یابی, تعمیرات";
             var eBreadcrumb = $@"{{""@type"":""BreadcrumbList"",""itemListElement"":[{{""@type"":""ListItem"",""position"":1,""name"":""کدهای خطا"",""item"":""{_baseUrl}/technical/error-codes""}},{{""@type"":""ListItem"",""position"":2,""name"":""کد خطای {EscapeJson(code)} {EscapeJson(brand)} {EscapeJson(device)}"",""item"":""{_baseUrl}/{cleanPath}""}}]}}";
             var eJsonLdParts = new List<string>
@@ -1373,15 +1933,13 @@ public sealed class SeoFallbackMiddleware
         if (cleanPath.StartsWith("technical/sensor-finder/"))
         {
             var s = JsonSerializer.SerializeToNode(entity)!;
-            var sName = s["SensorName"]?.GetValue<string>() ?? "سنسور";
             var sType = s["SensorType"]?.GetValue<string>() ?? "";
-            var size = s["SizeText"]?.GetValue<string>() ?? "";
-            var sTitle = $"سنسور {sName} | ارورسرویس";
-            var sDesc = $"مشخصات فنی سنسور {sName}" + (!string.IsNullOrEmpty(sType) ? $" - نوع: {sType}" : "") + (!string.IsNullOrEmpty(size) ? $" - سایز: {size}" : "");
-            var sKeywords = $"سنسور, {sName}, مشخصات فنی";
-            var sBreadcrumb = $@"{{""@type"":""BreadcrumbList"",""itemListElement"":[{{""@type"":""ListItem"",""position"":1,""name"":""سنسور یاب"",""item"":""{_baseUrl}/technical/sensor-finder""}},{{""@type"":""ListItem"",""position"":2,""name"":""{EscapeJson(sName)}"",""item"":""{_baseUrl}/{cleanPath}""}}]}}";
-            var sJsonLd = $@"[{{""@context"":""https://schema.org"",""@type"":""Product"",""name"":""{EscapeJson(sName)}"",""description"":""{EscapeJson(sDesc)}"",""category"":""{EscapeJson(sType)}"",""url"":""{_baseUrl}/{cleanPath}""}},{sBreadcrumb}]";
-            meta = (sTitle, sDesc, sKeywords, sJsonLd, "", "website");
+            var sDevice = s["DeviceName"]?.GetValue<string>() ?? "";
+            var seo = SensorSeoText.Build(s["SensorName"]?.GetValue<string>(), sType, s["SizeText"]?.GetValue<string>(), sDevice, s["Notes"]?.GetValue<string>());
+            var sImg = AbsUrl(s["FirstImageUrl"]?.GetValue<string>() ?? "");
+            var sBreadcrumb = $@"{{""@type"":""BreadcrumbList"",""itemListElement"":[{{""@type"":""ListItem"",""position"":1,""name"":""سنسور یاب"",""item"":""{_baseUrl}/technical/sensor-finder""}},{{""@type"":""ListItem"",""position"":2,""name"":""{EscapeJson(seo.FullName)}"",""item"":""{_baseUrl}/{cleanPath}""}}]}}";
+            var sJsonLd = $@"[{{""@context"":""https://schema.org"",""@type"":""Product"",""name"":""{EscapeJson(seo.FullName)}"",""description"":""{EscapeJson(seo.Description)}"",""category"":""{EscapeJson(sType)}"",""brand"":{{""@type"":""Brand"",""name"":""{EscapeJson(sDevice)}""}},""url"":""{_baseUrl}/{cleanPath}""}},{sBreadcrumb}]";
+            meta = (seo.Title, seo.Description, seo.Keywords, sJsonLd, sImg, "product");
             return true;
         }
 

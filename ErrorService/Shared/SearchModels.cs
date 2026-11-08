@@ -17,6 +17,10 @@ public class SearchResponseDto
     public List<SearchResultItemDto> ErrorCodes { get; set; } = new();
     public List<SearchResultItemDto> Courses { get; set; } = new();
     public List<SearchResultItemDto> Articles { get; set; } = new();
+    public List<SearchResultItemDto> Workshops { get; set; } = new();
+    public List<SearchResultItemDto> Sensors { get; set; } = new();
+    public List<SearchResultItemDto> Calculators { get; set; } = new();
+    public List<SearchResultItemDto> Faq { get; set; } = new();
 }
 
 public class ProductSuggestDto

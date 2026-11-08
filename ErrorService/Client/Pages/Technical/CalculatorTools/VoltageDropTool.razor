@@ -1,0 +1,246 @@
+@inherits CalcComponentBase
+
+<CalcShell Id="voltage-drop" Title="افت ولتاژ و سطح مقطع سیم"
+           Subtitle="افت ولتاژ کابل و سطح مقطع پیشنهادی سیم را بر اساس جریان، طول مسیر، جنس هادی و افت مجاز محاسبه می‌کند."
+           Icon="oi-resize-width" Tag="پرکاربرد"
+           CopyText="@Result.CopyText" OnReset="ResetAsync">
+    <div class="calc-seg" role="group" aria-label="نوع برق">
+        <button type="button" class="calc-seg__btn @(phase == "single" ? "is-active" : "")"
+                @onclick='() => SetPhase("single")'>تک‌فاز</button>
+        <button type="button" class="calc-seg__btn @(phase == "three" ? "is-active" : "")"
+                @onclick='() => SetPhase("three")'>سه‌فاز</button>
+    </div>
+
+    <div class="calc-form">
+        <div class="calc-field">
+            <label class="calc-label" for="vd-v">ولتاژ شبکه (V)</label>
+            <input id="vd-v" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   @bind="voltage" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="vd-i">جریان مصرفی (A)</label>
+            <input id="vd-i" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 16" @bind="current" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="vd-l">طول مسیر (متر، یک‌طرفه)</label>
+            <input id="vd-l" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   placeholder="مثلاً 30" @bind="length" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field">
+            <label class="calc-label" for="vd-drop">حداکثر افت مجاز (٪)</label>
+            <input id="vd-drop" class="calc-input" type="number" inputmode="decimal" step="any" dir="ltr"
+                   @bind="allowedDrop" @bind:event="oninput" @bind:after="PersistAsync" />
+        </div>
+        <div class="calc-field calc-field--full">
+            <label class="calc-label" for="vd-mat">جنس هادی</label>
+            <select id="vd-mat" class="calc-select" @bind="material" @bind:after="PersistAsync">
+                <option value="copper">مس (Copper)</option>
+                <option value="aluminum">آلومینیوم (Aluminum)</option>
+            </select>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Result.Error))
+    {
+        <div class="calc-error"><span class="oi oi-warning me-1"></span> @Result.Error</div>
+    }
+    else if (!string.IsNullOrEmpty(Result.Hint))
+    {
+        <div class="calc-hint"><span class="oi oi-info me-1"></span> @Result.Hint</div>
+    }
+    else
+    {
+        <div class="calc-result">
+            <div class="calc-result__grid">
+                <div class="calc-result__item calc-result__item--wide">
+                    <span class="calc-result__label">سطح مقطع پیشنهادی</span>
+                    <span class="calc-result__value" dir="ltr">@Result.Section</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">افت ولتاژ</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.DropVolts</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">درصد افت</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.DropPercent</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">تلفات توان کابل</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.Loss</span>
+                </div>
+                <div class="calc-result__item">
+                    <span class="calc-result__label">مقاومت هر رشته</span>
+                    <span class="calc-result__value calc-result__value--sm" dir="ltr">@Result.ConductorResistance</span>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(Result.Warning))
+            {
+                <p class="calc-note mt-2 mb-0" data-tone="warn">@Result.Warning</p>
+            }
+            <p class="calc-note mt-2 mb-0">
+                محاسبه بر پایه هدایت در دمای ۲۰ درجه سانتی‌گراد و بدون در نظر گرفتن جریان راه‌اندازی موتور است.
+                برای موتورها، روشنایی حساس و مسیرهای طولانی، یک سایز بالاتر انتخاب کنید.
+            </p>
+        </div>
+    }
+
+    <details class="calc-details">
+        <summary>جدول افت ولتاژ همه سطح مقطع‌های استاندارد</summary>
+        <div class="calc-details__body">
+            <table class="calc-table">
+                <thead>
+                    <tr><th>سطح مقطع</th><th>افت ولتاژ</th><th>درصد افت</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in Result.Table)
+                    {
+                        <tr class="@(row.Recommended ? "is-recommended" : "")">
+                            <td dir="ltr">@row.Section</td>
+                            <td dir="ltr">@row.Volts</td>
+                            <td dir="ltr">@row.Percent</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (Result.Table.Count == 0)
+            {
+                <p class="calc-note mb-0">برای دیدن جدول، جریان، طول مسیر و ولتاژ شبکه را کامل کنید.</p>
+            }
+        </div>
+    </details>
+</CalcShell>
+
+@code {
+    private string phase = "single";
+    private double? voltage = 220;
+    private double? current = 16;
+    private double? length = 30;
+    private double? allowedDrop = 3;
+    private string material = "copper";
+
+    protected override string StorageKey => "voltage-drop";
+
+    private static readonly double[] Sections = { 0.75, 1, 1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120 };
+
+    private double Resistivity => material == "aluminum" ? 0.0282 : 0.0175;
+
+    private sealed record SectionRow(string Section, string Volts, string Percent, bool Recommended, double PercentValue);
+
+    private sealed class DropResult
+    {
+        public string Section { get; init; } = "—";
+        public string DropVolts { get; init; } = "—";
+        public string DropPercent { get; init; } = "—";
+        public string Loss { get; init; } = "—";
+        public string ConductorResistance { get; init; } = "—";
+        public List<SectionRow> Table { get; init; } = new();
+        public string? Warning { get; init; }
+        public string? Error { get; init; }
+        public string? Hint { get; init; }
+        public string CopyText { get; init; } = "";
+    }
+
+    private DropResult Result => Compute();
+
+    private DropResult Compute()
+    {
+        if (voltage == null || current == null || length == null || allowedDrop == null)
+            return new DropResult { Hint = "ولتاژ شبکه، جریان، طول مسیر و افت مجاز را وارد کنید." };
+
+        if (voltage <= 0 || current <= 0 || length <= 0 || allowedDrop <= 0)
+            return new DropResult { Error = "همه مقادیر باید بزرگ‌تر از صفر باشند." };
+
+        var k = phase == "three" ? Math.Sqrt(3) : 2.0;
+        double DropFor(double area) => k * length.Value * current.Value * Resistivity / area;
+
+        var chosen = Sections.FirstOrDefault(area => DropFor(area) / voltage.Value * 100 <= allowedDrop.Value);
+        if (chosen <= 0)
+            chosen = Sections[^1];
+
+        var rows = Sections
+            .Select(area =>
+            {
+                var drop = DropFor(area);
+                var percent = drop / voltage.Value * 100;
+                var dropParts = CalcFormat.VoltageParts(drop);
+                return new SectionRow(
+                    CalcFormat.Num(area, "0.##") + " mm²",
+                    dropParts.Value + " " + dropParts.Unit,
+                    CalcFormat.Percent(percent),
+                    area == chosen,
+                    percent);
+            })
+            .ToList();
+
+        var chosenDrop = DropFor(chosen);
+        var chosenPercent = chosenDrop / voltage.Value * 100;
+
+        var conductorResistance = Resistivity * length.Value / chosen;
+        var totalResistance = conductorResistance * (phase == "three" ? 3 : 2);
+        var loss = current.Value * current.Value * totalResistance;
+        var chosenParts = CalcFormat.VoltageParts(chosenDrop);
+
+        var warning = chosenPercent > allowedDrop.Value
+            ? " حتی بزرگ‌ترین سطح مقطع جدول هم افت مجاز را تأمین نمی‌کند؛ طول مسیر یا جریان را بازبینی کنید."
+            : null;
+
+        return new DropResult
+        {
+            Section = CalcFormat.Num(chosen, "0.##") + " mm²",
+            DropVolts = chosenParts.Value + " " + chosenParts.Unit,
+            DropPercent = CalcFormat.Percent(chosenPercent),
+            Loss = CalcFormat.Power(loss),
+            ConductorResistance = CalcFormat.Resistance(conductorResistance),
+            Table = rows,
+            Warning = warning,
+            CopyText = $"افت ولتاژ — {CalcFormat.Num(chosen, "0.##")} mm² {material switch { "aluminum" => "آلومینیوم", _ => "مس" }} | افت {chosenParts.Value} {chosenParts.Unit} ({CalcFormat.Percent(chosenPercent)}) | جریان {CalcFormat.Num(current.Value)}A | طول {CalcFormat.Num(length.Value)}m"
+                       + (warning ?? "")
+        };
+    }
+
+    private async Task SetPhase(string newPhase)
+    {
+        phase = newPhase;
+        voltage = newPhase == "three" ? 380 : 220;
+        await PersistAsync();
+    }
+
+    private async Task ResetAsync()
+    {
+        phase = "single";
+        voltage = 220;
+        current = 16;
+        length = 30;
+        allowedDrop = 3;
+        material = "copper";
+        await PersistAsync();
+    }
+
+    protected override string CaptureState()
+        => System.Text.Json.JsonSerializer.Serialize(
+            new State(phase, voltage, current, length, allowedDrop, material), JsonOptions);
+
+    protected override bool ApplyState(string json)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<State>(json, JsonOptions);
+            if (s == null) return false;
+
+            phase = s.Phase is "single" or "three" ? s.Phase : "single";
+            voltage = s.Voltage;
+            current = s.Current;
+            length = s.Length;
+            allowedDrop = s.AllowedDrop;
+            material = s.Material is "copper" or "aluminum" ? s.Material : "copper";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed record State(string Phase, double? Voltage, double? Current, double? Length, double? AllowedDrop, string Material);
+}

@@ -129,7 +129,7 @@ public class ChatController : ControllerBase
     }
 
     [HttpPost("ai-test")]
-    [Authorize(Policy = "perm:admin.chat.manage")]
+    [Authorize(Policy = "perm:admin.ai.manage")]
     public async Task<IActionResult> TestAi([FromBody] AiTestRequest? req = null)
     {
         var settings = await _db.SiteSettings.FirstOrDefaultAsync();
@@ -412,11 +412,11 @@ public class ChatController : ControllerBase
     // ===== زنجیره چندسرویس‌دهنده‌ای هوش مصنوعی =====
 
     [HttpGet("ai-providers")]
-    [Authorize(Policy = "perm:admin.chat.manage")]
+    [Authorize(Policy = "perm:admin.ai.view")]
     public async Task<IActionResult> GetAiProviders()
     {
         var providers = await _db.ChatAiProviders.AsNoTracking()
-            .Include(p => p.ApiKeys).Include(p => p.Models)
+            .Include(p => p.ApiKeys).Include(p => p.Models).Include(p => p.Proxies)
             .OrderBy(p => p.Priority).ThenBy(p => p.Id)
             .ToListAsync();
 
@@ -433,6 +433,8 @@ public class ChatController : ControllerBase
                 kind = p.Kind,
                 enabled = p.Enabled,
                 priority = p.Priority,
+                useForChat = p.UseForChat,
+                useForContentStudio = p.UseForContentStudio,
                 keys = p.ApiKeys.OrderBy(k => k.Priority).ThenBy(k => k.Id).Select(k => new
                 {
                     id = k.Id,
@@ -462,6 +464,21 @@ public class ChatController : ControllerBase
                     lastUsedAt = m.LastUsedAt,
                     successCount = m.SuccessCount,
                     failureCount = m.FailureCount
+                }),
+                proxies = p.Proxies.OrderBy(x => x.Priority).ThenBy(x => x.Id).Select(x => new
+                {
+                    id = x.Id,
+                    url = x.Url,
+                    label = x.Label,
+                    enabled = x.Enabled,
+                    priority = x.Priority,
+                    inCooldown = x.CooldownUntil != null && x.CooldownUntil > now,
+                    cooldownUntil = x.CooldownUntil,
+                    consecutiveFailures = x.ConsecutiveFailures,
+                    lastError = x.LastError,
+                    lastUsedAt = x.LastUsedAt,
+                    successCount = x.SuccessCount,
+                    failureCount = x.FailureCount
                 })
             }),
             legacy = new
@@ -473,11 +490,61 @@ public class ChatController : ControllerBase
         });
     }
 
+    [HttpGet("ai-legacy")]
+    [Authorize(Policy = "perm:admin.ai.view")]
+    public async Task<ActionResult<AiLegacyPayload>> GetAiLegacy()
+    {
+        var settings = await _db.SiteSettings.AsNoTracking().FirstOrDefaultAsync();
+        return Ok(new AiLegacyPayload
+        {
+            Provider = settings?.ChatAiProvider,
+            ApiUrl = settings?.ChatAiApiUrl,
+            ApiKey = settings?.ChatAiApiKey,
+            Model = settings?.ChatAiModel
+        });
+    }
+
+    [HttpPut("ai-legacy")]
+    [Authorize(Policy = "perm:admin.ai.manage")]
+    public async Task<IActionResult> SaveAiLegacy([FromBody] AiLegacyPayload p)
+    {
+        var settings = await _db.SiteSettings.FirstOrDefaultAsync();
+        if (settings == null)
+        {
+            settings = new SiteSettings();
+            _db.SiteSettings.Add(settings);
+        }
+
+        settings.ChatAiApiUrl = string.IsNullOrWhiteSpace(p.ApiUrl) ? null : p.ApiUrl.Trim();
+        settings.ChatAiProvider = string.IsNullOrWhiteSpace(p.Provider)
+            ? AiProviderDetector.Detect(settings.ChatAiApiUrl)
+            : p.Provider.Trim();
+        settings.ChatAiModel = string.IsNullOrWhiteSpace(p.Model) ? null : p.Model.Trim();
+        settings.ChatAiApiKey = string.IsNullOrWhiteSpace(p.ApiKey) ? null : p.ApiKey.Trim();
+        await _db.SaveChangesAsync();
+
+        OpenAiCompatibleChatService.InvalidateCandidateCache();
+        return Ok(new { success = true, message = "پیکربندی پشتیبان هوش مصنوعی ذخیره شد." });
+    }
+
     [HttpPut("ai-providers")]
-    [Authorize(Policy = "perm:admin.chat.manage")]
+    [Authorize(Policy = "perm:admin.ai.manage")]
     public async Task<IActionResult> SaveAiProviders([FromBody] List<ChatAiProviderPayload> payload)
     {
         if (payload == null) return Ok(new { success = true }); // null = تغییری نداده
+
+        // اعتبارسنجی قبل از هر نوشتن، تا با یک آدرس نامعتبر ذخیره نیمه‌کاره نشود.
+        var invalidProxy = payload
+            .SelectMany(p => (p.Proxies ?? new List<ChatAiProxyPayload>())
+                .Where(x => !string.IsNullOrWhiteSpace(x.Url))
+                .Select(x => new { Provider = p.Name, Url = x.Url }))
+            .FirstOrDefault(x => !IsValidProxyUrl(x.Url.Trim()));
+        if (invalidProxy != null)
+            return BadRequest(new
+            {
+                success = false,
+                message = $"آدرس Proxy سرویس‌دهنده «{invalidProxy.Provider}» معتبر نیست. نمونه: http://127.0.0.1:8080 یا socks5://127.0.0.1:1080"
+            });
 
         // حذف سرویس‌دهنده‌هایی که از پنل حذف شده‌اند (فقط رکوردهای جدول جدید؛ هیچ جدول دیگری دست نمی‌خورد)
         var incomingIds = payload.Where(p => p.Id > 0).Select(p => p.Id).ToHashSet();
@@ -487,8 +554,10 @@ public class ChatController : ControllerBase
         {
             var keys = await _db.ChatAiApiKeys.Where(k => k.ProviderId == r.Id).ToListAsync();
             var models = await _db.ChatAiModels.Where(m => m.ProviderId == r.Id).ToListAsync();
+            var proxies = await _db.ChatAiProxies.Where(x => x.ProviderId == r.Id).ToListAsync();
             _db.ChatAiApiKeys.RemoveRange(keys);
             _db.ChatAiModels.RemoveRange(models);
+            _db.ChatAiProxies.RemoveRange(proxies);
             _db.ChatAiProviders.Remove(r);
         }
 
@@ -496,6 +565,10 @@ public class ChatController : ControllerBase
         foreach (var p in payload)
         {
             if (string.IsNullOrWhiteSpace(p.Name) || string.IsNullOrWhiteSpace(p.BaseUrl)) continue;
+
+            var oldProxyUrls = p.Id > 0
+                ? await _db.ChatAiProxies.Where(x => x.ProviderId == p.Id).Select(x => x.Url).ToListAsync()
+                : new List<string>();
 
             var entity = p.Id > 0 ? existing.FirstOrDefault(e => e.Id == p.Id) : null;
             if (entity == null)
@@ -508,16 +581,78 @@ public class ChatController : ControllerBase
             entity.Kind = string.IsNullOrWhiteSpace(p.Kind) ? "custom" : p.Kind.Trim();
             entity.Enabled = p.Enabled;
             entity.Priority = p.Priority > 0 ? p.Priority : ++order;
+            entity.UseForChat = p.UseForChat;
+            entity.UseForContentStudio = p.UseForContentStudio;
 
             await _db.SaveChangesAsync();
 
             await SyncKeysAsync(entity.Id, p.Keys ?? new List<ChatAiKeyPayload>());
             await SyncModelsAsync(entity.Id, p.Models ?? new List<ChatAiModelPayload>());
+            await SyncProxiesAsync(entity.Id, p.Proxies ?? new List<ChatAiProxyPayload>());
+
+            var newProxyUrls = await _db.ChatAiProxies.Where(x => x.ProviderId == entity.Id).Select(x => x.Url).ToListAsync();
+            var proxyChanged = !oldProxyUrls.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .SequenceEqual(newProxyUrls.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+
+            // تغییر مسیر خروجی → خطاهای قبلی (مثل مسدودی IP) دیگر معتبر نیستند.
+            if (proxyChanged)
+            {
+                var blockedKeys = await _db.ChatAiApiKeys
+                    .Where(k => k.ProviderId == entity.Id && (k.CooldownUntil != null || k.ConsecutiveFailures > 0)).ToListAsync();
+                foreach (var k in blockedKeys)
+                {
+                    k.CooldownUntil = null;
+                    k.ConsecutiveFailures = 0;
+                }
+                var blockedModels = await _db.ChatAiModels
+                    .Where(m => m.ProviderId == entity.Id && (m.CooldownUntil != null || m.ConsecutiveFailures > 0)).ToListAsync();
+                foreach (var m in blockedModels)
+                {
+                    m.CooldownUntil = null;
+                    m.ConsecutiveFailures = 0;
+                }
+                await _db.SaveChangesAsync();
+            }
         }
 
         await _db.SaveChangesAsync();
         OpenAiCompatibleChatService.InvalidateCandidateCache();
         return Ok(new { success = true, message = "سرویس‌دهنده‌های هوش مصنوعی ذخیره شد." });
+    }
+
+    private static bool IsValidProxyUrl(string value)
+        => Uri.TryCreate(value, UriKind.Absolute, out var uri)
+           && (uri.Scheme == Uri.UriSchemeHttp
+               || uri.Scheme == Uri.UriSchemeHttps
+               || string.Equals(uri.Scheme, "socks5", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(uri.Scheme, "socks4", StringComparison.OrdinalIgnoreCase));
+
+    private async Task SyncProxiesAsync(int providerId, List<ChatAiProxyPayload> src)
+    {
+        var current = await _db.ChatAiProxies.Where(x => x.ProviderId == providerId).ToListAsync();
+        var valid = src.Where(s => !string.IsNullOrWhiteSpace(s.Url)).ToList();
+
+        int order = 0;
+        foreach (var s in valid)
+        {
+            order++;
+            var entity = s.Id > 0 ? current.FirstOrDefault(c => c.Id == s.Id) : null;
+            if (entity == null)
+            {
+                entity = new ChatAiProxy { ProviderId = providerId };
+                _db.ChatAiProxies.Add(entity);
+            }
+            entity.Url = s.Url.Trim();
+            entity.Label = s.Label;
+            entity.Enabled = s.Enabled;
+            entity.Priority = order;
+        }
+
+        var validIds = valid.Where(s => s.Id > 0).Select(s => s.Id).ToHashSet();
+        foreach (var c in current.Where(c => !validIds.Contains(c.Id)))
+            _db.ChatAiProxies.Remove(c);
+
+        await _db.SaveChangesAsync();
     }
 
     private async Task SyncKeysAsync(int providerId, List<ChatAiKeyPayload> src)
@@ -579,8 +714,41 @@ public class ChatController : ControllerBase
         await _db.SaveChangesAsync();
     }
 
+    [HttpPost("ai-providers/reset-cooldowns")]
+    [Authorize(Policy = "perm:admin.ai.manage")]
+    public async Task<IActionResult> ResetAiCooldowns()
+    {
+        var keys = await _db.ChatAiApiKeys
+            .Where(k => k.CooldownUntil != null || k.ConsecutiveFailures > 0).ToListAsync();
+        foreach (var k in keys)
+        {
+            k.CooldownUntil = null;
+            k.ConsecutiveFailures = 0;
+        }
+
+        var models = await _db.ChatAiModels
+            .Where(m => m.CooldownUntil != null || m.ConsecutiveFailures > 0).ToListAsync();
+        foreach (var m in models)
+        {
+            m.CooldownUntil = null;
+            m.ConsecutiveFailures = 0;
+        }
+
+        var proxies = await _db.ChatAiProxies
+            .Where(x => x.CooldownUntil != null || x.ConsecutiveFailures > 0).ToListAsync();
+        foreach (var x in proxies)
+        {
+            x.CooldownUntil = null;
+            x.ConsecutiveFailures = 0;
+        }
+
+        await _db.SaveChangesAsync();
+        OpenAiCompatibleChatService.InvalidateCandidateCache();
+        return Ok(new { success = true, message = $"{keys.Count + models.Count + proxies.Count} مورد کول‌داون پاک شد." });
+    }
+
     [HttpPost("ai-chain-test")]
-    [Authorize(Policy = "perm:admin.chat.manage")]
+    [Authorize(Policy = "perm:admin.ai.manage")]
     public async Task<IActionResult> TestAiChain([FromBody] List<ChatAiProviderPayload>? payload = null)
     {
         var settings = await _db.SiteSettings.FirstOrDefaultAsync();
@@ -588,21 +756,48 @@ public class ChatController : ControllerBase
         var temperature = settings?.ChatAiTemperature is > 0 and <= 2 ? settings.ChatAiTemperature : 0.6;
 
         // اگر payload فرستاده شده همون ویرایش‌نشده‌ست؛ وگرنه از DB ذخیره‌شده
-        var candidates = new List<(string Provider, string KeyLabel, string Model, string BaseUrl, string ApiKey)>();
+        var candidates = new List<(string Provider, string KeyLabel, string Model, string BaseUrl, string ApiKey, string? ProxyLabel, string? ProxyUrl)>();
         if (payload != null && payload.Count > 0)
         {
             foreach (var p in payload.Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.BaseUrl))
                          .OrderBy(x => x.Priority))
+            {
+                var proxies = (p.Proxies ?? new List<ChatAiProxyPayload>())
+                    .Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.Url))
+                    .OrderBy(x => x.Priority).ToList();
+
                 foreach (var k in (p.Keys ?? new()).Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.KeyValue)).OrderBy(x => x.Priority))
                     foreach (var m in (p.Models ?? new()).Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.ModelId)).OrderBy(x => x.Priority))
-                        candidates.Add((p.Name, k.Label ?? MaskKey(k.KeyValue), m.ModelId, p.BaseUrl.TrimEnd('/'), k.KeyValue));
+                    {
+                        var keyLabel = k.Label ?? MaskKey(k.KeyValue);
+                        if (proxies.Count == 0)
+                            candidates.Add((p.Name, keyLabel, m.ModelId, p.BaseUrl.TrimEnd('/'), k.KeyValue, "مستقیم", null));
+                        foreach (var px in proxies)
+                            candidates.Add((p.Name, keyLabel, m.ModelId, p.BaseUrl.TrimEnd('/'), k.KeyValue,
+                                px.Label ?? px.Url, px.Url));
+                    }
+            }
         }
         else
         {
             var svc = new OpenAiCompatibleChatService(_db, _httpClientFactory,
                 HttpContext.RequestServices.GetRequiredService<ILogger<OpenAiCompatibleChatService>>());
-            var chain = await svc.BuildCandidatesAsync(settings ?? new SiteSettings());
-            candidates = chain.Select(c => (c.ProviderName, c.KeyId is int kid ? MaskKeyById(kid) : "کلید قدیمی", c.Model, c.BaseUrl, c.ApiKey)).ToList();
+            var chain = new List<OpenAiCompatibleChatService.ChainCandidate>();
+            foreach (var scope in new[] { AiUsageScope.Chat, AiUsageScope.ContentStudio })
+                chain.AddRange(await svc.BuildCandidatesAsync(settings ?? new SiteSettings(), scope));
+            candidates = chain
+                .GroupBy(c => (c.KeyId, c.ModelId, c.Model))
+                .Select(g => g.First())
+                .SelectMany(c =>
+                {
+                    var keyLabel = c.KeyId is int kid ? MaskKeyById(kid) : "کلید قدیمی";
+                    if (c.Proxies is not { Count: > 0 })
+                        return new[] { (c.ProviderName, keyLabel, c.Model, c.BaseUrl, c.ApiKey, (string?)"مستقیم", (string?)null) };
+                    return c.Proxies
+                        .Select(px => (c.ProviderName, keyLabel, c.Model, c.BaseUrl, c.ApiKey, (string?)(px.Label ?? px.Url), (string?)px.Url))
+                        .ToArray();
+                })
+                .ToList();
         }
 
         if (candidates.Count == 0)
@@ -616,9 +811,9 @@ public class ChatController : ControllerBase
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                var (ok, msg) = await ProbeCandidateAsync(c.BaseUrl, c.ApiKey, c.Model, temperature, Math.Min(maxTokens, 100));
+                var (ok, msg) = await ProbeCandidateAsync(c.BaseUrl, c.ApiKey, c.Model, temperature, Math.Min(maxTokens, 100), c.ProxyUrl);
                 sw.Stop();
-                results.Enqueue(new { provider = c.Provider, key = c.KeyLabel, model = c.Model, ok, ms = sw.ElapsedMilliseconds, message = msg });
+                results.Enqueue(new { provider = c.Provider, key = c.KeyLabel, model = c.Model, proxy = c.ProxyLabel, ok, ms = sw.ElapsedMilliseconds, message = msg });
             }
             finally { sem.Release(); }
         });
@@ -653,11 +848,11 @@ public class ChatController : ControllerBase
     }
 
     private async Task<(bool Ok, string Message)> ProbeCandidateAsync(string baseUrl, string apiKey, string model,
-        double temperature, int maxTokens)
+        double temperature, int maxTokens, string? proxyUrl = null)
     {
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = OpenAiCompatibleChatService.CreateHttpClient(_httpClientFactory, proxyUrl);
             var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/chat/completions");
             if (!string.IsNullOrWhiteSpace(apiKey))
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey.Trim());
@@ -691,14 +886,15 @@ public class ChatController : ControllerBase
     }
 
     [HttpGet("ai-models/catalog")]
-    [Authorize(Policy = "perm:admin.chat.manage")]
-    public async Task<IActionResult> GetAiModelCatalog([FromQuery] string kind = "openrouter", [FromQuery] string? baseUrl = null, [FromQuery] string? apiKey = null)
+    [Authorize(Policy = "perm:admin.ai.view")]
+    public async Task<IActionResult> GetAiModelCatalog([FromQuery] string kind = "openrouter", [FromQuery] string? baseUrl = null,
+        [FromQuery] string? apiKey = null, [FromQuery] string? proxyUrl = null)
     {
         try
         {
             if (string.Equals(kind, "openrouter", StringComparison.OrdinalIgnoreCase))
             {
-                var models = await FetchOpenRouterFreeModelsAsync();
+                var models = await FetchOpenRouterFreeModelsAsync(proxyUrl);
                 if (models.Count > 0)
                     return Ok(new { success = true, source = "openrouter", models });
                 return Ok(new { success = false, source = "openrouter", models = StaticFreeModels, message = "دریافت زنده ناموفق بود؛ از فهرست ثابت استفاده کنید." });
@@ -707,7 +903,7 @@ public class ChatController : ControllerBase
             // سرویس‌دهنده سازگار با OpenAI: تلاش برای GET {baseUrl}/models
             if (!string.IsNullOrWhiteSpace(baseUrl))
             {
-                var remote = await FetchOpenAiCompatibleModelsAsync(baseUrl!, apiKey);
+                var remote = await FetchOpenAiCompatibleModelsAsync(baseUrl!, apiKey, proxyUrl);
                 if (remote.Count > 0) return Ok(new { success = true, source = "endpoint", models = remote });
             }
             return Ok(new { success = true, source = "static", models = StaticFreeModels, message = "فهرست سرویس‌دهنده دریافت نشد؛ فهرست ثابت نمایش داده شد." });
@@ -719,11 +915,11 @@ public class ChatController : ControllerBase
         }
     }
 
-    private async Task<List<object>> FetchOpenRouterFreeModelsAsync()
+    private async Task<List<object>> FetchOpenRouterFreeModelsAsync(string? proxyUrl = null)
     {
-        var client = _httpClientFactory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(20);
-        var body = await client.GetStringAsync("https://openrouter.ai/api/v1/models");
+        var client = OpenAiCompatibleChatService.CreateHttpClient(_httpClientFactory, proxyUrl);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var body = await client.GetStringAsync("https://openrouter.ai/api/v1/models", cts.Token);
         var list = new List<object>();
         using var doc = System.Text.Json.JsonDocument.Parse(body);
         if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != System.Text.Json.JsonValueKind.Array)
@@ -738,6 +934,11 @@ public class ChatController : ControllerBase
                 || IsZeroPrice(m, "prompt") && IsZeroPrice(m, "completion");
             if (!isFree) continue;
 
+            // فقط مدل‌های متنیِ چت؛ مدل‌های تولید موسیقی/تصویر و طبقه‌بند ایمنی برای این کاربرد نیستند.
+            if (string.Equals(id, "openrouter/free", StringComparison.OrdinalIgnoreCase)) continue;
+            if (id.Contains("content-safety", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!OutputsTextOnly(m)) continue;
+
             var name = m.TryGetProperty("name", out var nEl) ? nEl.GetString() : id;
             var ctx = m.TryGetProperty("context_length", out var cEl) && cEl.ValueKind == System.Text.Json.JsonValueKind.Number
                 ? cEl.GetInt32() : (int?)null;
@@ -750,18 +951,37 @@ public class ChatController : ControllerBase
                && p.TryGetProperty(prop, out var v)
                && v.ValueKind == System.Text.Json.JsonValueKind.String
                && (v.GetString() == "0" || v.GetString() == "0.000000");
+
+        static bool OutputsTextOnly(System.Text.Json.JsonElement m)
+        {
+            if (!m.TryGetProperty("architecture", out var arch)
+                || !arch.TryGetProperty("output_modalities", out var outputs)
+                || outputs.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return true;
+
+            var hasText = false;
+            foreach (var o in outputs.EnumerateArray())
+            {
+                if (o.ValueKind != System.Text.Json.JsonValueKind.String) continue;
+                var value = o.GetString();
+                if (string.Equals(value, "text", StringComparison.OrdinalIgnoreCase)) hasText = true;
+                else if (string.Equals(value, "audio", StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(value, "image", StringComparison.OrdinalIgnoreCase)) return false;
+            }
+            return hasText;
+        }
     }
 
-    private async Task<List<object>> FetchOpenAiCompatibleModelsAsync(string baseUrl, string? apiKey)
+    private async Task<List<object>> FetchOpenAiCompatibleModelsAsync(string baseUrl, string? apiKey, string? proxyUrl = null)
     {
         try
         {
-            var client = _httpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(15);
+            var client = OpenAiCompatibleChatService.CreateHttpClient(_httpClientFactory, proxyUrl);
             var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl.TrimEnd('/')}/models");
             if (!string.IsNullOrWhiteSpace(apiKey))
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey.Trim());
-            var response = await client.SendAsync(request);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var response = await client.SendAsync(request, cts.Token);
             if (!response.IsSuccessStatusCode) return new();
             using var doc = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != System.Text.Json.JsonValueKind.Array)
@@ -782,14 +1002,15 @@ public class ChatController : ControllerBase
     // فهرست ثابت مدل‌های رایگان (fallback وقتی دریافت زنده ممکن نیست)
     private static readonly object[] StaticFreeModels =
     {
-        new { id = "liquid/lfm-2.5-2.6b:free", name = "Liquid LFM 2.5 2.6B", contextLength = (int?)null },
-        new { id = "nvidia/nemotron-3-ultra-550b-a55b:free", name = "Nemotron 3 Ultra 550B", contextLength = (int?)null },
-        new { id = "nvidia/nemotron-3-super-120b-a12b:free", name = "Nemotron 3 Super 120B", contextLength = (int?)null },
-        new { id = "nvidia/nemotron-3.5-lightning:free", name = "Nemotron 3.5 Lightning", contextLength = (int?)null }
+        new { id = "google/gemma-4-31b-it:free", name = "Google Gemma 4 31B", contextLength = (int?)262144 },
+        new { id = "nvidia/nemotron-3.5-lightning:free", name = "NVIDIA Nemotron 3.5 Lightning", contextLength = (int?)1000000 },
+        new { id = "nvidia/nemotron-3-ultra-550b-a55b:free", name = "NVIDIA Nemotron 3 Ultra 550B", contextLength = (int?)1000000 },
+        new { id = "thinkingmachines/inkling:free", name = "Thinking Machines Inkling", contextLength = (int?)1048576 },
+        new { id = "liquid/lfm-2.5-2.6b:free", name = "Liquid LFM 2.5 2.6B", contextLength = (int?)65536 }
     };
 
     [HttpGet("ai-credits")]
-    [Authorize(Policy = "perm:admin.chat.manage")]
+    [Authorize(Policy = "perm:admin.ai.view")]
     public async Task<IActionResult> GetAiCredits()
     {
         var settings = await _db.SiteSettings.FirstOrDefaultAsync();
@@ -1484,10 +1705,6 @@ public class ChatController : ControllerBase
             AutoMessageSeconds = settings.ChatAutoMessageSeconds,
             PhoneRequired = settings.ChatPhoneRequired,
             EnableAiAssistant = settings.ChatEnableAiAssistant,
-            AiProvider = settings.ChatAiProvider,
-            AiApiUrl = settings.ChatAiApiUrl,
-            AiModel = settings.ChatAiModel,
-            AiApiKey = settings.ChatAiApiKey,
             AiSystemPrompt = settings.ChatAiSystemPrompt,
             AiSuggestedTopics = settings.ChatSuggestedTopics,
             AiGuestEnabled = settings.ChatAiGuestEnabled,
@@ -1529,12 +1746,6 @@ public class ChatController : ControllerBase
         settings.ChatAutoMessageSeconds = p.AutoMessageSeconds > 0 ? p.AutoMessageSeconds : 60;
         settings.ChatPhoneRequired = p.PhoneRequired;
         settings.ChatEnableAiAssistant = p.EnableAiAssistant;
-        settings.ChatAiApiUrl = string.IsNullOrWhiteSpace(p.AiApiUrl) ? null : p.AiApiUrl.Trim();
-        settings.ChatAiProvider = string.IsNullOrWhiteSpace(p.AiProvider)
-            ? AiProviderDetector.Detect(settings.ChatAiApiUrl)
-            : p.AiProvider!.Trim();
-        settings.ChatAiModel = p.AiModel;
-        settings.ChatAiApiKey = string.IsNullOrWhiteSpace(p.AiApiKey) ? null : p.AiApiKey.Trim();
         settings.ChatAiSystemPrompt = p.AiSystemPrompt;
         settings.ChatSuggestedTopics = string.IsNullOrWhiteSpace(p.AiSuggestedTopics) ? null : p.AiSuggestedTopics.Trim();
         settings.ChatAiGuestEnabled = p.AiGuestEnabled;
@@ -1696,10 +1907,6 @@ public class ChatSettingsPayload
     public int AutoMessageSeconds { get; set; } = 60;
     public bool PhoneRequired { get; set; }
     public bool EnableAiAssistant { get; set; }
-    public string? AiProvider { get; set; }
-    public string? AiApiUrl { get; set; }
-    public string? AiModel { get; set; }
-    public string? AiApiKey { get; set; }
     public string? AiSystemPrompt { get; set; }
     public string? AiSuggestedTopics { get; set; }
     public bool AiGuestEnabled { get; set; }

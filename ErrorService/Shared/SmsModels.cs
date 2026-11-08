@@ -20,6 +20,14 @@ public sealed class SmsSettingsDto
 {
     public bool IsActive { get; set; }
     public bool OtpEnabled { get; set; }
+    public bool OtpRegistrationEnabled { get; set; }
+    public bool OtpAdmissionRepairEnabled { get; set; } = true;
+    public bool OtpAdmissionExpertiseEnabled { get; set; } = true;
+    public bool OtpAdmissionTrackingEnabled { get; set; } = true;
+    public bool OtpPasswordResetEnabled { get; set; } = true;
+    public int OtpCodeTtlSeconds { get; set; } = 120;
+    public int OtpResendCooldownSeconds { get; set; } = 60;
+    public int OtpMaxAttempts { get; set; } = 5;
     public decimal TariffPerSms { get; set; }
     public string? ApiKey { get; set; }
     public string? SenderNumber { get; set; }
@@ -32,6 +40,14 @@ public sealed class SmsSettingsUpdateRequest
 {
     public bool IsActive { get; set; }
     public bool OtpEnabled { get; set; }
+    public bool OtpRegistrationEnabled { get; set; }
+    public bool OtpAdmissionRepairEnabled { get; set; } = true;
+    public bool OtpAdmissionExpertiseEnabled { get; set; } = true;
+    public bool OtpAdmissionTrackingEnabled { get; set; } = true;
+    public bool OtpPasswordResetEnabled { get; set; } = true;
+    [Range(60, 600)] public int OtpCodeTtlSeconds { get; set; } = 120;
+    [Range(0, 600)] public int OtpResendCooldownSeconds { get; set; } = 60;
+    [Range(1, 20)] public int OtpMaxAttempts { get; set; } = 5;
     [Range(0, 100000)] public decimal TariffPerSms { get; set; }
     public string? ApiKey { get; set; }
     public string? SenderNumber { get; set; }
