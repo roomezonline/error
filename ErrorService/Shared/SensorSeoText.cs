@@ -34,9 +34,15 @@ public static class SensorSeoText
 
         var coreName = spec == null ? name : $"{name} {spec}";
         var fullName = device == null ? coreName : $"{coreName} - {device}";
-        var titleBase = device != null && coreName.Length + device.Length + 3 <= MaxTitleWithoutSite
-            ? fullName
-            : coreName;
+        // نام دستگاه همان چیزی است که صفحه را از ده‌ها صفحهٔ مشابه («سنسور دما» برای
+        // دستگاه‌های مختلف) متمایز می‌کند؛ اگر با مشخصهٔ فنی در تیتر جا نشد، مشخصه
+        // حذف می‌شود (در توضیح می‌ماند) ولی دستگاه هرگز از تیتر حذف نمی‌شود.
+        var titleBase = fullName;
+        if (device != null && fullName.Length > MaxTitleWithoutSite)
+        {
+            var nameAndDevice = $"{name} - {device}";
+            if (nameAndDevice.Length <= MaxTitleWithoutSite) titleBase = nameAndDevice;
+        }
 
         return new SensorSeoInfo(
             name,
