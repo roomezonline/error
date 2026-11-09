@@ -163,7 +163,8 @@
                                     </div>
                                 </div>
                                 <div class="sv-item__tools">
-                                    @if (it.DeviceId is > 0 && !string.IsNullOrWhiteSpace(it.AudioUrl))
+                                    @if (it.DeviceId is > 0 && it.AudioUrl is not null &&
+                                         it.AudioUrl.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
                                     {
                                         <button type="button" class="sv-icon-btn" title="پخش آزمایشی روی دستگاه"
                                                 aria-label="پخش آزمایشی روی دستگاه"

@@ -491,6 +491,15 @@ void handleSave() {
     return;
   }
 
+  // اگر کد دستگاه عوض شود، cursor رویدادهای دستگاه قبلی پاک می‌شود تا
+  // پس از ری‌استارت، نقطهٔ شروع رویدادهای دستگاه جدید از سرور خوانده شود.
+  if (code != deviceCode) {
+    prefs.begin("cfg", false);
+    prefs.remove("evlast");
+    prefs.end();
+    Serial.println("[Portal] device code changed -> event cursor reset");
+  }
+
   saveCfg(s, p, code);
   Serial.printf("[Portal] saved ssid=\"%s\" code=\"%s\" -> restart\n",
                 s.c_str(), code.c_str());
