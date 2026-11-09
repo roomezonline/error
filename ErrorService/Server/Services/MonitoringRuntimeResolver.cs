@@ -25,6 +25,34 @@ public static class MonitoringRuntimeResolver
             || trimmed.Equals("true", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// تشخیص مقدار معتبر روشن/خاموش. مقدار خالی یا ناشناخته (مثل «nan» یا رشتهٔ
+    /// ناقص) معتبر نیست تا قطعیِ موقتِ ارتباط، تغییر کاذب و پخش صدای اشتباه نسازد.
+    /// </summary>
+    public static bool TryIsOnValue(string? value, out bool isOn)
+    {
+        isOn = false;
+        if (string.IsNullOrWhiteSpace(value)) return false;
+
+        var trimmed = value.Trim();
+        if (trimmed.Equals("on", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("1", StringComparison.Ordinal)
+            || trimmed.Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            isOn = true;
+            return true;
+        }
+
+        if (trimmed.Equals("off", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("0", StringComparison.Ordinal)
+            || trimmed.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     public static bool IsStopRecord(string? oldValue, string? newValue) =>
         IsOnValue(oldValue) && !IsOnValue(newValue);
 

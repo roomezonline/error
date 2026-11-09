@@ -146,6 +146,36 @@ public sealed class DeviceVoiceEventsDto
     public List<DeviceVoiceEventDto> Events { get; set; } = new();
 }
 
+/// <summary>
+/// یک رویداد صوتی ثبت‌شده برای بازبینی در پنل مدیریت: چه تغییری رخ داده،
+/// چه اکشنی انتخاب شده و کدام فایل MP3 روی دستگاه پخش شده است.
+/// </summary>
+public sealed class ServiceVoiceEventLogDto
+{
+    public long Id { get; set; }
+    public string ActionKey { get; set; } = string.Empty;
+
+    /// <summary>عنوان استاندارد رویداد؛ مثل «خاموش شدن موتور».</summary>
+    public string? EventTitleFa { get; set; }
+
+    /// <summary>نام نمایشی اکشنی که برای همین کلید ساخته شده است.</summary>
+    public string? ActionTitleFa { get; set; }
+
+    /// <summary>فایل صوتی متصل به همین اکشن در لحظهٔ خواندن گزارش.</summary>
+    public string? AudioUrl { get; set; }
+
+    public bool HasAudio { get; set; }
+    public bool ActionIsActive { get; set; }
+
+    public string SourceType { get; set; } = string.Empty;
+    public string? OldValue { get; set; }
+    public string? NewValue { get; set; }
+    public string? DescriptionFa { get; set; }
+    public bool IsTest { get; set; }
+    public bool IsExpired { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public sealed class ServiceVoiceTestResultDto
 {
     public bool Ok { get; set; }

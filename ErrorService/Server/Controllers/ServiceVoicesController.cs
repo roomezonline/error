@@ -138,6 +138,67 @@ public sealed class ServiceVoicesController : ControllerBase
         return Ok(devices);
     }
 
+    /// <summary>
+    /// آخرین رویدادهای صوتی یک دستگاه برای بازبینی در پنل: هر ردیف نشان می‌دهد
+    /// کدام تغییر پایش رخ داده، چه اکشنی انتخاب شده و کدام فایل MP3 پخش شده است.
+    /// </summary>
+    [HttpGet("events")]
+    public async Task<ActionResult<List<ServiceVoiceEventLogDto>>> RecentEvents(
+        [FromQuery] int deviceId, [FromQuery] int take = 20, CancellationToken ct = default)
+    {
+        if (deviceId <= 0)
+            return BadRequest("شناسه دستگاه نامعتبر است.");
+
+        take = Math.Clamp(take, 1, 100);
+        var now = DateTimeOffset.UtcNow;
+
+        var events = await _db.DeviceVoiceEvents.AsNoTracking()
+            .Where(x => x.MonitoringDeviceId == deviceId)
+            .OrderByDescending(x => x.Id)
+            .Take(take)
+            .Select(x => new ServiceVoiceEventLogDto
+            {
+                Id = x.Id,
+                ActionKey = x.ActionKey,
+                SourceType = x.SourceType,
+                OldValue = x.OldValue,
+                NewValue = x.NewValue,
+                DescriptionFa = x.DescriptionFa,
+                IsTest = x.IsTest,
+                IsExpired = x.ExpiresAt <= now,
+                CreatedAt = x.CreatedAt
+            })
+            .ToListAsync(ct);
+
+        if (events.Count == 0)
+            return Ok(events);
+
+        var actions = await _db.ServiceVoiceActions.AsNoTracking()
+            .Where(a => a.MonitoringDeviceId == deviceId)
+            .Select(a => new { a.Key, a.TitleFa, a.AudioUrl, a.IsActive })
+            .ToListAsync(ct);
+
+        var actionByKey = new Dictionary<string, (string TitleFa, string? AudioUrl, bool IsActive)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var action in actions)
+            actionByKey.TryAdd(action.Key, (action.TitleFa, action.AudioUrl, action.IsActive));
+
+        foreach (var ev in events)
+        {
+            ev.EventTitleFa = ServiceVoiceEventKeys.TitleOf(ev.ActionKey) ?? ev.ActionKey;
+
+            if (actionByKey.TryGetValue(ev.ActionKey, out var action))
+            {
+                ev.ActionTitleFa = action.TitleFa;
+                ev.AudioUrl = action.AudioUrl;
+                ev.ActionIsActive = action.IsActive;
+                ev.HasAudio = !string.IsNullOrWhiteSpace(action.AudioUrl)
+                              && action.AudioUrl.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        return Ok(events);
+    }
+
     [HttpPost]
     public async Task<ActionResult<ServiceVoiceActionDto>> Save(
         [FromBody] ServiceVoiceActionUpsertRequest req, CancellationToken ct)

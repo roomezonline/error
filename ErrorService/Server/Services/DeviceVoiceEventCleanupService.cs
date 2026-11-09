@@ -36,7 +36,9 @@ public sealed class DeviceVoiceEventCleanupService : BackgroundService
             {
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<ErrorServiceDbContext>();
-                var cutoff = DateTimeOffset.UtcNow.AddHours(-1);
+                // رویدادها فقط ۲ دقیقه قابل پخش‌اند، اما یک روز نگه داشته می‌شوند
+                // تا پنل مدیریت بتواند تطابق «تغییر ↔ اکشن ↔ فایل صدا» را بازبینی کند.
+                var cutoff = DateTimeOffset.UtcNow.AddHours(-24);
                 var removed = await db.DeviceVoiceEvents
                     .Where(x => x.CreatedAt < cutoff)
                     .ExecuteDeleteAsync(stoppingToken);

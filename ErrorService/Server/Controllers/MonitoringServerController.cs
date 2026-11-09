@@ -762,25 +762,25 @@ public class MonitoringServerController : ControllerBase
 
             var changes = new List<(string type, string? oldVal, string? newVal, string desc)>();
 
-            if (NormalizeSwitch(oldData.Priz) != NormalizeSwitch(newData.Priz))
+            if (SwitchChanged(oldData.Priz, newData.Priz))
             {
                 var oldP = IsOn(oldData.Priz) ? "روشن" : "خاموش";
                 var newP = IsOn(newData.Priz) ? "روشن" : "خاموش";
                 changes.Add(("Priz", oldData.Priz, newData.Priz, $"برق اصلی {oldP} → {newP}"));
             }
-            if (NormalizeSwitch(oldData.MotorState) != NormalizeSwitch(newData.MotorState))
+            if (SwitchChanged(oldData.MotorState, newData.MotorState))
             {
                 var oldM = IsOn(oldData.MotorState) ? "روشن" : "خاموش";
                 var newM = IsOn(newData.MotorState) ? "روشن" : "خاموش";
                 changes.Add(("MotorState", oldData.MotorState, newData.MotorState, $"موتور {oldM} → {newM}"));
             }
-            if (NormalizeSwitch(oldData.Element1) != NormalizeSwitch(newData.Element1))
+            if (SwitchChanged(oldData.Element1, newData.Element1))
             {
                 var oldE1 = IsOn(oldData.Element1) ? "روشن" : "خاموش";
                 var newE1 = IsOn(newData.Element1) ? "روشن" : "خاموش";
                 changes.Add(("Element1", oldData.Element1, newData.Element1, $"المنت ۱ {oldE1} → {newE1}"));
             }
-            if (NormalizeSwitch(oldData.Element2) != NormalizeSwitch(newData.Element2))
+            if (SwitchChanged(oldData.Element2, newData.Element2))
             {
                 var oldE2 = IsOn(oldData.Element2) ? "روشن" : "خاموش";
                 var newE2 = IsOn(newData.Element2) ? "روشن" : "خاموش";
@@ -946,8 +946,15 @@ public class MonitoringServerController : ControllerBase
 
     private static bool IsOn(string? val) => MonitoringRuntimeResolver.IsOnValue(val);
 
-    /// <summary>مقایسهٔ وضعیت روشن/خاموش مستقل از شکل مقدار خام (1/true/on).</summary>
-    private static bool NormalizeSwitch(string? val) => IsOn(val);
+    /// <summary>
+    /// فقط وقتی هر دو مقدار قبلی و جدید «روشن/خاموش معتبر» باشند تغییر واقعی است.
+    /// مقدار خالی یا ناشناخته (قطع لحظه‌ای ارتباط، سنسور ناقص) نه رکورد تغییر
+    /// می‌سازد و نه رویداد صوتی.
+    /// </summary>
+    private static bool SwitchChanged(string? oldValue, string? newValue) =>
+        MonitoringRuntimeResolver.TryIsOnValue(oldValue, out var oldOn)
+        && MonitoringRuntimeResolver.TryIsOnValue(newValue, out var newOn)
+        && oldOn != newOn;
 
     /// <summary>
     /// بعد از ری‌استارت سرور، کش حافظه خالی است و اولین تغییر از دست می‌رفت.

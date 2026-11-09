@@ -17,6 +17,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "esp_wifi.h"
+#include "esp_heap_caps.h"
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 
@@ -29,11 +30,51 @@
 #include "ava_config.h"
 
 // ==================== خروجی I2S با شمارش خطا ====================
+// کانال I2S یک‌بار در بوت ساخته می‌شود و تا پایان عمر برد آزاد نمی‌شود.
+// دلیل: بافرهای DMA باید از حافظهٔ داخلیِ قابل‌دسترسی به DMA گرفته شوند و اگر
+// هنگام شروع پخش (که هم‌زمان TLS و دیکودر MP3 هم حافظه گرفته‌اند) ساخته شوند،
+// خطای «allocate DMA buffer failed» و ری‌ست برد رخ می‌دهد.
 class TrackedAudioOutput : public AudioOutputI2S {
 public:
+  // کتابخانه _tx_handle را مقدار اولیه نمی‌دهد؛ قبل از هر بررسی باید صفر باشد.
+  TrackedAudioOutput() { _tx_handle = nullptr; }
+
   uint32_t framesSent = 0;
   uint32_t writeFails = 0;
   int32_t  lastRate   = 0;
+
+  bool begin() override {
+#ifdef ESP32
+    if (_tx_handle != nullptr) {
+      if (!i2sOn) i2sOn = (i2s_channel_enable(_tx_handle) == ESP_OK);
+      return i2sOn;
+    }
+#endif
+    return AudioOutputI2S::begin();
+  }
+
+  bool stop() override {
+#ifdef ESP32
+    if (_tx_handle == nullptr) return false;
+    if (i2sOn) {
+      i2s_channel_disable(_tx_handle);
+      i2sOn = false;
+    }
+    return true;
+#else
+    return AudioOutputI2S::stop();
+#endif
+  }
+
+  ~TrackedAudioOutput() override {
+#ifdef ESP32
+    if (_tx_handle != nullptr) {
+      if (i2sOn) i2s_channel_disable(_tx_handle);
+      i2s_del_channel(_tx_handle);
+      _tx_handle = nullptr;
+    }
+#endif
+  }
 
   bool SetRate(int hz) override {
     bool ok = AudioOutputI2S::SetRate(hz);
@@ -93,17 +134,27 @@ struct VoiceEventItem {
 QueueHandle_t eventQueue = nullptr;
 
 // فقط یک درخواست HTTPS هم‌زمان؛ دو TLS موازی روی ESP32-C3 حافظه را
-// تکه‌تکه و پخش صدا را ناپایدار می‌کند. هر تسک قفل را با تایم‌اوت صفر
-// می‌گیرد و اگر مشغول بود بعداً تلاش می‌کند (بدون بلاک شدن صدا).
+// تکه‌تکه و پخش صدا را ناپایدار می‌کند. درخواست‌های دوره‌ای قفل را با
+// تایم‌اوت صفر می‌گیرند و اگر مشغول بود بعداً تلاش می‌کنند؛ فقط شروع پخش
+// برای مدت کوتاهی منتظر می‌ماند و سپس قفل را تا پایان فایل نگه می‌دارد.
 SemaphoreHandle_t netLock = nullptr;
 
 static bool netAcquire() {
   return netLock && xSemaphoreTake(netLock, 0) == pdTRUE;
 }
 
+// گرفتن قفل با انتظار محدود؛ فقط برای شروع پخش استفاده می‌شود تا اگر
+// یک درخواست کوتاه در جریان است، پخش با آن هم‌زمان نشود.
+static bool netAcquireWait(uint32_t ms) {
+  return netLock && xSemaphoreTake(netLock, pdMS_TO_TICKS(ms)) == pdTRUE;
+}
+
 static void netRelease() {
   if (netLock) xSemaphoreGive(netLock);
 }
+
+// آیا قفل شبکه در اختیار تسک پخش است (تا پایان همان فایل صوتی نگه داشته می‌شود)؟
+static bool netHeldByAudio = false;
 
 VoiceEventItem currentEvent;
 volatile bool    eventPlaying = false;
@@ -181,8 +232,8 @@ void audioTask(void *arg);
 void eventTask(void *arg);
 bool fetchVoices();
 static bool fetchEventCursorInternal();
-static void fetchEventsInternal();
-void fetchEvents();
+static int fetchEventsInternal();
+int fetchEvents();
 bool fetchEventCursor();
 void saveLastEventId();
 bool dequeueEvent(VoiceEventItem& out);
@@ -679,6 +730,8 @@ bool fetchVoices() {
 
 // ==================== پخش ====================
 void stopPlayback() {
+  // gen->stop() خودش out->stop() را صدا می‌زند؛ کانال I2S فقط غیرفعال می‌شود
+  // و آزاد نمی‌شود تا شروع بعدی نیازی به تخصیص مجدد DMA نداشته باشد.
   if (gen) { gen->stop(); delete gen; gen = nullptr; }
   if (buffer) { delete buffer; buffer = nullptr; }
   if (out) {
@@ -687,10 +740,19 @@ void stopPlayback() {
       Serial.printf("[Audio] played %.2fs, write-fails=%u\n",
                     (double)out->framesSent / hz, (unsigned)out->writeFails);
     }
-    delete out; out = nullptr;
+    out->stop();
+    out->framesSent = 0;
+    out->writeFails = 0;
   }
   if (httpSrc) { delete httpSrc; httpSrc = nullptr; }
   playState = PS_IDLE;
+
+  // قفل شبکه فقط بعد از بستن اتصال صوتی آزاد می‌شود تا هیچ درخواست TLS
+  // دیگری هم‌زمان با استریم باز نشود.
+  if (netHeldByAudio) {
+    netHeldByAudio = false;
+    netRelease();
+  }
 }
 
 /// پخش مستقیم یک فایل MP3 از روی سرور (استریم + بافر ۲۴ کیلوبایتی).
@@ -699,9 +761,28 @@ bool startFile(const String& url) {
 
   if (url.length() == 0) return false;
 
-  Serial.printf("[Play] url=%s\n", url.c_str());
+  // از همین لحظه تسک رویداد نباید poll جدیدی شروع کند؛ playState در پایان
+  // باز شدن فایل هم دوباره روی PS_PLAYING تنظیم می‌شود.
+  playState = PS_PLAYING;
+
+  // اگر درخواست کوتاهی در جریان است، حداکثر نیم‌ثانیه صبر می‌کنیم؛ ولی
+  // شروع پخش را به‌خاطر یک long-poll بیست‌ثانیه‌ای عقب نمی‌اندازیم.
+  if (netAcquireWait(500)) {
+    netHeldByAudio = true;   // تا پایان همین فایل نگه داشته می‌شود
+  } else {
+    Serial.println("[Play] network busy -> start without lock");
+  }
+
+  Serial.printf("[Play] url=%s heap=%u dma=%u\n", url.c_str(),
+                (unsigned)ESP.getFreeHeap(),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
 
   httpSrc = new AudioFileSourceHTTPSRange();
+  if (!httpSrc) {
+    Serial.println("[Play] out of memory (source)");
+    stopPlayback();
+    return false;
+  }
   if (!httpSrc->open(url.c_str())) {
     Serial.println("[Play] open failed");
     stopPlayback();
@@ -709,15 +790,39 @@ bool startFile(const String& url) {
   }
 
   buffer = new AudioFileSourceBuffer(httpSrc, streamBuffer, STREAM_BUFFER_BYTES);
+  if (!buffer) {
+    Serial.println("[Play] out of memory (buffer)");
+    stopPlayback();
+    return false;
+  }
 
-  out = new TrackedAudioOutput();
-  out->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-  out->SetGain(VOLUME_GAIN);
+  // خروجی I2S یک‌بار در بوت ساخته شده است؛ فقط دوباره فعال می‌شود.
+  if (!out) {
+    out = new TrackedAudioOutput();
+    if (!out) {
+      Serial.println("[Play] out of memory (i2s)");
+      stopPlayback();
+      return false;
+    }
+    out->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+    out->SetGain(VOLUME_GAIN);
+    if (!out->begin()) {
+      Serial.println("[Play] I2S init failed");
+      stopPlayback();
+      return false;
+    }
+    out->stop();
+  }
 
   gen = new AudioGeneratorMP3(mp3Buff,   (int)sizeof(mp3Buff),
                               mp3Stream, (int)sizeof(mp3Stream),
                               mp3Frame,  (int)sizeof(mp3Frame),
                               mp3Synth,  (int)sizeof(mp3Synth));
+  if (!gen) {
+    Serial.println("[Play] out of memory (decoder)");
+    stopPlayback();
+    return false;
+  }
 
   if (!gen->begin(buffer, out)) {
     Serial.println("[Play] decoder begin failed");
@@ -911,8 +1016,9 @@ void eventTask(void *arg) {
   (void)arg;
 
   for (;;) {
-    // فقط وقتی دستگاه آنلاین و بی‌کار است poll می‌کنیم تا دیکود صدا روان بماند.
-    if (mode != M_PLAY || !wifiConnected || deviceCode.isEmpty() || playState != PS_IDLE) {
+    // فقط وقتی دستگاه آنلاین و کاملاً بی‌کار است poll می‌کنیم تا دیکود صدا روان بماند.
+    if (mode != M_PLAY || !wifiConnected || deviceCode.isEmpty() ||
+        playState != PS_IDLE || sessionActive || eventPlaying) {
       vTaskDelay(pdMS_TO_TICKS(500));
       continue;
     }
@@ -931,8 +1037,10 @@ void eventTask(void *arg) {
       }
     }
 
-    fetchEvents();
-    vTaskDelay(pdMS_TO_TICKS(200));
+    // اگر رویداد گرفتیم، قبل از درخواست بعدی فرصت بدهیم تسک پخش آن را
+    // از صف بردارد و پخش را شروع کند؛ وگرنه دو TLS روی هم می‌افتند.
+    int got = fetchEvents();
+    vTaskDelay(pdMS_TO_TICKS(got > 0 ? 1500 : (got < 0 ? 3000 : 200)));
   }
 }
 
@@ -978,13 +1086,15 @@ static bool fetchEventCursorInternal() {
   return true;
 }
 
-void fetchEvents() {
-  if (!netAcquire()) return;
-  fetchEventsInternal();
+int fetchEvents() {
+  if (!netAcquire()) return 0;   // قفل مشغول: بدون شمارش خطا، بعداً دوباره
+  int got = fetchEventsInternal();
   netRelease();
+  return got;
 }
 
-static void fetchEventsInternal() {
+/// خروجی: تعداد رویدادهای دریافتی؛ 0 یعنی پاسخی نبود؛ -1 یعنی خطا.
+static int fetchEventsInternal() {
   WiFiClientSecure client;
   client.setInsecure();
   client.setHandshakeTimeout(15);
@@ -1001,8 +1111,7 @@ static void fetchEventsInternal() {
 
   if (!http.begin(client, url)) {
     Serial.println("[Event] begin failed");
-    delay(2000);
-    return;
+    return -1;
   }
   http.addHeader("Accept", "application/json");
 
@@ -1010,8 +1119,7 @@ static void fetchEventsInternal() {
   if (code != 200) {
     Serial.printf("[Event] HTTP %d\n", code);
     http.end();
-    delay(3000);
-    return;
+    return -1;
   }
 
   String payload = http.getString();
@@ -1021,7 +1129,7 @@ static void fetchEventsInternal() {
   DeserializationError err = deserializeJson(doc, payload);
   if (err) {
     Serial.printf("[Event] json error: %s\n", err.c_str());
-    return;
+    return -1;
   }
 
   unsigned long long after = doc["afterId"].as<unsigned long long>();
@@ -1055,6 +1163,7 @@ static void fetchEventsInternal() {
     Serial.printf("[Event] received %u event(s), cursor=%llu\n",
                   (unsigned)count, lastEventId);
   }
+  return (int)count;
 }
 
 // ==================== تسک پخش ====================
@@ -1222,6 +1331,24 @@ void setup() {
 
   netLock = xSemaphoreCreateMutex();
   if (!netLock) Serial.println("[Boot] network lock create FAILED");
+
+  // کانال I2S (و بافرهای DMA آن) همین حالا و پیش از اتصال وای‌فای ساخته می‌شود
+  // تا هرگز هنگام پخش با TLS و دیکودر MP3 بر سر حافظهٔ DMA رقابت نکند.
+  out = new TrackedAudioOutput();
+  if (!out) {
+    Serial.println("[Boot] I2S object alloc FAILED");
+  } else {
+    out->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+    out->SetGain(VOLUME_GAIN);
+    if (out->begin()) {
+      out->stop();   // تا شروع اولین پخش غیرفعال می‌ماند
+      Serial.printf("[Boot] I2S ready, dma=%u heap=%u\n",
+                    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA),
+                    (unsigned)ESP.getFreeHeap());
+    } else {
+      Serial.println("[Boot] I2S init FAILED");
+    }
+  }
 
   TaskHandle_t task = nullptr;
   xTaskCreate(audioTask, "audio", PLAYER_TASK_STACK, nullptr, 2, &task);
