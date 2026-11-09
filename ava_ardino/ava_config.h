@@ -63,8 +63,8 @@
 // ---------------- پخش صدا ----------------
 #define VOLUME_GAIN 3.0f
 
-const uint32_t STREAM_BUFFER_BYTES = 24 * 1024;  // بافر استریم شبکه
-const uint32_t PLAYER_TASK_STACK   = 48 * 1024;  // استک تسک پخش (دیکودر MP3)
+const uint32_t STREAM_BUFFER_BYTES = 12 * 1024;   // بافر استریم شبکه (~۱.۵ ثانیه صدا)
+const uint32_t PLAYER_TASK_STACK   = 32 * 1024;   // استک تسک پخش (دیکودر MP3 + TLS)
 
 // رویدادها: تسک کم‌اولویت long-poll + صف پخش
 const uint32_t EVENT_TASK_STACK     = 16 * 1024;

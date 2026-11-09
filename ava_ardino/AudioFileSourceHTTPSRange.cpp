@@ -67,7 +67,12 @@ bool AudioFileSourceHTTPSRange::startRequest(uint32_t offset) {
 
     int code = http.GET();
     if (code != 200 && code != 206) {
-        Serial.printf("[HTTPRange] GET %d at byte %u\n", code, (unsigned)offset);
+        // خطای واقعی TLS/شبکه را چاپ می‌کنیم تا علت -1 مشخص شود
+        // (کمبود حافظه، تایم‌اوت دست‌دهی، DNS یا قطع اتصال).
+        char tlsErr[160] = {0};
+        int tlsCode = client.lastError(tlsErr, sizeof(tlsErr) - 1);
+        Serial.printf("[HTTPRange] GET %d at byte %u (tls=%d %s)\n",
+                      code, (unsigned)offset, tlsCode, tlsErr);
         endRequest();
         return false;
     }

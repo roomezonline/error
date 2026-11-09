@@ -755,11 +755,16 @@ void stopPlayback() {
   }
 }
 
-/// پخش مستقیم یک فایل MP3 از روی سرور (استریم + بافر ۲۴ کیلوبایتی).
+/// پخش مستقیم یک فایل MP3 از روی سرور (استریم + بافر ۱۲ کیلوبایتی).
 bool startFile(const String& url) {
   stopPlayback();
 
   if (url.length() == 0) return false;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Play] wifi not connected");
+    return false;
+  }
 
   // از همین لحظه تسک رویداد نباید poll جدیدی شروع کند؛ playState در پایان
   // باز شدن فایل هم دوباره روی PS_PLAYING تنظیم می‌شود.
@@ -773,9 +778,11 @@ bool startFile(const String& url) {
     Serial.println("[Play] network busy -> start without lock");
   }
 
-  Serial.printf("[Play] url=%s heap=%u dma=%u\n", url.c_str(),
+  Serial.printf("[Play] url=%s heap=%u dma=%u block8=%u rssi=%d\n", url.c_str(),
                 (unsigned)ESP.getFreeHeap(),
-                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                (int)WiFi.RSSI());
 
   httpSrc = new AudioFileSourceHTTPSRange();
   if (!httpSrc) {
@@ -795,6 +802,10 @@ bool startFile(const String& url) {
     stopPlayback();
     return false;
   }
+
+  Serial.printf("[Play] buffer ready heap=%u block8=%u\n",
+                (unsigned)ESP.getFreeHeap(),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 
   // خروجی I2S یک‌بار در بوت ساخته شده است؛ فقط دوباره فعال می‌شود.
   if (!out) {
