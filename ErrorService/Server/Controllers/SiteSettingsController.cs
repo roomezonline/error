@@ -167,7 +167,8 @@ public sealed class SiteSettingsController : ControllerBase
                     {
                         Key = (SiteHomeModuleKey)x.Key,
                         IsEnabled = x.IsEnabled,
-                        SortOrder = x.SortOrder
+                        SortOrder = x.SortOrder,
+                        Title = x.Title
                     })
                     .ToList()
                 : new List<SiteHomeModuleDto>()
@@ -239,6 +240,7 @@ public sealed class SiteSettingsController : ControllerBase
             foreach (var m in dto.HomeModules)
             {
                 var keyInt = (int)m.Key;
+                var title = HomeSectionTitles.Normalize(m.Title);
                 var existing = settings.HomeModules.FirstOrDefault(x => x.Key == keyInt);
                 if (existing == null)
                 {
@@ -246,13 +248,15 @@ public sealed class SiteSettingsController : ControllerBase
                     {
                         Key = keyInt,
                         IsEnabled = m.IsEnabled,
-                        SortOrder = m.SortOrder
+                        SortOrder = m.SortOrder,
+                        Title = title
                     });
                 }
                 else
                 {
                     existing.IsEnabled = m.IsEnabled;
                     existing.SortOrder = m.SortOrder;
+                    existing.Title = title;
                 }
             }
         }
@@ -353,8 +357,11 @@ public sealed class SiteSettingsController : ControllerBase
         settings.EnableCustomerOrderCancel = dto.EnableCustomerOrderCancel;
         settings.CustomerCancelWindowHours = Math.Clamp(dto.CustomerCancelWindowHours, 0, 720);
         settings.CustomerCancelRequireReason = dto.CustomerCancelRequireReason;
-        settings.EnableHomeBestSellers = dto.EnableHomeBestSellers;
-        settings.EnableHomeRestocked = dto.EnableHomeRestocked;
+        if (!homeModulesAvailable)
+        {
+            settings.EnableHomeBestSellers = dto.EnableHomeBestSellers;
+            settings.EnableHomeRestocked = dto.EnableHomeRestocked;
+        }
         settings.ShowEnamadSeal = dto.ShowEnamadSeal;
         settings.CalculatorsDisabled = NormalizeCalculatorKeys(dto.CalculatorsDisabled);
 
@@ -388,6 +395,8 @@ public sealed class SiteSettingsController : ControllerBase
         AddIfMissing(settings, SiteHomeModuleKey.TechnicalGuide, 22);
         AddIfMissing(settings, SiteHomeModuleKey.LatestNews, 20);
         AddIfMissing(settings, SiteHomeModuleKey.LatestProducts, 30);
+        AddIfMissing(settings, SiteHomeModuleKey.BestSellers, 31);
+        AddIfMissing(settings, SiteHomeModuleKey.Restocked, 32);
         AddIfMissing(settings, SiteHomeModuleKey.LatestAcademy, 44);
         AddIfMissing(settings, SiteHomeModuleKey.AcademyHub, 40);
         AddIfMissing(settings, SiteHomeModuleKey.LatestCourses, 41);
@@ -420,6 +429,8 @@ public sealed class SiteSettingsController : ControllerBase
             SiteHomeModuleKey.FeatureCards => settings.ShowFeatureCards,
             SiteHomeModuleKey.LatestNews => settings.ShowLatestNews,
             SiteHomeModuleKey.LatestProducts => settings.ShowLatestProducts,
+            SiteHomeModuleKey.BestSellers => settings.EnableHomeBestSellers,
+            SiteHomeModuleKey.Restocked => settings.EnableHomeRestocked,
             SiteHomeModuleKey.LatestAcademy => settings.ShowLatestAcademy,
             SiteHomeModuleKey.LatestCourses => settings.ShowLatestCourses,
             SiteHomeModuleKey.LatestArticles => settings.ShowLatestArticles,
@@ -436,6 +447,8 @@ public sealed class SiteSettingsController : ControllerBase
         settings.ShowFeatureCards = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.FeatureCards)?.IsEnabled ?? settings.ShowFeatureCards;
         settings.ShowLatestNews = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.LatestNews)?.IsEnabled ?? settings.ShowLatestNews;
         settings.ShowLatestProducts = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.LatestProducts)?.IsEnabled ?? settings.ShowLatestProducts;
+        settings.EnableHomeBestSellers = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.BestSellers)?.IsEnabled ?? settings.EnableHomeBestSellers;
+        settings.EnableHomeRestocked = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.Restocked)?.IsEnabled ?? settings.EnableHomeRestocked;
         settings.ShowLatestAcademy = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.LatestAcademy)?.IsEnabled ?? settings.ShowLatestAcademy;
         settings.ShowLatestCourses = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.LatestCourses)?.IsEnabled ?? settings.ShowLatestCourses;
         settings.ShowLatestArticles = settings.HomeModules.FirstOrDefault(x => x.Key == (int)SiteHomeModuleKey.LatestArticles)?.IsEnabled ?? settings.ShowLatestArticles;

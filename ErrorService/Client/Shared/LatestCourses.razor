@@ -26,7 +26,7 @@
         <section class="academy-section home-section position-relative" dir="rtl">
             <div class="container-fluid px-3 px-md-4">
                 <div class="home-head px-2">
-                    <h2 class="home-head__title">جدیدترین دوره‌های آموزشی</h2>
+                    <h2 class="home-head__title">@Title</h2>
                     <div class="home-head__actions">
                         <a href="/academy" class="home-more">مشاهده همه <span class="oi oi-arrow-left" aria-hidden="true"></span></a>
                         <CarouselControls TrackId="latest-courses-track" />
@@ -70,6 +70,8 @@
 
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
+
+    [Parameter] public string Title { get; set; } = "جدیدترین دوره‌های آموزشی";
     [Inject] private ErrorService.Client.Services.SiteSettingsService SettingsService { get; set; } = default!;
     private List<TrainingCourseDto>? items;
     private SiteSettingsDto? settings;

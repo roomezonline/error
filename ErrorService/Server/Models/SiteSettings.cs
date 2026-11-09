@@ -151,4 +151,7 @@ public sealed class SiteHomeModuleSetting
     public bool IsEnabled { get; set; } = true;
 
     public int SortOrder { get; set; }
+
+    /// <summary>عنوان سفارشی بخش در صفحه اصلی؛ null یعنی عنوان پیش‌فرض.</summary>
+    public string? Title { get; set; }
 }

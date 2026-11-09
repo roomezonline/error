@@ -88,7 +88,7 @@ else
         {
             case SiteHomeModuleKey.Stories:
                 <div class="container home-head-wrap" dir="rtl">
-                    <h2 class="home-head__title">استوری‌های امروز</h2>
+                    <h2 class="home-head__title">@SectionTitle(SiteHomeModuleKey.Stories)</h2>
                 </div>
                 <ErrorService.Client.Shared.Components.StoriesBar />
                 break;
@@ -96,7 +96,7 @@ else
                 <FeatureCardsRow />
                 break;
             case SiteHomeModuleKey.SpecialOffers:
-                <SpecialOffers />
+                <SpecialOffers Title="@SectionTitle(SiteHomeModuleKey.SpecialOffers)" />
                 break;
             case SiteHomeModuleKey.LatestNews:
                 if (hasPublishedNews)
@@ -131,10 +131,10 @@ else
                 }
                 break;
             case SiteHomeModuleKey.AcademyHub:
-                <HomeAcademyHub />
+                <HomeAcademyHub Title="@SectionTitle(SiteHomeModuleKey.AcademyHub)" />
                 break;
             case SiteHomeModuleKey.TrustStrip:
-                <HomeTrustStrip />
+                <HomeTrustStrip Title="@SectionTitle(SiteHomeModuleKey.TrustStrip)" />
                 break;
             case SiteHomeModuleKey.LatestProducts:
                 if (showcaseEnabled)
@@ -143,12 +143,13 @@ else
                     {
                         <HomeProductShowcase ShowLatest="showLatestProductsTab"
                                              ShowBest="showBestSellersTab"
-                                             ShowRestocked="showRestockedTab" />
+                                             ShowRestocked="showRestockedTab"
+                                             Title="@SectionTitle(SiteHomeModuleKey.LatestProducts)" />
                     }
                 }
                 else
                 {
-                    <LatestProducts />
+                    <LatestProducts Title="@SectionTitle(SiteHomeModuleKey.LatestProducts, "آخرین محصولات")" />
                 }
                 break;
             case SiteHomeModuleKey.BestSellers:
@@ -158,12 +159,13 @@ else
                     {
                         <HomeProductShowcase ShowLatest="showLatestProductsTab"
                                              ShowBest="showBestSellersTab"
-                                             ShowRestocked="showRestockedTab" />
+                                             ShowRestocked="showRestockedTab"
+                                             Title="@SectionTitle(SiteHomeModuleKey.BestSellers, "ویترین محصولات")" />
                     }
                 }
                 else
                 {
-                    <ProductRow Title="پرفروش‌ترین محصولات"
+                    <ProductRow Title="@SectionTitle(SiteHomeModuleKey.BestSellers)"
                                 Endpoint="api/products/bestsellers" />
                 }
                 break;
@@ -174,12 +176,13 @@ else
                     {
                         <HomeProductShowcase ShowLatest="showLatestProductsTab"
                                              ShowBest="showBestSellersTab"
-                                             ShowRestocked="showRestockedTab" />
+                                             ShowRestocked="showRestockedTab"
+                                             Title="@SectionTitle(SiteHomeModuleKey.Restocked, "ویترین محصولات")" />
                     }
                 }
                 else
                 {
-                    <ProductRow Title="محصولات تازه و موجود"
+                    <ProductRow Title="@SectionTitle(SiteHomeModuleKey.Restocked)"
                                 Endpoint="api/products/restocked" />
                 }
                 break;
@@ -189,29 +192,29 @@ else
             case SiteHomeModuleKey.PopularBrands:
                 if (!trustStripEnabled)
                 {
-                    <ErrorService.Client.Shared.Components.PopularBrandsRow />
+                    <ErrorService.Client.Shared.Components.PopularBrandsRow Title="@SectionTitle(SiteHomeModuleKey.PopularBrands)" />
                 }
                 break;
             case SiteHomeModuleKey.SomeCustomers:
                 if (!trustStripEnabled)
                 {
-                    <ErrorService.Client.Shared.Components.SomeCustomersRow />
+                    <ErrorService.Client.Shared.Components.SomeCustomersRow Title="@SectionTitle(SiteHomeModuleKey.SomeCustomers)" />
                 }
                 break;
             case SiteHomeModuleKey.LatestCourses:
                 if (!academyHubEnabled)
                 {
-                    <LatestCourses />
+                    <LatestCourses Title="@SectionTitle(SiteHomeModuleKey.LatestCourses)" />
                 }
                 break;
             case SiteHomeModuleKey.LatestArticles:
                 if (!academyHubEnabled)
                 {
-                    <LatestArticles />
+                    <LatestArticles Title="@SectionTitle(SiteHomeModuleKey.LatestArticles)" />
                 }
                 break;
             case SiteHomeModuleKey.TeamMembers:
-                <TeamMembers />
+                <TeamMembers Title="@SectionTitle(SiteHomeModuleKey.TeamMembers)" />
                 break;
             case SiteHomeModuleKey.TechnicalGuide:
                 <TechnicalGuide />
@@ -266,7 +269,9 @@ else
 
     private int HomeCardCount => contentSettings?.HomeCardCount ?? 3;
     private int HomeListCount => contentSettings?.HomeListCount ?? 5;
-    private string HomeTitle => string.IsNullOrWhiteSpace(contentSettings?.HomeTitle) ? "آخرین اخبار" : contentSettings!.HomeTitle;
+    private string HomeTitle => SectionTitle(SiteHomeModuleKey.LatestNews, contentSettings?.HomeTitle);
+    private string SectionTitle(SiteHomeModuleKey key, string? fallback = null)
+        => HomeSectionTitles.Resolve(orderedModules, key, fallback);
     private string HomeTypesCsv => string.Join(",",
         (contentSettings ?? new ContentSettingsDto()).HomeContentTypes().Select(t => t.ToString()));
     private bool HomeBlockHasItems => HomeCardCount > 0 || HomeListCount > 0;
@@ -305,19 +310,13 @@ else
                 };
             }
 
-            // Modules introduced by the store upgrade: keep them present and driven by
-            // the «تنظیمات فروشگاه» toggles, regardless of the persisted HomeModules list.
+            // Modules introduced by the store upgrade: keep them present so a
+            // previously persisted module list keeps working after this upgrade.
             if (orderedModules.All(m => m.Key != SiteHomeModuleKey.BestSellers))
                 orderedModules.Add(new() { Key = SiteHomeModuleKey.BestSellers, IsEnabled = settings?.EnableHomeBestSellers ?? true, SortOrder = 31 });
-            else
-                foreach (var m in orderedModules.Where(m => m.Key == SiteHomeModuleKey.BestSellers))
-                    m.IsEnabled = settings?.EnableHomeBestSellers ?? true;
 
             if (orderedModules.All(m => m.Key != SiteHomeModuleKey.Restocked))
                 orderedModules.Add(new() { Key = SiteHomeModuleKey.Restocked, IsEnabled = settings?.EnableHomeRestocked ?? true, SortOrder = 32 });
-            else
-                foreach (var m in orderedModules.Where(m => m.Key == SiteHomeModuleKey.Restocked))
-                    m.IsEnabled = settings?.EnableHomeRestocked ?? true;
 
             // The merged sections are new; add them client-side as well so a
             // previously persisted module list keeps working after this upgrade.

@@ -35,9 +35,10 @@
                                     @item.Code
                                 </span>
                                 <div class="tg-row-body">
-                                    <div class="tg-row-title">
+                                    <div class="tg-row-name">@item.Description</div>
+                                    <div class="tg-row-tags">
                                         <span class="tg-badge tg-badge--brand">@item.Brand</span>
-                                        <span class="tg-desc-text">@item.Description</span>
+                                        <span class="tg-badge tg-badge--device">@item.DeviceType</span>
                                     </div>
                                     <div class="tg-solution-text">@item.Solution</div>
                                 </div>
@@ -71,16 +72,23 @@
                                     }
                                 </span>
                                 <div class="tg-row-body">
-                                    <div class="tg-row-title">
-                                        <span class="tg-badge tg-badge--sensor">@item.SensorType</span>
-                                        <span>@item.SensorName</span>
-                                    </div>
+                                    <div class="tg-row-name">@item.SensorName</div>
+                                    @if (!string.IsNullOrEmpty(item.SensorType) || !string.IsNullOrEmpty(item.SizeText))
+                                    {
+                                        <div class="tg-row-tags">
+                                            @if (!string.IsNullOrEmpty(item.SensorType))
+                                            {
+                                                <span class="tg-badge tg-badge--sensor">@item.SensorType</span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(item.SizeText))
+                                            {
+                                                <span class="tg-size-tag">@item.SizeText</span>
+                                            }
+                                        </div>
+                                    }
                                     <div class="tg-row-desc">
-                                        @item.DeviceName
-                                        @if (!string.IsNullOrEmpty(item.SizeText))
-                                        {
-                                            <span class="tg-size-tag">@item.SizeText</span>
-                                        }
+                                        <span class="tg-row-desc-label">دستگاه:</span>
+                                        <span class="tg-row-desc-value">@item.DeviceName</span>
                                     </div>
                                 </div>
                                 <span class="oi oi-chevron-left tg-row-arrow"></span>

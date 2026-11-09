@@ -6,7 +6,7 @@
     <section class="pr-row hps home-section bg-light" dir="rtl">
         <div class="container-fluid px-2 px-md-4">
             <div class="home-head home-head--compact px-2">
-                <h2 class="home-head__title">ویترین محصولات</h2>
+                <h2 class="home-head__title">@Title</h2>
                 <div class="home-head__actions">
                     <a href="/products" class="home-more">مشاهده همه <span class="oi oi-arrow-left" aria-hidden="true"></span></a>
                     @if (!_loading && _tabs.Count > 0)
@@ -76,6 +76,7 @@
     [Parameter] public bool ShowLatest { get; set; } = true;
     [Parameter] public bool ShowBest { get; set; } = true;
     [Parameter] public bool ShowRestocked { get; set; } = true;
+    [Parameter] public string Title { get; set; } = "ویترین محصولات";
 
     private sealed class ShowcaseTab
     {

@@ -15,7 +15,7 @@
             <div class="container-fluid px-2 px-md-4">
                 <div class="special-offers__wrapper rounded-5 p-4 shadow-lg">
                     <div class="home-head px-2">
-                        <h2 class="home-head__title text-white">پیشنهادات شگفت‌انگیز</h2>
+                        <h2 class="home-head__title text-white">@Title</h2>
                         <div class="home-head__actions">
                             <a href="/products" class="home-more home-more--light">مشاهده همه <span class="oi oi-arrow-left" aria-hidden="true"></span></a>
                             <CarouselControls TrackId="special-offers-track" OnDark="true" />
@@ -40,6 +40,8 @@
 
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
+
+    [Parameter] public string Title { get; set; } = "پیشنهادات شگفت‌انگیز";
     private List<ProductDto>? discountedProducts;
     private SiteSettingsDto? settings;
     private System.Threading.Timer? timer;

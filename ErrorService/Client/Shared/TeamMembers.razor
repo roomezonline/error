@@ -15,7 +15,7 @@
 
             <div class="container-fluid px-2 px-md-4 position-relative">
                 <div class="text-center mb-4">
-                    <h2 class="fw-black display-5 mb-3 animate__animated animate__fadeInUp">تیم ارور سرویس</h2>
+                    <h2 class="fw-black display-5 mb-3 animate__animated animate__fadeInUp">@Title</h2>
                     <div class="mx-auto bg-primary rounded-pill" style="width: 60px; height: 4px;"></div>
                 </div>
 
@@ -350,6 +350,8 @@
 
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
+
+    [Parameter] public string Title { get; set; } = "تیم ارور سرویس";
     [Inject] private ErrorService.Client.Services.SiteSettingsService SettingsService { get; set; } = default!;
     private List<TeamMemberDto>? members;
     private SiteSettingsDto? settings;

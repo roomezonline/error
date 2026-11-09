@@ -28,6 +28,9 @@ public sealed class SiteHomeModuleDto
     public SiteHomeModuleKey Key { get; set; }
     public bool IsEnabled { get; set; } = true;
     public int SortOrder { get; set; }
+
+    /// <summary>عنوان سفارشی بخش در صفحه اصلی؛ خالی یعنی عنوان پیش‌فرض.</summary>
+    public string? Title { get; set; }
 }
 
 public sealed class SiteSettingsDto

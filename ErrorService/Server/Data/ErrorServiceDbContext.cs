@@ -1090,6 +1090,7 @@ public sealed class ErrorServiceDbContext : DbContext
         modelBuilder.Entity<SiteHomeModuleSetting>(entity =>
         {
             entity.HasKey(x => x.Id);
+            entity.Property(x => x.Title).HasMaxLength(120);
             entity.HasIndex(x => new { x.SiteSettingsId, x.SortOrder });
             entity.HasIndex(x => new { x.SiteSettingsId, x.Key }).IsUnique();
         });

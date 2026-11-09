@@ -6,7 +6,7 @@
     <section class="home-academy home-section" dir="rtl">
         <div class="container">
             <div class="home-head">
-                <h2 class="home-head__title">آکادمی ارورسرویس</h2>
+                <h2 class="home-head__title">@Title</h2>
                 <div class="home-head__actions">
                     <a href="/academy" class="home-more">مشاهده همه <span class="oi oi-arrow-left" aria-hidden="true"></span></a>
                     @if (!_loading && _tabs.Count > 0)
@@ -93,6 +93,8 @@
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
 
+    [Parameter] public string Title { get; set; } = "آکادمی ارورسرویس";
+
     private sealed class HubTab
     {
         public string Label { get; init; } = "";
@@ -127,27 +129,6 @@
         var courses = coursesTask.Result ?? new();
         var articles = articlesTask.Result ?? new();
 
-        if (courses.Count > 0)
-        {
-            _tabs.Add(new HubTab
-            {
-                Label = "دوره‌های آموزشی",
-                TrackId = "hah-track-courses",
-                Items = courses.Select(x => new HubItem
-                {
-                    Href = SeoUrl.Course(x.Id, x.Slug),
-                    Title = x.Title,
-                    Summary = x.Summary ?? "",
-                    CoverImageUrl = x.CoverImageUrl,
-                    Badge = "دوره آموزشی",
-                    BadgeClass = "academy-card__badge--course",
-                    Icon = "oi-layers",
-                    Action = "مشاهده دوره",
-                    ActionClass = "text-primary"
-                }).ToList()
-            });
-        }
-
         if (articles.Count > 0)
         {
             _tabs.Add(new HubTab
@@ -165,6 +146,27 @@
                     Icon = "oi-document",
                     Action = "مطالعه آموزش",
                     ActionClass = "text-success"
+                }).ToList()
+            });
+        }
+
+        if (courses.Count > 0)
+        {
+            _tabs.Add(new HubTab
+            {
+                Label = "دوره‌های آموزشی",
+                TrackId = "hah-track-courses",
+                Items = courses.Select(x => new HubItem
+                {
+                    Href = SeoUrl.Course(x.Id, x.Slug),
+                    Title = x.Title,
+                    Summary = x.Summary ?? "",
+                    CoverImageUrl = x.CoverImageUrl,
+                    Badge = "دوره آموزشی",
+                    BadgeClass = "academy-card__badge--course",
+                    Icon = "oi-layers",
+                    Action = "مشاهده دوره",
+                    ActionClass = "text-primary"
                 }).ToList()
             });
         }

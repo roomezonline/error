@@ -1092,42 +1092,6 @@ html.theme-anim body *::after {
    Public homepage components — dark mode gaps
    ========================================================================== */
 
-[data-theme="dark"] .tg-section {
-    background: var(--app-surface);
-}
-
-[data-theme="dark"] .tg-row {
-    background: transparent;
-}
-
-[data-theme="dark"] .tg-row:hover {
-    background: rgba(148, 163, 184, 0.10);
-    border-color: var(--app-border);
-}
-
-[data-theme="dark"] .tg-row:active {
-    background: rgba(148, 163, 184, 0.16);
-}
-
-[data-theme="dark"] .tg-row-title {
-    color: var(--app-text);
-}
-
-[data-theme="dark"] .tg-solution-text {
-    background: rgba(16, 185, 129, 0.12);
-    border-color: rgba(16, 185, 129, 0.35);
-    color: #6ee7b7;
-}
-
-[data-theme="dark"] .tg-row-icon--sensor {
-    background: rgba(148, 163, 184, 0.14);
-    color: var(--app-text-muted);
-}
-
-[data-theme="dark"] .tg-row-arrow {
-    color: #64748b;
-}
-
 [data-theme="dark"] .pr-row {
     background: var(--app-bg);
 }

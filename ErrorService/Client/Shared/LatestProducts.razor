@@ -37,7 +37,7 @@
         <section class="latest-products home-section bg-light" dir="rtl">
             <div class="container-fluid px-2 px-md-4">
                 <div class="home-head px-2">
-                    <h2 class="home-head__title">آخرین محصولات</h2>
+                    <h2 class="home-head__title">@Title</h2>
                     <div class="home-head__actions">
                         <a href="/products" class="home-more">مشاهده همه <span class="oi oi-arrow-left" aria-hidden="true"></span></a>
                         <CarouselControls TrackId="latest-products-track" />
@@ -63,6 +63,8 @@
 
 @code {
     [Inject] private HttpClient Http { get; set; } = default!;
+
+    [Parameter] public string Title { get; set; } = "آخرین محصولات";
     private List<ProductDto>? products;
     private SiteSettingsDto? settings;
     private ElementReference scrollContainer;
