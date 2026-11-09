@@ -1,9 +1,10 @@
 #include "AudioFileSourceHTTPSRange.h"
 #include "ava_config.h"
 
-// اگر هیچ داده‌ای نیامد، بعد از این مدت اتصال را با هدر Range دوباره باز می‌کنیم.
-static const unsigned long READ_WAIT_MS       = 5000;
-static const uint32_t      READ_CHUNK_TARGET  = 4096;
+// فقط وقتی هیچ داده‌ای نمی‌آید این‌قدر صبر می‌کنیم و بعد با هدر Range
+// اتصال را از همان بایت ادامه می‌دهیم. بقیهٔ اوقات به‌محض آماده بودن
+// حتی یک بایت برمی‌گردیم تا پخش معطل نشود.
+static const unsigned long READ_WAIT_MS       = 2500;
 static const int           RECONNECT_TRIES    = 6;
 static const unsigned long RECONNECT_DELAY_MS = 300;
 
@@ -102,6 +103,8 @@ bool AudioFileSourceHTTPSRange::startRequest(uint32_t offset) {
 
     pos = offset;
     size = total;
+    Serial.printf("[HTTPRange] open code=%d size=%u offset=%u\n",
+                  code, (unsigned)size, (unsigned)offset);
     return true;
 }
 
@@ -156,9 +159,9 @@ uint32_t AudioFileSourceHTTPSRange::readNonBlock(void *data, uint32_t len) {
 uint32_t AudioFileSourceHTTPSRange::readInternal(void *data, uint32_t len, bool nonBlock) {
     if (!data || len == 0 || failed) return 0;
     if (size > 0) {
+        if (pos >= size) return 0;
         uint32_t remaining = size - pos;
         if (len > remaining) len = remaining;
-        if (len == 0) return 0;
     }
 
     // readNonBlock برای پرکردن بافر است و نباید معطل یا دوباره‌وصل شود.
@@ -177,37 +180,47 @@ uint32_t AudioFileSourceHTTPSRange::readInternal(void *data, uint32_t len, bool 
         if (size > 0 && pos >= size) return 0;
 
         auto *stream = http.getStreamPtr();
-        if (!stream) return 0;
-
-        // ممکن است فایل کوچک باشد و سرور قبل از خواندن، اتصال را ببندد؛
-        // تا وقتی بایت آماده در سوکت هست، نباید دوباره‌وصل شویم.
-        if (!http.connected() && stream->available() <= 0) {
-            if (size == 0 && pos > 0) return 0;  // طول نامشخص و اتصال بسته = پایان
+        if (!stream) {
+            // طول نامشخص (chunked) و اتصال بسته شده = پایان طبیعی فایل
+            if (size == 0 && pos > 0) return 0;
             if (!reconnect()) return 0;
-            stream = http.getStreamPtr();
-            if (!stream) return 0;
+            continue;
         }
 
-        uint32_t target = len < READ_CHUNK_TARGET ? len : READ_CHUNK_TARGET;
+        // به‌محض موجود بودن حتی یک بایت برمی‌گردیم. منتظر پر شدن ۴ کیلوبایت
+        // نمی‌مانیم؛ همان انتظار باعث می‌شد شروع پیام‌ها ~۵ ثانیه عقب بیفتد
+        // و لایهٔ بافر قدیمی، دادهٔ ابتدای فایل را دور بریزد.
         unsigned long waitStart = millis();
-        while ((uint32_t)stream->available() < target) {
-            if (size > 0 && (pos + (uint32_t)stream->available()) >= size) break;
-            if (!http.connected()) break;
+        int avail = 0;
+        while ((avail = stream->available()) <= 0) {
+            if (size > 0 && pos >= size) return 0;
             if (millis() - waitStart >= READ_WAIT_MS) break;
+            if (!http.connected()) break;
             delay(1);
         }
 
-        int avail = stream->available();
-        if (avail > 0) {
-            if ((uint32_t)avail < len) len = (uint32_t)avail;
-            int n = stream->read(reinterpret_cast<uint8_t *>(data), len);
-            if (n > 0) {
-                pos += (uint32_t)n;
-                return (uint32_t)n;
-            }
+        if (avail <= 0) {
+            // داده‌ای نرسید: یا به انتهای فایل رسیده‌ایم یا اتصال قطع شده است.
+            if (size > 0 && pos >= size) return 0;
+            if (size == 0 && pos > 0 && !http.connected()) return 0;
+            endRequest();
+            if (!reconnect()) return 0;
+            continue;
         }
 
-        // در این مدت داده‌ای نیامد؛ همان‌جا با Range از pos ادامه می‌دهیم.
+        if ((uint32_t)avail < len) len = (uint32_t)avail;
+        int n = stream->read(reinterpret_cast<uint8_t *>(data), len);
+        if (n > 0) {
+            pos += (uint32_t)n;
+            if (n >= 4 && pos == (uint32_t)n) {
+                const uint8_t *p = reinterpret_cast<const uint8_t *>(data);
+                Serial.printf("[HTTPRange] first %d B: %02X %02X %02X %02X\n",
+                              n, p[0], p[1], p[2], p[3]);
+            }
+            return (uint32_t)n;
+        }
+
+        // با وجود دادهٔ آماده، خواندن ناموفق بود؛ اتصال را دوباره باز می‌کنیم.
         endRequest();
         if (!reconnect()) return 0;
     }

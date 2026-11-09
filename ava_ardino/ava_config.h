@@ -63,14 +63,15 @@
 // ---------------- پخش صدا ----------------
 #define VOLUME_GAIN 3.0f
 
-const uint32_t STREAM_BUFFER_BYTES = 12 * 1024;   // بافر استریم شبکه (~۱.۵ ثانیه صدا)
+// پخش مستقیم استریم می‌شود و لایهٔ بافر جداگانه حذف شده است؛ پس بافر
+// استریم ثابتی لازم نیست و ~۱۲ کیلوبایت heap برای TLS آزاد می‌ماند.
 const uint32_t PLAYER_TASK_STACK   = 32 * 1024;   // استک تسک پخش (دیکودر MP3 + TLS)
 
 // رویدادها: تسک کم‌اولویت long-poll + صف پخش
 const uint32_t EVENT_TASK_STACK     = 16 * 1024;
 const uint32_t EVENT_TASK_PRIORITY  = 1;         // پایین‌تر از تسک پخش (۲)
 const uint32_t EVENT_QUEUE_SIZE     = 10;
-const int      EVENT_POLL_WAIT_SEC  = 20;        // مدت باز ماندن درخواست long-poll
+const int      EVENT_POLL_WAIT_SEC  = 5;         // مدت باز ماندن درخواست long-poll
 const unsigned long EVENT_HTTP_TIMEOUT_MS = 30 * 1000;
 // رویدادی که بیشتر از این مدت در صف دستگاه مانده باشد پخش نمی‌شود.
 const unsigned long EVENT_MAX_AGE_MS = 90UL * 1000UL;

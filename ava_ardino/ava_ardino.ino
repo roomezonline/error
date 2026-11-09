@@ -23,7 +23,6 @@
 
 #include "AudioLogger.h"
 #include "AudioFileSourceHTTPSRange.h"
-#include "AudioFileSourceBuffer.h"
 #include "AudioGeneratorMP3.h"
 #include "AudioOutputI2S.h"
 
@@ -198,8 +197,9 @@ volatile unsigned long selectFeedbackUntil = 0;
 
 unsigned long retryAt = 0;
 
-// بافرهای ثابت (یک‌بار رزرو می‌شوند تا heap تکه‌تکه نشود)
-static uint8_t streamBuffer[STREAM_BUFFER_BYTES] alignas(16);
+// بافرهای ثابت دیکودر (یک‌بار رزرو می‌شوند تا heap تکه‌تکه نشود).
+// از AudioFileSourceBuffer استفاده نمی‌کنیم: آن لایه در حالت «کم‌بودن موقت داده»
+// بافر پیش‌خوانی‌شده را دور می‌ریخت و ابتدای پیام‌ها (~۱۲ کیلوبایت) حذف می‌شد.
 static uint8_t mp3Buff  [AudioGeneratorMP3::preAllocBuffSize()]   alignas(8);
 static uint8_t mp3Stream[AudioGeneratorMP3::preAllocStreamSize()] alignas(8);
 static uint8_t mp3Frame [AudioGeneratorMP3::preAllocFrameSize()]  alignas(8);
@@ -207,7 +207,6 @@ static uint8_t mp3Synth [AudioGeneratorMP3::preAllocSynthSize()]  alignas(8);
 
 // ==================== آبجکت‌های صوتی ====================
 AudioGenerator*             gen     = nullptr;
-AudioFileSourceBuffer*      buffer  = nullptr;
 AudioFileSourceHTTPSRange*  httpSrc = nullptr;
 TrackedAudioOutput*         out     = nullptr;
 
@@ -730,10 +729,14 @@ bool fetchVoices() {
 
 // ==================== پخش ====================
 void stopPlayback() {
+  // مقادیر منبع را قبل از gen->stop() نگه می‌داریم؛ چون stop() فایل را می‌بندد
+  // و close() موقعیت/اندازه را صفر می‌کند.
+  uint32_t srcPos  = httpSrc ? httpSrc->getPos()  : 0;
+  uint32_t srcSize = httpSrc ? httpSrc->getSize() : 0;
+
   // gen->stop() خودش out->stop() را صدا می‌زند؛ کانال I2S فقط غیرفعال می‌شود
   // و آزاد نمی‌شود تا شروع بعدی نیازی به تخصیص مجدد DMA نداشته باشد.
   if (gen) { gen->stop(); delete gen; gen = nullptr; }
-  if (buffer) { delete buffer; buffer = nullptr; }
   if (out) {
     if (out->framesSent) {
       uint32_t hz = out->lastRate > 0 ? (uint32_t)out->lastRate : 22050;
@@ -744,7 +747,13 @@ void stopPlayback() {
     out->framesSent = 0;
     out->writeFails = 0;
   }
-  if (httpSrc) { delete httpSrc; httpSrc = nullptr; }
+  if (httpSrc) {
+    // برای عیب‌یابی: اگر pos کمتر از size باشد، فایل ناقص خوانده شده است.
+    Serial.printf("[Play] closed at byte %u/%u\n",
+                  (unsigned)srcPos, (unsigned)srcSize);
+    delete httpSrc;
+    httpSrc = nullptr;
+  }
   playState = PS_IDLE;
 
   // قفل شبکه فقط بعد از بستن اتصال صوتی آزاد می‌شود تا هیچ درخواست TLS
@@ -755,7 +764,7 @@ void stopPlayback() {
   }
 }
 
-/// پخش مستقیم یک فایل MP3 از روی سرور (استریم + بافر ۱۲ کیلوبایتی).
+/// پخش مستقیم یک فایل MP3 از روی سرور (بدون لایهٔ بافر اضافی).
 bool startFile(const String& url) {
   stopPlayback();
 
@@ -770,13 +779,16 @@ bool startFile(const String& url) {
   // باز شدن فایل هم دوباره روی PS_PLAYING تنظیم می‌شود.
   playState = PS_PLAYING;
 
-  // اگر درخواست کوتاهی در جریان است، حداکثر نیم‌ثانیه صبر می‌کنیم؛ ولی
-  // شروع پخش را به‌خاطر یک long-poll بیست‌ثانیه‌ای عقب نمی‌اندازیم.
-  if (netAcquireWait(500)) {
-    netHeldByAudio = true;   // تا پایان همین فایل نگه داشته می‌شود
-  } else {
-    Serial.println("[Play] network busy -> start without lock");
+  // حتماً باید قفل شبکه را بگیریم. دو TLS هم‌زمان روی ESP32-C3 باعث
+  // «SSL - Memory allocation failed» می‌شود. long-poll حداکثر
+  // EVENT_POLL_WAIT_SEC ثانیه طول می‌کشد؛ تا آن زمان صبر می‌کنیم.
+  const uint32_t lockWaitMs = ((uint32_t)EVENT_POLL_WAIT_SEC + 6UL) * 1000UL;
+  if (!netAcquireWait(lockWaitMs)) {
+    Serial.println("[Play] network busy -> retry later");
+    stopPlayback();
+    return false;
   }
+  netHeldByAudio = true;   // تا پایان همین فایل نگه داشته می‌شود
 
   Serial.printf("[Play] url=%s heap=%u dma=%u block8=%u rssi=%d\n", url.c_str(),
                 (unsigned)ESP.getFreeHeap(),
@@ -796,14 +808,7 @@ bool startFile(const String& url) {
     return false;
   }
 
-  buffer = new AudioFileSourceBuffer(httpSrc, streamBuffer, STREAM_BUFFER_BYTES);
-  if (!buffer) {
-    Serial.println("[Play] out of memory (buffer)");
-    stopPlayback();
-    return false;
-  }
-
-  Serial.printf("[Play] buffer ready heap=%u block8=%u\n",
+  Serial.printf("[Play] source open heap=%u block8=%u\n",
                 (unsigned)ESP.getFreeHeap(),
                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 
@@ -817,6 +822,9 @@ bool startFile(const String& url) {
     }
     out->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     out->SetGain(VOLUME_GAIN);
+    // چون دیگر بافر شبکهٔ جداگانه‌ای نداریم، بافر DMA را بزرگ‌تر می‌گیریم
+    // (~۹۳ میلی‌ثانیه صدا) تا نوسان کوتاه شبکه باعث خش‌خش نشود.
+    out->SetBuffers(8, 256 * 4);
     if (!out->begin()) {
       Serial.println("[Play] I2S init failed");
       stopPlayback();
@@ -835,7 +843,7 @@ bool startFile(const String& url) {
     return false;
   }
 
-  if (!gen->begin(buffer, out)) {
+  if (!gen->begin(httpSrc, out)) {
     Serial.println("[Play] decoder begin failed");
     stopPlayback();
     return false;
@@ -1351,6 +1359,8 @@ void setup() {
   } else {
     out->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     out->SetGain(VOLUME_GAIN);
+    // بافر DMA بزرگ‌تر (~۹۳ms) چون بافر شبکهٔ جداگانه‌ای نداریم.
+    out->SetBuffers(8, 256 * 4);
     if (out->begin()) {
       out->stop();   // تا شروع اولین پخش غیرفعال می‌ماند
       Serial.printf("[Boot] I2S ready, dma=%u heap=%u\n",
