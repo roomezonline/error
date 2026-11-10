@@ -5094,6 +5094,96 @@ html:root[data-theme="dark"] .od-event-msg {
     color: #94a3b8;
 }
 
+html:root[data-theme="dark"] .od-event-by {
+    color: #64748b;
+}
+
+html:root[data-theme="dark"] .od-event-action {
+    color: #64748b;
+}
+
+html:root[data-theme="dark"] .od-event-action:hover {
+    color: hsl(226 71% 72%);
+    background: rgba(99, 102, 241, 0.12);
+}
+
+html:root[data-theme="dark"] .od-event-action--danger:hover {
+    color: hsl(0 72% 72%);
+    background: rgba(248, 113, 113, 0.12);
+}
+
+html:root[data-theme="dark"] .od-note-form {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+html:root[data-theme="dark"] .od-note-upload-label {
+    background: #0f172a;
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #cbd5e1;
+}
+
+html:root[data-theme="dark"] .od-note-upload-label:hover {
+    border-color: hsl(226 71% 72%);
+    color: hsl(226 71% 72%);
+    background: rgba(99, 102, 241, 0.10);
+}
+
+html:root[data-theme="dark"] .od-note-preview {
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+html:root[data-theme="dark"] .od-note-item {
+    background: #0f172a;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+html:root[data-theme="dark"] .od-note-meta {
+    color: #94a3b8;
+}
+
+html:root[data-theme="dark"] .od-note-author {
+    color: #e2e8f0;
+}
+
+html:root[data-theme="dark"] .od-note-edit,
+html:root[data-theme="dark"] .od-note-delete {
+    color: #64748b;
+}
+
+html:root[data-theme="dark"] .od-note-edit:hover {
+    color: hsl(226 71% 72%);
+    background: rgba(99, 102, 241, 0.12);
+}
+
+html:root[data-theme="dark"] .od-note-delete:hover {
+    color: hsl(0 72% 72%);
+    background: rgba(248, 113, 113, 0.12);
+}
+
+html:root[data-theme="dark"] .od-note-text {
+    color: #e2e8f0;
+}
+
+html:root[data-theme="dark"] .od-note-thumb {
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+html:root[data-theme="dark"] .od-note-thumb:hover {
+    border-color: hsl(226 71% 72%);
+}
+
+html:root[data-theme="dark"] .od-note-legacy {
+    border-top: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+html:root[data-theme="dark"] .od-note-legacy-title {
+    color: #94a3b8;
+}
+
+html:root[data-theme="dark"] .od-status-reason-label {
+    color: #cbd5e1;
+}
+
 html:root[data-theme="dark"] .od-danger-zone {
     border: 1.5px solid rgba(248, 113, 113, 0.35);
     background: #1e293b;

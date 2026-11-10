@@ -507,7 +507,8 @@ else
             @if (CanShowStatusChange())
             {
             <div class="od-status-row">
-                <select class="od-select" @bind="statusToUpdate">
+                <select class="od-select" @bind="statusToUpdate" @bind:after="SyncStageFromStatus">
+                    <option value="">بدون تغییر وضعیت</option>
                     @foreach (var s in GetValidTransitions())
                     {
                         <option value="@s">@GetStatusLabel(s)</option>
@@ -515,24 +516,11 @@ else
                 </select>
             </div>
             }
-                <div class="od-field">
-                    <input class="od-input" dir="rtl" @bind="adminNote" placeholder="یادداشت مدیر (اختیاری)" />
-                </div>
                 <div class="od-status-actions">
-                    @if (CanShowStageChange())
-                    {
-                        <button class="od-btn od-btn-primary" @onclick="UpdateStage" disabled="@(isSaving || stageToUpdate == null)">
-                            @if (isSaving) { <span class="od-btn-spinner"></span> }
-                            بروزرسانی مرحله
-                        </button>
-                    }
-                    @if (CanShowStatusChange())
-                    {
-                        <button class="od-btn od-btn-secondary" @onclick="UpdateStatus" disabled="@isSaving">
-                            @if (isSaving) { <span class="od-btn-spinner"></span> }
-                            بروزرسانی وضعیت
-                        </button>
-                    }
+                    <button class="od-btn od-btn-primary" @onclick="SaveStatusAndStage" disabled="@isSaving">
+                        @if (isSaving) { <span class="od-btn-spinner"></span> }
+                        ثبت تغییرات
+                    </button>
                 </div>
             }
         </div>
@@ -543,22 +531,156 @@ else
                 <div class="od-section-title">
                     <span class="od-section-icon oi oi-document"></span>
                     یادداشت مدیر
+                    @if (order.Notes != null && order.Notes.Count > 0)
+                    {
+                        <span class="od-badge-count">@order.Notes.Count</span>
+                    }
                 </div>
                 <span class="oi oi-minus od-section-toggle"></span>
             </div>
             @if (IsSectionVisible("n"))
             {
-            @if (string.IsNullOrEmpty(order.AdminNotes))
+            @* فرم ثبت یادداشت جدید *@
+            <div class="od-note-form">
+                <div class="od-field">
+                    <textarea class="od-input od-note-textarea" dir="rtl" rows="3" @bind="newNoteMessage" placeholder="متن یادداشت..."></textarea>
+                </div>
+                <div class="od-field">
+                    <label class="od-note-upload-label">
+                        <span class="oi oi-image"></span> افزودن تصویر (حداکثر @MaxNoteImages تصویر)
+                        <InputFile OnChange="HandleNoteFilesSelected" multiple accept="image/*" class="d-none" />
+                    </label>
+                    @if (noteFiles.Count > 0)
+                    {
+                        <div class="od-note-previews">
+                            @for (var i = 0; i < noteFiles.Count; i++)
+                            {
+                                var index = i;
+                                var preview = noteFiles[i];
+                                <div class="od-note-preview">
+                                    <img src="@preview.PreviewUrl" alt="پیش‌نمایش" decoding="async" />
+                                    <button type="button" class="od-note-preview__remove" @onclick="() => noteFiles.RemoveAt(index)" title="حذف تصویر">×</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="od-note-actions">
+                    <button class="od-btn od-btn-primary" @onclick="SubmitNote" disabled="@(isSavingNote || (string.IsNullOrWhiteSpace(newNoteMessage) && noteFiles.Count == 0))">
+                        @if (isSavingNote) { <span class="od-btn-spinner"></span> }
+                        <span class="oi oi-plus"></span> ثبت یادداشت
+                    </button>
+                </div>
+            </div>
+
+            @* نمایش یادداشت‌های ثبت‌شده (با تصویر) *@
+            @if (order.Notes != null && order.Notes.Count > 0)
+            {
+                <div class="od-notes-list">
+                    @foreach (var note in order.Notes)
+                    {
+                        <div class="od-note-item">
+                            <div class="od-note-meta">
+                                <span class="od-note-author">
+                                    <span class="oi oi-people"></span>
+                                    @(note.CreatedBy ?? "مدیر")
+                                </span>
+                                <span class="od-note-date">
+                                    <span class="oi oi-calendar"></span>
+                                    @PersianDate.ToJalaliDateTime(note.CreatedAt)
+                                </span>
+                                @if (editingNoteId != note.Id)
+                                {
+                                    <span class="od-note-item-actions">
+                                        <button class="od-note-edit" @onclick="() => StartEditNote(note)" title="ویرایش یادداشت">
+                                            <span class="oi oi-pencil"></span>
+                                        </button>
+                                        <button class="od-note-delete" @onclick="() => ConfirmDeleteNote(note.Id)" title="حذف یادداشت">
+                                            <span class="oi oi-trash"></span>
+                                        </button>
+                                    </span>
+                                }
+                            </div>
+                            @if (editingNoteId == note.Id)
+                            {
+                                <div class="od-note-edit-form">
+                                    <textarea class="od-input od-note-textarea" dir="rtl" rows="3" maxlength="2000" @bind="editNoteMessage" placeholder="متن یادداشت..."></textarea>
+                                    <label class="od-note-upload-label">
+                                        <span class="oi oi-image"></span> افزودن تصویر (حداکثر @MaxNoteImages تصویر)
+                                        <InputFile OnChange="HandleEditNoteFilesSelected" multiple accept="image/*" class="d-none" />
+                                    </label>
+                                    @if (editNoteExistingImages.Count > 0 || editNoteFiles.Count > 0)
+                                    {
+                                        <div class="od-note-previews">
+                                            @for (var i = 0; i < editNoteExistingImages.Count; i++)
+                                            {
+                                                var index = i;
+                                                var url = editNoteExistingImages[i];
+                                                <div class="od-note-preview">
+                                                    <img src="@url" alt="تصویر یادداشت" decoding="async" />
+                                                    <button type="button" class="od-note-preview__remove" @onclick="() => editNoteExistingImages.RemoveAt(index)" title="حذف تصویر">×</button>
+                                                </div>
+                                            }
+                                            @for (var i = 0; i < editNoteFiles.Count; i++)
+                                            {
+                                                var index = i;
+                                                var preview = editNoteFiles[i];
+                                                <div class="od-note-preview">
+                                                    <img src="@preview.PreviewUrl" alt="پیش‌نمایش" decoding="async" />
+                                                    <button type="button" class="od-note-preview__remove" @onclick="() => editNoteFiles.RemoveAt(index)" title="حذف تصویر">×</button>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    <div class="od-note-edit-actions">
+                                        <button class="od-btn od-btn-primary od-btn-sm" @onclick="SaveEditNote" disabled="@isSavingNoteEdit">
+                                            @if (isSavingNoteEdit) { <span class="od-btn-spinner"></span> }
+                                            <span class="oi oi-check"></span> ذخیره تغییرات
+                                        </button>
+                                        <button class="od-btn od-btn-ghost od-btn-sm" @onclick="CancelEditNote" disabled="@isSavingNoteEdit">انصراف</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                @if (!string.IsNullOrWhiteSpace(note.Message))
+                                {
+                                    <div class="od-note-text" dir="rtl">@note.Message</div>
+                                }
+                                @if (note.ImageUrls != null && note.ImageUrls.Count > 0)
+                                {
+                                    <div class="od-note-images">
+                                        @foreach (var url in note.ImageUrls)
+                                        {
+                                            <a href="@url" target="_blank" rel="noopener" class="od-note-thumb">
+                                                <img src="@url" alt="تصویر یادداشت" loading="lazy" decoding="async" />
+                                            </a>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @* یادداشت‌های همراه با تغییر وضعیت/مرحله (برای مشتری هم نمایش داده می‌شود) *@
+            @if (!string.IsNullOrEmpty(order.AdminNotes))
+            {
+                <div class="od-note-legacy">
+                    <div class="od-note-legacy-title">یادداشت‌های همراه با تغییر وضعیت</div>
+                    <AdminNotesList Notes="@order.AdminNotes"
+                                    CanManage="true"
+                                    OnSaveNote="@SaveLegacyAdminNote"
+                                    OnDeleteNote="@DeleteLegacyAdminNote" />
+                </div>
+            }
+
+            @if ((order.Notes == null || order.Notes.Count == 0) && string.IsNullOrEmpty(order.AdminNotes))
             {
                 <div class="od-empty-state">
                     <span class="oi oi-document" style="font-size:1.5rem;color:#94a3b8"></span>
                     <span>یادداشتی ثبت نشده.</span>
-                </div>
-            }
-            else
-            {
-                <div style="padding:0 16px 16px">
-                    <AdminNotesList Notes="@order.AdminNotes" />
                 </div>
             }
             }
@@ -739,9 +861,35 @@ else
                             <div class="od-event-body">
                                 <div class="od-event-top">
                                     <span class="od-event-label">@GetEventLabel(evt)</span>
-                                    <span class="od-event-time">@PersianDate.ToJalaliDateTime(evt.CreatedAt)</span>
+                                    <span class="od-event-time-wrap">
+                                        <span class="od-event-time">@PersianDate.ToJalaliDateTime(evt.CreatedAt)</span>
+                                        @if (editingEventId != evt.Id)
+                                        {
+                                            <span class="od-event-actions">
+                                                <button class="od-event-action" @onclick="() => StartEditEvent(evt)" title="ویرایش متن رویداد">
+                                                    <span class="oi oi-pencil"></span>
+                                                </button>
+                                                <button class="od-event-action od-event-action--danger" @onclick="() => ConfirmDeleteEvent(evt.Id)" title="حذف رویداد">
+                                                    <span class="oi oi-trash"></span>
+                                                </button>
+                                            </span>
+                                        }
+                                    </span>
                                 </div>
-                                @if (!string.IsNullOrEmpty(evt.DisplayMessage))
+                                @if (editingEventId == evt.Id)
+                                {
+                                    <div class="od-event-edit">
+                                        <textarea class="od-input od-note-textarea" dir="rtl" rows="2" maxlength="2000" @bind="editEventMessage" placeholder="متن رویداد..."></textarea>
+                                        <div class="od-note-edit-actions">
+                                            <button class="od-btn od-btn-primary od-btn-sm" @onclick="SaveEditEvent" disabled="@isSavingEventEdit">
+                                                @if (isSavingEventEdit) { <span class="od-btn-spinner"></span> }
+                                                <span class="oi oi-check"></span> ذخیره
+                                            </button>
+                                            <button class="od-btn od-btn-ghost od-btn-sm" @onclick="CancelEditEvent" disabled="@isSavingEventEdit">انصراف</button>
+                                        </div>
+                                    </div>
+                                }
+                                else if (!string.IsNullOrEmpty(evt.DisplayMessage))
                                 {
                                     <div class="od-event-msg">@evt.DisplayMessage</div>
                                 }
@@ -835,6 +983,44 @@ else
                ConfirmText="بله، حذف شود"
                IsDanger="true"
                OnResult="HandleDeleteReturnResult" />
+
+<ConfirmDialog IsVisible="showDeleteNoteConfirm"
+               Title="حذف یادداشت"
+               Message="آیا از حذف این یادداشت اطمینان دارید؟ تصاویر پیوست‌شده نیز حذف خواهند شد."
+               ConfirmText="بله، حذف شود"
+               IsDanger="true"
+               OnResult="HandleDeleteNoteResult" />
+
+@if (statusReasonRequired)
+{
+    <ConfirmDialog IsVisible="showStatusConfirm"
+                   Title="تایید تغییر وضعیت و مرحله"
+                   Message="@statusConfirmMessage"
+                   ConfirmText="بله، ثبت شود"
+                   IsDanger="@statusConfirmIsDanger"
+                   OnResult="HandleStatusConfirmResult">
+        <Details>
+            <label class="od-status-reason-label" for="od-status-reason">دلیل رد یا لغو سفارش (به‌عنوان یادداشت مدیر ثبت می‌شود)</label>
+            <textarea id="od-status-reason" class="od-input od-note-textarea" dir="rtl" rows="3" maxlength="2000" @bind="statusReason" placeholder="دلیل را بنویسید..."></textarea>
+        </Details>
+    </ConfirmDialog>
+}
+else
+{
+    <ConfirmDialog IsVisible="showStatusConfirm"
+                   Title="تایید تغییر وضعیت و مرحله"
+                   Message="@statusConfirmMessage"
+                   ConfirmText="بله، ثبت شود"
+                   IsDanger="@statusConfirmIsDanger"
+                   OnResult="HandleStatusConfirmResult" />
+}
+
+<ConfirmDialog IsVisible="showDeleteEventConfirm"
+               Title="حذف رویداد"
+               Message="آیا از حذف این رکورد از تاریخچه عملیات اطمینان دارید؟ وضعیت واقعی سفارش تغییری نمی‌کند."
+               ConfirmText="بله، حذف شود"
+               IsDanger="true"
+               OnResult="HandleDeleteEventResult" />
 
 @if (showMarkPaidModal)
 {
@@ -1614,6 +1800,17 @@ else
     .od-event-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     .od-event-label { font-weight: 700; font-size: 0.82rem; color: #1e293b; }
     .od-event-time { font-size: 0.68rem; color: #94a3b8; white-space: nowrap; }
+    .od-event-time-wrap { display: inline-flex; align-items: center; gap: 6px; }
+    .od-event-actions { display: inline-flex; align-items: center; gap: 2px; }
+    .od-event-action {
+        background: none; border: none; cursor: pointer;
+        color: #94a3b8; padding: 2px; border-radius: 6px;
+        font-size: 0.72rem; transition: all .15s;
+    }
+    .od-event-action:hover { color: #2563eb; background: #eff6ff; }
+    .od-event-action--danger:hover { color: #dc2626; background: #fef2f2; }
+    .od-event-edit { margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
+    .od-event-edit .od-note-textarea { min-height: 56px; }
     .od-event-msg { font-size: 0.78rem; color: #64748b; margin-top: 3px; line-height: 1.5; }
     .od-event-by { font-size: 0.65rem; color: #cbd5e1; margin-top: 2px; }
 
@@ -1728,6 +1925,72 @@ else
         .od-btn { min-height: 44px; }
         .od-btn-sm { min-height: 40px; }
     }
+
+    /* ── یادداشت‌های مستقل مدیر ── */
+    .od-note-form { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; }
+    .od-note-textarea { width: 100%; min-height: 72px; resize: vertical; font-family: inherit; }
+    .od-note-upload-label {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; border-radius: 10px;
+        background: #f8fafc; border: 1.5px dashed #cbd5e1;
+        color: #475569; font-size: 0.82rem; font-weight: 600;
+        cursor: pointer; transition: all .15s;
+    }
+    .od-note-upload-label:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
+    .od-note-previews { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .od-note-preview {
+        position: relative; width: 64px; height: 64px;
+        border-radius: 8px; overflow: hidden; border: 2px solid #e2e8f0;
+    }
+    .od-note-preview img { width: 100%; height: 100%; object-fit: cover; }
+    .od-note-preview__remove {
+        position: absolute; top: 0; left: 0;
+        width: 20px; height: 20px; border-radius: 50%;
+        background: rgba(220,38,38,0.9); color: #fff;
+        border: none; cursor: pointer; font-size: 0.75rem;
+        display: flex; align-items: center; justify-content: center;
+        line-height: 1;
+    }
+    .od-note-actions { margin-top: 10px; }
+
+    .od-notes-list { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+    .od-note-item {
+        background: #f8fafc; border-radius: 12px;
+        border: 1px solid #e2e8f0; padding: 12px 14px;
+    }
+    .od-note-meta {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 0.75rem; color: #64748b; margin-bottom: 8px;
+        flex-wrap: wrap;
+    }
+    .od-note-author { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: #334155; }
+    .od-note-date { display: inline-flex; align-items: center; gap: 4px; }
+    .od-note-item-actions { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 2px; }
+    .od-note-edit, .od-note-delete {
+        background: none; border: none; cursor: pointer;
+        color: #94a3b8; padding: 2px; border-radius: 6px;
+        transition: all .15s;
+    }
+    .od-note-edit:hover { color: #2563eb; background: #eff6ff; }
+    .od-note-delete:hover { color: #dc2626; background: #fef2f2; }
+    .od-note-edit-form { display: flex; flex-direction: column; gap: 10px; }
+    .od-note-edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .od-status-reason-label { display: block; font-size: 0.8rem; font-weight: 700; color: #475569; margin-bottom: 6px; }
+    .od-note-text { font-size: 0.88rem; color: #1e293b; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .od-note-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .od-note-thumb {
+        display: block; width: 80px; height: 80px;
+        border-radius: 8px; overflow: hidden;
+        border: 2px solid #e2e8f0; transition: border-color .15s;
+    }
+    .od-note-thumb:hover { border-color: #2563eb; }
+    .od-note-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+    .od-note-legacy { padding: 0 16px 16px; border-top: 1px solid #f1f5f9; margin-top: 12px; }
+    .od-note-legacy-title {
+        font-size: 0.78rem; font-weight: 700; color: #64748b;
+        margin-bottom: 8px; padding-top: 12px;
+    }
 </style>
 
 @code {
@@ -1741,7 +2004,12 @@ else
     private OrderUpdateInfoRequest editInfo = new();
     private string statusToUpdate = "";
     private OrderStage? stageToUpdate;
-    private string? adminNote;
+    private bool showStatusConfirm;
+    private string statusConfirmMessage = "";
+    private bool statusConfirmIsDanger;
+    private bool statusReasonRequired;
+    private string? statusReason;
+    private TaskCompletionSource<bool>? statusConfirmTcs;
 
     private bool showShipmentForm = false;
     private OrderShipmentCreateDto newShipment = new();
@@ -1783,6 +2051,34 @@ else
     private bool isPublishing = false;
     private bool isVerifying = false;
 
+    // ── یادداشت‌های مستقل مدیر ──
+    private string? newNoteMessage;
+    private readonly List<NoteImageFile> noteFiles = new();
+    private bool isSavingNote;
+    private bool showDeleteNoteConfirm;
+    private int? noteToDeleteId;
+    private const int MaxNoteImages = 5;
+    private int? editingNoteId;
+    private string? editNoteMessage;
+    private readonly List<string> editNoteExistingImages = new();
+    private readonly List<NoteImageFile> editNoteFiles = new();
+    private bool isSavingNoteEdit;
+
+    // ── ویرایش/حذف رویدادهای تاریخچه ──
+    private int? editingEventId;
+    private string? editEventMessage;
+    private bool isSavingEventEdit;
+    private bool showDeleteEventConfirm;
+    private int? eventToDeleteId;
+
+    private sealed class NoteImageFile
+    {
+        public string FileName { get; set; } = string.Empty;
+        public string ContentType { get; set; } = "image/jpeg";
+        public byte[] Buffer { get; set; } = Array.Empty<byte>();
+        public string PreviewUrl { get; set; } = string.Empty;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         await LoadOrder();
@@ -1805,11 +2101,8 @@ else
             order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/admin/{Id}");
             if (order != null)
             {
-                var valid = GetValidTransitions();
-                statusToUpdate = valid.Count > 0 ? valid[0].ToString() : order.Status.ToString();
-                stageToUpdate = order.Stage
-                    ?? (order.Status == OrderStatus.Completed ? OrderStage.Resolved
-                        : order.Status == OrderStatus.Approved ? OrderStage.PaymentConfirmed : null);
+                statusToUpdate = "";
+                stageToUpdate = order.Stage;
             }
         }
         catch (Exception ex)
@@ -1867,57 +2160,113 @@ else
     private void SelectStage(OrderStage stage)
     {
         stageToUpdate = stage;
+        if (stage != OrderStage.Resolved && statusToUpdate == OrderStatus.Completed.ToString())
+            statusToUpdate = "";
+    }
+
+    private void SyncStageFromStatus()
+    {
+        if (statusToUpdate == OrderStatus.Completed.ToString())
+            stageToUpdate = OrderStage.Resolved;
+        else if (!string.IsNullOrEmpty(statusToUpdate) && stageToUpdate == OrderStage.Resolved)
+            stageToUpdate = order?.Stage;
     }
 
     private bool CanShowStageChange() => order != null
         && order.Status is not (OrderStatus.Rejected or OrderStatus.Cancelled or OrderStatus.PendingPayment or OrderStatus.Draft);
 
-    private async Task UpdateStage()
+    private async Task SaveStatusAndStage()
     {
-        if (order == null || isSaving || stageToUpdate == null) return;
+        if (order == null || isSaving) return;
+        var stageChanged = CanShowStageChange() && stageToUpdate.HasValue && stageToUpdate.Value != order.Stage;
+        var targetStatus = order.Status;
+        var statusChanged = CanShowStatusChange() && !string.IsNullOrEmpty(statusToUpdate)
+            && Enum.TryParse(statusToUpdate, out targetStatus) && targetStatus != order.Status;
+
+        if (!stageChanged && !statusChanged)
+        {
+            ToastService.ShowInfo("تغییری برای ثبت وجود ندارد؛ مرحله یا وضعیت را انتخاب کنید.");
+            return;
+        }
+
+        var parts = new List<string>();
+        if (stageChanged)
+            parts.Add($"مرحله از «{(order.Stage.HasValue ? OrderStageInfo.Label(order.Stage.Value) : "ثبت‌نشده")}» به «{OrderStageInfo.Label(stageToUpdate!.Value)}»");
+        if (statusChanged)
+            parts.Add($"وضعیت از «{GetStatusLabel(order.Status)}» به «{GetStatusLabel(targetStatus)}»");
+        if (statusChanged && targetStatus == OrderStatus.Completed && !(stageChanged && stageToUpdate == OrderStage.Resolved))
+            parts.Add("مرحله نیز خودکار روی «حمل شده» تنظیم می‌شود");
+        if (stageChanged && stageToUpdate == OrderStage.Resolved && order.Status == OrderStatus.Approved && !statusChanged)
+            parts.Add("وضعیت نیز خودکار «تکمیل شده» می‌شود");
+        if (stageChanged && stageToUpdate != OrderStage.Resolved && order.Status == OrderStatus.Completed)
+            parts.Add("وضعیت خودکار به «تایید شده» برمی‌گردد");
+
+        statusReasonRequired = statusChanged && targetStatus is OrderStatus.Rejected or OrderStatus.Cancelled;
+        if (statusReasonRequired)
+            parts.Add("دلیل واردشده به‌عنوان یادداشت مدیر ثبت می‌شود");
+        statusConfirmMessage = "آیا این تغییرات ثبت شوند؟ " + string.Join("؛ ", parts) + ".";
+        statusConfirmIsDanger = statusReasonRequired;
+        statusReason = null;
+        if (!await ShowStatusConfirm()) return;
+
         isSaving = true;
         try
         {
-            var req = new OrderStageUpdateDto { Stage = stageToUpdate.Value, AdminNotes = adminNote };
-            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/stage", req);
-            if (resp.IsSuccessStatusCode)
+            var reason = statusReasonRequired ? statusReason?.Trim() : null;
+            if (stageChanged)
             {
-                ToastService.ShowSuccess("مرحله سفارش بروزرسانی شد.");
-                adminNote = null;
-                await LoadOrder();
+                if (!await PutStage(stageToUpdate!.Value, null)) return;
+                var predicted = stageToUpdate == OrderStage.Resolved && order.Status == OrderStatus.Approved ? OrderStatus.Completed
+                    : order.Status == OrderStatus.Completed && stageToUpdate != OrderStage.Resolved ? OrderStatus.Approved
+                    : order.Status;
+                if (statusChanged && targetStatus != predicted && !await PutStatus(targetStatus, reason)) return;
             }
-            else
-            {
-                var msg = await resp.Content.ReadAsStringAsync();
-                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در بروزرسانی مرحله.");
-            }
+            else if (!await PutStatus(targetStatus, reason)) return;
+            ToastService.ShowSuccess("تغییرات سفارش ثبت شد.");
+            await LoadOrder();
         }
         catch (Exception ex) { ToastService.ShowError(ex.Message); }
         finally { isSaving = false; }
     }
 
-    private async Task UpdateStatus()
+    private async Task<bool> PutStage(OrderStage stage, string? note)
     {
-        if (order == null || isSaving) return;
-        isSaving = true;
-        try
+        var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order!.Id}/stage", new OrderStageUpdateDto { Stage = stage, AdminNotes = note });
+        if (resp.IsSuccessStatusCode) return true;
+        var msg = await resp.Content.ReadAsStringAsync();
+        ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در بروزرسانی مرحله.");
+        return false;
+    }
+
+    private async Task<bool> PutStatus(OrderStatus status, string? note)
+    {
+        var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order!.Id}/status", new OrderStatusUpdateDto { Status = status, AdminNotes = note });
+        if (resp.IsSuccessStatusCode) return true;
+        var msg = await resp.Content.ReadAsStringAsync();
+        ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در بروزرسانی وضعیت.");
+        return false;
+    }
+
+    private Task<bool> ShowStatusConfirm()
+    {
+        statusConfirmTcs = new TaskCompletionSource<bool>();
+        showStatusConfirm = true;
+        StateHasChanged();
+        return statusConfirmTcs.Task;
+    }
+
+    private Task HandleStatusConfirmResult(bool result)
+    {
+        if (result && statusReasonRequired && string.IsNullOrWhiteSpace(statusReason))
         {
-            var req = new OrderStatusUpdateDto { Status = Enum.Parse<OrderStatus>(statusToUpdate), AdminNotes = adminNote };
-            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/status", req);
-            if (resp.IsSuccessStatusCode)
-            {
-                ToastService.ShowSuccess("وضعیت بروزرسانی شد.");
-                adminNote = null;
-                await LoadOrder();
-            }
-            else
-            {
-                var msg = await resp.Content.ReadAsStringAsync();
-                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در بروزرسانی وضعیت.");
-            }
+            ToastService.ShowError("برای رد یا لغو سفارش، نوشتن دلیل الزامی است.");
+            StateHasChanged();
+            return Task.CompletedTask;
         }
-        catch (Exception ex) { ToastService.ShowError(ex.Message); }
-        finally { isSaving = false; }
+        showStatusConfirm = false;
+        statusConfirmTcs?.SetResult(result);
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private void ShowNewShipmentForm()
@@ -2132,6 +2481,337 @@ else
             }
         }
         catch (Exception ex) { ToastService.ShowError(ex.Message); }
+    }
+
+    // ── یادداشت‌های مستقل مدیر ──
+
+    private async Task HandleNoteFilesSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var remaining = MaxNoteImages - noteFiles.Count;
+            var files = e.GetMultipleFiles(Math.Max(1, remaining));
+            foreach (var file in files)
+            {
+                if (noteFiles.Count >= MaxNoteImages) break;
+                var buffer = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+                noteFiles.Add(new NoteImageFile
+                {
+                    FileName = file.Name,
+                    ContentType = file.ContentType,
+                    Buffer = buffer,
+                    PreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(buffer)}"
+                });
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            ToastService.ShowError($"حداکثر {MaxNoteImages} تصویر برای یادداشت مجاز است.");
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا در خواندن فایل: " + ex.Message); }
+    }
+
+    private async Task SubmitNote()
+    {
+        if (order == null || isSavingNote) return;
+        if (string.IsNullOrWhiteSpace(newNoteMessage) && noteFiles.Count == 0)
+        {
+            ToastService.ShowError("متن یا تصویر یادداشت الزامی است.");
+            return;
+        }
+
+        isSavingNote = true;
+        try
+        {
+            // ابتدا تصاویر را آپلود کن (در صورت وجود)
+            var uploadedUrls = await UploadNoteImagesAsync(noteFiles);
+            if (uploadedUrls == null) return;
+
+            // سپس یادداشت را ثبت کن
+            var req = new OrderNoteCreateRequest
+            {
+                Message = string.IsNullOrWhiteSpace(newNoteMessage) ? null : newNoteMessage.Trim(),
+                ImageUrls = uploadedUrls
+            };
+
+            var resp = await Http.PostAsJsonAsync($"api/orders/admin/{order.Id}/notes", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("یادداشت ثبت شد.");
+                newNoteMessage = null;
+                noteFiles.Clear();
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "ثبت یادداشت ناموفق بود." : msg);
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSavingNote = false; }
+    }
+
+    private void ConfirmDeleteNote(int noteId)
+    {
+        noteToDeleteId = noteId;
+        showDeleteNoteConfirm = true;
+    }
+
+    private async Task HandleDeleteNoteResult(bool confirmed)
+    {
+        showDeleteNoteConfirm = false;
+        if (!confirmed || order == null || noteToDeleteId == null) return;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/orders/admin/{order.Id}/notes/{noteToDeleteId.Value}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("یادداشت حذف شد.");
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در حذف یادداشت.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { noteToDeleteId = null; }
+    }
+
+    private async Task<List<string>?> UploadNoteImagesAsync(List<NoteImageFile> files)
+    {
+        if (files.Count == 0) return new List<string>();
+
+        using var content = new MultipartFormDataContent();
+        foreach (var file in files)
+        {
+            var part = new ByteArrayContent(file.Buffer);
+            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(part, "files", file.FileName);
+        }
+
+        var uploadResp = await Http.PostAsync($"api/orders/admin/{order!.Id}/notes/upload", content);
+        if (!uploadResp.IsSuccessStatusCode)
+        {
+            var msg = await uploadResp.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "آپلود تصاویر ناموفق بود." : msg.Trim().Trim('"'));
+            return null;
+        }
+
+        var urls = await uploadResp.Content.ReadFromJsonAsync<List<string>>() ?? new();
+        if (urls.Count == 0)
+        {
+            ToastService.ShowError("آپلود تصاویر ناموفق بود.");
+            return null;
+        }
+        return urls;
+    }
+
+    private void StartEditNote(OrderNoteDto note)
+    {
+        editingNoteId = note.Id;
+        editNoteMessage = note.Message;
+        editNoteExistingImages.Clear();
+        if (note.ImageUrls != null) editNoteExistingImages.AddRange(note.ImageUrls);
+        editNoteFiles.Clear();
+    }
+
+    private void CancelEditNote()
+    {
+        editingNoteId = null;
+        editNoteMessage = null;
+        editNoteExistingImages.Clear();
+        editNoteFiles.Clear();
+    }
+
+    private async Task HandleEditNoteFilesSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var remaining = MaxNoteImages - editNoteExistingImages.Count - editNoteFiles.Count;
+            if (remaining <= 0)
+            {
+                ToastService.ShowError($"حداکثر {MaxNoteImages} تصویر برای یادداشت مجاز است.");
+                return;
+            }
+            var files = e.GetMultipleFiles(remaining);
+            foreach (var file in files)
+            {
+                if (editNoteExistingImages.Count + editNoteFiles.Count >= MaxNoteImages) break;
+                var buffer = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+                editNoteFiles.Add(new NoteImageFile
+                {
+                    FileName = file.Name,
+                    ContentType = file.ContentType,
+                    Buffer = buffer,
+                    PreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(buffer)}"
+                });
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            ToastService.ShowError($"حداکثر {MaxNoteImages} تصویر برای یادداشت مجاز است.");
+        }
+        catch (Exception ex) { ToastService.ShowError("خطا در خواندن فایل: " + ex.Message); }
+    }
+
+    private async Task SaveEditNote()
+    {
+        if (order == null || editingNoteId == null || isSavingNoteEdit) return;
+        if (string.IsNullOrWhiteSpace(editNoteMessage) && editNoteExistingImages.Count == 0 && editNoteFiles.Count == 0)
+        {
+            ToastService.ShowError("متن یا تصویر یادداشت الزامی است.");
+            return;
+        }
+
+        isSavingNoteEdit = true;
+        try
+        {
+            var uploadedUrls = await UploadNoteImagesAsync(editNoteFiles);
+            if (uploadedUrls == null) return;
+
+            var req = new OrderNoteUpdateRequest
+            {
+                Message = string.IsNullOrWhiteSpace(editNoteMessage) ? null : editNoteMessage.Trim(),
+                ImageUrls = editNoteExistingImages.Concat(uploadedUrls).ToList()
+            };
+
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/notes/{editingNoteId.Value}", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("یادداشت ویرایش شد.");
+                CancelEditNote();
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "ویرایش یادداشت ناموفق بود." : msg.Trim().Trim('"'));
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSavingNoteEdit = false; }
+    }
+
+    // ── ویرایش/حذف یادداشت‌های قدیمی همراه وضعیت/مرحله ──
+
+    private async Task<bool> SaveLegacyAdminNote(AdminNoteUpdateRequest request)
+    {
+        if (order == null) return false;
+
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/admin-notes", request);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("یادداشت ویرایش شد.");
+                await LoadOrder();
+                return true;
+            }
+
+            var msg = await resp.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "ویرایش یادداشت ناموفق بود." : msg.Trim().Trim('"'));
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+
+        return false;
+    }
+
+    private async Task<bool> DeleteLegacyAdminNote(AdminNoteDeleteRequest request)
+    {
+        if (order == null) return false;
+
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"api/orders/admin/{order.Id}/admin-notes/delete", request);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("یادداشت حذف شد.");
+                await LoadOrder();
+                return true;
+            }
+
+            var msg = await resp.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "حذف یادداشت ناموفق بود." : msg.Trim().Trim('"'));
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+
+        return false;
+    }
+
+    // ── ویرایش/حذف رویدادهای تاریخچه ──
+
+    private void StartEditEvent(OrderEventDto evt)
+    {
+        editingEventId = evt.Id;
+        editEventMessage = evt.DisplayMessage;
+    }
+
+    private void CancelEditEvent()
+    {
+        editingEventId = null;
+        editEventMessage = null;
+    }
+
+    private async Task SaveEditEvent()
+    {
+        if (order == null || editingEventId == null || isSavingEventEdit) return;
+        if (string.IsNullOrWhiteSpace(editEventMessage))
+        {
+            ToastService.ShowError("متن رویداد نمی‌تواند خالی باشد.");
+            return;
+        }
+
+        isSavingEventEdit = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/events/{editingEventId.Value}",
+                new OrderEventUpdateRequest { Message = editEventMessage.Trim() });
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("رویداد ویرایش شد.");
+                CancelEditEvent();
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "ویرایش رویداد ناموفق بود." : msg.Trim().Trim('"'));
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSavingEventEdit = false; }
+    }
+
+    private void ConfirmDeleteEvent(int eventId)
+    {
+        eventToDeleteId = eventId;
+        showDeleteEventConfirm = true;
+    }
+
+    private async Task HandleDeleteEventResult(bool confirmed)
+    {
+        showDeleteEventConfirm = false;
+        if (!confirmed || order == null || eventToDeleteId == null) return;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/orders/admin/{order.Id}/events/{eventToDeleteId.Value}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("رویداد حذف شد.");
+                if (editingEventId == eventToDeleteId) CancelEditEvent();
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(!string.IsNullOrEmpty(msg) ? msg : "خطا در حذف رویداد.");
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { eventToDeleteId = null; }
     }
 
     private void EditDraft()

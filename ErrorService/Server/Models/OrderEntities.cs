@@ -130,6 +130,7 @@ public class Order
     public ICollection<OrderShipment> Shipments { get; set; } = new List<OrderShipment>();
     public ICollection<OrderEvent> Events { get; set; } = new List<OrderEvent>();
     public ICollection<OrderReturn> Returns { get; set; } = new List<OrderReturn>();
+    public ICollection<OrderNote> Notes { get; set; } = new List<OrderNote>();
 }
 
 public class OrderShipment
@@ -194,6 +195,26 @@ public class OrderReturn
 
     [MaxLength(200)]
     public string? CreatedBy { get; set; }
+}
+
+/// <summary>یادداشت مستقل مدیر روی سفارش — بدون تغییر وضعیت، با قابلیت پیوست تصویر.</summary>
+public class OrderNote
+{
+    public int Id { get; set; }
+    public int OrderId { get; set; }
+    public Order Order { get; set; } = default!;
+
+    /// <summary>متن یادداشت (اختیاری اگر تصویر پیوست شده باشد).</summary>
+    [MaxLength(2000)]
+    public string? Message { get; set; }
+
+    /// <summary>آدرس‌های تصاویر پیوست‌شده به‌صورت JSON array.</summary>
+    [MaxLength(2000)]
+    public string? ImageUrlsJson { get; set; }
+
+    [MaxLength(200)]
+    public string? CreatedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public class OrderItem

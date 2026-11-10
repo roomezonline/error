@@ -1,6 +1,7 @@
 @using System.Globalization
 @using System.Text.RegularExpressions
 @using ErrorService.Client.Utils
+@using ErrorService.Shared
 
 @if (ParsedNotes.Count > 0)
 {
@@ -37,7 +38,58 @@
                         }
                     </div>
                 }
-                <div class="an-text">@note.Text</div>
+
+                @if (CanManage && editingIndex == note.Index)
+                {
+                    <div class="an-edit">
+                        <textarea class="an-edit-input" dir="rtl" rows="3"
+                                  maxlength="@MaxNoteLength"
+                                  @bind="editText" @bind:event="oninput"
+                                  placeholder="متن یادداشت..."></textarea>
+                        <div class="an-actions">
+                            <button type="button" class="an-btn an-btn--save"
+                                    @onclick="SaveEditAsync"
+                                    disabled="@(isBusy || string.IsNullOrWhiteSpace(editText))">
+                                @if (isBusy) { <span class="an-spinner"></span> }
+                                <span class="oi oi-check"></span> ذخیره
+                            </button>
+                            <button type="button" class="an-btn" @onclick="CancelEdit" disabled="@isBusy">انصراف</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="an-text">@note.Text</div>
+
+                    @if (CanManage)
+                    {
+                        @if (confirmDeleteIndex == note.Index)
+                        {
+                            <div class="an-actions an-actions--confirm">
+                                <span class="an-confirm-text">این یادداشت حذف شود؟</span>
+                                <button type="button" class="an-btn an-btn--danger"
+                                        @onclick="() => DeleteAsync(note)" disabled="@isBusy">
+                                    @if (isBusy) { <span class="an-spinner"></span> }
+                                    بله، حذف شود
+                                </button>
+                                <button type="button" class="an-btn" @onclick="CancelDelete" disabled="@isBusy">انصراف</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="an-actions">
+                                <button type="button" class="an-action"
+                                        @onclick="() => StartEdit(note)" title="ویرایش یادداشت">
+                                    <span class="oi oi-pencil"></span>
+                                </button>
+                                <button type="button" class="an-action an-action--danger"
+                                        @onclick="() => RequestDelete(note)" title="حذف یادداشت">
+                                    <span class="oi oi-trash"></span>
+                                </button>
+                            </div>
+                        }
+                    }
+                }
             </div>
         }
     </div>
@@ -46,15 +98,114 @@
 @code {
     [Parameter] public string? Notes { get; set; }
 
+    /// <summary>فقط در پنل مدیر true می‌شود؛ صفحات مشتری همیشه فقط‌خواندنی می‌مانند.</summary>
+    [Parameter] public bool CanManage { get; set; }
+
+    [Parameter] public Func<AdminNoteUpdateRequest, Task<bool>>? OnSaveNote { get; set; }
+    [Parameter] public Func<AdminNoteDeleteRequest, Task<bool>>? OnDeleteNote { get; set; }
+
+    private const int MaxNoteLength = 1000;
+
     private static readonly Regex NoteRegex = new(
         @"^\[(?<ts>[^\]]+)\]\s*(?<name>[^:]+):\s*(?<msg>.*)$",
         RegexOptions.Compiled | RegexOptions.Singleline);
 
     private List<ParsedNote> ParsedNotes = new();
+    private string? _lastNotes;
+    private int? editingIndex;
+    private string? editText;
+    private int? confirmDeleteIndex;
+    private bool isBusy;
 
     protected override void OnParametersSet()
     {
+        // فقط وقتی متن یادداشت‌ها واقعاً عوض شده بازخوانی می‌کنیم؛ در غیر این صورت
+        // رندرهای عادی صفحه، حالت ویرایش/تأیید حذف را از بین می‌برد.
+        if (string.Equals(_lastNotes, Notes, StringComparison.Ordinal)) return;
+
+        _lastNotes = Notes;
         ParsedNotes = Parse(Notes);
+
+        if (editingIndex != null && !ParsedNotes.Any(n => n.Index == editingIndex))
+        {
+            editingIndex = null;
+            editText = null;
+        }
+        if (confirmDeleteIndex != null && !ParsedNotes.Any(n => n.Index == confirmDeleteIndex))
+        {
+            confirmDeleteIndex = null;
+        }
+    }
+
+    private void StartEdit(ParsedNote note)
+    {
+        editingIndex = note.Index;
+        editText = note.Text;
+        confirmDeleteIndex = null;
+    }
+
+    private void CancelEdit()
+    {
+        editingIndex = null;
+        editText = null;
+    }
+
+    private void RequestDelete(ParsedNote note)
+    {
+        confirmDeleteIndex = note.Index;
+        editingIndex = null;
+        editText = null;
+    }
+
+    private void CancelDelete() => confirmDeleteIndex = null;
+
+    private async Task SaveEditAsync()
+    {
+        if (editingIndex == null || isBusy) return;
+
+        var text = editText?.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+
+        var note = ParsedNotes.FirstOrDefault(n => n.Index == editingIndex);
+        if (note == null) { CancelEdit(); return; }
+
+        isBusy = true;
+        try
+        {
+            var saved = OnSaveNote != null && await OnSaveNote(new AdminNoteUpdateRequest
+            {
+                Index = note.Index,
+                Original = note.RawLine,
+                Text = text
+            });
+
+            if (saved) CancelEdit();
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task DeleteAsync(ParsedNote note)
+    {
+        if (isBusy) return;
+
+        isBusy = true;
+        try
+        {
+            var deleted = OnDeleteNote != null && await OnDeleteNote(new AdminNoteDeleteRequest
+            {
+                Index = note.Index,
+                Original = note.RawLine
+            });
+
+            if (deleted) confirmDeleteIndex = null;
+        }
+        finally
+        {
+            isBusy = false;
+        }
     }
 
     private static List<ParsedNote> Parse(string? notes)
@@ -62,6 +213,7 @@
         var result = new List<ParsedNote>();
         if (string.IsNullOrWhiteSpace(notes)) return result;
 
+        var index = 0;
         foreach (var raw in notes.Replace("\r\n", "\n").Split('\n'))
         {
             var line = raw.Trim();
@@ -70,7 +222,7 @@
             var m = NoteRegex.Match(line);
             if (!m.Success)
             {
-                result.Add(new ParsedNote { Text = line, IsPlain = true });
+                result.Add(new ParsedNote { Index = index++, RawLine = line, Text = line, IsPlain = true });
                 continue;
             }
 
@@ -95,6 +247,8 @@
 
             result.Add(new ParsedNote
             {
+                Index = index++,
+                RawLine = line,
                 AdminName = name,
                 DateFa = dateFa,
                 TimeFa = timeFa,
@@ -107,6 +261,8 @@
 
     private sealed class ParsedNote
     {
+        public int Index { get; set; }
+        public string RawLine { get; set; } = "";
         public string AdminName { get; set; } = "";
         public string DateFa { get; set; } = "";
         public string TimeFa { get; set; } = "";
@@ -193,5 +349,132 @@
 
     .an-item--plain .an-text {
         color: #475569;
+    }
+
+    .an-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+    }
+
+    .an-actions--confirm {
+        border-top: 1px dashed #fecaca;
+        padding-top: 10px;
+    }
+
+    .an-confirm-text {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #b91c1c;
+    }
+
+    .an-action {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #94a3b8;
+        padding: 3px;
+        border-radius: 6px;
+        transition: all .15s;
+        line-height: 1;
+    }
+
+    .an-action:hover {
+        color: #2563eb;
+        background: #eff6ff;
+    }
+
+    .an-action--danger:hover {
+        color: #dc2626;
+        background: #fef2f2;
+    }
+
+    .an-edit {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .an-edit-input {
+        width: 100%;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font: inherit;
+        font-size: 0.86rem;
+        color: #1e293b;
+        background: #fff;
+        resize: vertical;
+        line-height: 1.8;
+    }
+
+    .an-edit-input:focus {
+        outline: none;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    .an-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #475569;
+        border-radius: 8px;
+        padding: 5px 12px;
+        font: inherit;
+        font-size: 0.78rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all .15s;
+    }
+
+    .an-btn:hover:not(:disabled) {
+        border-color: #cbd5e1;
+        background: #f8fafc;
+    }
+
+    .an-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .an-btn--save {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #fff;
+    }
+
+    .an-btn--save:hover:not(:disabled) {
+        background: #1d4ed8;
+        border-color: #1d4ed8;
+    }
+
+    .an-btn--danger {
+        background: #dc2626;
+        border-color: #dc2626;
+        color: #fff;
+    }
+
+    .an-btn--danger:hover:not(:disabled) {
+        background: #b91c1c;
+        border-color: #b91c1c;
+    }
+
+    .an-spinner {
+        width: 12px;
+        height: 12px;
+        border: 2px solid rgba(255, 255, 255, 0.45);
+        border-top-color: #fff;
+        border-radius: 50%;
+        display: inline-block;
+        animation: an-spin .7s linear infinite;
+    }
+
+    @@keyframes an-spin {
+        to { transform: rotate(360deg); }
     }
 </style>

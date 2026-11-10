@@ -143,6 +143,7 @@ public class OrderDto
     public List<OrderShipmentDto> Shipments { get; set; } = new();
     public List<OrderEventDto> Events { get; set; } = new();
     public List<OrderReturnDto> Returns { get; set; } = new();
+    public List<OrderNoteDto> Notes { get; set; } = new();
     public decimal? DiscountAmount { get; set; }
     public decimal? ManualDiscountAmount { get; set; }
     public string? CouponCode { get; set; }
@@ -202,6 +203,61 @@ public class OrderEventDto
             return Message.Trim();
         }
     }
+}
+
+public class OrderNoteDto
+{
+    public int Id { get; set; }
+    public int OrderId { get; set; }
+    public string? Message { get; set; }
+    public List<string> ImageUrls { get; set; } = new();
+    public string? CreatedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public class OrderNoteCreateRequest
+{
+    [MaxLength(2000)]
+    public string? Message { get; set; }
+    public List<string> ImageUrls { get; set; } = new();
+}
+
+public class OrderNoteUpdateRequest
+{
+    [MaxLength(2000)]
+    public string? Message { get; set; }
+    public List<string> ImageUrls { get; set; } = new();
+}
+
+public class OrderEventUpdateRequest
+{
+    [MaxLength(2000)]
+    public string Message { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// ویرایش یک خط از یادداشت‌های قدیمی مدیر (ستون متنی AdminNotes).
+/// جای خط با ایندکس و متن اصلی مشخص می‌شود تا اگر هم‌زمان تغییر کرده باشد،
+/// اشتباهاً خط دیگری بازنویسی نشود.
+/// </summary>
+public class AdminNoteUpdateRequest
+{
+    public int Index { get; set; }
+
+    [MaxLength(1000)]
+    public string? Original { get; set; }
+
+    [MaxLength(1000)]
+    public string Text { get; set; } = string.Empty;
+}
+
+/// <summary>حذف یک خط از یادداشت‌های قدیمی مدیر.</summary>
+public class AdminNoteDeleteRequest
+{
+    public int Index { get; set; }
+
+    [MaxLength(1000)]
+    public string? Original { get; set; }
 }
 
 public class OrderShipmentCreateDto
@@ -334,12 +390,14 @@ public class ReceiptUploadRequest
 public class OrderStatusUpdateDto
 {
     public OrderStatus Status { get; set; }
+    [MaxLength(2000)]
     public string? AdminNotes { get; set; }
 }
 
 public class OrderStageUpdateDto
 {
     public OrderStage Stage { get; set; }
+    [MaxLength(2000)]
     public string? AdminNotes { get; set; }
 }
 
@@ -371,6 +429,9 @@ public class CartItemDto
     public string? ImageUrl { get; set; }
     public decimal Price { get; set; }
     public int Quantity { get; set; }
+
+    /// <summary>حداقل تعداد خرید محصول؛ فقط در پاسخ سرور پر میشود.</summary>
+    public int MinOrderQuantity { get; set; } = 1;
 }
 
 public class CartItemUpdateDto

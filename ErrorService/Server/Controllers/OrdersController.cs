@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ErrorService.Server.Controllers;
 
@@ -189,6 +190,16 @@ public sealed class OrdersController : ControllerBase
 
     private static string SerializeReceiptUrls(List<string> urls)
         => urls.Count == 0 ? string.Empty : JsonSerializer.Serialize(urls);
+
+    private static List<string> DeserializeNoteImageUrls(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new List<string>();
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+        }
+        catch (JsonException) { return new List<string>(); }
+    }
 
     private async Task<string> GenerateOrderNumberAsync()
     {
@@ -561,6 +572,10 @@ public sealed class OrdersController : ControllerBase
             // جمع تعداد هر محصول در کل سبد (آیتم‌های تکراریِ یک محصول) ملاک است.
             var wanted = requestedQty.GetValueOrDefault(item.ProductId) + item.Quantity;
             requestedQty[item.ProductId] = wanted;
+
+            var minOrder = Math.Max(1, product.MinOrderQuantity);
+            if (wanted < minOrder)
+                return BadRequest($"حداقل تعداد خرید «{product.Name}» {minOrder} عدد است.");
 
             if (!product.IsAvailable || product.StockQuantity < wanted)
                 return BadRequest($"موجودی «{product.Name}» کافی نیست. موجودی فعلی: {product.StockQuantity}");
@@ -1913,6 +1928,22 @@ public sealed class OrdersController : ControllerBase
         var returns = await _db.OrderReturns.Where(r => r.OrderId == id).OrderBy(r => r.CreatedAt).ToListAsync();
 
         var dto = MapOrderToDto(order, items, shipments, events, returns);
+
+        // یادداشت‌های مستقل مدیر (با قابلیت پیوست تصویر) — فقط در نمای ادمین بارگذاری می‌شوند.
+        var noteEntities = await _db.OrderNotes
+            .Where(n => n.OrderId == id)
+            .OrderByDescending(n => n.CreatedAt)
+            .ToListAsync();
+        dto.Notes = noteEntities.Select(n => new OrderNoteDto
+        {
+            Id = n.Id,
+            OrderId = n.OrderId,
+            Message = n.Message,
+            ImageUrls = DeserializeNoteImageUrls(n.ImageUrlsJson),
+            CreatedBy = n.CreatedBy,
+            CreatedAt = n.CreatedAt
+        }).ToList();
+
         await ApplyProductImagesAsync(new[] { dto });
         return Ok(dto);
     }
@@ -2164,6 +2195,245 @@ public sealed class OrdersController : ControllerBase
             return BadRequest("هیچ فایل معتبری ارسال نشده است.");
 
         return Ok(savedUrls);
+    }
+
+    // ──────────── ADMIN: ORDER NOTES (without status change) ────────────
+
+    /// <summary>آپلود تصاویر پیوست یادداشت سفارش (بدون تغییر وضعیت سفارش).</summary>
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpPost("admin/{id:int}/notes/upload")]
+    [RequestSizeLimit(15_000_000)]
+    public async Task<ActionResult<List<string>>> UploadOrderNoteImages(int id, [FromForm] List<IFormFile> files, CancellationToken ct)
+    {
+        if (!await _db.Orders.AnyAsync(o => o.Id == id, ct))
+            return NotFound();
+
+        if (files == null || files.Count == 0)
+            return BadRequest("فایلی ارسال نشده است.");
+
+        const int maxTotal = 5;
+        if (files.Count > maxTotal)
+            return BadRequest($"حداکثر {maxTotal} تصویر مجاز است.");
+
+        var uploadsFolder = Path.Combine(_env.WebRootPath, "uploads", "order-notes");
+        if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
+
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp" };
+        var savedUrls = new List<string>();
+
+        foreach (var file in files)
+        {
+            if (file == null || file.Length == 0) continue;
+
+            var safeExt = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (!allowed.Contains(safeExt))
+                return BadRequest("فرمت فایل مجاز نیست. فقط تصاویر jpg, jpeg, png, webp");
+
+            var fileName = $"{id}_note_{Guid.NewGuid():N}{safeExt}";
+            var filePath = Path.Combine(uploadsFolder, fileName);
+
+            await using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream, ct);
+            }
+
+            savedUrls.Add($"/uploads/order-notes/{fileName}");
+        }
+
+        if (savedUrls.Count == 0)
+            return BadRequest("هیچ فایل معتبری ارسال نشده است.");
+
+        return Ok(savedUrls);
+    }
+
+    /// <summary>ثبت یادداشت مستقل مدیر روی سفارش — بدون تغییر وضعیت یا مرحله.</summary>
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpPost("admin/{id:int}/notes")]
+    public async Task<ActionResult<OrderNoteDto>> CreateOrderNote(int id, [FromBody] OrderNoteCreateRequest request, CancellationToken ct)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(request.Message)
+            && (request.ImageUrls == null || request.ImageUrls.Count == 0))
+            return BadRequest("یادداشت نمی‌تواند خالی باشد؛ متن یا تصویر الزامی است.");
+
+        var imageUrls = request.ImageUrls?
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Select(u => u.Trim())
+            .ToList() ?? new List<string>();
+
+        var note = new OrderNote
+        {
+            OrderId = id,
+            Message = string.IsNullOrWhiteSpace(request.Message) ? null : request.Message.Trim(),
+            ImageUrlsJson = imageUrls.Count > 0 ? JsonSerializer.Serialize(imageUrls) : null,
+            CreatedBy = GetAdminDisplayName(),
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        _db.OrderNotes.Add(note);
+        order.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new OrderNoteDto
+        {
+            Id = note.Id,
+            OrderId = note.OrderId,
+            Message = note.Message,
+            ImageUrls = imageUrls,
+            CreatedBy = note.CreatedBy,
+            CreatedAt = note.CreatedAt
+        });
+    }
+
+    /// <summary>حذف یک یادداشت سفارش (همراه با حذف فایل‌های تصویری).</summary>
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpDelete("admin/{id:int}/notes/{noteId:int}")]
+    public async Task<IActionResult> DeleteOrderNote(int id, int noteId, CancellationToken ct)
+    {
+        var note = await _db.OrderNotes.FirstOrDefaultAsync(n => n.Id == noteId && n.OrderId == id, ct);
+        if (note == null) return NotFound();
+
+        // حذف فایل‌های تصویری پیوست‌شده
+        if (!string.IsNullOrWhiteSpace(note.ImageUrlsJson))
+        {
+            try
+            {
+                var urls = JsonSerializer.Deserialize<List<string>>(note.ImageUrlsJson);
+                if (urls != null)
+                    DeleteReceiptFiles(urls);
+            }
+            catch (JsonException) { }
+        }
+
+        _db.OrderNotes.Remove(note);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>ویرایش یادداشت مدیر (متن و تصاویر)؛ فایل تصاویر حذف‌شده پاک می‌شود.</summary>
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpPut("admin/{id:int}/notes/{noteId:int}")]
+    public async Task<ActionResult<OrderNoteDto>> UpdateOrderNote(int id, int noteId, [FromBody] OrderNoteUpdateRequest request, CancellationToken ct)
+    {
+        var note = await _db.OrderNotes.FirstOrDefaultAsync(n => n.Id == noteId && n.OrderId == id, ct);
+        if (note == null) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(request.Message)
+            && (request.ImageUrls == null || request.ImageUrls.Count == 0))
+            return BadRequest("یادداشت نمی‌تواند خالی باشد؛ متن یا تصویر الزامی است.");
+
+        var imageUrls = request.ImageUrls?
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Select(u => u.Trim())
+            .Distinct()
+            .ToList() ?? new List<string>();
+
+        if (imageUrls.Count > 5)
+            return BadRequest("حداکثر ۵ تصویر برای هر یادداشت مجاز است.");
+        if (imageUrls.Any(u => !u.StartsWith("/uploads/order-notes/", StringComparison.OrdinalIgnoreCase)))
+            return BadRequest("آدرس تصویر معتبر نیست.");
+
+        var oldUrls = DeserializeNoteImageUrls(note.ImageUrlsJson);
+        var removedUrls = oldUrls.Except(imageUrls).ToList();
+        if (removedUrls.Count > 0)
+            DeleteReceiptFiles(removedUrls);
+
+        note.Message = string.IsNullOrWhiteSpace(request.Message) ? null : request.Message.Trim();
+        note.ImageUrlsJson = imageUrls.Count > 0 ? JsonSerializer.Serialize(imageUrls) : null;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new OrderNoteDto
+        {
+            Id = note.Id,
+            OrderId = note.OrderId,
+            Message = note.Message,
+            ImageUrls = imageUrls,
+            CreatedBy = note.CreatedBy,
+            CreatedAt = note.CreatedAt
+        });
+    }
+
+    // ──────────── ADMIN: LEGACY ADMIN NOTES (status/stage note lines) ────────────
+
+    /// <summary>
+    /// ویرایش متن یک یادداشت همراه تغییر وضعیت/مرحله. تاریخ و نام ثبت‌کننده حفظ می‌شود.
+    /// </summary>
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpPut("admin/{id:int}/admin-notes")]
+    public async Task<IActionResult> UpdateAdminNote(int id, [FromBody] AdminNoteUpdateRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Text))
+            return BadRequest("متن یادداشت نمی‌تواند خالی باشد.");
+
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound("سفارش یافت نشد.");
+
+        var lines = SplitAdminNoteLines(order.AdminNotes);
+        if (request.Index < 0 || request.Index >= lines.Count)
+            return NotFound("یادداشت موردنظر یافت نشد؛ صفحه را تازه کنید.");
+
+        // اگر همان لحظه خط دیگری اضافه/حذف شده باشد، ایندکس جابه‌جا می‌شود.
+        // با مقایسهٔ متن اصلی از بازنویسی اشتباه جلوگیری می‌کنیم.
+        if (!string.IsNullOrEmpty(request.Original) && lines[request.Index] != request.Original)
+            return Conflict("یادداشت هم‌زمان تغییر کرده است؛ صفحه را تازه کنید.");
+
+        lines[request.Index] = ReplaceAdminNoteText(lines[request.Index], request.Text.Trim());
+
+        var updated = string.Join("\n", lines);
+        if (updated.Length > 1000)
+            return BadRequest("مجموع یادداشت‌ها بیش از حد مجاز (۱۰۰۰ کاراکتر) می‌شود.");
+
+        order.AdminNotes = updated;
+        order.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>حذف یک یادداشت همراه تغییر وضعیت/مرحله.</summary>
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpPost("admin/{id:int}/admin-notes/delete")]
+    public async Task<IActionResult> DeleteAdminNote(int id, [FromBody] AdminNoteDeleteRequest request, CancellationToken ct)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order == null) return NotFound("سفارش یافت نشد.");
+
+        var lines = SplitAdminNoteLines(order.AdminNotes);
+        if (request.Index < 0 || request.Index >= lines.Count)
+            return NotFound("یادداشت موردنظر یافت نشد؛ صفحه را تازه کنید.");
+
+        if (!string.IsNullOrEmpty(request.Original) && lines[request.Index] != request.Original)
+            return Conflict("یادداشت هم‌زمان تغییر کرده است؛ صفحه را تازه کنید.");
+
+        lines.RemoveAt(request.Index);
+        order.AdminNotes = lines.Count == 0 ? null : string.Join("\n", lines);
+        order.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    private static readonly Regex AdminNotePrefixRegex = new(
+        @"^\[[^\]]+\]\s*[^:]+:\s*",
+        RegexOptions.Compiled);
+
+    /// <summary>خطوط خالی حذف می‌شوند تا ایندکس کلاینت و سرور یکسان باشد.</summary>
+    private static List<string> SplitAdminNoteLines(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes)) return new List<string>();
+
+        return notes.Replace("\r\n", "\n")
+            .Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0)
+            .ToList();
+    }
+
+    /// <summary>فقط متن یادداشت را عوض می‌کند و پیشوند «[تاریخ] نام:» را نگه می‌دارد.</summary>
+    private static string ReplaceAdminNoteText(string line, string text)
+    {
+        var match = AdminNotePrefixRegex.Match(line);
+        return match.Success ? line[..match.Length] + text : text;
     }
 
     /// <summary>تأیید دستی پرداخت آنلاین با همان Authority ثبت‌شده (برای callbackهای گم‌شده).</summary>
@@ -2564,6 +2834,40 @@ WHERE Id = {order.Id}
         }
 
         await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // ──────────── ADMIN: ORDER EVENTS (edit/delete timeline records) ────────────
+
+    /// <summary>ویرایش متن یک رویداد ثبت‌شده در تاریخچه سفارش (بدون تغییر وضعیت واقعی سفارش).</summary>
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpPut("admin/{id:int}/events/{eventId:int}")]
+    public async Task<IActionResult> UpdateOrderEvent(int id, int eventId, [FromBody] OrderEventUpdateRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Message))
+            return BadRequest("متن رویداد نمی‌تواند خالی باشد.");
+
+        var evt = await _db.OrderEvents.FirstOrDefaultAsync(e => e.Id == eventId && e.OrderId == id, ct);
+        if (evt == null) return NotFound();
+
+        var text = request.Message.Trim();
+        // بخش ساختاری پیام (مثل «|مرحله|زمان») باید حفظ شود تا برچسب رویداد درست بماند.
+        var pipe = evt.Message?.IndexOf('|') ?? -1;
+        evt.Message = pipe >= 0 ? text + evt.Message![pipe..] : text;
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>حذف یک رویداد از تاریخچه سفارش (وضعیت واقعی سفارش تغییر نمی‌کند).</summary>
+    [Authorize(Policy = "perm:admin.orders.manage")]
+    [HttpDelete("admin/{id:int}/events/{eventId:int}")]
+    public async Task<IActionResult> DeleteOrderEvent(int id, int eventId, CancellationToken ct)
+    {
+        var evt = await _db.OrderEvents.FirstOrDefaultAsync(e => e.Id == eventId && e.OrderId == id, ct);
+        if (evt == null) return NotFound();
+
+        _db.OrderEvents.Remove(evt);
+        await _db.SaveChangesAsync(ct);
         return NoContent();
     }
 

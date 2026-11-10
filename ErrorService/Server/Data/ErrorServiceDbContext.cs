@@ -43,6 +43,7 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<OrderEvent> OrderEvents { get; set; }
     public DbSet<ShippingMethod> ShippingMethods { get; set; }
     public DbSet<OrderReturn> OrderReturns { get; set; }
+    public DbSet<OrderNote> OrderNotes { get; set; }
     public DbSet<CartItem> CartItems { get; set; }
     public DbSet<Coupon> Coupons { get; set; }
     public DbSet<PaymentGateway> PaymentGateways { get; set; }
