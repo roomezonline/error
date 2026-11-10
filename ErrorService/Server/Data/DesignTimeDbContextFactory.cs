@@ -11,8 +11,11 @@ public sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<Err
 {
     public ErrorServiceDbContext CreateDbContext(string[] args)
     {
+        // استفاده از connection string واقعی از appsettings.Development.json
+        var connectionString = "Server=185.211.56.76,1463;Database=foodir_errorservice_new;User Id=foodir_errorservice;Password=M2223125!;TrustServerCertificate=True;Encrypt=False;MultipleActiveResultSets=True";
+        
         var options = new DbContextOptionsBuilder<ErrorServiceDbContext>()
-            .UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=ErrorService_DesignTime;Trusted_Connection=True;TrustServerCertificate=True")
+            .UseSqlServer(connectionString)
             .Options;
 
         return new ErrorServiceDbContext(options);
