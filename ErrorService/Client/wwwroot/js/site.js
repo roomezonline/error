@@ -1474,3 +1474,9 @@ window.initSmartReadMore = function (rootSelector) {
         });
     });
 };
+
+// قفل اسکرول صفحه هنگام باز بودن مدال‌های ادمین؛ بدنهٔ مدال خودش اسکرول می‌شود
+// و لیست/صفحه پشت آن جابه‌جا نمی‌شود (مهم برای موبایل).
+window.setBodyScrollLock = function (lock) {
+    document.body.style.overflow = lock ? 'hidden' : '';
+};
