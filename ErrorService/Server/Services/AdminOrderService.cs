@@ -554,6 +554,10 @@ WHERE Id = {order.Id}
             if (product.IsDraft)
                 return (items, total, $"محصول «{product.Name}» در فروشگاه قابل فروش نیست.");
 
+            var minOrder = Math.Max(1, product.MinOrderQuantity);
+            if (quantity < minOrder)
+                return (items, total, $"حداقل تعداد خرید «{product.Name}» {minOrder} عدد است.");
+
             if (requireStock && (!product.IsAvailable || product.StockQuantity < quantity))
                 return (items, total, $"موجودی «{product.Name}» کافی نیست. موجودی فعلی: {product.StockQuantity}");
 

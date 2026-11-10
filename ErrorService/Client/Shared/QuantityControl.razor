@@ -15,7 +15,7 @@
     else
     {
         <div class="qc-qty">
-            <button type="button" class="qc-btn" @onclick="OnDecrease" @onclick:stopPropagation="true" @onclick:preventDefault="true" aria-label="کم کردن">
+            <button type="button" class="qc-btn" @onclick="OnDecrease" disabled="@DecreaseDisabled" @onclick:stopPropagation="true" @onclick:preventDefault="true" aria-label="کم کردن">
                 <span class="oi oi-minus"></span>
             </button>
             <span class="qc-val">@Quantity</span>
@@ -34,6 +34,9 @@
     // سقف موجودی: دکمه «+» غیرفعال می‌شود ولی کم کردن همچنان مجاز است
     // تا کاربری که از سقف رد شده بتواند تعداد را اصلاح کند.
     [Parameter] public bool IncreaseDisabled { get; set; }
+
+    // کف خرید: دکمه «−» در حداقل تعداد خرید غیرفعال می‌شود.
+    [Parameter] public bool DecreaseDisabled { get; set; }
 
     [Parameter] public string AddLabel { get; set; } = "افزودن";
 

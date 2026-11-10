@@ -676,6 +676,7 @@ public class ProductsController : ControllerBase
             CategoryName = p.Category.Name,
             IsAvailable = p.IsAvailable,
             StockQuantity = p.StockQuantity,
+            MinOrderQuantity = p.MinOrderQuantity,
             IsFeatured = p.IsFeatured,
             SortOrder = p.SortOrder,
             CreatedAt = p.CreatedAt,
@@ -872,6 +873,7 @@ public class ProductsController : ControllerBase
                 IsAvailable = p.IsAvailable,
                 IsDraft = p.IsDraft,
                 StockQuantity = p.StockQuantity,
+                MinOrderQuantity = p.MinOrderQuantity,
                 IsFeatured = p.IsFeatured,
                 SortOrder = p.SortOrder,
                 CreatedAt = p.CreatedAt,
@@ -915,6 +917,7 @@ public class ProductsController : ControllerBase
                 IsAvailable = p.IsAvailable,
                 IsDraft = p.IsDraft,
                 StockQuantity = p.StockQuantity,
+                MinOrderQuantity = p.MinOrderQuantity,
                 IsFeatured = p.IsFeatured,
                 SortOrder = p.SortOrder,
                 CreatedAt = p.CreatedAt,
@@ -1183,7 +1186,8 @@ public class ProductsController : ControllerBase
                 EstimatedDeliveryText = p.EstimatedDeliveryText,
                 DatasheetUrl = p.DatasheetUrl,
                 FailureSymptoms = p.FailureSymptoms,
-                RelatedProductIds = p.RelatedProductIds
+                RelatedProductIds = p.RelatedProductIds,
+                MinOrderQuantity = p.MinOrderQuantity
             })
             .FirstOrDefaultAsync();
 
@@ -1225,7 +1229,8 @@ public class ProductsController : ControllerBase
                 CategoryId = p.CategoryId,
                 CategoryName = p.Category.Name,
                 IsAvailable = p.IsAvailable,
-                StockQuantity = p.StockQuantity
+                StockQuantity = p.StockQuantity,
+                MinOrderQuantity = p.MinOrderQuantity
             })
             .ToListAsync();
 
@@ -1262,7 +1267,8 @@ public class ProductsController : ControllerBase
                 EstimatedDeliveryText = p.EstimatedDeliveryText,
                 DatasheetUrl = p.DatasheetUrl,
                 FailureSymptoms = p.FailureSymptoms,
-                RelatedProductIds = p.RelatedProductIds
+                RelatedProductIds = p.RelatedProductIds,
+                MinOrderQuantity = p.MinOrderQuantity
             })
             .FirstOrDefaultAsync();
 
@@ -1291,6 +1297,8 @@ public class ProductsController : ControllerBase
             return "قیمت محصول معتبر نیست";
         if (request.StockQuantity < 0)
             return "موجودی انبار نمی‌تواند منفی باشد";
+        if (request.MinOrderQuantity < 1)
+            return "حداقل تعداد خرید باید حداقل ۱ باشد";
         if (request.DiscountPrice.HasValue
             && (request.DiscountPrice.Value <= 0 || request.DiscountPrice.Value >= request.Price))
             return "قیمت با تخفیف باید بزرگتر از صفر و کمتر از قیمت اصلی باشد";
@@ -1330,6 +1338,7 @@ public class ProductsController : ControllerBase
             IsAvailable = request.IsAvailable,
             IsDraft = request.IsDraft,
             StockQuantity = request.StockQuantity,
+            MinOrderQuantity = request.MinOrderQuantity,
             IsFeatured = request.IsFeatured,
             SortOrder = request.SortOrder,
             CompatibilityInfo = request.CompatibilityInfo,
@@ -1400,6 +1409,7 @@ public class ProductsController : ControllerBase
         product.IsAvailable = request.IsAvailable;
         product.IsDraft = request.IsDraft;
         product.StockQuantity = request.StockQuantity;
+        product.MinOrderQuantity = request.MinOrderQuantity;
         product.IsFeatured = request.IsFeatured;
         product.SortOrder = request.SortOrder;
         if (product.StockQuantity <= 0) product.IsAvailable = false;

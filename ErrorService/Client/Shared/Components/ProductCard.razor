@@ -145,6 +145,7 @@
                 <QuantityControl Quantity="@CartService.GetQuantity(Product.Id)"
                                  Disabled="@(!Product.IsAvailable || Product.StockQuantity <= 0)"
                                  IncreaseDisabled="@(Product.StockQuantity > 0 && CartService.GetQuantity(Product.Id) >= Product.StockQuantity)"
+                                 DecreaseDisabled="@(Product.MinOrderQuantity > 1 && CartService.GetQuantity(Product.Id) <= Product.MinOrderQuantity)"
                                  AddLabel="افزودن به سبد"
                                  OnAdd="Add"
                                  OnIncrease="Increase"
@@ -345,8 +346,10 @@
     {
         try
         {
-            await CartService.AddToCartAsync(Product, 1);
-            Toast.ShowSuccess($"{Product.Name} به سبد خرید اضافه شد.");
+            if (await CartService.AddToCartAsync(Product, 1))
+                Toast.ShowSuccess($"{Product.Name} به سبد خرید اضافه شد.");
+            else
+                Toast.ShowWarning($"حداقل خرید «{Product.Name}» {Math.Max(1, Product.MinOrderQuantity)} عدد است؛ موجودی فعلی کمتر از آن است.");
         }
         catch
         {

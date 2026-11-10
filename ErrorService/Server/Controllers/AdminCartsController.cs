@@ -85,6 +85,9 @@ public sealed class AdminCartsController : ControllerBase
                 return BadRequest($"محصول «{product.Name}» ناموجود است؛ آن را حذف یا جایگزین کنید.");
             if (quantity > product.StockQuantity)
                 return BadRequest($"تعداد «{product.Name}» از موجودی ({product.StockQuantity}) بیشتر است.");
+            var minOrder = Math.Max(1, product.MinOrderQuantity);
+            if (quantity < minOrder)
+                return BadRequest($"حداقل تعداد خرید «{product.Name}» {minOrder} عدد است.");
         }
 
         var existing = await _db.CartItems.Where(c => c.UserId == userId).ToListAsync();
@@ -303,6 +306,7 @@ public sealed class AdminCartsController : ControllerBase
             else if (product.IsDraft) issue = "محصول پیش‌نویس است";
             else if (!available) issue = "ناموجود";
             else if (row.Quantity > product.StockQuantity) issue = "بیش از موجودی";
+            else if (row.Quantity < Math.Max(1, product.MinOrderQuantity)) issue = $"کمتر از حداقل خرید ({Math.Max(1, product.MinOrderQuantity)} عدد)";
             else if (effectivePrice != row.Price) issue = "قیمت به‌روزرسانی شده است";
 
             items.Add(new AdminCartItemDto

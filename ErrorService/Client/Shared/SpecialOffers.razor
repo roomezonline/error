@@ -119,8 +119,10 @@
 
     private async Task Add(ProductDto p)
     {
-        await CartService.AddToCartAsync(p, 1);
-        ToastService.ShowSuccess($"{p.Name} به سبد خرید اضافه شد.");
+        if (await CartService.AddToCartAsync(p, 1))
+            ToastService.ShowSuccess($"{p.Name} به سبد خرید اضافه شد.");
+        else
+            ToastService.ShowWarning($"حداقل خرید «{p.Name}» {Math.Max(1, p.MinOrderQuantity)} عدد است؛ موجودی فعلی کمتر از آن است.");
         StateHasChanged();
     }
 

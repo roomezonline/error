@@ -3443,6 +3443,39 @@ namespace ErrorService.Server.Data.Migrations
                     b.ToTable("OrderItems");
                 });
 
+            modelBuilder.Entity("ErrorService.Server.Models.OrderNote", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ImageUrlsJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.ToTable("OrderNotes");
+                });
+
             modelBuilder.Entity("ErrorService.Server.Models.OrderReturn", b =>
                 {
                     b.Property<int>("Id")
@@ -3871,6 +3904,9 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<string>("MainImageUrl")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("MinOrderQuantity")
+                        .HasColumnType("int");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -7391,6 +7427,17 @@ namespace ErrorService.Server.Data.Migrations
                     b.Navigation("Order");
                 });
 
+            modelBuilder.Entity("ErrorService.Server.Models.OrderNote", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.Order", "Order")
+                        .WithMany("Notes")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+                });
+
             modelBuilder.Entity("ErrorService.Server.Models.OrderReturn", b =>
                 {
                     b.HasOne("ErrorService.Server.Models.Order", "Order")
@@ -7954,6 +8001,8 @@ namespace ErrorService.Server.Data.Migrations
                     b.Navigation("Events");
 
                     b.Navigation("Items");
+
+                    b.Navigation("Notes");
 
                     b.Navigation("Returns");
 

@@ -13,6 +13,7 @@ public class CartItem
     public string? ImageUrl { get; set; }
     public decimal Price { get; set; }
     public int Quantity { get; set; }
+    public int MinOrderQuantity { get; set; } = 1;
 }
 
 public class RemovedCartEntry
@@ -258,7 +259,8 @@ public class CartService
                 Name = si.ProductName,
                 ImageUrl = si.ImageUrl,
                 Price = si.Price,
-                Quantity = si.Quantity
+                Quantity = si.Quantity,
+                MinOrderQuantity = Math.Max(1, si.MinOrderQuantity)
             });
         }
 
@@ -285,9 +287,16 @@ public class CartService
 
     public decimal GetTotalAmount() => _items.Sum(x => x.Price * x.Quantity);
 
-    public async Task AddToCartAsync(ProductDto product, int quantity = 1)
+    public async Task<bool> AddToCartAsync(ProductDto product, int quantity = 1)
     {
-        if (quantity <= 0) return;
+        if (quantity <= 0) return false;
+
+        // کف خرید: کمتر از حداقل تعیین‌شده توسط ادمین قابل افزودن نیست.
+        var minOrder = Math.Max(1, product.MinOrderQuantity);
+        // موجودی کمتر از حداقل خرید یعنی محصول عملاً قابل سفارش نیست.
+        if (product.StockQuantity > 0 && product.StockQuantity < minOrder)
+            return false;
+        quantity = Math.Max(quantity, minOrder);
 
         // سقف موجودی: تعداد نباید از موجودی انبار بیشتر شود.
         if (product.StockQuantity > 0)
@@ -301,6 +310,7 @@ public class CartService
             var target = existing.Quantity + quantity;
             if (product.StockQuantity > 0) target = Math.Min(target, product.StockQuantity);
             existing.Quantity = target;
+            existing.MinOrderQuantity = minOrder;
         }
         else
         {
@@ -310,7 +320,8 @@ public class CartService
                 Name = product.Name,
                 ImageUrl = product.MainImageUrl,
                 Price = DiscountHelper.GetEffectivePrice(product),
-                Quantity = quantity
+                Quantity = quantity,
+                MinOrderQuantity = minOrder
             });
         }
 
@@ -324,6 +335,7 @@ public class CartService
         {
             try { ItemAdded?.Invoke(added); } catch { }
         }
+        return true;
     }
 
     public async Task UpdateQuantityAsync(int productId, int quantity)
@@ -337,6 +349,7 @@ public class CartService
             return;
         }
 
+        quantity = Math.Max(quantity, Math.Max(1, item.MinOrderQuantity));
         item.Quantity = quantity;
         _removed.RemoveAll(r => r.ProductId == productId);
         await SaveAsync();

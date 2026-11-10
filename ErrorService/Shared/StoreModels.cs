@@ -103,6 +103,9 @@ public class ProductDto : IDiscountInfo
     public bool IsAvailable { get; set; } = true;
     public bool IsDraft { get; set; }
     public int StockQuantity { get; set; } = 0;
+
+    /// <summary>حداقل تعداد خرید در هر سفارش؛ ۱ یعنی بدون محدودیت.</summary>
+    public int MinOrderQuantity { get; set; } = 1;
     public bool IsFeatured { get; set; }
     public int SortOrder { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -301,6 +304,10 @@ public class ProductUpsertRequest
     public bool IsDraft { get; set; }
 
     public int StockQuantity { get; set; } = 0;
+
+    /// <summary>حداقل تعداد خرید در هر سفارش؛ ۱ یعنی بدون محدودیت.</summary>
+    [Range(1, 1000000, ErrorMessage = "حداقل تعداد خرید باید بین ۱ و ۱۰۰۰۰۰۰ باشد")]
+    public int MinOrderQuantity { get; set; } = 1;
 
     public bool IsFeatured { get; set; }
 

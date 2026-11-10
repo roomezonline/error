@@ -69,7 +69,7 @@
                                 <div class="mc-item__price">@item.Price.ToString("N0") <small>تومان</small></div>
                                 <div class="mc-item__actions">
                                     <div class="mc-qty" role="group" aria-label="تعداد @item.Name">
-                                        <button type="button" class="mc-qty__btn" @onclick="() => Decrease(item)" aria-label="کم کردن">
+                                        <button type="button" class="mc-qty__btn" @onclick="() => Decrease(item)" disabled="@(item.MinOrderQuantity > 1 && item.Quantity <= item.MinOrderQuantity)" aria-label="کم کردن">
                                             <span class="oi oi-minus"></span>
                                         </button>
                                         <span class="mc-qty__val">@item.Quantity</span>
@@ -487,7 +487,7 @@
     {
         if (item.Quantity <= 1)
             await CartService.RemoveItemAsync(item.ProductId);
-        else
+        else if (item.Quantity > Math.Max(1, item.MinOrderQuantity))
             await CartService.UpdateQuantityAsync(item.ProductId, item.Quantity - 1);
     }
 

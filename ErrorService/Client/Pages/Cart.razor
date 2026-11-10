@@ -108,6 +108,17 @@
                                         سقف موجودی: @avail!.StockQuantity عدد
                                     </div>
                                 }
+                                else if (item.Quantity < Math.Max(1, item.MinOrderQuantity))
+                                {
+                                    <div class="item-unavailable-badge item-unavailable-badge--info">
+                                        <span class="oi oi-info"></span>
+                                        حداقل خرید: @Math.Max(1, item.MinOrderQuantity) عدد
+                                        <button type="button" class="btn btn-sm btn-link p-0 ms-2"
+                                                @onclick="() => CartService.UpdateQuantityAsync(item.ProductId, Math.Max(1, item.MinOrderQuantity))">
+                                            اصلاح تعداد
+                                        </button>
+                                    </div>
+                                }
                                 <div class="d-flex align-items-center gap-3">
                                     <div class="item-img">
                                         <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "/images/placeholder-product.svg" : ImageUrlHelper.Thumb(item.ImageUrl, 200))"
@@ -121,6 +132,7 @@
                                         <QuantityControl Quantity="@item.Quantity"
                                                          Disabled="@notPurchasable"
                                                          IncreaseDisabled="@atCap"
+                                                         DecreaseDisabled="@(item.MinOrderQuantity > 1 && item.Quantity <= item.MinOrderQuantity)"
                                                          OnAdd="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity + 1)"
                                                          OnIncrease="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity + 1)"
                                                          OnDecrease="() => CartService.UpdateQuantityAsync(item.ProductId, item.Quantity - 1)" />
@@ -315,6 +327,13 @@
         {
             showRemoveUnavailableConfirm = true;
             StateHasChanged();
+            return;
+        }
+
+        var belowMin = CartService.GetItems().FirstOrDefault(i => i.Quantity < Math.Max(1, i.MinOrderQuantity));
+        if (belowMin != null)
+        {
+            ToastService.ShowWarning($"حداقل تعداد خرید «{belowMin.Name}» {Math.Max(1, belowMin.MinOrderQuantity)} عدد است؛ تعداد آن را اصلاح کنید.");
             return;
         }
 

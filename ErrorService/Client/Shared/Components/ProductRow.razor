@@ -65,8 +65,10 @@
     {
         try
         {
-            await CartService.AddToCartAsync(product, 1);
-            ToastService.ShowSuccess("به سبد خرید اضافه شد");
+            if (await CartService.AddToCartAsync(product, 1))
+                ToastService.ShowSuccess("به سبد خرید اضافه شد");
+            else
+                ToastService.ShowWarning($"حداقل خرید «{product.Name}» {Math.Max(1, product.MinOrderQuantity)} عدد است؛ موجودی فعلی کمتر از آن است.");
         }
         catch (Exception ex)
         {

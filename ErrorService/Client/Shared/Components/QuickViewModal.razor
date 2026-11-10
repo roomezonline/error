@@ -111,7 +111,7 @@
                             @if (_product.IsAvailable && _product.StockQuantity > 0)
                             {
                                 <div class="qv-qty" role="group" aria-label="تعداد">
-                                    <button type="button" class="qv-qty__btn" @onclick="DecreaseQty" disabled="@(_qty <= 1)" aria-label="کم کردن تعداد">
+                                    <button type="button" class="qv-qty__btn" @onclick="DecreaseQty" disabled="@(_qty <= MinQty)" aria-label="کم کردن تعداد">
                                         <span class="oi oi-minus"></span>
                                     </button>
                                     <span class="qv-qty__val">@_qty</span>
@@ -524,6 +524,7 @@
             var product = await Http.GetFromJsonAsync<ProductDto>($"api/products/{productId}");
             if (QuickView.ProductId != productId) return;
             _product = product;
+            _qty = MinQty;
             _activeImage = product?.MainImageUrl;
             if (product != null)
             {
@@ -570,8 +571,10 @@
 
     private void DecreaseQty()
     {
-        if (_qty > 1) _qty--;
+        if (_qty > MinQty) _qty--;
     }
+
+    private int MinQty => Math.Max(1, _product?.MinOrderQuantity ?? 1);
 
     private async Task AddToCartAsync()
     {
@@ -580,7 +583,11 @@
         try
         {
             var buyQty = _product.StockQuantity > 0 ? Math.Min(_qty, _product.StockQuantity) : _qty;
-            await CartService.AddToCartAsync(_product, buyQty);
+            if (!await CartService.AddToCartAsync(_product, buyQty))
+            {
+                Toast.ShowWarning($"حداقل خرید «{_product.Name}» {MinQty} عدد است؛ موجودی فعلی کمتر از آن است.");
+                return;
+            }
             Toast.ShowSuccess($"{_product.Name} به سبد خرید اضافه شد.");
             Close();
         }

@@ -82,6 +82,9 @@ public class Product : IDiscountInfo
 
     public int StockQuantity { get; set; } = 0;
 
+    /// <summary>حداقل تعداد خرید در هر سفارش؛ ۱ یعنی بدون محدودیت.</summary>
+    public int MinOrderQuantity { get; set; } = 1;
+
     public bool IsFeatured { get; set; }
 
     public int SortOrder { get; set; }

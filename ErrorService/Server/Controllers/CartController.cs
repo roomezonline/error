@@ -42,6 +42,8 @@ public class CartController : ControllerBase
             .OrderByDescending(c => c.UpdatedAt)
             .ToListAsync();
 
+        var minQuantities = await MinOrderQuantitiesAsync(items.Select(i => i.ProductId));
+
         return new CartStateDto
         {
             Revision = revision,
@@ -53,9 +55,19 @@ public class CartController : ControllerBase
                 ProductName = c.ProductName,
                 ImageUrl = c.ImageUrl,
                 Price = c.Price,
-                Quantity = c.Quantity
+                Quantity = c.Quantity,
+                MinOrderQuantity = minQuantities.GetValueOrDefault(c.ProductId, 1)
             }).ToList()
         };
+    }
+
+    private async Task<Dictionary<int, int>> MinOrderQuantitiesAsync(IEnumerable<int> productIds)
+    {
+        var ids = productIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<int, int>();
+        return await _db.Products.AsNoTracking()
+            .Where(p => ids.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => Math.Max(1, p.MinOrderQuantity));
     }
 
     private void SetRevisionHeader(long revision)
@@ -161,18 +173,22 @@ public class CartController : ControllerBase
         var userId = CurrentUserId();
         if (userId == null) return Unauthorized();
 
-        return await _db.CartItems
+        var items = await _db.CartItems
             .Where(c => c.UserId == userId.Value)
             .OrderByDescending(c => c.UpdatedAt)
-            .Select(c => new CartItemDto
-            {
-                ProductId = c.ProductId,
-                ProductName = c.ProductName,
-                ImageUrl = c.ImageUrl,
-                Price = c.Price,
-                Quantity = c.Quantity
-            })
             .ToListAsync();
+
+        var minQuantities = await MinOrderQuantitiesAsync(items.Select(i => i.ProductId));
+
+        return items.Select(c => new CartItemDto
+        {
+            ProductId = c.ProductId,
+            ProductName = c.ProductName,
+            ImageUrl = c.ImageUrl,
+            Price = c.Price,
+            Quantity = c.Quantity,
+            MinOrderQuantity = minQuantities.GetValueOrDefault(c.ProductId, 1)
+        }).ToList();
     }
 
     [HttpGet("state")]

@@ -349,6 +349,7 @@
                                     <span class="pd-price-badge">تخفیف ویژه</span>
                                 </div>
                                 <div class="pd-price-current">
+                                    <span class="pd-price-label">قیمت واحد:</span>
                                     <span class="pd-price-num">@product.DiscountPrice!.Value.ToString("N0")</span>
                                     <span class="pd-price-unit">تومان</span>
                                 </div>
@@ -356,6 +357,7 @@
                             else
                             {
                                 <div class="pd-price-current">
+                                    <span class="pd-price-label">قیمت واحد:</span>
                                     <span class="pd-price-num">@product.Price.ToString("N0")</span>
                                     <span class="pd-price-unit">تومان</span>
                                 </div>
@@ -363,33 +365,39 @@
                         </div>
 
                         <div class="pd-actions">
-                            <div class="pd-qty">
-                                <span class="pd-qty-label">تعداد:</span>
-                                <div class="pd-qty-box">
-                                    <button class="pd-qty-btn" @onclick="DecrementQty" disabled="@(_quantity <= 1)" aria-label="کاهش">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                    </button>
-                                    <span class="pd-qty-val">@_quantity</span>
-                                    <button class="pd-qty-btn" @onclick="IncrementQty" disabled="@(_quantity >= QtyMax)" aria-label="افزایش">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                    </button>
+                            <div class="pd-qty @(QtyMin > 1 ? "pd-qty--has-min" : "")">
+                                <div class="pd-qty-main">
+                                    <span class="pd-qty-label">تعداد:</span>
+                                    <div class="pd-qty-box">
+                                        <button class="pd-qty-btn" @onclick="DecrementQty" disabled="@(_quantity <= QtyMin)" aria-label="کاهش">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                        </button>
+                                        <span class="pd-qty-val">@_quantity</span>
+                                        <button class="pd-qty-btn" @onclick="IncrementQty" disabled="@(_quantity >= QtyMax)" aria-label="افزایش">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                        </button>
+                                    </div>
                                 </div>
+                                @if (QtyMin > 1)
+                                {
+                                    <span class="pd-qty-min">@(product!.StockQuantity > 0 && product.StockQuantity < QtyMin ? $"موجودی کمتر از حداقل خرید ({QtyMin} عدد) است" : $"حداقل خرید: {QtyMin} عدد")</span>
+                                }
                             </div>
                             <div class="pd-actions-tools">
-                                <button class="pd-share" @onclick="OpenShareModal" title="اشتراک‌گذاری" aria-label="اشتراک‌گذاری">
+                                <button class="pd-share pd-tool-share" @onclick="OpenShareModal" title="اشتراک‌گذاری" aria-label="اشتراک‌گذاری">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                                     <span>اشتراک</span>
                                 </button>
                                 @if (Flag("wishlist"))
                                 {
-                                    <button class="pd-share @(isInWishlist ? "pd-wishlist-active" : "")" @onclick="ToggleWishlist" title="علاقمندی" aria-label="افزودن به علاقمندی‌ها">
+                                    <button class="pd-share pd-tool-wish @(isInWishlist ? "pd-wishlist-active" : "")" @onclick="ToggleWishlist" title="علاقمندی" aria-label="افزودن به علاقمندی‌ها">
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="@(isInWishlist ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
                                         <span>علاقمندی</span>
                                     </button>
                                 }
                                 @if (Flag("pricedrop") && product != null && product.Price > 0)
                                 {
-                                    <button class="pd-share pd-price-drop @(_priceDropSubscribed ? "pd-price-drop--on" : "")"
+                                    <button class="pd-share pd-tool-bell pd-price-drop @(_priceDropSubscribed ? "pd-price-drop--on" : "")"
                                             @onclick="HandlePriceDropClick" disabled="@_priceDropBusy"
                                             title="اطلاع از کاهش قیمت" aria-label="اطلاع از کاهش قیمت">
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -420,7 +428,7 @@
                         }
                         else
                         {
-                            <button class="pd-add-cart @_cartBtnClass" @onclick="AddToCart" disabled="@(!product.IsAvailable || product.StockQuantity <= 0 || _isAddingToCart)">
+                            <button class="pd-add-cart @_cartBtnClass" @onclick="AddToCart" disabled="@(!product.IsAvailable || product.StockQuantity <= 0 || product.StockQuantity < QtyMin || _isAddingToCart)">
                                 @if (_cartBtnState == CartBtnState.Spinner)
                                 {
                                     <span class="pd-cart-spinner"></span>
@@ -970,7 +978,7 @@
             </div>
             <div class="pd-sticky-actions">
                 <div class="pd-sticky-qty">
-                    <button class="pd-sticky-qty-btn" @onclick="DecrementQty" disabled="@(_quantity <= 1)" aria-label="کاهش">
+                    <button class="pd-sticky-qty-btn" @onclick="DecrementQty" disabled="@(_quantity <= QtyMin)" aria-label="کاهش">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
                     <span class="pd-sticky-qty-val">@_quantity</span>
@@ -980,7 +988,7 @@
                 </div>
                 @if (!IsProductOutOfStock)
                 {
-                <button class="pd-sticky-cart @_cartBtnClass" @onclick="AddToCart" disabled="@(!product.IsAvailable || product.StockQuantity <= 0 || _isAddingToCart)">
+                <button class="pd-sticky-cart @_cartBtnClass" @onclick="AddToCart" disabled="@(!product.IsAvailable || product.StockQuantity <= 0 || product.StockQuantity < QtyMin || _isAddingToCart)">
                     @if (_cartBtnState == CartBtnState.Spinner)
                     {
                         <span class="pd-cart-spinner"></span>
@@ -1472,7 +1480,10 @@
     private void HandleThumbError(int index) { }
 
     private void IncrementQty() { if (_quantity < QtyMax) _quantity++; }
-    private void DecrementQty() { if (_quantity > 1) _quantity--; }
+    private void DecrementQty() { if (_quantity > QtyMin) _quantity--; }
+
+    // کف انتخاب تعداد = حداقل خرید تعیین‌شده توسط ادمین (پیش‌فرض ۱)
+    private int QtyMin => Math.Max(1, product?.MinOrderQuantity ?? 1);
 
     // سقف انتخاب تعداد = موجودی انبار (در صورت نبود اطلاعات، سقف عمومی ۹۹)
     private int QtyMax => (product != null && product.StockQuantity > 0) ? product.StockQuantity : 99;
@@ -1820,6 +1831,7 @@
             product = loaded;
             if (product != null)
             {
+                _quantity = QtyMin;
                 productJsonLd = BuildProductJsonLd(product);
                 StartCountdown();
                 _ = LoadRelatedProducts(product);
@@ -2080,7 +2092,15 @@
         _cartBtnText = "در حال افزودن...";
         StateHasChanged();
         await Task.Delay(400);
-        await CartService.AddToCartAsync(product, _quantity);
+        if (!await CartService.AddToCartAsync(product, _quantity))
+        {
+            _cartBtnState = CartBtnState.Default;
+            _cartBtnText = "افزودن به سبد خرید";
+            _isAddingToCart = false;
+            StateHasChanged();
+            ToastService.ShowWarning($"حداقل خرید «{product.Name}» {QtyMin} عدد است؛ موجودی فعلی کمتر از آن است.");
+            return;
+        }
         _cartBtnState = CartBtnState.Done;
         _cartBtnText = "افزوده شد";
         StateHasChanged();

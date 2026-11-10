@@ -606,8 +606,8 @@
                 if (item.Quantity <= 0) continue;
                 var p = await Http.GetFromJsonAsync<ProductDto>($"api/products/{item.ProductId}");
                 if (p == null || !p.IsAvailable || p.StockQuantity <= 0) continue;
-                await CartService.AddToCartAsync(p, item.Quantity);
-                added++;
+                if (await CartService.AddToCartAsync(p, item.Quantity))
+                    added++;
             }
             if (added == 0)
             {

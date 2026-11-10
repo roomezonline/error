@@ -1475,7 +1475,7 @@
                                                 <div class="pf-cart-price">@item.Price.ToString("N0") تومان</div>
                                                 <div class="pf-cart-qty-row">
                                                     <div class="pf-cart-qty-controls">
-                                                        <button class="pf-cart-qty-btn" @onclick="() => DecreaseQty(item.ProductId)" disabled="@(item.Quantity <= 1 || isUnavailable)">
+                                                        <button class="pf-cart-qty-btn" @onclick="() => DecreaseQty(item.ProductId)" disabled="@(item.Quantity <= 1 || (item.MinOrderQuantity > 1 && item.Quantity <= item.MinOrderQuantity) || isUnavailable)">
                                                             <span class="oi oi-minus"></span>
                                                         </button>
                                                         <span class="pf-cart-qty-val">@item.Quantity</span>
