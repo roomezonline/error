@@ -78,16 +78,18 @@
 
     @if (showEditor)
     {
-        <div class="card shadow-sm border-0 rounded-4 mb-4 p-4 animate__animated animate__fadeIn">
-            <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="nw-modal-overlay" @onclick="CloseEditorIfIdle">
+            <div class="nw-modal" @onclick:stopPropagation>
+            <div class="nw-modal__head">
                 <h5 class="m-0 fw-bold">
                     @(editingId == 0 ? "ایجاد " : "ویرایش ")@ContentTypeCatalog.Label(model.ContentType)
                 </h5>
                 <button class="btn-close" @onclick="CloseEditor"></button>
             </div>
 
-            <EditForm Model="model" OnValidSubmit="SaveNews">
+            <EditForm Model="model" OnValidSubmit="SaveNews" class="nw-modal__form">
                 <DataAnnotationsValidator />
+                <div class="nw-modal__body">
                 <div class="row g-4">
                     <div class="col-12">
                         <div class="mb-3">
@@ -313,6 +315,7 @@
                         </div>
                     </div>
                 </div>
+                </div>
 
                 <div class="news-actions mt-4 pt-3 border-top">
                     <button type="button" class="btn btn-outline-primary rounded-3 news-actions__preview" @onclick="OpenLivePreview">
@@ -367,6 +370,7 @@
                     </div>
                 </div>
             }
+        </div>
         </div>
     }
 
@@ -1399,6 +1403,70 @@
         font-weight: 800 !important;
         text-decoration: none !important;
     }
+    /* ویرایشگر به‌صورت مدال باز می‌شود تا لیست پشت آن جابه‌جا نشود */
+    .nw-modal-overlay {
+        position: fixed; inset: 0; z-index: 1080;
+        display: flex; align-items: center; justify-content: center;
+        padding: 20px;
+        background: rgba(2, 6, 23, .55);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        direction: rtl;
+        animation: nwFadeIn .16s ease;
+    }
+
+    .nw-modal {
+        width: min(980px, 100%);
+        max-height: min(94vh, 920px);
+        display: flex; flex-direction: column;
+        background: var(--app-surface, #fff);
+        color: var(--app-text, #0f172a);
+        border-radius: 26px;
+        box-shadow: 0 40px 90px rgba(0, 0, 0, .35);
+        overflow: hidden;
+        animation: nwPop .2s cubic-bezier(.34, 1.4, .64, 1);
+    }
+
+    .nw-modal__head {
+        display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+        flex-shrink: 0;
+        padding: 16px 22px;
+        margin: 0 !important;
+        border-bottom: 1px solid var(--app-border, #e2e8f0);
+    }
+
+    .nw-modal__form { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+
+    .nw-modal__body {
+        flex: 1 1 auto;
+        min-height: 0;
+        padding: 18px 22px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .nw-modal__form > .news-actions {
+        flex-shrink: 0;
+        margin-top: 0 !important;
+        padding: 12px 22px !important;
+        background: var(--app-surface, #fff);
+        border-top: 1px solid var(--app-border, #e2e8f0) !important;
+    }
+
+    @@keyframes nwFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @@keyframes nwPop {
+        from { transform: translateY(16px) scale(.97); opacity: 0; }
+        to { transform: translateY(0) scale(1); opacity: 1; }
+    }
+
+    @@media (max-width: 768px) {
+        .nw-modal-overlay { align-items: flex-end; padding: 0; }
+        .nw-modal { width: 100%; max-height: 95vh; border-radius: 24px 24px 0 0; }
+        .nw-modal__head { padding: 14px 16px; }
+        .nw-modal__body { padding: 14px 16px; }
+        .nw-modal__form > .news-actions { padding: 10px 16px !important; }
+    }
 </style>
 
 @code {
@@ -1409,6 +1477,7 @@
     private int editingId = 0;
     private bool isSaving = false;
     private bool isUploading = false;
+    private bool _inlineUploading = false;
     private string createdAtInput = string.Empty;
 
     private ContentType? _typeFilter;
@@ -1491,6 +1560,7 @@
     private DotNetObjectReference<News>? objRef;
     private int _lastQuillEditingId;
     private bool _quillInitialized;
+    private bool _bodyScrollLocked;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1608,6 +1678,13 @@
             await JS.InvokeVoidAsync("initJalali");
         }
 
+        // هنگام باز بودن مدال، اسکرول صفحهٔ پشت قفل می‌شود تا لیست جابه‌جا نشود.
+        if (_bodyScrollLocked != showEditor)
+        {
+            _bodyScrollLocked = showEditor;
+            try { await JS.InvokeVoidAsync("setBodyScrollLock", showEditor); } catch { }
+        }
+
         if (!showEditor)
             return;
 
@@ -1642,6 +1719,12 @@
         _linkQueryCts?.Cancel();
         _linkQueryCts?.Dispose();
         objRef?.Dispose();
+
+        if (_bodyScrollLocked)
+        {
+            _bodyScrollLocked = false;
+            try { _ = JS.InvokeVoidAsync("setBodyScrollLock", false); } catch { }
+        }
     }
 
     private int skip = 0;
@@ -1654,7 +1737,9 @@
         if (loadMore)
         {
             isLoadingMore = true;
-            skip += take;
+            // مبدأ صفحهٔ بعد از تعداد ردیف‌های نمایش‌داده‌شده محاسبه می‌شود تا بعد از
+            // افزودن/حذف محلی، هیچ موردی جا نیفتد.
+            skip = newsList?.Count ?? (skip + take);
         }
         else
         {
@@ -1746,6 +1831,7 @@
 
     private async Task HandleInlineImageUpload(InputFileChangeEventArgs e)
     {
+        _inlineUploading = true;
         try
         {
             var file = e.File;
@@ -1767,10 +1853,12 @@
             }
         }
         catch (Exception ex) { ToastService.ShowError("خطا در آپلود: " + ex.Message); }
+        finally { _inlineUploading = false; }
     }
 
     private async Task HandleInlineVideoUpload(InputFileChangeEventArgs e)
     {
+        _inlineUploading = true;
         try
         {
             var file = e.File;
@@ -1795,6 +1883,7 @@
             }
         }
         catch (Exception ex) { ToastService.ShowError("خطا در آپلود: " + ex.Message); }
+        finally { _inlineUploading = false; }
     }
 
     private async Task InsertVideoLink()
@@ -2271,7 +2360,37 @@
             if (resp.IsSuccessStatusCode)
             {
                 ToastService.ShowSuccess(editingId == 0 ? "خبر با موفقیت ثبت شد" : "تغییرات خبر ذخیره شد");
-                await LoadNews();
+
+                if (editingId == 0)
+                {
+                    // ردیف تازه بالای لیست اضافه می‌شود تا بارگذاری مجدد، موقعیت اسکرول را از بین نبرد.
+                    try
+                    {
+                        var created = await resp.Content.ReadFromJsonAsync<NewsDto>();
+                        var full = created != null
+                            ? await Http.GetFromJsonAsync<NewsDto>($"api/news/{created.Id}")
+                            : null;
+                        if (full != null && newsList != null)
+                        {
+                            newsList.Insert(0, full);
+                            totalCount++;
+                        }
+                        else
+                        {
+                            await LoadNews();
+                        }
+                    }
+                    catch
+                    {
+                        await LoadNews();
+                    }
+                }
+                else
+                {
+                    // فقط همان ردیف به‌روز می‌شود تا موقعیت اسکرول لیست (خصوصاً در موبایل) حفظ شود.
+                    await RefreshNewsRow(editingId);
+                }
+
                 CloseEditor();
             }
             else
@@ -2286,12 +2405,59 @@
         finally { isSaving = false; }
     }
 
+    // فقط همان ردیف لیست را تازه می‌کند تا بارگذاری مجدد کل لیست، اسکرول را جابه‌جا نکند.
+    private async Task RefreshNewsRow(int id)
+    {
+        if (newsList == null) return;
+
+        try
+        {
+            var full = await Http.GetFromJsonAsync<NewsDto>($"api/news/{id}");
+            if (full != null)
+            {
+                var index = newsList.FindIndex(n => n.Id == id);
+                if (index >= 0) newsList[index] = full;
+                return;
+            }
+        }
+        catch
+        {
+            // در صورت خطا، فیلدهای نمایشی از روی فرم به‌روز می‌شوند.
+        }
+
+        var row = newsList.FirstOrDefault(n => n.Id == id);
+        if (row == null) return;
+
+        row.Title = model.Title;
+        row.Summary = model.Summary;
+        row.ImageUrl = model.ImageUrl;
+        row.Tags = model.Tags;
+        row.AuthorName = model.AuthorName;
+        row.IsPublished = model.IsPublished;
+        row.ContentType = model.ContentType;
+        row.CategoryId = model.CategoryId;
+        row.CategoryTitle = EditorCategories.FirstOrDefault(c => c.Id == model.CategoryId)?.Title;
+        row.PublishAt = model.PublishAt;
+        row.ExpireAt = model.ExpireAt;
+        row.IsFeatured = model.IsFeatured;
+        row.PinnedUntil = model.PinnedUntil;
+        row.CreatedAt = model.CreatedAt ?? row.CreatedAt;
+        row.PublishedAt = model.PublishAt ?? model.CreatedAt ?? row.PublishedAt;
+        row.Status = ContentStatusResolver.Resolve(model.IsPublished, model.PublishAt, model.ExpireAt, DateTimeOffset.UtcNow);
+    }
+
     private void CloseEditor()
     {
         showEditor = false;
         _quillInitialized = false;
         _lastQuillEditingId = 0;
         _ = JS.InvokeVoidAsync("destroyQuillEditor", "quill-editor-container");
+    }
+
+    // کلیک روی پس‌زمینه هنگام ذخیره/آپلود، فرم را نمی‌بندد تا کار کاربر از بین نرود.
+    private void CloseEditorIfIdle()
+    {
+        if (!isSaving && !isUploading && !_inlineUploading) CloseEditor();
     }
 
     private NewsDto? itemToDelete;
@@ -2314,7 +2480,14 @@
                 if (response.IsSuccessStatusCode)
                 {
                     ToastService.ShowSuccess("خبر با موفقیت حذف شد");
-                    await LoadNews();
+
+                    // ردیف حذف‌شده فقط از لیست برداشته می‌شود تا اسکرول صفحه جابه‌جا نشود.
+                    if (newsList != null)
+                    {
+                        newsList.RemoveAll(n => n.Id == itemToDelete.Id);
+                        totalCount = Math.Max(0, totalCount - 1);
+                        selectedIds.Remove(itemToDelete.Id);
+                    }
                 }
                 else
                 {
