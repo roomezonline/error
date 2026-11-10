@@ -341,6 +341,21 @@
         -webkit-box-orient: vertical;
     }
 
+    .notif-mini__images {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+    }
+
+    .notif-mini__images img {
+        width: 46px;
+        height: 46px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+    }
+
     .notif-mini__time {
         font-size: 0.7rem;
         color: #94a3b8;

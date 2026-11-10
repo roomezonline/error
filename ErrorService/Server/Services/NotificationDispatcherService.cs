@@ -3,6 +3,7 @@ using ErrorService.Server.Models;
 using ErrorService.Server.Services.Messenger;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
+using System.Text.Json;
 
 namespace ErrorService.Server.Services;
 
@@ -249,18 +250,46 @@ public sealed class NotificationDispatcherService : BackgroundService
 
     internal static string BuildMessage(Notification notification, IConfiguration configuration)
     {
+        var baseUrl = (configuration.GetValue<string>("Site:BaseUrl") ?? "https://errorservice.ir").TrimEnd('/');
         var sb = new StringBuilder();
         sb.Append(notification.Title);
         sb.Append('\n');
         sb.Append(notification.Body);
+
+        // تصاویر پیوست (مثلاً تصاویر یادداشت مدیر) به‌صورت لینک کامل در متن پیام می‌آیند؛
+        // سفیر بله فقط ارسال متنی دارد و لینک تصویر برای کاربر قابل بازکردن است.
+        foreach (var imageUrl in ParseImageUrls(notification.ImageUrlsJson))
+        {
+            sb.Append('\n');
+            sb.Append(imageUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? imageUrl
+                : baseUrl + (imageUrl.StartsWith('/') ? imageUrl : "/" + imageUrl));
+        }
+
         if (!string.IsNullOrWhiteSpace(notification.ActionUrl))
         {
-            var baseUrl = (configuration.GetValue<string>("Site:BaseUrl") ?? "https://errorservice.ir").TrimEnd('/');
             var url = notification.ActionUrl.StartsWith('/') ? notification.ActionUrl : "/" + notification.ActionUrl;
             sb.Append('\n');
             sb.Append(baseUrl);
             sb.Append(url);
         }
         return sb.ToString();
+    }
+
+    private static List<string> ParseImageUrls(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new List<string>();
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json)?
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+        }
+        catch (JsonException)
+        {
+            return new List<string>();
+        }
     }
 }

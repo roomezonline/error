@@ -44,6 +44,7 @@ public sealed class ErrorServiceDbContext : DbContext
     public DbSet<ShippingMethod> ShippingMethods { get; set; }
     public DbSet<OrderReturn> OrderReturns { get; set; }
     public DbSet<OrderNote> OrderNotes { get; set; }
+    public DbSet<OrderAdminNoteImage> OrderAdminNoteImages { get; set; }
     public DbSet<CartItem> CartItems { get; set; }
     public DbSet<Coupon> Coupons { get; set; }
     public DbSet<PaymentGateway> PaymentGateways { get; set; }
@@ -178,6 +179,7 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.Body).IsRequired().HasMaxLength(4000);
             entity.Property(x => x.ActionUrl).HasMaxLength(500);
             entity.Property(x => x.IdempotencyKey).HasMaxLength(200);
+            entity.Property(x => x.ImageUrlsJson).HasMaxLength(4000);
             entity.HasIndex(x => x.CreatedAt);
             entity.HasIndex(x => new { x.WorkshopId, x.CreatedAt });
             entity.HasIndex(x => x.IdempotencyKey).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
@@ -1607,6 +1609,8 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.EventType).IsRequired().HasMaxLength(80);
             entity.Property(x => x.Message).HasMaxLength(1000);
             entity.Property(x => x.CreatedBy).HasMaxLength(200);
+            entity.Property(x => x.NotificationKey).HasMaxLength(200);
+            entity.HasIndex(x => x.NotificationKey);
             entity.HasIndex(x => new { x.OrderId, x.CreatedAt });
             entity.HasOne(x => x.Order).WithMany(x => x.Events).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -1641,6 +1645,15 @@ public sealed class ErrorServiceDbContext : DbContext
             entity.Property(x => x.CreatedBy).HasMaxLength(200);
             entity.HasIndex(x => x.OrderId);
             entity.HasOne(x => x.Order).WithMany(x => x.Returns).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OrderAdminNoteImage>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.NoteKey).IsRequired().HasMaxLength(64);
+            entity.Property(x => x.ImageUrlsJson).IsRequired().HasMaxLength(2000);
+            entity.HasIndex(x => new { x.OrderId, x.NoteKey }).IsUnique();
+            entity.HasOne(x => x.Order).WithMany(x => x.AdminNoteImages).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<VisitLog>(entity =>

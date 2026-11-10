@@ -49,6 +49,10 @@ public sealed class Notification
     public string? ActionUrl { get; set; }
     public string? IdempotencyKey { get; set; }
 
+    /// <summary>آدرس تصاویر پیوست اعلان به‌صورت JSON array (مثلاً تصاویر یادداشت مدیر).</summary>
+    [MaxLength(4000)]
+    public string? ImageUrlsJson { get; set; }
+
     public ICollection<NotificationRecipient> Recipients { get; set; } = new List<NotificationRecipient>();
     public ICollection<NotificationDelivery> Deliveries { get; set; } = new List<NotificationDelivery>();
 }

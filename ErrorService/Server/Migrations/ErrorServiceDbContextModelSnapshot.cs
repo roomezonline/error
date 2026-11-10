@@ -2910,6 +2910,10 @@ namespace ErrorService.Server.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("ImageUrlsJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
                     b.Property<bool>("IsBroadcast")
                         .HasColumnType("bit");
 
@@ -3371,6 +3375,38 @@ namespace ErrorService.Server.Data.Migrations
                     b.ToTable("Orders");
                 });
 
+            modelBuilder.Entity("ErrorService.Server.Models.OrderAdminNoteImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ImageUrlsJson")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("NoteKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId", "NoteKey")
+                        .IsUnique();
+
+                    b.ToTable("OrderAdminNoteImages");
+                });
+
             modelBuilder.Entity("ErrorService.Server.Models.OrderEvent", b =>
                 {
                     b.Property<int>("Id")
@@ -3398,6 +3434,10 @@ namespace ErrorService.Server.Data.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<string>("NotificationKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<int>("OrderId")
                         .HasColumnType("int");
 
@@ -3405,6 +3445,8 @@ namespace ErrorService.Server.Data.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("NotificationKey");
 
                     b.HasIndex("OrderId", "CreatedAt");
 
@@ -7405,6 +7447,17 @@ namespace ErrorService.Server.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("ErrorService.Server.Models.OrderAdminNoteImage", b =>
+                {
+                    b.HasOne("ErrorService.Server.Models.Order", "Order")
+                        .WithMany("AdminNoteImages")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+                });
+
             modelBuilder.Entity("ErrorService.Server.Models.OrderEvent", b =>
                 {
                     b.HasOne("ErrorService.Server.Models.Order", "Order")
@@ -7998,6 +8051,8 @@ namespace ErrorService.Server.Data.Migrations
 
             modelBuilder.Entity("ErrorService.Server.Models.Order", b =>
                 {
+                    b.Navigation("AdminNoteImages");
+
                     b.Navigation("Events");
 
                     b.Navigation("Items");

@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -284,9 +286,9 @@ public sealed class OrdersController : ControllerBase
         return User.Identity?.Name ?? "مدیر";
     }
 
-    private async Task AddOrderEventAsync(int orderId, string eventType, OrderStatus? from, OrderStatus? to, string? message = null)
+    private Task<OrderEvent> AddOrderEventAsync(int orderId, string eventType, OrderStatus? from, OrderStatus? to, string? message = null)
     {
-        _db.OrderEvents.Add(new OrderEvent
+        var evt = new OrderEvent
         {
             OrderId = orderId,
             EventType = eventType,
@@ -295,7 +297,9 @@ public sealed class OrdersController : ControllerBase
             Message = message,
             CreatedBy = GetAdminDisplayName(),
             CreatedAt = DateTimeOffset.UtcNow
-        });
+        };
+        _db.OrderEvents.Add(evt);
+        return Task.FromResult(evt);
     }
 
     private async Task<bool> CanAccessOrderAsync(Order order, string? token)
@@ -786,6 +790,7 @@ public sealed class OrdersController : ControllerBase
         var returns = await _db.OrderReturns.AsNoTracking().Where(r => r.OrderId == order.Id).OrderBy(r => r.CreatedAt).ToListAsync(ct);
 
         var dto = MapOrderToDto(order, items, shipments, events, returns);
+        await AttachAdminNoteImagesAsync(new[] { dto });
         await ApplyProductImagesAsync(new[] { dto });
         return Ok(dto);
     }
@@ -1056,8 +1061,57 @@ public sealed class OrdersController : ControllerBase
         var returns = await _db.OrderReturns.AsNoTracking().Where(r => r.OrderId == id).OrderBy(r => r.CreatedAt).ToListAsync(ct);
 
         var dto = MapOrderToDto(order, items, shipments, events, returns);
+        await AttachAdminNoteImagesAsync(new[] { dto });
         await ApplyProductImagesAsync(new[] { dto });
         return Ok(dto);
+    }
+
+    /// <summary>
+    /// تصاویر خطوط یادداشت قدیمی (AdminNotes) را برای هر سفارش پُر می‌کند.
+    /// برای صفحهٔ ادمین و صفحات مشتری یکسان استفاده می‌شود تا عکس‌ها همه‌جا دیده شوند.
+    /// </summary>
+    private async Task AttachAdminNoteImagesAsync(IEnumerable<OrderDto> orders, CancellationToken ct = default)
+    {
+        var targets = orders
+            .Where(o => !string.IsNullOrWhiteSpace(o.AdminNotes))
+            .ToList();
+        if (targets.Count == 0) return;
+
+        var orderIds = targets.Select(o => o.Id).Distinct().ToList();
+        var rows = await _db.OrderAdminNoteImages
+            .AsNoTracking()
+            .Where(x => orderIds.Contains(x.OrderId))
+            .ToListAsync(ct);
+        if (rows.Count == 0)
+        {
+            foreach (var target in targets)
+                target.AdminNoteImages = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            return;
+        }
+
+        var imagesByOrder = rows
+            .GroupBy(x => x.OrderId)
+            .ToDictionary(
+                g => g.Key,
+                g => g
+                    .GroupBy(x => x.NoteKey, StringComparer.Ordinal)
+                    .ToDictionary(
+                        x => x.Key,
+                        x => DeserializeNoteImageUrls(x.Last().ImageUrlsJson),
+                        StringComparer.Ordinal));
+
+        foreach (var target in targets)
+        {
+            target.AdminNoteImages = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            if (!imagesByOrder.TryGetValue(target.Id, out var imagesByKey))
+                continue;
+
+            foreach (var line in SplitAdminNoteLines(target.AdminNotes))
+            {
+                if (imagesByKey.TryGetValue(AdminNoteKey(line), out var urls) && urls.Count > 0)
+                    target.AdminNoteImages.TryAdd(line, urls);
+            }
+        }
     }
 
     private async Task ApplyProductImagesAsync(IEnumerable<OrderDto> orders)
@@ -1179,6 +1233,7 @@ public sealed class OrdersController : ControllerBase
             .ToListAsync();
 
         await FillStageDatesAsync(orders);
+        await AttachAdminNoteImagesAsync(orders);
         await ApplyProductImagesAsync(orders);
         return Ok(orders);
     }
@@ -1919,6 +1974,11 @@ public sealed class OrdersController : ControllerBase
     [HttpGet("admin/{id:int}")]
     public async Task<ActionResult<OrderDto>> GetAdminOrderDetail(int id)
     {
+        // پاسخ باید همیشه تازه باشد؛ بعضی مرورگرها/پروکسی‌ها GET بدون هدر را کش می‌کنند
+        // و بعد از حذف/ویرایش یادداشت، لیست قدیمی نمایش داده می‌شد.
+        Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+        Response.Headers.Pragma = "no-cache";
+
         var order = await _db.Orders.FindAsync(id);
         if (order == null) return NotFound();
 
@@ -1943,6 +2003,9 @@ public sealed class OrdersController : ControllerBase
             CreatedBy = n.CreatedBy,
             CreatedAt = n.CreatedAt
         }).ToList();
+
+        // تصاویر یادداشت‌های قدیمی (خطوط AdminNotes) با کلید متن همان خط برمی‌گردند.
+        await AttachAdminNoteImagesAsync(new[] { dto });
 
         await ApplyProductImagesAsync(new[] { dto });
         return Ok(dto);
@@ -2276,6 +2339,10 @@ public sealed class OrdersController : ControllerBase
         order.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
 
+        // یادداشت مدیر به‌عنوان اعلان مشتری (متن + تصاویر) در سایت و بله.
+        await _notificationEvents.NotifyOrderNoteAddedAsync(order, note);
+        await _db.SaveChangesAsync(ct);
+
         return Ok(new OrderNoteDto
         {
             Id = note.Id,
@@ -2308,6 +2375,7 @@ public sealed class OrdersController : ControllerBase
         }
 
         _db.OrderNotes.Remove(note);
+        await _notificationEvents.DeleteOrderNoteNotificationAsync(note.Id);
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
@@ -2342,6 +2410,11 @@ public sealed class OrdersController : ControllerBase
 
         note.Message = string.IsNullOrWhiteSpace(request.Message) ? null : request.Message.Trim();
         note.ImageUrlsJson = imageUrls.Count > 0 ? JsonSerializer.Serialize(imageUrls) : null;
+
+        var noteOrder = await _db.Orders.FindAsync(id);
+        if (noteOrder != null)
+            await _notificationEvents.SyncOrderNoteNotificationAsync(noteOrder, note);
+
         await _db.SaveChangesAsync(ct);
 
         return Ok(new OrderNoteDto
@@ -2359,6 +2432,7 @@ public sealed class OrdersController : ControllerBase
 
     /// <summary>
     /// ویرایش متن یک یادداشت همراه تغییر وضعیت/مرحله. تاریخ و نام ثبت‌کننده حفظ می‌شود.
+    /// تصاویر پیوست هم با همان خط جابه‌جا/به‌روز می‌شوند.
     /// </summary>
     [Authorize(Policy = "perm:admin.orders.manage")]
     [HttpPut("admin/{id:int}/admin-notes")]
@@ -2379,19 +2453,74 @@ public sealed class OrdersController : ControllerBase
         if (!string.IsNullOrEmpty(request.Original) && lines[request.Index] != request.Original)
             return Conflict("یادداشت هم‌زمان تغییر کرده است؛ صفحه را تازه کنید.");
 
-        lines[request.Index] = ReplaceAdminNoteText(lines[request.Index], request.Text.Trim());
+        var imageUrls = NormalizeAdminNoteImageUrls(request.ImageUrls);
+        if (imageUrls.Count > 5)
+            return BadRequest("حداکثر ۵ تصویر برای هر یادداشت مجاز است.");
+        if (imageUrls.Any(u => !u.StartsWith("/uploads/order-notes/", StringComparison.OrdinalIgnoreCase)))
+            return BadRequest("آدرس تصویر معتبر نیست.");
 
-        var updated = string.Join("\n", lines);
+        var oldLine = lines[request.Index];
+        var newLine = ReplaceAdminNoteText(oldLine, request.Text.Trim());
+
+        var updated = string.Join("\n", lines.Select((line, i) => i == request.Index ? newLine : line));
         if (updated.Length > 1000)
             return BadRequest("مجموع یادداشت‌ها بیش از حد مجاز (۱۰۰۰ کاراکتر) می‌شود.");
 
-        order.AdminNotes = updated;
+        var oldKey = AdminNoteKey(oldLine);
+        var newKey = AdminNoteKey(newLine);
+
+        var imageRows = await _db.OrderAdminNoteImages
+            .Where(x => x.OrderId == id && (x.NoteKey == oldKey || x.NoteKey == newKey))
+            .ToListAsync(ct);
+        var oldRow = imageRows.FirstOrDefault(x => x.NoteKey == oldKey);
+        var newRow = imageRows.FirstOrDefault(x => x.NoteKey == newKey);
+
+        var oldUrls = DeserializeNoteImageUrls(oldRow?.ImageUrlsJson);
+        var removedUrls = oldUrls.Except(imageUrls, StringComparer.OrdinalIgnoreCase).ToList();
+        if (removedUrls.Count > 0) DeleteReceiptFiles(removedUrls);
+
+        // متن خط عوض شده است؛ تصاویر باید به کلید جدید منتقل شوند.
+        if (oldKey != newKey && oldRow != null)
+        {
+            _db.OrderAdminNoteImages.Remove(oldRow);
+            if (newRow == oldRow) newRow = null;
+        }
+
+        if (imageUrls.Count == 0)
+        {
+            // اگر همین خط تصویر داشته، رکوردش حذف می‌شود. رکورد خط دیگری با متن یکسان
+            // دست‌نخورده می‌ماند تا تصاویر یادداشت دیگر پاک نشود.
+            if (oldRow != null) _db.OrderAdminNoteImages.Remove(oldRow);
+        }
+        else if (oldKey == newKey && oldRow != null)
+        {
+            oldRow.ImageUrlsJson = JsonSerializer.Serialize(imageUrls);
+            oldRow.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+        else if (newRow != null)
+        {
+            newRow.ImageUrlsJson = JsonSerializer.Serialize(imageUrls);
+            newRow.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+        else
+        {
+            _db.OrderAdminNoteImages.Add(new OrderAdminNoteImage
+            {
+                OrderId = id,
+                NoteKey = newKey,
+                ImageUrlsJson = JsonSerializer.Serialize(imageUrls),
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        lines[request.Index] = newLine;
+        order.AdminNotes = string.Join("\n", lines);
         order.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
 
-    /// <summary>حذف یک یادداشت همراه تغییر وضعیت/مرحله.</summary>
+    /// <summary>حذف یک یادداشت همراه تغییر وضعیت/مرحله و تصاویر پیوست آن.</summary>
     [Authorize(Policy = "perm:admin.orders.manage")]
     [HttpPost("admin/{id:int}/admin-notes/delete")]
     public async Task<IActionResult> DeleteAdminNote(int id, [FromBody] AdminNoteDeleteRequest request, CancellationToken ct)
@@ -2405,6 +2534,15 @@ public sealed class OrdersController : ControllerBase
 
         if (!string.IsNullOrEmpty(request.Original) && lines[request.Index] != request.Original)
             return Conflict("یادداشت هم‌زمان تغییر کرده است؛ صفحه را تازه کنید.");
+
+        var noteKey = AdminNoteKey(lines[request.Index]);
+        var imageRow = await _db.OrderAdminNoteImages
+            .FirstOrDefaultAsync(x => x.OrderId == id && x.NoteKey == noteKey, ct);
+        if (imageRow != null)
+        {
+            DeleteReceiptFiles(DeserializeNoteImageUrls(imageRow.ImageUrlsJson));
+            _db.OrderAdminNoteImages.Remove(imageRow);
+        }
 
         lines.RemoveAt(request.Index);
         order.AdminNotes = lines.Count == 0 ? null : string.Join("\n", lines);
@@ -2434,6 +2572,24 @@ public sealed class OrdersController : ControllerBase
     {
         var match = AdminNotePrefixRegex.Match(line);
         return match.Success ? line[..match.Length] + text : text;
+    }
+
+    /// <summary>کلید پایدار هر خط یادداشت برای اتصال تصاویر.</summary>
+    private static string AdminNoteKey(string line)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(line));
+        return Convert.ToHexString(hash);
+    }
+
+    private static List<string> NormalizeAdminNoteImageUrls(IEnumerable<string>? urls)
+    {
+        if (urls == null) return new List<string>();
+
+        return urls
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Select(u => u.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>تأیید دستی پرداخت آنلاین با همان Authority ثبت‌شده (برای callbackهای گم‌شده).</summary>
@@ -2499,14 +2655,14 @@ WHERE Id = {order.Id}
 
         await _db.Entry(order).ReloadAsync(ct);
         await FinalizeOrderAsync(order);
-        await AddOrderEventAsync(order.Id, "payment.verified_by_admin",
+        var paymentStatusEvent = await AddOrderEventAsync(order.Id, "payment.verified_by_admin",
             previousStatus, OrderStatus.Approved,
             "پرداخت آنلاین توسط مدیر استعلام و تأیید شد");
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         await _db.Entry(order).ReloadAsync(ct);
 
-        await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousStatus);
+        paymentStatusEvent.NotificationKey = await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousStatus);
         await _notificationEvents.NotifyAsync(
             eventType: "payment.succeeded",
             values: new Dictionary<string, string?>
@@ -2746,11 +2902,11 @@ WHERE Id = {order.Id}
         };
         var statusLabel = statusLabels.TryGetValue(request.Status, out var lbl) ? lbl : request.Status.ToString();
         var autoStageNote = stageAssigned && request.Status == OrderStatus.Completed ? "؛ تنظیم خودکار مرحله «حمل شده»" : "";
-        await AddOrderEventAsync(order.Id, "status_changed", previousStatus, request.Status, $"تغییر وضعیت به «{statusLabel}»{autoStageNote}");
-        await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousStatus);
+        var statusEvent = await AddOrderEventAsync(order.Id, "status_changed", previousStatus, request.Status, $"تغییر وضعیت به «{statusLabel}»{autoStageNote}");
+        statusEvent.NotificationKey = await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousStatus);
         if (stageAssigned)
         {
-            await _db.OrderEvents.AddAsync(new OrderEvent
+            var stageEvent = await _db.OrderEvents.AddAsync(new OrderEvent
             {
                 OrderId = order.Id,
                 EventType = "stage_changed",
@@ -2760,7 +2916,7 @@ WHERE Id = {order.Id}
                 CreatedBy = GetAdminDisplayName(),
                 CreatedAt = DateTimeOffset.UtcNow
             });
-            await _notificationEvents.NotifyOrderStageChangedAsync(order, stageBeforeStatusUpdate);
+            stageEvent.Entity.NotificationKey = await _notificationEvents.NotifyOrderStageChangedAsync(order, stageBeforeStatusUpdate);
         }
 
         await _db.SaveChangesAsync();
@@ -2803,34 +2959,25 @@ WHERE Id = {order.Id}
         order.UpdatedAt = DateTimeOffset.UtcNow;
 
         var stageLabel = OrderStageInfo.Label(request.Stage);
-        _db.OrderEvents.Add(new OrderEvent
-        {
-            OrderId = order.Id,
-            EventType = "stage_changed",
-            FromStatus = order.Status,
-            ToStatus = order.Status,
-            Message = $"تغییر مرحله به «{stageLabel}»|{request.Stage}|{DateTimeOffset.UtcNow:O}",
-            CreatedBy = GetAdminDisplayName(),
-            CreatedAt = DateTimeOffset.UtcNow
-        });
-
-        await _notificationEvents.NotifyOrderStageChangedAsync(order, previousStage);
+        var stageEvent = await AddOrderEventAsync(order.Id, "stage_changed", order.Status, order.Status,
+            $"تغییر مرحله به «{stageLabel}»|{request.Stage}|{DateTimeOffset.UtcNow:O}");
+        stageEvent.NotificationKey = await _notificationEvents.NotifyOrderStageChangedAsync(order, previousStage);
 
         if (request.Stage == OrderStage.Resolved && order.Status == OrderStatus.Approved)
         {
             order.Status = OrderStatus.Completed;
             order.UpdatedAt = DateTimeOffset.UtcNow;
-            await AddOrderEventAsync(order.Id, "status_changed", OrderStatus.Approved, OrderStatus.Completed,
+            var autoStatusEvent = await AddOrderEventAsync(order.Id, "status_changed", OrderStatus.Approved, OrderStatus.Completed,
                 "تغییر وضعیت به «تکمیل شده» (با رسیدن به مرحله حمل شده)");
-            await _notificationEvents.NotifyOrderStatusChangedAsync(order, OrderStatus.Approved);
+            autoStatusEvent.NotificationKey = await _notificationEvents.NotifyOrderStatusChangedAsync(order, OrderStatus.Approved);
         }
         else if (order.Status == OrderStatus.Completed && request.Stage != OrderStage.Resolved)
         {
             order.Status = OrderStatus.Approved;
             order.UpdatedAt = DateTimeOffset.UtcNow;
-            await AddOrderEventAsync(order.Id, "status_changed", OrderStatus.Completed, OrderStatus.Approved,
+            var autoStatusEvent = await AddOrderEventAsync(order.Id, "status_changed", OrderStatus.Completed, OrderStatus.Approved,
                 $"خروج از «تکمیل شده» (تغییر مرحله از «حمل شده» به «{stageLabel}»)");
-            await _notificationEvents.NotifyOrderStatusChangedAsync(order, OrderStatus.Completed);
+            autoStatusEvent.NotificationKey = await _notificationEvents.NotifyOrderStatusChangedAsync(order, OrderStatus.Completed);
         }
 
         await _db.SaveChangesAsync();
@@ -2866,9 +3013,101 @@ WHERE Id = {order.Id}
         var evt = await _db.OrderEvents.FirstOrDefaultAsync(e => e.Id == eventId && e.OrderId == id, ct);
         if (evt == null) return NotFound();
 
+        // اعلان مشتریِ همان تغییر وضعیت/مرحله هم حذف می‌شود تا تاریخچه و اعلان‌ها
+        // هیچ‌وقت با هم مغایرت نداشته باشند. فقط اعلان همین رویداد پاک می‌شود.
+        await DeleteNotificationsForEventAsync(evt, ct);
+
         _db.OrderEvents.Remove(evt);
         await _db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>
+    /// اعلان متصل به یک رویداد تاریخچه را پیدا و حذف می‌کند. برای رویدادهای جدید
+    /// از <see cref="OrderEvent.NotificationKey"/> و برای ردیف‌های قدیمی از پیشوند
+    /// کلید اعلان به‌همراه نزدیک‌ترین زمان ثبت استفاده می‌شود.
+    /// </summary>
+    private async Task DeleteNotificationsForEventAsync(OrderEvent evt, CancellationToken ct)
+    {
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+
+        if (!string.IsNullOrWhiteSpace(evt.NotificationKey))
+        {
+            keys.Add(evt.NotificationKey);
+        }
+        else
+        {
+            var exactKeys = new HashSet<string>(StringComparer.Ordinal);
+            var prefixes = LegacyNotificationPrefixes(evt, exactKeys);
+            if (prefixes.Count == 0 && exactKeys.Count == 0) return;
+
+            var windowStart = evt.CreatedAt.AddMinutes(-1);
+            var windowEnd = evt.CreatedAt.AddMinutes(1);
+            var candidates = await _db.Notifications
+                .AsNoTracking()
+                .Where(n => n.IdempotencyKey != null
+                    && n.CreatedAt >= windowStart
+                    && n.CreatedAt <= windowEnd)
+                .ToListAsync(ct);
+
+            // اعلان‌هایی که صریحاً به یک رویداد دیگر وصل شده‌اند نباید دوباره به این رویداد نسبت داده شوند.
+            var linkedKeys = await _db.OrderEvents
+                .AsNoTracking()
+                .Where(e => e.OrderId == evt.OrderId && e.NotificationKey != null)
+                .Select(e => e.NotificationKey!)
+                .ToListAsync(ct);
+            var linked = new HashSet<string>(linkedKeys, StringComparer.Ordinal);
+
+            var nearest = candidates
+                .Where(n => !linked.Contains(n.IdempotencyKey!))
+                .Where(n => exactKeys.Contains(n.IdempotencyKey!)
+                    || prefixes.Any(p => n.IdempotencyKey!.StartsWith(p, StringComparison.Ordinal)))
+                .OrderBy(n => Math.Abs((n.CreatedAt - evt.CreatedAt).Ticks))
+                .FirstOrDefault();
+
+            if (nearest?.IdempotencyKey != null)
+                keys.Add(nearest.IdempotencyKey);
+        }
+
+        if (keys.Count == 0) return;
+
+        var notifications = await _db.Notifications
+            .Where(n => n.IdempotencyKey != null && keys.Contains(n.IdempotencyKey))
+            .ToListAsync(ct);
+
+        foreach (var notification in notifications)
+            _db.Notifications.Remove(notification);
+    }
+
+    private static List<string> LegacyNotificationPrefixes(OrderEvent evt, ISet<string> exactKeys)
+    {
+        var prefixes = new List<string>();
+        switch (evt.EventType)
+        {
+            case "created":
+                // کلید اعلان ثبت سفارش پسوند عددی دارد؛ تطبیق دقیق لازم است تا سفارش ۵ با ۵۰ اشتباه نشود.
+                exactKeys.Add($"order.created:{evt.OrderId}");
+                break;
+            case "status_changed":
+            case "payment.verified_by_admin":
+                if (evt.FromStatus.HasValue && evt.ToStatus.HasValue)
+                    prefixes.Add($"order-status:{evt.OrderId}:{evt.FromStatus}:{evt.ToStatus}:");
+                break;
+            case "stage_changed":
+                var stage = TryParseStage(evt.Message);
+                if (stage.HasValue)
+                    prefixes.Add($"order-stage:{evt.OrderId}:{stage.Value}:");
+                break;
+        }
+        return prefixes;
+    }
+
+    private static OrderStage? TryParseStage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return null;
+        var parts = message.Split('|');
+        if (parts.Length < 2) return null;
+        return Enum.TryParse<OrderStage>(parts[1].Trim(), out var stage) ? stage : null;
     }
 
     // ──────────── ADMIN: SHIPMENT CRUD ────────────
@@ -3018,8 +3257,8 @@ WHERE Id = {order.Id}
             var previousOrderStatus = order.Status;
             order.Status = OrderStatus.Completed;
             order.UpdatedAt = DateTimeOffset.UtcNow;
-            await AddOrderEventAsync(orderId, "status_changed", previousOrderStatus, OrderStatus.Completed, "سفارش به‌طور خودکار تکمیل شد (تحویل مرسوله)");
-            await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousOrderStatus);
+            var deliveredStatusEvent = await AddOrderEventAsync(orderId, "status_changed", previousOrderStatus, OrderStatus.Completed, "سفارش به‌طور خودکار تکمیل شد (تحویل مرسوله)");
+            deliveredStatusEvent.NotificationKey = await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousOrderStatus);
         }
 
         if (!string.IsNullOrWhiteSpace(request.TrackingNumber))

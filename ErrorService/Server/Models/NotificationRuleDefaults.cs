@@ -51,6 +51,13 @@ public static class NotificationRuleDefaults
             "/my-orders/{OrderId}", null, true, false,
             new[] { "OrderNumber", "Amount", "Status", "OrderId" }),
 
+        new("order.note_added", "سفارش و پرداخت", "یادداشت مدیر برای مشتری",
+            "یادداشت جدیدی برای سفارش شما ثبت شد",
+            "مدیر برای سفارش {OrderNumber} یادداشت جدیدی ثبت کرد:\n{Message}",
+            "/my-orders/{OrderId}", NotificationSeverity.Info, true, false,
+            new[] { "OrderNumber", "Message", "ImageCount", "OrderId" },
+            NotificationChannelFlags.Internal | NotificationChannelFlags.Bale),
+
         new("order.auto_cancelled", "سفارش و پرداخت", "لغو خودکار سفارش",
             "سفارش لغو شد",
             "سفارش {OrderNumber} به مبلغ {Amount} تومان به دلیل عدم پرداخت در مهلت مقرر لغو شد.",

@@ -187,6 +187,15 @@
                                                 <span class="notif-mini__body">
                                                     <span class="notif-mini__title">@item.Title</span>
                                                     <span class="notif-mini__desc">@item.Body</span>
+                                                    @if (item.ImageUrls.Count > 0)
+                                                    {
+                                                        <span class="notif-mini__images">
+                                                            @foreach (var url in item.ImageUrls)
+                                                            {
+                                                                <img src="@url" alt="تصویر اعلان" loading="lazy" decoding="async" />
+                                                            }
+                                                        </span>
+                                                    }
                                                     <span class="notif-mini__time">@ErrorService.Client.Services.NotificationCenterService.RelativeTime(item.CreatedAt)</span>
                                                 </span>
                                             </button>

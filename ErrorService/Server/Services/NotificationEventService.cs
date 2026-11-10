@@ -3,6 +3,7 @@ using ErrorService.Server.Models;
 using ErrorService.Server.Services.Messenger;
 using ErrorService.Shared;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace ErrorService.Server.Services;
 
@@ -200,10 +201,10 @@ public sealed class NotificationEventService
         }
     }
 
-    public Task NotifyOrderStatusChangedAsync(Order order, OrderStatus previousStatus)
+    public async Task<string?> NotifyOrderStatusChangedAsync(Order order, OrderStatus previousStatus)
     {
         if (!order.UserId.HasValue || previousStatus == order.Status)
-            return Task.CompletedTask;
+            return null;
 
         var label = OrderStatusTitle(order.Status);
         var severity = order.Status switch
@@ -212,7 +213,8 @@ public sealed class NotificationEventService
             OrderStatus.Completed => NotificationSeverity.Success,
             _ => NotificationSeverity.Info
         };
-        return GuardAsync("order.status_changed", () => EmitAsync(
+        var idempotencyKey = $"order-status:{order.Id}:{previousStatus}:{order.Status}:{order.UpdatedAt.UtcTicks}";
+        await GuardAsync("order.status_changed", () => EmitAsync(
             eventType: "order.status_changed",
             values: new Dictionary<string, string?>
             {
@@ -221,25 +223,27 @@ public sealed class NotificationEventService
                 ["Status"] = label,
                 ["OrderId"] = order.Id.ToString()
             },
-            idempotencyKey: $"order-status:{order.Id}:{previousStatus}:{order.Status}:{order.UpdatedAt.UtcTicks}",
+            idempotencyKey: idempotencyKey,
             legacySeverity: severity,
             legacyTitle: "وضعیت سفارش به‌روزرسانی شد",
             legacyBody: $"وضعیت سفارش {order.OrderNumber} به مبلغ {PayableAmount(order):N0} تومان به «{label}» تغییر کرد.",
             legacyUrl: $"/my-orders/{order.Id}",
             appUserId: order.UserId));
+        return idempotencyKey;
     }
 
-    public Task NotifyOrderStageChangedAsync(Order order, OrderStage? previousStage)
+    public async Task<string?> NotifyOrderStageChangedAsync(Order order, OrderStage? previousStage)
     {
         if (!order.UserId.HasValue || !order.Stage.HasValue)
-            return Task.CompletedTask;
+            return null;
 
         var stage = order.Stage.Value;
         if (stage == previousStage)
-            return Task.CompletedTask;
+            return null;
 
         var label = OrderStageInfo.Label(stage);
-        return GuardAsync($"order.stage.{StageKey(stage)}", () => EmitAsync(
+        var idempotencyKey = $"order-stage:{order.Id}:{stage}:{order.UpdatedAt.UtcTicks}";
+        await GuardAsync($"order.stage.{StageKey(stage)}", () => EmitAsync(
             eventType: $"order.stage.{StageKey(stage)}",
             values: new Dictionary<string, string?>
             {
@@ -248,12 +252,111 @@ public sealed class NotificationEventService
                 ["Stage"] = label,
                 ["OrderId"] = order.Id.ToString()
             },
-            idempotencyKey: $"order-stage:{order.Id}:{stage}:{order.UpdatedAt.UtcTicks}",
+            idempotencyKey: idempotencyKey,
             legacySeverity: NotificationSeverity.Info,
             legacyTitle: "مرحله سفارش تغییر کرد",
             legacyBody: $"سفارش {order.OrderNumber} به مرحله «{label}» رسید.",
             legacyUrl: $"/my-orders/{order.Id}",
             appUserId: order.UserId));
+        return idempotencyKey;
+    }
+
+    /// <summary>
+    /// یادداشت مستقل مدیر (متن و تصاویر) را به‌عنوان اعلان مشتری ثبت می‌کند.
+    /// کلید ثابت مبتنی بر شناسهٔ یادداشت است تا با حذف یادداشت، اعلان آن هم پاک شود.
+    /// </summary>
+    public async Task<string?> NotifyOrderNoteAddedAsync(Order order, OrderNote note)
+    {
+        if (!order.UserId.HasValue && string.IsNullOrWhiteSpace(order.PhoneNumber))
+            return null;
+
+        var images = ParseImageUrls(note.ImageUrlsJson);
+        var message = string.IsNullOrWhiteSpace(note.Message)
+            ? (images.Count > 0 ? "تصویر جدیدی برای سفارش شما ثبت شد." : "یادداشت جدیدی برای سفارش شما ثبت شد.")
+            : note.Message.Trim();
+        var idempotencyKey = $"order-note:{note.Id}";
+
+        await GuardAsync("order.note_added", () => EmitAsync(
+            eventType: "order.note_added",
+            values: new Dictionary<string, string?>
+            {
+                ["OrderNumber"] = order.OrderNumber,
+                ["OrderId"] = order.Id.ToString(),
+                ["Message"] = message,
+                ["ImageCount"] = images.Count.ToString()
+            },
+            idempotencyKey: idempotencyKey,
+            legacySeverity: NotificationSeverity.Info,
+            legacyTitle: "یادداشت جدید مدیر",
+            legacyBody: images.Count > 0
+                ? $"{message}\n{images.Count} تصویر پیوست شده است."
+                : message,
+            legacyUrl: $"/my-orders/{order.Id}",
+            appUserId: order.UserId,
+            phone: order.PhoneNumber,
+            imageUrls: images));
+        return idempotencyKey;
+    }
+
+    private static List<string> ParseImageUrls(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new List<string>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json)?
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+        }
+        catch (JsonException)
+        {
+            return new List<string>();
+        }
+    }
+
+    /// <summary>متن و تصاویر اعلان یادداشت را پس از ویرایش یادداشت هم‌خوان می‌کند.</summary>
+    public async Task SyncOrderNoteNotificationAsync(Order order, OrderNote note)
+    {
+        var key = $"order-note:{note.Id}";
+        var notification = await _db.Notifications.FirstOrDefaultAsync(n => n.IdempotencyKey == key);
+        if (notification == null) return;
+
+        var images = ParseImageUrls(note.ImageUrlsJson);
+        var message = string.IsNullOrWhiteSpace(note.Message)
+            ? (images.Count > 0 ? "تصویر جدیدی برای سفارش شما ثبت شد." : "یادداشت جدیدی برای سفارش شما ثبت شد.")
+            : note.Message.Trim();
+        var values = new Dictionary<string, string?>
+        {
+            ["OrderNumber"] = order.OrderNumber,
+            ["OrderId"] = order.Id.ToString(),
+            ["Message"] = message,
+            ["ImageCount"] = images.Count.ToString()
+        };
+
+        var rule = await GetRuleAsync("order.note_added");
+        if (rule != null)
+        {
+            notification.Title = Render(rule.TitleTemplate, values);
+            notification.Body = Render(rule.BodyTemplate, values);
+        }
+        else
+        {
+            notification.Title = "یادداشت جدید مدیر";
+            notification.Body = images.Count > 0 ? $"{message}\n{images.Count} تصویر پیوست شده است." : message;
+        }
+
+        notification.ImageUrlsJson = images.Count > 0 ? JsonSerializer.Serialize(images) : null;
+    }
+
+    /// <summary>اعلان یادداشت حذف‌شده را از سیستم اعلان پاک می‌کند.</summary>
+    public async Task DeleteOrderNoteNotificationAsync(int noteId)
+    {
+        var key = $"order-note:{noteId}";
+        var notification = await _db.Notifications.FirstOrDefaultAsync(n => n.IdempotencyKey == key);
+        if (notification != null)
+            _db.Notifications.Remove(notification);
     }
 
     public Task NotifyOrderCreatedAsync(Order order)
@@ -444,7 +547,8 @@ public sealed class NotificationEventService
         int? workshopUserId = null,
         string? phone = null,
         bool superAdminsOnly = false,
-        bool workshopOnly = false) =>
+        bool workshopOnly = false,
+        IReadOnlyList<string>? imageUrls = null) =>
         GuardAsync(eventType, () => EmitAsync(
             eventType,
             values,
@@ -458,7 +562,8 @@ public sealed class NotificationEventService
             workshopUserId,
             phone,
             superAdminsOnly,
-            workshopOnly));
+            workshopOnly,
+            imageUrls));
 
     private async Task EmitAsync(
         string eventType,
@@ -473,7 +578,8 @@ public sealed class NotificationEventService
         int? workshopUserId = null,
         string? phone = null,
         bool superAdminsOnly = false,
-        bool workshopOnly = false)
+        bool workshopOnly = false,
+        IReadOnlyList<string>? imageUrls = null)
     {
         var rule = await GetRuleAsync(eventType);
         if (rule is { IsEnabled: false })
@@ -524,7 +630,10 @@ public sealed class NotificationEventService
             Severity = severity,
             WorkshopId = workshopId,
             ActionUrl = actionUrl,
-            IdempotencyKey = idempotencyKey
+            IdempotencyKey = idempotencyKey,
+            ImageUrlsJson = imageUrls is { Count: > 0 }
+                ? JsonSerializer.Serialize(imageUrls.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+                : null
         };
 
         var appUserIds = new HashSet<int>();

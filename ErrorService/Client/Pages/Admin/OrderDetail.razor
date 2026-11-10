@@ -670,6 +670,8 @@ else
                 <div class="od-note-legacy">
                     <div class="od-note-legacy-title">یادداشت‌های همراه با تغییر وضعیت</div>
                     <AdminNotesList Notes="@order.AdminNotes"
+                                    OrderId="@order.Id"
+                                    ImagesByLine="@order.AdminNoteImages"
                                     CanManage="true"
                                     OnSaveNote="@SaveLegacyAdminNote"
                                     OnDeleteNote="@DeleteLegacyAdminNote" />
@@ -2098,7 +2100,10 @@ else
         isLoading = true;
         try
         {
-            order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/admin/{Id}");
+            // پارامتر t کش مرورگر/پروکسی را دور می‌زند تا بعد از حذف یادداشت یا رویداد،
+            // لیست همیشه تازه بارگذاری شود.
+            var cacheBuster = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            order = await Http.GetFromJsonAsync<OrderDto>($"api/orders/admin/{Id}?t={cacheBuster}");
             if (order != null)
             {
                 statusToUpdate = "";

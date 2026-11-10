@@ -131,6 +131,7 @@ public class Order
     public ICollection<OrderEvent> Events { get; set; } = new List<OrderEvent>();
     public ICollection<OrderReturn> Returns { get; set; } = new List<OrderReturn>();
     public ICollection<OrderNote> Notes { get; set; } = new List<OrderNote>();
+    public ICollection<OrderAdminNoteImage> AdminNoteImages { get; set; } = new List<OrderAdminNoteImage>();
 }
 
 public class OrderShipment
@@ -161,6 +162,13 @@ public class OrderEvent
     public string? Message { get; set; }
     public string? CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// کلید اعلان مشتری که از این رویداد ساخته شده است. با حذف رویداد،
+    /// همان اعلان هم حذف می‌شود تا تاریخچه و اعلان‌ها با هم هم‌خوان بمانند.
+    /// </summary>
+    [MaxLength(200)]
+    public string? NotificationKey { get; set; }
 }
 
 public class OrderReturn
@@ -215,6 +223,27 @@ public class OrderNote
     [MaxLength(200)]
     public string? CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// تصاویر پیوست‌شده به یک خط از یادداشت‌های قدیمی مدیر (ستون متنی AdminNotes).
+/// خط با هش متن کامل شناسایی می‌شود؛ هنگام ویرایش متن، رکورد به هش جدید منتقل می‌شود.
+/// </summary>
+public class OrderAdminNoteImage
+{
+    public int Id { get; set; }
+    public int OrderId { get; set; }
+    public Order Order { get; set; } = default!;
+
+    /// <summary>هش SHA-256 متن کامل خط یادداشت (۶۴ کاراکتر هگز).</summary>
+    [MaxLength(64)]
+    public string NoteKey { get; set; } = string.Empty;
+
+    /// <summary>آدرس‌های تصاویر به‌صورت JSON array.</summary>
+    [MaxLength(2000)]
+    public string ImageUrlsJson { get; set; } = string.Empty;
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public class OrderItem

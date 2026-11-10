@@ -127,6 +127,9 @@ public class OrderDto
     public string? TrackingNumber { get; set; }
     public DateTimeOffset? PaymentDate { get; set; }
     public string? AdminNotes { get; set; }
+
+    /// <summary>تصاویر هر خط از یادداشت‌های AdminNotes، با کلید متن همان خط (فقط نمای ادمین).</summary>
+    public Dictionary<string, List<string>>? AdminNoteImages { get; set; }
     public string? CustomerNotes { get; set; }
 
     public PaymentProvider? PaymentProvider { get; set; }
@@ -249,6 +252,9 @@ public class AdminNoteUpdateRequest
 
     [MaxLength(1000)]
     public string Text { get; set; } = string.Empty;
+
+    /// <summary>فهرست کامل تصاویر باقی‌مانده/جدید این خط یادداشت.</summary>
+    public List<string> ImageUrls { get; set; } = new();
 }
 
 /// <summary>حذف یک خط از یادداشت‌های قدیمی مدیر.</summary>

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using ErrorService.Server.Data;
 using ErrorService.Server.Models;
 using ErrorService.Server.Services;
@@ -63,7 +64,7 @@ public sealed class NotificationsController : ControllerBase
         if (!userId.HasValue && !workshopUserId.HasValue) return Ok(new List<NotificationDto>());
         take = Math.Clamp(take, 1, 100);
 
-        var items = await _db.NotificationRecipients
+        var rows = await _db.NotificationRecipients
             .AsNoTracking()
             .Where(x => x.HiddenAt == null &&
                 (!unreadOnly || !x.IsRead) &&
@@ -71,20 +72,35 @@ public sealed class NotificationsController : ControllerBase
                  (workshopUserId.HasValue && x.WorkshopUserId == workshopUserId.Value)))
             .OrderByDescending(x => x.Notification.CreatedAt)
             .Take(take)
-            .Select(x => new NotificationDto
+            .Select(x => new
             {
                 Id = x.NotificationId,
-                EventType = x.Notification.EventType,
-                Title = x.Notification.Title,
-                Body = x.Notification.Body,
-                Severity = (int)x.Notification.Severity,
-                SeverityTitle = SeverityTitle(x.Notification.Severity),
-                ActionUrl = x.Notification.ActionUrl,
-                IsRead = x.IsRead,
-                CreatedAt = x.Notification.CreatedAt,
-                ReadAt = x.ReadAt
+                x.Notification.EventType,
+                x.Notification.Title,
+                x.Notification.Body,
+                x.Notification.Severity,
+                x.Notification.ActionUrl,
+                x.Notification.ImageUrlsJson,
+                x.IsRead,
+                x.Notification.CreatedAt,
+                x.ReadAt
             })
             .ToListAsync();
+
+        var items = rows.Select(x => new NotificationDto
+        {
+            Id = x.Id,
+            EventType = x.EventType,
+            Title = x.Title,
+            Body = x.Body,
+            Severity = (int)x.Severity,
+            SeverityTitle = SeverityTitle(x.Severity),
+            ActionUrl = x.ActionUrl,
+            ImageUrls = ParseImageUrls(x.ImageUrlsJson),
+            IsRead = x.IsRead,
+            CreatedAt = x.CreatedAt,
+            ReadAt = x.ReadAt
+        }).ToList();
 
         return Ok(items);
     }
@@ -187,29 +203,60 @@ public sealed class NotificationsController : ControllerBase
     public async Task<ActionResult<List<NotificationDto>>> GetAdminList([FromQuery] int take = 100)
     {
         take = Math.Clamp(take, 1, 500);
-        var items = await _db.Notifications
+        var rows = await _db.Notifications
             .AsNoTracking()
             .OrderByDescending(x => x.CreatedAt)
             .Take(take)
-            .Select(x => new NotificationDto
+            .Select(x => new
             {
-                Id = x.Id,
-                EventType = x.EventType,
-                Title = x.Title,
-                Body = x.Body,
-                Severity = (int)x.Severity,
-                SeverityTitle = SeverityTitle(x.Severity),
-                ActionUrl = x.ActionUrl,
-                IsRead = false,
-                CreatedAt = x.CreatedAt,
-                IsBroadcast = x.IsBroadcast,
+                x.Id,
+                x.EventType,
+                x.Title,
+                x.Body,
+                x.Severity,
+                x.ActionUrl,
+                x.ImageUrlsJson,
+                x.CreatedAt,
+                x.IsBroadcast,
                 RecipientCount = x.Recipients.Count,
                 CreatedByName = x.CreatedByUserId == null
                     ? null
                     : _db.Users.Where(u => u.Id == x.CreatedByUserId).Select(u => u.FullName).FirstOrDefault()
             })
             .ToListAsync();
+
+        var items = rows.Select(x => new NotificationDto
+        {
+            Id = x.Id,
+            EventType = x.EventType,
+            Title = x.Title,
+            Body = x.Body,
+            Severity = (int)x.Severity,
+            SeverityTitle = SeverityTitle(x.Severity),
+            ActionUrl = x.ActionUrl,
+            ImageUrls = ParseImageUrls(x.ImageUrlsJson),
+            IsRead = false,
+            CreatedAt = x.CreatedAt,
+            IsBroadcast = x.IsBroadcast,
+            RecipientCount = x.RecipientCount,
+            CreatedByName = x.CreatedByName
+        }).ToList();
         return Ok(items);
+    }
+
+    private static List<string> ParseImageUrls(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new List<string>();
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json)?
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList() ?? new List<string>();
+        }
+        catch (JsonException)
+        {
+            return new List<string>();
+        }
     }
 
     [Authorize(Policy = "perm:admin.notifications.view")]

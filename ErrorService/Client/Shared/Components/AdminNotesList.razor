@@ -1,7 +1,14 @@
 @using System.Globalization
 @using System.Text.RegularExpressions
+@using System.Net.Http.Json
+@using ErrorService.Client.Helpers
 @using ErrorService.Client.Utils
 @using ErrorService.Shared
+@using Microsoft.AspNetCore.Components.Forms
+
+@inject HttpClient Http
+@inject ErrorService.Client.Services.ToastService ToastService
+@inject IJSRuntime JS
 
 @if (ParsedNotes.Count > 0)
 {
@@ -46,6 +53,34 @@
                                   maxlength="@MaxNoteLength"
                                   @bind="editText" @bind:event="oninput"
                                   placeholder="متن یادداشت..."></textarea>
+                        @if (CanManage)
+                        {
+                            <label class="an-upload-label">
+                                <span class="oi oi-image"></span> افزودن تصویر (حداکثر @MaxImages تصویر)
+                                <InputFile OnChange="HandleImageFilesSelected" multiple accept="image/*" class="d-none" />
+                            </label>
+                        }
+                        @if (editExistingImages.Count > 0 || editNewImages.Count > 0)
+                        {
+                            <div class="an-image-grid">
+                                @for (var i = 0; i < editExistingImages.Count; i++)
+                                {
+                                    var index = i;
+                                    <div class="an-image-preview">
+                                        <img src="@editExistingImages[i]" alt="تصویر یادداشت" loading="lazy" decoding="async" />
+                                        <button type="button" class="an-image-remove" @onclick="() => editExistingImages.RemoveAt(index)" title="حذف تصویر">×</button>
+                                    </div>
+                                }
+                                @for (var i = 0; i < editNewImages.Count; i++)
+                                {
+                                    var index = i;
+                                    <div class="an-image-preview">
+                                        <img src="@editNewImages[i].PreviewUrl" alt="پیش‌نمایش" decoding="async" />
+                                        <button type="button" class="an-image-remove" @onclick="() => editNewImages.RemoveAt(index)" title="حذف تصویر">×</button>
+                                    </div>
+                                }
+                            </div>
+                        }
                         <div class="an-actions">
                             <button type="button" class="an-btn an-btn--save"
                                     @onclick="SaveEditAsync"
@@ -60,6 +95,18 @@
                 else
                 {
                     <div class="an-text">@note.Text</div>
+
+                    @if (GetImages(note).Count > 0)
+                    {
+                        <div class="an-image-grid an-image-grid--read">
+                            @foreach (var url in GetImages(note))
+                            {
+                                <a href="@url" target="_blank" rel="noopener" class="an-image-preview">
+                                    <img src="@url" alt="تصویر یادداشت" loading="lazy" decoding="async" />
+                                </a>
+                            }
+                        </div>
+                    }
 
                     @if (CanManage)
                     {
@@ -98,6 +145,12 @@
 @code {
     [Parameter] public string? Notes { get; set; }
 
+    /// <summary>شناسهٔ سفارش برای آپلود تصاویر یادداشت (فقط نمای مدیر).</summary>
+    [Parameter] public int? OrderId { get; set; }
+
+    /// <summary>تصاویر هر خط یادداشت با کلید متن کامل همان خط.</summary>
+    [Parameter] public Dictionary<string, List<string>>? ImagesByLine { get; set; }
+
     /// <summary>فقط در پنل مدیر true می‌شود؛ صفحات مشتری همیشه فقط‌خواندنی می‌مانند.</summary>
     [Parameter] public bool CanManage { get; set; }
 
@@ -105,6 +158,7 @@
     [Parameter] public Func<AdminNoteDeleteRequest, Task<bool>>? OnDeleteNote { get; set; }
 
     private const int MaxNoteLength = 1000;
+    private const int MaxImages = 5;
 
     private static readonly Regex NoteRegex = new(
         @"^\[(?<ts>[^\]]+)\]\s*(?<name>[^:]+):\s*(?<msg>.*)$",
@@ -112,24 +166,31 @@
 
     private List<ParsedNote> ParsedNotes = new();
     private string? _lastNotes;
+    private Dictionary<string, List<string>>? _lastImages;
     private int? editingIndex;
     private string? editText;
     private int? confirmDeleteIndex;
     private bool isBusy;
+    private readonly List<string> editExistingImages = new();
+    private readonly List<NoteImageFile> editNewImages = new();
 
     protected override void OnParametersSet()
     {
         // فقط وقتی متن یادداشت‌ها واقعاً عوض شده بازخوانی می‌کنیم؛ در غیر این صورت
         // رندرهای عادی صفحه، حالت ویرایش/تأیید حذف را از بین می‌برد.
-        if (string.Equals(_lastNotes, Notes, StringComparison.Ordinal)) return;
+        if (string.Equals(_lastNotes, Notes, StringComparison.Ordinal)
+            && ReferenceEquals(_lastImages, ImagesByLine)) return;
 
         _lastNotes = Notes;
+        _lastImages = ImagesByLine;
         ParsedNotes = Parse(Notes);
 
         if (editingIndex != null && !ParsedNotes.Any(n => n.Index == editingIndex))
         {
             editingIndex = null;
             editText = null;
+            editExistingImages.Clear();
+            editNewImages.Clear();
         }
         if (confirmDeleteIndex != null && !ParsedNotes.Any(n => n.Index == confirmDeleteIndex))
         {
@@ -137,17 +198,27 @@
         }
     }
 
+    private List<string> GetImages(ParsedNote note)
+        => ImagesByLine != null && ImagesByLine.TryGetValue(note.RawLine, out var urls)
+            ? urls
+            : new List<string>();
+
     private void StartEdit(ParsedNote note)
     {
         editingIndex = note.Index;
         editText = note.Text;
         confirmDeleteIndex = null;
+        editExistingImages.Clear();
+        editExistingImages.AddRange(GetImages(note));
+        editNewImages.Clear();
     }
 
     private void CancelEdit()
     {
         editingIndex = null;
         editText = null;
+        editExistingImages.Clear();
+        editNewImages.Clear();
     }
 
     private void RequestDelete(ParsedNote note)
@@ -155,9 +226,76 @@
         confirmDeleteIndex = note.Index;
         editingIndex = null;
         editText = null;
+        editExistingImages.Clear();
+        editNewImages.Clear();
     }
 
     private void CancelDelete() => confirmDeleteIndex = null;
+
+    private async Task HandleImageFilesSelected(InputFileChangeEventArgs e)
+    {
+        var remaining = MaxImages - editExistingImages.Count - editNewImages.Count;
+        if (remaining <= 0)
+        {
+            ToastService.ShowError($"حداکثر {MaxImages} تصویر برای هر یادداشت مجاز است.");
+            return;
+        }
+
+        try
+        {
+            var files = e.GetMultipleFiles(remaining);
+            foreach (var file in files)
+            {
+                if (editExistingImages.Count + editNewImages.Count >= MaxImages) break;
+                var buffer = await ImageCompressionHelper.CompressIfNeededAsync(file, JS);
+                editNewImages.Add(new NoteImageFile
+                {
+                    FileName = file.Name,
+                    ContentType = file.ContentType,
+                    Buffer = buffer,
+                    PreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(buffer)}"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError("خطا در خواندن فایل: " + ex.Message);
+        }
+    }
+
+    private async Task<List<string>?> UploadImagesAsync(List<NoteImageFile> files)
+    {
+        if (files.Count == 0) return new List<string>();
+        if (OrderId == null)
+        {
+            ToastService.ShowError("شناسه سفارش برای آپلود تصویر مشخص نیست.");
+            return null;
+        }
+
+        using var content = new MultipartFormDataContent();
+        foreach (var file in files)
+        {
+            var part = new ByteArrayContent(file.Buffer);
+            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            content.Add(part, "files", file.FileName);
+        }
+
+        var response = await Http.PostAsync($"api/orders/admin/{OrderId.Value}/notes/upload", content);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await response.Content.ReadAsStringAsync();
+            ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "آپلود تصاویر ناموفق بود." : msg.Trim().Trim('"'));
+            return null;
+        }
+
+        var urls = await response.Content.ReadFromJsonAsync<List<string>>() ?? new();
+        if (urls.Count == 0)
+        {
+            ToastService.ShowError("آپلود تصاویر ناموفق بود.");
+            return null;
+        }
+        return urls;
+    }
 
     private async Task SaveEditAsync()
     {
@@ -172,11 +310,15 @@
         isBusy = true;
         try
         {
+            var uploaded = await UploadImagesAsync(editNewImages);
+            if (uploaded == null) return;
+
             var saved = OnSaveNote != null && await OnSaveNote(new AdminNoteUpdateRequest
             {
                 Index = note.Index,
                 Original = note.RawLine,
-                Text = text
+                Text = text,
+                ImageUrls = editExistingImages.Concat(uploaded).ToList()
             });
 
             if (saved) CancelEdit();
@@ -269,6 +411,14 @@
         public string Text { get; set; } = "";
         public bool IsPlain { get; set; }
     }
+
+    private sealed class NoteImageFile
+    {
+        public string FileName { get; set; } = string.Empty;
+        public string ContentType { get; set; } = "image/jpeg";
+        public byte[] Buffer { get; set; } = Array.Empty<byte>();
+        public string PreviewUrl { get; set; } = string.Empty;
+    }
 }
 
 <style>
@@ -349,6 +499,65 @@
 
     .an-item--plain .an-text {
         color: #475569;
+    }
+
+    .an-upload-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: #2563eb;
+        background: #eff6ff;
+        border: 1px dashed #93c5fd;
+        border-radius: 8px;
+        padding: 6px 10px;
+        width: fit-content;
+    }
+
+    .an-image-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+    }
+
+    .an-image-grid--read {
+        margin-top: 10px;
+    }
+
+    .an-image-preview {
+        position: relative;
+        width: 76px;
+        height: 76px;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        display: block;
+    }
+
+    .an-image-preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .an-image-remove {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 20px;
+        height: 20px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(15, 23, 42, 0.72);
+        color: #fff;
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
     }
 
     .an-actions {

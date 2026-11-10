@@ -26,6 +26,8 @@ public sealed class NotificationDto
     public int Severity { get; set; }
     public string SeverityTitle { get; set; } = string.Empty;
     public string? ActionUrl { get; set; }
+    /// <summary>تصاویر پیوست اعلان (مثلاً تصاویر یادداشت مدیر).</summary>
+    public List<string> ImageUrls { get; set; } = new();
     public bool IsRead { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? ReadAt { get; set; }
