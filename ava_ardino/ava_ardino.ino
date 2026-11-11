@@ -431,22 +431,60 @@ static const char PORTAL_HTML[] PROGMEM = R"html(<!DOCTYPE html>
 <title>تنظیمات آوای ارورسرویس</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;padding:18px;font-family:Tahoma,system-ui,sans-serif;color:#eef1ff;
-background:radial-gradient(800px 420px at 100% -10%,#1d2a52,transparent),#0e1020;min-height:100vh}
-.card{max-width:430px;margin:0 auto;background:#151a2e;border:1px solid #262c4a;border-radius:18px;
-padding:20px;box-shadow:0 18px 40px rgba(0,0,0,.45)}
-h1{font-size:18px;margin:0 0 4px}
-.sub{color:#8f98bd;font-size:12.5px;margin:0 0 16px;line-height:1.8}
-label{display:block;font-size:12.5px;color:#9aa3c8;margin:14px 0 6px}
-.hint{color:#6f789c;font-size:11px;line-height:1.7;margin-top:5px}
-input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid #2b3155;
-background:#11152c;color:#eef1ff;font-family:inherit;font-size:14px}
-button{width:100%;margin-top:16px;padding:12px;border:0;border-radius:12px;
-background:linear-gradient(135deg,#4f7cff,#2e5be0);color:#fff;font-family:inherit;font-size:14px;cursor:pointer}
-button.danger{background:#3a1f2a;color:#ff8fa3}
-.muted{color:#6f789c;font-size:11.5px;text-align:center;margin:18px 0 0;line-height:1.9}
+body{margin:0;padding:18px;font-family:Tahoma,system-ui,sans-serif;color:#f7f9ff;
+background:radial-gradient(800px 420px at 100% -10%,#22335f,transparent),#0b0e1a;min-height:100vh;
+font-size:14px;line-height:1.7}
+.card{max-width:438px;margin:0 auto;background:#141a2e;border:1px solid #333c66;border-radius:18px;
+padding:22px 20px 20px;box-shadow:0 20px 46px rgba(0,0,0,.5)}
+h1{font-size:20px;font-weight:800;letter-spacing:-.2px;margin:0 0 6px;color:#fff}
+.sub{color:#c7d0f2;font-size:13.5px;font-weight:600;margin:0 0 18px;line-height:1.9}
+label{display:block;font-size:13.5px;font-weight:800;color:#e9edff;margin:16px 0 7px}
+.hint{color:#a6b0d2;font-size:12px;font-weight:600;line-height:1.75;margin-top:6px}
+input{width:100%;padding:12px 13px;border-radius:11px;border:1px solid #3b4576;
+background:#0c1124;color:#fff;font-family:inherit;font-size:16px;font-weight:700}
+input::placeholder{color:#828cb0;font-weight:600}
+input:focus{outline:none;border-color:#6f8dff;box-shadow:0 0 0 3px rgba(79,124,255,.25)}
+.pw{position:relative}
+.pw input{padding-left:50px}
+.eye{position:absolute;top:50%;left:7px;transform:translateY(-50%);width:36px;height:36px;
+margin:0;padding:0;border:0;border-radius:9px;background:transparent;color:#b9c6ff;
+display:grid;place-items:center;cursor:pointer;box-shadow:none}
+.eye:hover{background:#1d2545;color:#fff}
+.eye svg{display:block}
+.eye .off{display:none}
+.eye.is-on .on{display:none}
+.eye.is-on .off{display:block}
+button{width:100%;margin-top:18px;padding:13px;border:0;border-radius:12px;
+background:linear-gradient(135deg,#5a86ff,#2e5be0);color:#fff;font-family:inherit;font-size:15px;
+font-weight:800;cursor:pointer;box-shadow:0 8px 20px rgba(46,91,224,.35)}
+button.danger{background:#3d1e2a;color:#ffb3c1;border:1px solid #6d2c40;box-shadow:none}
+.muted{color:#9ba5c9;font-size:12px;font-weight:600;text-align:center;margin:20px 0 0;line-height:1.9}
+.brand{display:flex;align-items:center;gap:12px;margin:0 0 14px}
+.brand__logo{width:52px;height:52px;flex:0 0 auto;filter:drop-shadow(0 6px 14px rgba(37,99,235,.45))}
+.brand h1{margin:0}
+.brand__site{display:inline-flex;align-items:center;gap:5px;margin-top:4px;color:#a3baff;font-size:12.5px;
+font-weight:800;text-decoration:none;direction:ltr}
+.brand__site:hover{color:#cddaff;text-decoration:underline}
 </style></head><body><div class="card">
+<div class="brand">
+<svg class="brand__logo" viewBox="0 0 512 512" role="img" aria-label="لوگوی ارورسرویس">
+<defs>
+<linearGradient id="avaBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#1d4ed8"/></linearGradient>
+<linearGradient id="avaAcc" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#d97706"/></linearGradient>
+</defs>
+<path d="M256 24L440 108v196c0 92-72 172-184 204-112-32-184-112-184-204V108L256 24z" fill="url(#avaBg)"/>
+<path d="M168 180h176v36H220v44h112v34H220v48h124v36H168V180z" fill="#fff"/>
+<circle cx="376" cy="180" r="20" fill="url(#avaAcc)"/>
+<rect x="369" y="208" width="14" height="58" rx="7" fill="url(#avaAcc)"/>
+</svg>
+<div class="brand__text">
 <h1>آوای ارورسرویس</h1>
+<a class="brand__site" href="https://errorservice.ir" target="_blank" rel="noopener">
+<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c3 3 3 15 0 18"></path><path d="M12 3c-3 3-3 15 0 18"></path></svg>
+errorservice.ir
+</a>
+</div>
+</div>
 <p class="sub">وای‌فای دستگاه را انتخاب و کد دستگاه را وارد کنید. بعد از ذخیره، دستگاه خودش ری‌استارت می‌شود.</p>
 <form method="POST" action="/save">
 <label for="code">کد دستگاه</label>
@@ -456,12 +494,30 @@ button.danger{background:#3a1f2a;color:#ff8fa3}
 <input id="ssid" name="ssid" list="nets" value="%SSID%" placeholder="نام شبکه" required>
 <datalist id="nets">%NETS%</datalist>
 <label for="pass">رمز شبکه</label>
-<input id="pass" name="pass" type="password" value="%PASS%" placeholder="رمز (برای شبکهٔ باز خالی بگذارید)">
+<div class="pw">
+<input id="pass" name="pass" type="password" value="%PASS%" placeholder="رمز (برای شبکهٔ باز خالی بگذارید)" autocomplete="current-password">
+<button type="button" class="eye" onclick="togglePw(this)" aria-label="نمایش رمز" title="نمایش رمز">
+<svg class="on" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+<svg class="off" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+</button>
+</div>
 <button type="submit">ذخیره و اتصال</button>
 </form>
 <form method="GET" action="/clear"><button class="danger" type="submit">پاک کردن تنظیمات</button></form>
 <p class="muted">%NAME% — فرمور %FW%</p>
-</div></body></html>)html";
+</div>
+<script>
+function togglePw(btn){
+  var i=document.getElementById('pass');
+  if(!i) return;
+  var show=i.type==='password';
+  i.type=show?'text':'password';
+  btn.classList.toggle('is-on',show);
+  btn.setAttribute('aria-label',show?'پنهان کردن رمز':'نمایش رمز');
+  btn.setAttribute('title',show?'پنهان کردن رمز':'نمایش رمز');
+}
+</script>
+</body></html>)html";
 
 static const char PORTAL_OK[] PROGMEM = R"html(<!DOCTYPE html><html lang="fa" dir="rtl"><head>
 <meta charset="utf-8"><title>ذخیره شد</title></head>
