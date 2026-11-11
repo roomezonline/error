@@ -182,6 +182,9 @@ public class OrderShipmentDto
     public DateTimeOffset? DeliveredAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public string? CreatedBy { get; set; }
+
+    /// <summary>لینک آمادهٔ رهگیری بر اساس شرکت حمل و کد رهگیری ثبت‌شده.</summary>
+    public string? TrackingUrl => CarrierTrackingInfo.BuildUrl(Carrier, TrackingNumber);
 }
 
 public class OrderEventDto

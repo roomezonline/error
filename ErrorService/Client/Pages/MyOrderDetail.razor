@@ -308,9 +308,12 @@
                     <div class="mod-shipment-tracking">
                         <span class="text-muted">کد رهگیری:</span>
                         <span class="fw-bold ltr" dir="ltr">@s.TrackingNumber</span>
-                        <a class="mod-tracking-link" href="@GetTrackingUrl(s.Carrier, s.TrackingNumber)" target="_blank" rel="noopener">
-                            <span class="oi oi-external-link"></span> رهگیری مرسوله
-                        </a>
+                        @if (!string.IsNullOrWhiteSpace(ShippingTrackingUrl(s)))
+                        {
+                            <a class="mod-tracking-link" href="@ShippingTrackingUrl(s)" target="_blank" rel="noopener">
+                                <span class="oi oi-external-link"></span> رهگیری مرسوله
+                            </a>
+                        }
                     </div>
                 }
                         </div>
@@ -755,18 +758,13 @@
         _ => "bg-secondary-subtle"
     };
 
-    private string GetTrackingUrl(string carrier, string trackingNumber)
+    private string? ShippingTrackingUrl(OrderShipmentDto shipment)
     {
-        if (!string.IsNullOrWhiteSpace(_trackingTemplate))
-            return _trackingTemplate.Replace("{tracking}", Uri.EscapeDataString(trackingNumber));
+        if (string.IsNullOrWhiteSpace(shipment.TrackingNumber)) return null;
 
-        var c = carrier?.ToLowerInvariant() ?? "";
-        if (c.Contains("پست") || c.Contains("post"))
-            return $"https://tracking.post.ir/?id={trackingNumber}";
-        if (c.Contains("تیپاکس") || c.Contains("tipax"))
-            return $"https://tipax.trace.tci.ir/?trackingcode={trackingNumber}";
-        if (c.Contains("اسنپ") || c.Contains("snapp"))
-            return $"https://snappbox.ir/tracking/{trackingNumber}";
-        return $"https://tracking.post.ir/?id={trackingNumber}";
+        if (!string.IsNullOrWhiteSpace(_trackingTemplate))
+            return _trackingTemplate.Replace("{tracking}", Uri.EscapeDataString(shipment.TrackingNumber));
+
+        return shipment.TrackingUrl;
     }
 }

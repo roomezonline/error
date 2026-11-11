@@ -767,7 +767,7 @@
                                                                                          {
                                                                                              <span class="text-muted small">کد رهگیری:</span>
                                                                                              <span class="fw-bold small ltr" dir="ltr">@s.TrackingNumber</span>
-                                                                                             <a href="@GetTrackingUrl(s.Carrier, s.TrackingNumber)" target="_blank" rel="noopener"
+                                                                                             <a href="@s.TrackingUrl" target="_blank" rel="noopener"
                                                                                                 style="display:inline-flex;align-items:center;gap:4px;background:#eff6ff;color:#2563eb;padding:2px 10px;border-radius:16px;font-size:0.72rem;font-weight:700;text-decoration:none;">
                                                                                                  <span class="oi oi-external-link"></span> رهگیری
                                                                                              </a>
@@ -4203,18 +4203,6 @@
     private void GoToOrderDetail(int orderId)
     {
         Nav.NavigateTo($"/my-orders/{orderId}");
-    }
-
-    private static string GetTrackingUrl(string carrier, string trackingNumber)
-    {
-        var c = carrier?.ToLowerInvariant() ?? "";
-        if (c.Contains("پست") || c.Contains("post"))
-            return $"https://tracking.post.ir/?id={trackingNumber}";
-        if (c.Contains("تیپاکس") || c.Contains("tipax"))
-            return $"https://tipax.trace.tci.ir/?trackingcode={trackingNumber}";
-        if (c.Contains("اسنپ") || c.Contains("snapp"))
-            return $"https://snappbox.ir/tracking/{trackingNumber}";
-        return $"https://tracking.post.ir/?id={trackingNumber}";
     }
 
     private static string FormatJalaliDateTime(DateTime dt)

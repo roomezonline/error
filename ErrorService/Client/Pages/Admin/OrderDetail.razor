@@ -382,13 +382,45 @@ else
                     <div class="od-field-row" style="flex-wrap:wrap">
                         <div class="od-field" style="flex:1;min-width:140px">
                             <label>شرکت حمل</label>
-                            <input class="od-input" @bind="newShipment.Carrier" placeholder="پست، تیپاکس،..." />
+                            <select class="od-select" @bind="newShipment.Carrier">
+                                @foreach (var carrier in CarrierOptions)
+                                {
+                                    <option value="@carrier">@carrier</option>
+                                }
+                                <option value="@CarrierTrackingInfo.OtherCarrier">@CarrierTrackingInfo.OtherCarrier</option>
+                            </select>
                         </div>
+                        @if (newShipment.Carrier == CarrierTrackingInfo.OtherCarrier)
+                        {
+                            <div class="od-field" style="flex:1;min-width:140px">
+                                <label>نام شرکت حمل</label>
+                                <input class="od-input" @bind="customCarrier" placeholder="نام شرکت حمل" />
+                            </div>
+                        }
                         <div class="od-field" style="flex:1;min-width:140px">
                             <label>کد رهگیری</label>
-                            <input class="od-input ltr" @bind="newShipment.TrackingNumber" />
+                            <input class="od-input ltr" @bind="newShipment.TrackingNumber" @bind:event="oninput" placeholder="مثلاً 4096720261111164160403" />
                         </div>
                     </div>
+                    @if (!string.IsNullOrWhiteSpace(newShipment.TrackingNumber))
+                    {
+                        <div class="od-track-preview">
+                            @if (!string.IsNullOrWhiteSpace(NewTrackingUrl))
+                            {
+                                <a class="od-track-preview__link" href="@NewTrackingUrl" target="_blank" rel="noopener">
+                                    <span class="oi oi-external-link"></span>
+                                    رهگیری با @(EffectiveNewCarrier)
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="od-track-preview__hint">برای این شرکت حمل لینک رهگیری خودکار تعریف نشده است.</span>
+                            }
+                            <button type="button" class="od-track-copy" @onclick="() => CopyTrackingAsync(newShipment.TrackingNumber)">
+                                <span class="oi oi-clipboard"></span> کپی کد
+                            </button>
+                        </div>
+                    }
                     <div class="od-field">
                         <label>یادداشت</label>
                         <input class="od-input" @bind="newShipment.Notes" />
@@ -436,6 +468,10 @@ else
                                             <button class="od-dropdown-item" @onclick="() => UpdateShipmentStatus(ship, s)">@GetShipmentStatusLabel(s)</button>
                                         }
                                         <div class="od-dropdown-divider"></div>
+                                        <button class="od-dropdown-item" @onclick="() => BeginEditShipment(ship)">
+                                            <span class="oi oi-pencil"></span> ویرایش شرکت حمل و رهگیری
+                                        </button>
+                                        <div class="od-dropdown-divider"></div>
                                         <button class="od-dropdown-item od-text-danger" @onclick="() => ConfirmDeleteShipment(ship)">حذف مرسوله</button>
                                     </div>
                                 }
@@ -452,6 +488,83 @@ else
                                 <span>تحویل: @PersianDate.ToJalaliDateTime(ship.DeliveredAt.Value)</span>
                             }
                         </div>
+
+                        @if (!string.IsNullOrEmpty(ship.TrackingNumber))
+                        {
+                            <div class="od-shipment-track">
+                                @if (!string.IsNullOrWhiteSpace(ship.TrackingUrl))
+                                {
+                                    <a class="od-shipment-track__link" href="@ship.TrackingUrl" target="_blank" rel="noopener">
+                                        <span class="oi oi-external-link"></span>
+                                        پیگیری مرسوله
+                                    </a>
+                                }
+                                <button type="button" class="od-shipment-copy" @onclick="() => CopyTrackingAsync(ship.TrackingNumber)">
+                                    <span class="oi oi-clipboard"></span> کپی کد رهگیری
+                                </button>
+                            </div>
+                        }
+
+                        @if (editingShipmentId == ship.Id)
+                        {
+                            <div class="od-shipment-edit">
+                                <div class="od-form-title">ویرایش اطلاعات مرسوله</div>
+                                <div class="od-field-row" style="flex-wrap:wrap">
+                                    <div class="od-field" style="flex:1;min-width:140px">
+                                        <label>شرکت حمل</label>
+                                        <select class="od-select" @bind="editCarrier">
+                                            @foreach (var carrier in CarrierOptionsIncluding(ship.Carrier))
+                                            {
+                                                <option value="@carrier">@carrier</option>
+                                            }
+                                            <option value="@CarrierTrackingInfo.OtherCarrier">@CarrierTrackingInfo.OtherCarrier</option>
+                                        </select>
+                                    </div>
+                                    @if (editCarrier == CarrierTrackingInfo.OtherCarrier)
+                                    {
+                                        <div class="od-field" style="flex:1;min-width:140px">
+                                            <label>نام شرکت حمل</label>
+                                            <input class="od-input" @bind="editCustomCarrier" placeholder="نام شرکت حمل" />
+                                        </div>
+                                    }
+                                    <div class="od-field" style="flex:1;min-width:140px">
+                                        <label>کد رهگیری</label>
+                                        <input class="od-input ltr" @bind="editTrackingNumber" @bind:event="oninput" placeholder="کد رهگیری" />
+                                    </div>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(editTrackingNumber))
+                                {
+                                    <div class="od-track-preview">
+                                        @if (!string.IsNullOrWhiteSpace(EditTrackingUrl))
+                                        {
+                                            <a class="od-track-preview__link" href="@EditTrackingUrl" target="_blank" rel="noopener">
+                                                <span class="oi oi-external-link"></span>
+                                                رهگیری با @(EffectiveEditCarrier)
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <span class="od-track-preview__hint">برای این شرکت حمل لینک رهگیری خودکار تعریف نشده است.</span>
+                                        }
+                                        <button type="button" class="od-track-copy" @onclick="() => CopyTrackingAsync(editTrackingNumber)">
+                                            <span class="oi oi-clipboard"></span> کپی کد
+                                        </button>
+                                    </div>
+                                }
+                                <div class="od-field">
+                                    <label>یادداشت</label>
+                                    <input class="od-input" @bind="editShipmentNotes" />
+                                </div>
+                                <div class="od-field-row">
+                                    <button class="od-btn od-btn-primary" @onclick="() => SaveShipmentEdit(ship)" disabled="@isSaving">
+                                        @if (isSaving) { <span class="od-btn-spinner"></span> }
+                                        ذخیره
+                                    </button>
+                                    <button class="od-btn od-btn-ghost" @onclick="CancelShipmentEdit">انصراف</button>
+                                </div>
+                            </div>
+                        }
+
                         @if (!string.IsNullOrEmpty(ship.FailureReason))
                         {
                             <div class="od-text-danger" style="font-size:0.8rem;margin-top:6px">علت ناموفقی: @ship.FailureReason</div>
@@ -1746,6 +1859,96 @@ else
         margin-bottom: 12px;
     }
 
+    .od-track-preview {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        margin: -4px 0 12px;
+        padding: 8px 10px;
+        background: #ffffff;
+        border: 1px dashed #bfdbfe;
+        border-radius: 10px;
+        font-size: 0.78rem;
+    }
+    .od-track-preview__link {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: #1d4ed8;
+        font-weight: 700;
+        text-decoration: none;
+    }
+    .od-track-preview__link:hover {
+        text-decoration: underline;
+    }
+    .od-track-preview__hint {
+        color: #b45309;
+    }
+    .od-track-copy {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #334155;
+        border-radius: 8px;
+        padding: 4px 10px;
+        font-size: 0.72rem;
+        font-family: inherit;
+        cursor: pointer;
+    }
+    .od-track-copy:hover {
+        background: #f1f5f9;
+    }
+
+    .od-shipment-track {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        margin-top: 8px;
+    }
+    .od-shipment-track__link {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: #1d4ed8;
+        text-decoration: none;
+        background: #eff6ff;
+        border-radius: 8px;
+        padding: 5px 10px;
+    }
+    .od-shipment-track__link:hover {
+        background: #dbeafe;
+        text-decoration: underline;
+    }
+    .od-shipment-copy {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #475569;
+        border-radius: 8px;
+        padding: 5px 10px;
+        font-size: 0.72rem;
+        font-family: inherit;
+        cursor: pointer;
+    }
+    .od-shipment-copy:hover {
+        background: #f8fafc;
+    }
+    .od-shipment-edit {
+        margin-top: 12px;
+        padding: 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+    }
+
     .od-status-form {
         padding: 14px 16px;
     }
@@ -2017,6 +2220,15 @@ else
     private OrderShipmentCreateDto newShipment = new();
     private int? expandedShipmentId = null;
 
+    // ── سلکتور شرکت حمل و رهگیری مرسوله ──
+    private List<ShippingMethodDto> shippingMethods = new();
+    private string customCarrier = string.Empty;
+    private int? editingShipmentId;
+    private string editCarrier = string.Empty;
+    private string editCustomCarrier = string.Empty;
+    private string? editTrackingNumber;
+    private string? editShipmentNotes;
+
     private bool showDeleteConfirm = false;
     private bool showDeleteShipmentConfirm = false;
     private OrderShipmentDto? shipmentToDelete;
@@ -2083,6 +2295,15 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        try
+        {
+            shippingMethods = await Http.GetFromJsonAsync<List<ShippingMethodDto>>("api/shippingmethods") ?? new();
+        }
+        catch
+        {
+            // فهرست روش‌های ارسال فقط برای پیشنهاد سلکتور است؛ خطای آن مانع باز شدن سفارش نشود.
+        }
+
         await LoadOrder();
     }
 
@@ -2274,16 +2495,68 @@ else
         return Task.CompletedTask;
     }
 
+    private IEnumerable<string> CarrierOptions
+    {
+        get
+        {
+            var options = new List<string>();
+            foreach (var name in CarrierTrackingInfo.SuggestedCarriers)
+                if (!options.Contains(name)) options.Add(name);
+            foreach (var method in shippingMethods)
+                if (!string.IsNullOrWhiteSpace(method.Name) && !options.Contains(method.Name))
+                    options.Add(method.Name);
+            return options;
+        }
+    }
+
+    private IEnumerable<string> CarrierOptionsIncluding(string? current)
+    {
+        var options = CarrierOptions.ToList();
+        if (!string.IsNullOrWhiteSpace(current)
+            && current != CarrierTrackingInfo.OtherCarrier
+            && !options.Contains(current))
+            options.Add(current);
+        return options;
+    }
+
+    private string EffectiveNewCarrier => newShipment.Carrier == CarrierTrackingInfo.OtherCarrier
+        ? customCarrier.Trim()
+        : (newShipment.Carrier ?? string.Empty).Trim();
+
+    private string EffectiveEditCarrier => editCarrier == CarrierTrackingInfo.OtherCarrier
+        ? editCustomCarrier.Trim()
+        : (editCarrier ?? string.Empty).Trim();
+
+    private string? NewTrackingUrl => CarrierTrackingInfo.BuildUrl(EffectiveNewCarrier, newShipment.TrackingNumber);
+    private string? EditTrackingUrl => CarrierTrackingInfo.BuildUrl(EffectiveEditCarrier, editTrackingNumber);
+
+    private async Task CopyTrackingAsync(string? trackingNumber)
+    {
+        if (string.IsNullOrWhiteSpace(trackingNumber)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", trackingNumber.Trim());
+            ToastService.ShowSuccess("کد رهگیری کپی شد.");
+        }
+        catch
+        {
+            ToastService.ShowError("کپی خودکار ممکن نشد؛ کد را دستی انتخاب کنید.");
+        }
+    }
+
     private void ShowNewShipmentForm()
     {
-        newShipment = new OrderShipmentCreateDto();
+        var defaultCarrier = CarrierOptions.FirstOrDefault() ?? CarrierTrackingInfo.SuggestedCarriers[0];
+        newShipment = new OrderShipmentCreateDto { Carrier = defaultCarrier };
+        customCarrier = string.Empty;
         showShipmentForm = true;
     }
 
     private async Task CreateShipment()
     {
         if (order == null || isSaving) return;
-        if (string.IsNullOrWhiteSpace(newShipment.Carrier))
+        var carrier = EffectiveNewCarrier;
+        if (string.IsNullOrWhiteSpace(carrier))
         {
             ToastService.ShowError("شرکت حمل الزامی است.");
             return;
@@ -2291,14 +2564,93 @@ else
         isSaving = true;
         try
         {
-            var resp = await Http.PostAsJsonAsync($"api/orders/admin/{order.Id}/shipments", newShipment);
+            var payload = new OrderShipmentCreateDto
+            {
+                Carrier = carrier,
+                TrackingNumber = string.IsNullOrWhiteSpace(newShipment.TrackingNumber) ? null : newShipment.TrackingNumber.Trim(),
+                Notes = newShipment.Notes,
+                FailureReason = newShipment.FailureReason
+            };
+            var resp = await Http.PostAsJsonAsync($"api/orders/admin/{order.Id}/shipments", payload);
             if (resp.IsSuccessStatusCode)
             {
                 ToastService.ShowSuccess("مرسوله ثبت شد.");
                 showShipmentForm = false;
+                customCarrier = string.Empty;
                 await LoadOrder();
             }
-            else ToastService.ShowError("خطا در ثبت مرسوله.");
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ثبت مرسوله." : msg);
+            }
+        }
+        catch (Exception ex) { ToastService.ShowError(ex.Message); }
+        finally { isSaving = false; }
+    }
+
+    private void BeginEditShipment(OrderShipmentDto ship)
+    {
+        expandedShipmentId = null;
+        editingShipmentId = ship.Id;
+
+        var current = ship.Carrier?.Trim() ?? string.Empty;
+        var options = CarrierOptions.ToList();
+        if (!string.IsNullOrWhiteSpace(current) && !options.Contains(current))
+        {
+            editCarrier = CarrierTrackingInfo.OtherCarrier;
+            editCustomCarrier = current;
+        }
+        else
+        {
+            editCarrier = string.IsNullOrWhiteSpace(current)
+                ? options.FirstOrDefault() ?? CarrierTrackingInfo.SuggestedCarriers[0]
+                : current;
+            editCustomCarrier = string.Empty;
+        }
+
+        editTrackingNumber = ship.TrackingNumber;
+        editShipmentNotes = ship.Notes;
+    }
+
+    private void CancelShipmentEdit()
+    {
+        editingShipmentId = null;
+        editCustomCarrier = string.Empty;
+    }
+
+    private async Task SaveShipmentEdit(OrderShipmentDto ship)
+    {
+        if (order == null || isSaving) return;
+        var carrier = EffectiveEditCarrier;
+        if (string.IsNullOrWhiteSpace(carrier))
+        {
+            ToastService.ShowError("شرکت حمل الزامی است.");
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            var payload = new OrderShipmentUpdateDto
+            {
+                Carrier = carrier,
+                TrackingNumber = editTrackingNumber?.Trim() ?? string.Empty,
+                Notes = editShipmentNotes ?? string.Empty
+            };
+            var resp = await Http.PutAsJsonAsync($"api/orders/admin/{order.Id}/shipments/{ship.Id}", payload);
+            if (resp.IsSuccessStatusCode)
+            {
+                ToastService.ShowSuccess("اطلاعات مرسوله ذخیره شد.");
+                editingShipmentId = null;
+                editCustomCarrier = string.Empty;
+                await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در ذخیره اطلاعات مرسوله." : msg);
+            }
         }
         catch (Exception ex) { ToastService.ShowError(ex.Message); }
         finally { isSaving = false; }

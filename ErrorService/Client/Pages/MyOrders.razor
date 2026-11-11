@@ -77,17 +77,34 @@
                                 @if (!string.IsNullOrEmpty(order.TrackingNumber))
                                 {
                                     <span class="text-muted small me-3">کد رهگیری پستی:</span>
-                                    <span class="small ms-2" dir="ltr">@order.TrackingNumber</span>
+                                    @if (!string.IsNullOrWhiteSpace(CarrierTrackingInfo.BuildUrl(order.ShippingMethodName, order.TrackingNumber)))
+                                    {
+                                        <a href="@CarrierTrackingInfo.BuildUrl(order.ShippingMethodName, order.TrackingNumber)" target="_blank" rel="noopener"
+                                           class="small ms-2 ltr fw-bold" dir="ltr" style="color:#2563eb;text-decoration:none;">
+                                            @order.TrackingNumber <span class="oi oi-external-link" style="font-size:0.7rem;"></span>
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <span class="small ms-2" dir="ltr">@order.TrackingNumber</span>
+                                    }
                                 }
                                 @if (order.Shipments != null && order.Shipments.Any())
                                 {
                                     @foreach (var s in order.Shipments.Where(s => !string.IsNullOrEmpty(s.TrackingNumber)))
                                     {
                                         <span class="text-muted small me-3">رهگیری @s.Carrier:</span>
-                                        <a href="@GetTrackingUrl(s.Carrier, s.TrackingNumber)" target="_blank" rel="noopener"
-                                           class="small ms-2 ltr fw-bold" dir="ltr" style="color:#2563eb;text-decoration:none;">
-                                            @s.TrackingNumber <span class="oi oi-external-link" style="font-size:0.7rem;"></span>
-                                        </a>
+                                        @if (!string.IsNullOrWhiteSpace(s.TrackingUrl))
+                                        {
+                                            <a href="@s.TrackingUrl" target="_blank" rel="noopener"
+                                               class="small ms-2 ltr fw-bold" dir="ltr" style="color:#2563eb;text-decoration:none;">
+                                                @s.TrackingNumber <span class="oi oi-external-link" style="font-size:0.7rem;"></span>
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <span class="small ms-2" dir="ltr">@s.TrackingNumber</span>
+                                        }
                                     }
                                 }
                                 </div>
@@ -209,16 +226,4 @@
         OrderStatus.Completed => "bg-primary text-white",
         _ => "bg-light text-dark"
     };
-
-    private static string GetTrackingUrl(string carrier, string trackingNumber)
-    {
-        var c = carrier?.ToLowerInvariant() ?? "";
-        if (c.Contains("پست") || c.Contains("post"))
-            return $"https://tracking.post.ir/?id={trackingNumber}";
-        if (c.Contains("تیپاکس") || c.Contains("tipax"))
-            return $"https://tipax.trace.tci.ir/?trackingcode={trackingNumber}";
-        if (c.Contains("اسنپ") || c.Contains("snapp"))
-            return $"https://snappbox.ir/tracking/{trackingNumber}";
-        return $"https://tracking.post.ir/?id={trackingNumber}";
-    }
 }
