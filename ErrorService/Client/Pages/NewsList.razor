@@ -326,7 +326,10 @@
 
     .nlp-search { position: relative; display: flex; align-items: center; }
     .nlp-search__icon {
-        position: absolute; right: 14px; color: #94a3b8; font-size: .9rem; pointer-events: none;
+        position: absolute; right: 14px;
+        top: 50%; transform: translateY(-50%);
+        color: #94a3b8; font-size: .9rem; pointer-events: none;
+        line-height: 1;
     }
     .nlp-search__input {
         width: 100%; min-height: 46px;
@@ -343,6 +346,7 @@
     }
     .nlp-search__clear {
         position: absolute; left: 8px;
+        top: 50%; transform: translateY(-50%);
         width: 30px; height: 30px; border-radius: 50%;
         border: none; background: #f1f5f9; color: #64748b;
         font-size: 1.05rem; line-height: 1; cursor: pointer;
@@ -352,7 +356,10 @@
 
     .nlp-sort { position: relative; display: flex; align-items: center; }
     .nlp-sort__icon {
-        position: absolute; right: 12px; color: #94a3b8; font-size: .8rem; pointer-events: none;
+        position: absolute; right: 12px;
+        top: 50%; transform: translateY(-50%);
+        color: #94a3b8; font-size: .8rem; pointer-events: none;
+        line-height: 1;
     }
     .nlp-sort__select {
         width: 100%; min-height: 44px;
