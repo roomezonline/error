@@ -3261,8 +3261,29 @@ WHERE Id = {order.Id}
             deliveredStatusEvent.NotificationKey = await _notificationEvents.NotifyOrderStatusChangedAsync(order, previousOrderStatus);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.TrackingNumber))
-            order.TrackingNumber = request.TrackingNumber;
+        if (request.TrackingNumber != null)
+        {
+            var maxOtherAttempt = await _db.OrderShipments
+                .Where(s => s.OrderId == orderId && s.Id != shipmentId)
+                .MaxAsync(s => (int?)s.AttemptNumber) ?? 0;
+
+            // فقط وقتی مرسولهٔ در حال ویرایش آخرین تلاش است، کد رهگیری سطح سفارش را با آن هماهنگ کن.
+            if (shipment.AttemptNumber >= maxOtherAttempt)
+            {
+                if (!string.IsNullOrWhiteSpace(shipment.TrackingNumber))
+                {
+                    order.TrackingNumber = shipment.TrackingNumber.Trim();
+                }
+                else
+                {
+                    order.TrackingNumber = await _db.OrderShipments
+                        .Where(s => s.OrderId == orderId && s.Id != shipmentId && s.TrackingNumber != null && s.TrackingNumber != "")
+                        .OrderByDescending(s => s.AttemptNumber)
+                        .Select(s => s.TrackingNumber)
+                        .FirstOrDefaultAsync();
+                }
+            }
+        }
 
         order.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
@@ -3281,7 +3302,23 @@ WHERE Id = {order.Id}
 
         await AddOrderEventAsync(orderId, "shipment_deleted", order.Status, order.Status, $"مرسوله #{shipment.AttemptNumber} حذف شد");
 
+        var deletedTracking = shipment.TrackingNumber;
+
         _db.OrderShipments.Remove(shipment);
+
+        // اگر کد رهگیری سطح سفارش از همین مرسوله آمده بود، آن را با آخرین مرسولهٔ باقی‌مانده هماهنگ کن.
+        if (!string.IsNullOrWhiteSpace(deletedTracking)
+            && string.Equals(order.TrackingNumber?.Trim(), deletedTracking.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            var remainingTracking = await _db.OrderShipments
+                .Where(s => s.OrderId == orderId && s.Id != shipmentId && s.TrackingNumber != null && s.TrackingNumber != "")
+                .OrderByDescending(s => s.AttemptNumber)
+                .Select(s => s.TrackingNumber)
+                .FirstOrDefaultAsync();
+
+            order.TrackingNumber = remainingTracking;
+        }
+
         order.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
         return NoContent();

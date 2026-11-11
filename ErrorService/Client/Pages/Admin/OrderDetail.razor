@@ -505,6 +505,18 @@ else
                             </div>
                         }
 
+                        @if (editingShipmentId != ship.Id)
+                        {
+                            <div class="od-shipment-actions">
+                                <button type="button" class="od-shipment-action" @onclick="() => BeginEditShipment(ship)">
+                                    <span class="oi oi-pencil"></span> ویرایش مرسوله
+                                </button>
+                                <button type="button" class="od-shipment-action od-shipment-action--danger" @onclick="() => ConfirmDeleteShipment(ship)">
+                                    <span class="oi oi-trash"></span> حذف مرسوله
+                                </button>
+                            </div>
+                        }
+
                         @if (editingShipmentId == ship.Id)
                         {
                             <div class="od-shipment-edit">
@@ -1038,7 +1050,7 @@ else
 
 <ConfirmDialog IsVisible="showDeleteShipmentConfirm"
                Title="حذف مرسوله"
-               Message="آیا از حذف این مرسوله اطمینان دارید؟"
+               Message="@DeleteShipmentMessage"
                ConfirmText="بله، حذف شود"
                IsDanger="true"
                OnResult="HandleDeleteShipmentResult" />
@@ -1941,6 +1953,41 @@ else
     .od-shipment-copy:hover {
         background: #f8fafc;
     }
+    .od-shipment-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px dashed #e2e8f0;
+    }
+    .od-shipment-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        color: #334155;
+        border-radius: 8px;
+        padding: 5px 10px;
+        font-size: 0.74rem;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background .15s, border-color .15s;
+    }
+    .od-shipment-action:hover {
+        background: #f1f5f9;
+        border-color: #94a3b8;
+    }
+    .od-shipment-action--danger {
+        color: #b91c1c;
+        border-color: #fecaca;
+        background: #fef2f2;
+    }
+    .od-shipment-action--danger:hover {
+        background: #fee2e2;
+        border-color: #fca5a5;
+    }
     .od-shipment-edit {
         margin-top: 12px;
         padding: 12px;
@@ -2679,10 +2726,19 @@ else
         catch (Exception ex) { ToastService.ShowError(ex.Message); }
     }
 
+    private string DeleteShipmentMessage => shipmentToDelete == null
+        ? "آیا از حذف این مرسوله اطمینان دارید؟"
+        : $"مرسوله «{shipmentToDelete.Carrier}»{(string.IsNullOrEmpty(shipmentToDelete.TrackingNumber) ? string.Empty : $" با کد رهگیری {shipmentToDelete.TrackingNumber}")} حذف شود؟ این عمل قابل بازگشت نیست.";
+
     private void ConfirmDeleteShipment(OrderShipmentDto ship)
     {
         shipmentToDelete = ship;
         expandedShipmentId = null;
+        if (editingShipmentId == ship.Id)
+        {
+            editingShipmentId = null;
+            editCustomCarrier = string.Empty;
+        }
         showDeleteShipmentConfirm = true;
     }
 
@@ -2690,13 +2746,20 @@ else
     {
         showDeleteShipmentConfirm = false;
         if (!confirmed || shipmentToDelete == null || order == null) return;
+        var deleting = shipmentToDelete;
+        shipmentToDelete = null;
         try
         {
-            var resp = await Http.DeleteAsync($"api/orders/admin/{order.Id}/shipments/{shipmentToDelete.Id}");
+            var resp = await Http.DeleteAsync($"api/orders/admin/{order.Id}/shipments/{deleting.Id}");
             if (resp.IsSuccessStatusCode)
             {
                 ToastService.ShowSuccess("مرسوله حذف شد.");
                 await LoadOrder();
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                ToastService.ShowError(string.IsNullOrWhiteSpace(msg) ? "خطا در حذف مرسوله." : msg);
             }
         }
         catch (Exception ex) { ToastService.ShowError(ex.Message); }
