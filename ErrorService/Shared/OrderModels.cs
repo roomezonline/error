@@ -297,6 +297,9 @@ public class OrderAdminListResponse
     public int Page { get; set; }
     public int PageSize { get; set; }
     public int PendingActionCount { get; set; }
+
+    /// <summary>تعداد سفارش‌های باز/تکمیل‌نشده (در انتظار پرداخت، رسید یا تأیید) که در بالای لیست می‌آیند.</summary>
+    public int OpenOrderCount { get; set; }
 }
 
 public class OrderAdminSummaryDto

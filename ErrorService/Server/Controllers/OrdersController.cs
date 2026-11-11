@@ -1899,8 +1899,22 @@ public sealed class OrdersController : ControllerBase
 
         var totalCount = await query.CountAsync();
 
+        // سفارش‌های باز/تکمیل‌نشده همیشه بالای لیست می‌آیند تا از چشم ادمین نیفتند.
+        var openStatuses = new[]
+        {
+            OrderStatus.PendingPayment,
+            OrderStatus.ReceiptUploaded,
+            OrderStatus.Approved
+        };
+
+        var openOrderCount = await query.CountAsync(o =>
+            openStatuses.Contains(o.Status)
+            && (o.Stage == null || o.Stage != OrderStage.Resolved));
+
         var orders = await query
-            .OrderByDescending(o => o.CreatedAt)
+            .OrderBy(o => openStatuses.Contains(o.Status)
+                && (o.Stage == null || o.Stage != OrderStage.Resolved) ? 0 : 1)
+            .ThenByDescending(o => o.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(order => new OrderDto
@@ -1964,7 +1978,8 @@ public sealed class OrdersController : ControllerBase
             TotalCount = totalCount,
             Page = page,
             PageSize = pageSize,
-            PendingActionCount = pendingActionCount
+            PendingActionCount = pendingActionCount,
+            OpenOrderCount = openOrderCount
         });
     }
 

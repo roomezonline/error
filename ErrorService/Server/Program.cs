@@ -75,6 +75,7 @@ builder.Services.AddScoped<ErrorService.Server.Services.Backup.IBackupService, E
 builder.Services.AddSingleton<ErrorService.Server.Services.IEmailService, ErrorService.Server.Services.SmtpEmailService>();
 builder.Services.AddHostedService<ErrorService.Server.Services.Backup.BackupBackgroundService>();
 builder.Services.AddHostedService<ErrorService.Server.Services.PendingOrderCleanupService>();
+builder.Services.AddHostedService<ErrorService.Server.Services.OrderStaleReminderService>();
 builder.Services.AddHostedService<ErrorService.Server.Services.MonitoringExpiryNotificationService>();
 builder.Services.AddHostedService<ErrorService.Server.Services.MonitoringGraceEnforcementService>();
         builder.Services.AddHostedService<ErrorService.Server.Services.NotificationMaintenanceService>();

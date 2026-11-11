@@ -3,6 +3,7 @@ using ErrorService.Server.Models;
 using ErrorService.Server.Services.Messenger;
 using ErrorService.Shared;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using System.Text.Json;
 
 namespace ErrorService.Server.Services;
@@ -230,6 +231,45 @@ public sealed class NotificationEventService
             legacyUrl: $"/my-orders/{order.Id}",
             appUserId: order.UserId));
         return idempotencyKey;
+    }
+
+    /// <summary>
+    /// یادآوری روزانهٔ سفارش تکمیل‌نشده برای سوپر ادمین‌ها. پیام شامل نام مشتری،
+    /// اقلام سفارش، تاریخ ثبت، وضعیت/مرحلهٔ فعلی و زمان آخرین تغییر وضعیت است و
+    /// هم در مرکز اعلان‌ها و هم در بله ارسال می‌شود.
+    /// </summary>
+    public Task NotifyOrderStaleAsync(Order order, DateTimeOffset lastChangeAt, int staleDays)
+    {
+        var customerName = string.IsNullOrWhiteSpace(order.FullName) ? "—" : order.FullName.Trim();
+        var phone = string.IsNullOrWhiteSpace(order.PhoneNumber) ? "—" : order.PhoneNumber.Trim();
+        var status = OrderStatusTitle(order.Status);
+        var stage = order.Stage.HasValue ? OrderStageInfo.Label(order.Stage.Value) : "—";
+        var tracking = string.IsNullOrWhiteSpace(order.TrackingNumber) ? "—" : order.TrackingNumber!;
+        var days = Math.Max(1, staleDays);
+
+        return GuardAsync("order.stale", () => EmitAsync(
+            eventType: "order.stale",
+            values: new Dictionary<string, string?>
+            {
+                ["OrderNumber"] = order.OrderNumber,
+                ["CustomerName"] = customerName,
+                ["Phone"] = phone,
+                ["OrderDate"] = JalaliDateTime(order.CreatedAt),
+                ["Products"] = OrderProductsSummary(order),
+                ["Amount"] = PayableAmount(order).ToString("N0"),
+                ["Status"] = status,
+                ["Stage"] = stage,
+                ["LastChange"] = JalaliDateTime(lastChangeAt),
+                ["StaleDays"] = days.ToString(),
+                ["TrackingNumber"] = tracking,
+                ["OrderId"] = order.Id.ToString()
+            },
+            idempotencyKey: $"order.stale:{order.Id}:{lastChangeAt.UtcTicks}:{TehranDateKey(DateTimeOffset.UtcNow)}",
+            legacySeverity: NotificationSeverity.Warning,
+            legacyTitle: $"سفارش {order.OrderNumber} در انتظار اقدام است",
+            legacyBody: $"سفارش {order.OrderNumber} از {customerName} بیش از {days} روز در وضعیت «{status}» بدون تغییر مانده است.",
+            legacyUrl: "/admin/orders",
+            superAdminsOnly: true));
     }
 
     public async Task<string?> NotifyOrderStageChangedAsync(Order order, OrderStage? previousStage)
@@ -856,4 +896,31 @@ public sealed class NotificationEventService
         OrderStatus.Completed => "تکمیل شده",
         _ => status.ToString()
     };
+
+    // ساعت رسمی ایران بدون تغییر ساعت تابستانی است؛ برای کلید روزانه و
+    // نمایش تاریخ شمسی از همین آفست ثابت استفاده می‌شود.
+    private static readonly TimeSpan TehranOffset = TimeSpan.FromHours(3.5);
+
+    /// <summary>کلید روزِ تهران (مثلاً ۱۴۰۵۰۸۲۰) برای یک‌بار در روز بودن یادآوری.</summary>
+    private static string TehranDateKey(DateTimeOffset value)
+    {
+        var local = value.ToOffset(TehranOffset).DateTime;
+        var pc = new PersianCalendar();
+        return $"{pc.GetYear(local):0000}{pc.GetMonth(local):00}{pc.GetDayOfMonth(local):00}";
+    }
+
+    private static string JalaliDateTime(DateTimeOffset value)
+    {
+        var local = value.ToOffset(TehranOffset).DateTime;
+        var pc = new PersianCalendar();
+        return $"{pc.GetYear(local):0000}/{pc.GetMonth(local):00}/{pc.GetDayOfMonth(local):00} {local:HH:mm}";
+    }
+
+    private static string OrderProductsSummary(Order order)
+    {
+        if (order.Items == null || order.Items.Count == 0)
+            return "—";
+
+        return string.Join("، ", order.Items.Select(i => $"{i.ProductName} × {i.Quantity}"));
+    }
 }

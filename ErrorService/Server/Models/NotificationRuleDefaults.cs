@@ -51,6 +51,13 @@ public static class NotificationRuleDefaults
             "/my-orders/{OrderId}", null, true, false,
             new[] { "OrderNumber", "Amount", "Status", "OrderId" }),
 
+        new("order.stale", "سفارش و پرداخت", "یادآوری روزانهٔ سفارش تکمیل‌نشده",
+            "سفارش {OrderNumber} در انتظار اقدام است",
+            "مشتری: {CustomerName}\nتلفن: {Phone}\nتاریخ سفارش: {OrderDate}\nکالاها: {Products}\nمبلغ: {Amount} تومان\nوضعیت فعلی: {Status}\nمرحله فعلی: {Stage}\nآخرین تغییر وضعیت: {LastChange}\nکد رهگیری: {TrackingNumber}\n\nاز آخرین تغییر وضعیت {StaleDays} روز گذشته و اقدامی ثبت نشده است؛ لطفاً این سفارش را پیگیری کنید.",
+            "/admin/orders", NotificationSeverity.Warning, true, true,
+            new[] { "OrderNumber", "CustomerName", "Phone", "OrderDate", "Products", "Amount", "Status", "Stage", "LastChange", "StaleDays", "TrackingNumber", "OrderId" },
+            NotificationChannelFlags.Internal | NotificationChannelFlags.Bale),
+
         new("order.note_added", "سفارش و پرداخت", "یادداشت مدیر برای مشتری",
             "یادداشت جدیدی برای سفارش شما ثبت شد",
             "مدیر برای سفارش {OrderNumber} یادداشت جدیدی ثبت کرد:\n{Message}",
