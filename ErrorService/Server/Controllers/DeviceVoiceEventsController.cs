@@ -120,6 +120,17 @@ public sealed class DeviceVoiceEventsController : ControllerBase
                     });
                 }
 
+                // ثبت تحویل: از این لحظه در پنل مشخص است که صدا به دستگاه رسیده
+                // (و «پخش نشد» فقط برای رویدادهای تحویل‌نشده نمایش داده می‌شود).
+                if (events.Count > 0)
+                {
+                    var deliveredIds = events.Select(e => (int)e.Id).ToList();
+                    var deliveredAt = DateTimeOffset.UtcNow;
+                    await _db.DeviceVoiceEvents
+                        .Where(e => deliveredIds.Contains(e.Id) && e.DeliveredAt == null)
+                        .ExecuteUpdateAsync(s => s.SetProperty(e => e.DeliveredAt, deliveredAt), ct);
+                }
+
                 return Ok(new DeviceVoiceEventsDto
                 {
                     AfterId = batchCursor,

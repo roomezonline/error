@@ -49,6 +49,12 @@ public sealed class DeviceVoiceEvent
 
     public DateTimeOffset CreatedAt { get; set; }
 
+    /// <summary>
+    /// زمانی که دستگاه رویداد را با long-poll تحویل گرفت. اگر خالی بماند و بازهٔ
+    /// اعتبار تمام شود، یعنی صدا روی دستگاه پخش نشده است.
+    /// </summary>
+    public DateTimeOffset? DeliveredAt { get; set; }
+
     /// <summary>پس از این زمان رویداد کهنه است و پخش نمی‌شود.</summary>
     public DateTimeOffset ExpiresAt { get; set; }
 }

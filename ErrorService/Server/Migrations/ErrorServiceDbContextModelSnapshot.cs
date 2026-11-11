@@ -1947,6 +1947,9 @@ namespace ErrorService.Server.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("DeliveredAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("DescriptionFa")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");

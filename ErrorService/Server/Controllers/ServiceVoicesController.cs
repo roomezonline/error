@@ -140,16 +140,18 @@ public sealed class ServiceVoicesController : ControllerBase
 
     /// <summary>
     /// آخرین رویدادهای صوتی یک دستگاه برای بازبینی در پنل: هر ردیف نشان می‌دهد
-    /// کدام تغییر پایش رخ داده، چه اکشنی انتخاب شده و کدام فایل MP3 پخش شده است.
+    /// کدام تغییر پایش رخ داده، چه اکشنی انتخاب شده و آیا صدا به دستگاه رسیده است.
+    /// هر رویداد به رسید مشتری/اتصال پایش همان لحظه نسبت داده می‌شود تا فهرست
+    /// بر اساس شمارهٔ رسید دسته‌بندی شود.
     /// </summary>
     [HttpGet("events")]
     public async Task<ActionResult<List<ServiceVoiceEventLogDto>>> RecentEvents(
-        [FromQuery] int deviceId, [FromQuery] int take = 20, CancellationToken ct = default)
+        [FromQuery] int deviceId, [FromQuery] int take = 60, CancellationToken ct = default)
     {
         if (deviceId <= 0)
             return BadRequest("شناسه دستگاه نامعتبر است.");
 
-        take = Math.Clamp(take, 1, 100);
+        take = Math.Clamp(take, 1, 200);
         var now = DateTimeOffset.UtcNow;
 
         var events = await _db.DeviceVoiceEvents.AsNoTracking()
@@ -166,6 +168,8 @@ public sealed class ServiceVoicesController : ControllerBase
                 DescriptionFa = x.DescriptionFa,
                 IsTest = x.IsTest,
                 IsExpired = x.ExpiresAt <= now,
+                DeliveredAt = x.DeliveredAt,
+                IsDelivered = x.DeliveredAt != null,
                 CreatedAt = x.CreatedAt
             })
             .ToListAsync(ct);
@@ -182,6 +186,37 @@ public sealed class ServiceVoicesController : ControllerBase
         foreach (var action in actions)
             actionByKey.TryAdd(action.Key, (action.TitleFa, action.AudioUrl, action.IsActive));
 
+        // بازه‌های اتصال دستگاه به رسید مشتری؛ هر رویداد به اتصالی نسبت داده می‌شود
+        // که در لحظهٔ وقوع آن باز بوده است (شامل بازهٔ مهلت پس از قطع).
+        var oldest = events.Min(x => x.CreatedAt);
+        var connections = await _db.MonitoringReceiptConnections.AsNoTracking()
+            .Where(c => c.MonitoringDeviceId == deviceId &&
+                        c.CreatedAt <= now &&
+                        (c.EndedAt == null || c.GracePeriodEndAt >= oldest || c.EndedAt >= oldest))
+            .Select(c => new
+            {
+                c.Id,
+                c.CustomerReceiptId,
+                c.CreatedAt,
+                c.EndedAt,
+                c.GracePeriodEndAt,
+                CustomerFirstName = c.CustomerReceipt.Customer.FirstName,
+                CustomerLastName = c.CustomerReceipt.Customer.LastName
+            })
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync(ct);
+
+        var connectionWindows = connections
+            .Select(c => new
+            {
+                c.Id,
+                c.CustomerReceiptId,
+                Start = c.CreatedAt,
+                End = c.EndedAt == null ? (DateTimeOffset?)null : (c.GracePeriodEndAt ?? c.EndedAt),
+                CustomerName = $"{c.CustomerFirstName} {c.CustomerLastName}".Trim()
+            })
+            .ToList();
+
         foreach (var ev in events)
         {
             ev.EventTitleFa = ServiceVoiceEventKeys.TitleOf(ev.ActionKey) ?? ev.ActionKey;
@@ -194,9 +229,49 @@ public sealed class ServiceVoicesController : ControllerBase
                 ev.HasAudio = !string.IsNullOrWhiteSpace(action.AudioUrl)
                               && action.AudioUrl.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
             }
+
+            var connection = connectionWindows
+                .Where(c => c.Start <= ev.CreatedAt && (c.End == null || c.End >= ev.CreatedAt))
+                .OrderByDescending(c => c.Start)
+                .FirstOrDefault();
+
+            if (connection != null)
+            {
+                ev.ReceiptConnectionId = connection.Id;
+                ev.CustomerReceiptId = connection.CustomerReceiptId;
+                ev.ReceiptIsOpen = connection.End == null;
+                ev.CustomerName = connection.CustomerName.Length == 0 ? null : connection.CustomerName;
+            }
         }
 
         return Ok(events);
+    }
+
+    /// <summary>حذف یک رویداد صوتی از گزارش دستگاه.</summary>
+    [HttpDelete("events/{id:int}")]
+    public async Task<IActionResult> DeleteEvent(int id, CancellationToken ct)
+    {
+        var entity = await _db.DeviceVoiceEvents.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (entity == null)
+            return NotFound("رویداد یافت نشد.");
+
+        _db.DeviceVoiceEvents.Remove(entity);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>پاک‌کردن همهٔ رویدادهای صوتی یک دستگاه از گزارش.</summary>
+    [HttpDelete("events")]
+    public async Task<ActionResult<object>> ClearEvents([FromQuery] int deviceId, CancellationToken ct)
+    {
+        if (deviceId <= 0)
+            return BadRequest("شناسه دستگاه نامعتبر است.");
+
+        var removed = await _db.DeviceVoiceEvents
+            .Where(x => x.MonitoringDeviceId == deviceId)
+            .ExecuteDeleteAsync(ct);
+
+        return Ok(new { removed });
     }
 
     [HttpPost]

@@ -173,6 +173,24 @@ public sealed class ServiceVoiceEventLogDto
     public string? DescriptionFa { get; set; }
     public bool IsTest { get; set; }
     public bool IsExpired { get; set; }
+
+    /// <summary>زمان تحویل رویداد به دستگاه؛ خالی یعنی هنوز به دستگاه داده نشده است.</summary>
+    public DateTimeOffset? DeliveredAt { get; set; }
+
+    /// <summary>رویداد واقعاً به دستگاه تحویل داده شده است (حتی اگر بازهٔ اعتبارش گذشته باشد).</summary>
+    public bool IsDelivered { get; set; }
+
+    /// <summary>اتصال پایش/رسید مشتری که این رویداد در بازهٔ آن رخ داده است.</summary>
+    public int? ReceiptConnectionId { get; set; }
+
+    /// <summary>شناسهٔ رسید مشتری (همان شمارهٔ رسید نمایش‌داده‌شده به مشتری).</summary>
+    public int? CustomerReceiptId { get; set; }
+
+    public string? CustomerName { get; set; }
+
+    /// <summary>رسید در لحظهٔ خواندن گزارش هنوز باز است.</summary>
+    public bool ReceiptIsOpen { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 }
 

@@ -16,6 +16,16 @@
                Message=@($"آیا از حذف اکشن «{_itemToDelete?.TitleFa}» و فایل صدای آن اطمینان دارید؟")
                OnResult="HandleDeleteResult" />
 
+<ConfirmDialog IsVisible="_showEventDeleteConfirm"
+               Title="حذف رویداد"
+               Message=@($"آیا از حذف این رویداد «{_eventToDelete?.EventTitleFa}» از گزارش اطمینان دارید؟")
+               OnResult="HandleDeleteEventResult" />
+
+<ConfirmDialog IsVisible="_showClearEventsConfirm"
+               Title="پاک کردن همه رویدادها"
+               Message="همهٔ رویدادهای صوتی این دستگاه از گزارش پاک می‌شود. این کار روی فایل‌های صدا اثری ندارد. ادامه می‌دهید؟"
+               OnResult="HandleClearEventsResult" />
+
 <div class="admin-container sv-page" dir="rtl">
     <div class="sv-hero">
         <div class="sv-hero__text">
@@ -98,316 +108,484 @@
         }
     </div>
 
-    <div class="sv-stats">
-        <div class="sv-stat">
-            <span class="sv-stat__num">@(_items?.Count ?? 0)</span>
-            <span class="sv-stat__label">اکشن‌های این دستگاه</span>
-        </div>
-        <div class="sv-stat">
-            <span class="sv-stat__num">@ActiveCount</span>
-            <span class="sv-stat__label">فعال</span>
-        </div>
-        <div class="sv-stat">
-            <span class="sv-stat__num">@WithAudioCount</span>
-            <span class="sv-stat__label">دارای فایل صدا</span>
-        </div>
-    </div>
+    <section class="sv-panel sv-actions">
+        <header class="sv-panel__head">
+            <div>
+                <div class="sv-panel__title"><span class="oi oi-list"></span> اکشن‌های @(_selectedDevice?.Title ?? "دستگاه")</div>
+                <div class="sv-hint">@ActionsHint</div>
+            </div>
+            <button type="button" class="sv-icon-btn" @onclick="LoadAsync" title="بازخوانی" aria-label="بازخوانی">
+                <span class="oi oi-reload"></span>
+            </button>
+        </header>
 
-    <div class="sv-layout">
-        <section class="sv-panel">
-            <header class="sv-panel__head">
-                <div>
-                    <div class="sv-panel__title"><span class="oi oi-list"></span> اکشن‌های @(_selectedDevice?.Title ?? "دستگاه")</div>
-                    <div class="sv-hint">@(_selectedDevice is null ? "ابتدا دستگاه هدف را انتخاب کنید" : "چیدمان بر اساس اولویت پخش")</div>
-                </div>
-                <button type="button" class="sv-icon-btn" @onclick="LoadAsync" title="بازخوانی" aria-label="بازخوانی">
-                    <span class="oi oi-reload"></span>
+        @if (_items == null)
+        {
+            <div class="sv-empty">
+                <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+                در حال بارگذاری…
+            </div>
+        }
+        else if (_selectedDeviceId is not > 0)
+        {
+            <div class="sv-empty">
+                <div class="sv-empty__icon"><span class="oi oi-location"></span></div>
+                <div class="fw-bold mb-1">دستگاهی انتخاب نشده است</div>
+                <div class="small">از نوار «دستگاه هدف» یک دستگاه فعال کارگاه انتخاب کنید.</div>
+            </div>
+        }
+        else if (!_items.Any())
+        {
+            <div class="sv-empty">
+                <div class="sv-empty__icon"><span class="oi oi-audio"></span></div>
+                <div class="fw-bold mb-1">برای این دستگاه هنوز اکشنی تعریف نشده است</div>
+                <div class="small mb-3">مثلاً دیفراست، استارت موتور یا هشدار دما.</div>
+                <button type="button" class="btn btn-primary rounded-3" @onclick="NewItemAsync">
+                    <span class="oi oi-plus me-1"></span> تعریف اولین اکشن
                 </button>
-            </header>
+            </div>
+        }
+        else
+        {
+            <div class="sv-items">
+                @foreach (var it in _items)
+                {
+                    <article class="sv-item">
+                        <div class="sv-item__top">
+                            <div class="sv-item__lead">
+                                <span class="sv-prio" title="اولویت">@it.Priority</span>
+                                <div class="sv-item__nameline">
+                                    <div class="sv-item__title">@it.TitleFa</div>
+                                    <code class="sv-item__key" dir="ltr">@it.Key</code>
+                                </div>
+                            </div>
+                            <div class="sv-item__tools">
+                                @if (it.DeviceId is > 0 && it.AudioUrl is not null &&
+                                     it.AudioUrl.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <button type="button" class="sv-icon-btn" title="پخش آزمایشی روی دستگاه"
+                                            aria-label="پخش آزمایشی روی دستگاه"
+                                            @onclick="() => TestAsync(it)" disabled="@(_testingId == it.Id)">
+                                        @if (_testingId == it.Id)
+                                        {
+                                            <span class="spinner-border spinner-border-sm"></span>
+                                        }
+                                        else
+                                        {
+                                            <span class="oi oi-audio"></span>
+                                        }
+                                    </button>
+                                }
+                                <button type="button" class="sv-icon-btn" title="ویرایش" aria-label="ویرایش" @onclick="() => Edit(it)">
+                                    <span class="oi oi-pencil"></span>
+                                </button>
+                                <button type="button" class="sv-icon-btn sv-icon-btn--danger" title="حذف" aria-label="حذف" @onclick="() => AskDelete(it)">
+                                    <span class="oi oi-trash"></span>
+                                </button>
+                            </div>
+                        </div>
 
-            @if (_items == null)
+                        <div class="sv-item__meta">
+                            <button type="button" class="sv-toggle @(it.IsActive ? "on" : "")"
+                                    @onclick="() => ToggleAsync(it)"
+                                    title="@(it.IsActive ? "غیرفعال کردن" : "فعال کردن")">
+                                <span class="sv-toggle__track"><span class="sv-toggle__dot"></span></span>
+                                <span>@(it.IsActive ? "فعال" : "غیرفعال")</span>
+                            </button>
+                            <span class="sv-tag"><span class="oi oi-loop"></span>@it.RepeatCount بار</span>
+                            @if (ServiceVoiceEventKeys.TitleOf(it.Key) is { } eventTitle)
+                            {
+                                <span class="sv-tag sv-tag--event"><span class="oi oi-bolt"></span>@eventTitle</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(it.AudioUrl))
+                            {
+                                <span class="sv-tag sv-tag--ok"><span class="oi oi-audio"></span>@FormatSize(it.AudioSizeBytes)</span>
+                            }
+                            else
+                            {
+                                <span class="sv-tag sv-tag--off">بدون صدا</span>
+                            }
+                            @if (it.UpdatedAt != default)
+                            {
+                                <span class="sv-tag sv-tag--off">آخرین ویرایش: @PersianDate.ToJalaliDateTime(it.UpdatedAt)</span>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(it.AudioUrl))
+                        {
+                            <div class="sv-audio-row">
+                                <span class="sv-audio-row__icon"><span class="oi oi-audio"></span></span>
+                                <audio controls preload="none" src="@it.AudioUrl" class="sv-audio" dir="ltr"></audio>
+                            </div>
+                        }
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="sv-panel sv-events">
+        <div class="sv-panel__head sv-events__head" @onclick="ToggleEventsAsync" role="button" tabindex="0"
+             aria-expanded="@(_showEvents ? "true" : "false")">
+            <div>
+                <div class="sv-panel__title"><span class="oi oi-bolt"></span> رویدادهای صوتی دستگاه</div>
+                <div class="sv-hint">آخرین تغییرات پایش و صدایی که روی دستگاه پخش شده است.</div>
+            </div>
+            <span class="sv-events__toggle">
+                @(_showEvents ? "بستن" : "نمایش")
+                <span class="oi @(_showEvents ? "oi-chevron-top" : "oi-chevron-bottom")"></span>
+            </span>
+        </div>
+
+        @if (_showEvents)
+        {
+            <div class="sv-events__actions">
+                <span class="sv-hint">@EventsHint</span>
+                <div class="d-flex align-items-center gap-1">
+                    @if (_events.Count > 0)
+                    {
+                        <button type="button" class="sv-btn sv-btn--danger" @onclick="AskClearEvents"
+                                disabled="@_clearingEvents" title="پاک کردن همهٔ رویدادهای این دستگاه">
+                            <span class="oi oi-trash"></span>
+                            پاک کردن همه
+                        </button>
+                    }
+                    <button type="button" class="sv-icon-btn" @onclick="LoadEventsAsync" disabled="@_loadingEvents"
+                            title="بازخوانی رویدادها" aria-label="بازخوانی رویدادها">
+                        <span class="oi oi-reload"></span>
+                    </button>
+                </div>
+            </div>
+
+            @if (_selectedDeviceId is not > 0)
+            {
+                <div class="sv-empty">برای دیدن رویدادها ابتدا یک دستگاه فعال انتخاب کنید.</div>
+            }
+            else if (_loadingEvents)
             {
                 <div class="sv-empty">
-                    <div class="spinner-border spinner-border-sm text-primary me-2"></div>
-                    در حال بارگذاری…
+                    <span class="spinner-border spinner-border-sm text-primary me-2"></span>
+                    در حال بارگذاری رویدادها…
                 </div>
             }
-            else if (_selectedDeviceId is not > 0)
+            else if (_events.Count == 0)
             {
                 <div class="sv-empty">
-                    <div class="sv-empty__icon"><span class="oi oi-location"></span></div>
-                    <div class="fw-bold mb-1">دستگاهی انتخاب نشده است</div>
-                    <div class="small">از نوار «دستگاه هدف» یک دستگاه فعال کارگاه انتخاب کنید.</div>
-                </div>
-            }
-            else if (!_items.Any())
-            {
-                <div class="sv-empty">
-                    <div class="sv-empty__icon"><span class="oi oi-audio"></span></div>
-                    <div class="fw-bold mb-1">برای این دستگاه هنوز اکشنی تعریف نشده است</div>
-                    <div class="small">از دکمه «اکشن جدید» شروع کنید؛ مثلاً دیفراست یا استارت موتور.</div>
+                    هنوز رویداد صوتی برای این دستگاه ثبت نشده است. با تغییر برق، موتور یا المنت‌ها
+                    در دستگاه، رویداد همان لحظه اینجا ثبت می‌شود.
                 </div>
             }
             else
             {
-                <div class="sv-items">
-                    @foreach (var it in _items)
+                <div class="sv-events__list">
+                    @foreach (var group in EventGroups)
                     {
-                        <article class="sv-item @(_editingId == it.Id ? "is-editing" : "")">
-                            <div class="sv-item__top">
-                                <div class="sv-item__lead">
-                                    <span class="sv-prio" title="اولویت">@it.Priority</span>
-                                    <div class="sv-item__nameline">
-                                        <div class="sv-item__title">@it.TitleFa</div>
-                                        <code class="sv-item__key" dir="ltr">@it.Key</code>
-                                    </div>
-                                </div>
-                                <div class="sv-item__tools">
-                                    @if (it.DeviceId is > 0 && it.AudioUrl is not null &&
-                                         it.AudioUrl.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+                        var isOpen = _expandedGroups.Contains(group.Key);
+
+                        <article class="sv-egroup @(isOpen ? "is-open" : null)">
+                            <button type="button" class="sv-egroup__head" @onclick="() => ToggleGroup(group.Key)"
+                                    aria-expanded="@(isOpen ? "true" : "false")">
+                                <span class="sv-egroup__chevron oi @(isOpen ? "oi-chevron-top" : "oi-chevron-bottom")"></span>
+                                <span class="sv-egroup__main">
+                                    <span class="sv-egroup__title">@group.Title</span>
+                                    <span class="sv-egroup__meta">
+                                        @if (!string.IsNullOrWhiteSpace(group.CustomerName))
+                                        {
+                                            <span class="oi oi-person"></span>
+                                            <span>@group.CustomerName</span>
+                                        }
+                                        <span class="oi oi-calendar"></span>
+                                        <span>@group.RangeLabel</span>
+                                    </span>
+                                </span>
+                                <span class="sv-egroup__side">
+                                    @if (group.IsOpen)
                                     {
-                                        <button type="button" class="sv-icon-btn" title="پخش آزمایشی روی دستگاه"
-                                                aria-label="پخش آزمایشی روی دستگاه"
-                                                @onclick="() => TestAsync(it)" disabled="@(_testingId == it.Id)">
-                                            @if (_testingId == it.Id)
-                                            {
-                                                <span class="spinner-border spinner-border-sm"></span>
-                                            }
-                                            else
-                                            {
-                                                <span class="oi oi-audio"></span>
-                                            }
-                                        </button>
+                                        <span class="sv-tag sv-tag--ok">رسید باز</span>
                                     }
-                                    <button type="button" class="sv-icon-btn" title="ویرایش" aria-label="ویرایش" @onclick="() => Edit(it)">
-                                        <span class="oi oi-pencil"></span>
-                                    </button>
-                                    <button type="button" class="sv-icon-btn sv-icon-btn--danger" title="حذف" aria-label="حذف" @onclick="() => AskDelete(it)">
-                                        <span class="oi oi-trash"></span>
-                                    </button>
-                                </div>
-                            </div>
+                                    else
+                                    {
+                                        <span class="sv-tag sv-tag--off">رسید بسته</span>
+                                    }
+                                    <span class="sv-tag">@group.Events.Count رویداد</span>
+                                </span>
+                            </button>
 
-                            <div class="sv-item__meta">
-                                <button type="button" class="sv-toggle @(it.IsActive ? "on" : "")"
-                                        @onclick="() => ToggleAsync(it)"
-                                        title="@(it.IsActive ? "غیرفعال کردن" : "فعال کردن")">
-                                    <span class="sv-toggle__track"><span class="sv-toggle__dot"></span></span>
-                                    <span>@(it.IsActive ? "فعال" : "غیرفعال")</span>
-                                </button>
-                                <span class="sv-tag"><span class="oi oi-loop"></span>@it.RepeatCount بار</span>
-                                @if (ServiceVoiceEventKeys.TitleOf(it.Key) is { } eventTitle)
-                                {
-                                    <span class="sv-tag sv-tag--event"><span class="oi oi-bolt"></span>@eventTitle</span>
-                                }
-                                @if (!string.IsNullOrWhiteSpace(it.AudioUrl))
-                                {
-                                    <span class="sv-tag sv-tag--ok"><span class="oi oi-audio"></span>@FormatSize(it.AudioSizeBytes)</span>
-                                }
-                                else
-                                {
-                                    <span class="sv-tag sv-tag--off">بدون صدا</span>
-                                }
-                                @if (it.UpdatedAt != default)
-                                {
-                                    <span class="sv-tag sv-tag--off">آخرین ویرایش: @PersianDate.ToJalaliDateTime(it.UpdatedAt)</span>
-                                }
-                            </div>
-
-                            @if (!string.IsNullOrWhiteSpace(it.AudioUrl))
+                            @if (isOpen)
                             {
-                                <div class="sv-audio-row">
-                                    <span class="sv-audio-row__icon"><span class="oi oi-audio"></span></span>
-                                    <audio controls preload="none" src="@it.AudioUrl" class="sv-audio" dir="ltr"></audio>
+                                <div class="sv-egroup__body">
+                                    @foreach (var ev in group.Events)
+                                    {
+                                        <article class="sv-event @(ev.IsExpired && !ev.IsDelivered ? "is-expired" : null)">
+                                            <div class="sv-event__top">
+                                                <span class="sv-event__time">@PersianDate.ToJalaliDateTime(ev.CreatedAt)</span>
+                                                @if (ev.IsTest)
+                                                {
+                                                    <span class="sv-tag sv-tag--event">آزمایشی</span>
+                                                }
+                                                @if (ev.IsDelivered)
+                                                {
+                                                    <span class="sv-tag sv-tag--ok">
+                                                        <span class="oi oi-check"></span>
+                                                        به دستگاه رسید
+                                                    </span>
+                                                }
+                                                else if (ev.IsExpired)
+                                                {
+                                                    <span class="sv-tag sv-tag--off">
+                                                        <span class="oi oi-x"></span>
+                                                        پخش نشد — بازهٔ ارسال گذشت
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="sv-tag sv-tag--event">
+                                                        <span class="oi oi-clock"></span>
+                                                        در انتظار ارسال
+                                                    </span>
+                                                }
+                                                <button type="button" class="sv-icon-btn sv-icon-btn--danger sv-event__del"
+                                                        title="حذف این رویداد" aria-label="حذف این رویداد"
+                                                        @onclick="() => AskDeleteEvent(ev)">
+                                                    <span class="oi oi-trash"></span>
+                                                </button>
+                                            </div>
+
+                                            <div class="sv-event__body">
+                                                <div class="sv-event__main">
+                                                    <div class="sv-event__title">@ev.EventTitleFa</div>
+                                                    <div class="sv-event__meta">
+                                                        <code dir="ltr">@ev.ActionKey</code>
+                                                        @if (!string.IsNullOrWhiteSpace(ev.ActionTitleFa))
+                                                        {
+                                                            <span class="sv-tag">اکشن: @ev.ActionTitleFa</span>
+                                                        }
+                                                        @if (!ev.ActionIsActive && !string.IsNullOrWhiteSpace(ev.ActionTitleFa))
+                                                        {
+                                                            <span class="sv-tag sv-tag--off">اکشن غیرفعال</span>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(ev.DescriptionFa))
+                                                        {
+                                                            <span class="sv-event__desc">@ev.DescriptionFa</span>
+                                                        }
+                                                    </div>
+                                                </div>
+
+                                                @if (ev.HasAudio && !string.IsNullOrWhiteSpace(ev.AudioUrl))
+                                                {
+                                                    <div class="sv-event__audio">
+                                                        <audio controls preload="none" src="@ev.AudioUrl" class="sv-audio" dir="ltr"></audio>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="sv-event__audio sv-event__audio--missing">
+                                                        فایل MP3 برای این اکشن پیدا نشد
+                                                    </div>
+                                                }
+                                            </div>
+                                        </article>
+                                    }
                                 </div>
                             }
                         </article>
                     }
                 </div>
             }
-        </section>
+        }
+    </section>
+</div>
 
-        <section class="sv-panel sv-editor" id="sv-editor">
-            <header class="sv-panel__head">
-                <div>
-                    <div class="sv-panel__title">@(_editingId is null ? "تعریف اکشن جدید" : "ویرایش اکشن")</div>
-                    <div class="sv-hint">
-                        @if (_selectedDevice is { } editorDevice)
-                        {
-                            <span>برای دستگاه <strong>@editorDevice.Title</strong> — کد <code dir="ltr">@editorDevice.DeviceNumber</code></span>
-                        }
-                        else
-                        {
-                            <span>ابتدا دستگاه هدف را انتخاب کنید</span>
-                        }
-                    </div>
-                </div>
-                @if (_editingId is not null)
-                {
-                    <button type="button" class="sv-btn sv-btn--ghost" @onclick="NewItemAsync">
-                        <span class="oi oi-plus"></span>
-                        جدید
-                    </button>
-                }
-            </header>
-
-            <EditForm Model="_model" OnValidSubmit="SaveAsync" class="sv-form">
-                <DataAnnotationsValidator />
-
-                @if (_selectedDeviceId is not > 0)
-                {
-                    <div class="sv-note">
-                        برای تعریف اکشن، ابتدا از نوار «دستگاه هدف» یک دستگاه فعال کارگاه انتخاب کنید.
-                    </div>
-                }
-
-                <div class="sv-field">
-                    <label class="sv-label">کلید اکشن</label>
-                    <InputText class="form-control" dir="ltr" @bind-Value="_model.Key" placeholder="defrost" />
-                    <div class="sv-hint">حروف انگلیسی کوچک، عدد، خط تیره یا زیرخط — مثل <code dir="ltr">engine_start</code></div>
-                    <ValidationMessage For="@(() => _model.Key)" class="text-danger small" />
-                </div>
-
-                <div class="sv-field">
-                    <label class="sv-label">اتصال به رویداد پایش</label>
-                    <select class="form-select" value="@EventKeySelectValue" @onchange="OnEventKeyChanged">
-                        <option value="">بدون اتصال — فقط پخش دستی</option>
-                        @foreach (var opt in ServiceVoiceEventKeys.Options)
-                        {
-                            <option value="@opt.Key">@opt.TitleFa — @opt.HintFa</option>
-                        }
-                    </select>
-                    <div class="sv-hint">
-                        با انتخاب رویداد، کلید و نام خودکار پر می‌شود. هنگام تغییر همان تجهیز در پایش،
-                        صدا بلافاصله روی دستگاه پخش می‌شود.
-                    </div>
-                </div>
-
-                <div class="sv-field">
-                    <label class="sv-label">نام نمایشی</label>
-                    <InputText class="form-control" @bind-Value="_model.TitleFa" placeholder="دیفراست" />
-                    <ValidationMessage For="@(() => _model.TitleFa)" class="text-danger small" />
-                </div>
-
-                <div class="row g-3 sv-field">
-                    <div class="col-6">
-                        <label class="sv-label">تعداد تکرار</label>
-                        <InputNumber class="form-control" dir="ltr" min="1" max="50" @bind-Value="_model.RepeatCount" />
-                        <div class="sv-hint">۱ تا ۵۰</div>
-                        <ValidationMessage For="@(() => _model.RepeatCount)" class="text-danger small" />
-                    </div>
-                    <div class="col-6">
-                        <label class="sv-label">اولویت</label>
-                        <InputNumber class="form-control" dir="ltr" min="0" max="1000" @bind-Value="_model.Priority" />
-                        <div class="sv-hint">عدد کمتر = اولویت بالاتر</div>
-                        <ValidationMessage For="@(() => _model.Priority)" class="text-danger small" />
-                    </div>
-                </div>
-
-                <div class="form-check form-switch sv-switch">
-                    <InputCheckbox class="form-check-input" @bind-Value="_model.IsActive" />
-                    <label class="form-check-label">اکشن فعال باشد</label>
-                </div>
-
-                <div class="sv-recorder @(_isRecording ? "is-recording" : "")">
-                    <div class="sv-recorder__head">
-                        <div class="sv-recorder__title"><span class="oi oi-audio"></span> صدای اکشن</div>
-                        @if (!string.IsNullOrWhiteSpace(_existingAudioUrl) && string.IsNullOrWhiteSpace(_pendingUrl))
-                        {
-                            <button type="button" class="sv-btn sv-btn--danger" @onclick="DeleteAudioAsync" disabled="@_saving">
-                                <span class="oi oi-trash"></span>
-                                حذف صدا
-                            </button>
-                        }
-                    </div>
-
-                    @if (!_recorderSupported)
+@if (_showEditor)
+{
+    <div class="sv-modal-overlay" @onclick="CloseEditorIfIdle">
+        <div class="sv-modal" @onclick:stopPropagation>
+            <div class="sv-modal__head">
+                <div class="sv-modal__heading">
+                    <div class="sv-modal__kicker">@(_editingId is null ? "اکشن جدید" : "ویرایش اکشن")</div>
+                    <h5 class="sv-modal__title">@(_editingId is null ? "تعریف اکشن صوتی" : "ویرایش اکشن صوتی")</h5>
+                    @if (_selectedDevice is { } editorDevice)
                     {
-                        <div class="sv-note">
-                            ضبط صدا در این مرورگر پشتیبانی نمی‌شود. از Chrome یا Edge روی اتصال HTTPS استفاده کنید.
+                        <div class="sv-modal__sub">
+                            دستگاه <strong>@editorDevice.Title</strong> · کد <code dir="ltr">@editorDevice.DeviceNumber</code>
                         </div>
                     }
-                    else
-                    {
-                        <div class="sv-rec-stage">
-                            @if (_isRecording)
-                            {
-                                <button type="button" class="sv-rec-btn is-rec" @onclick="StopRecordingAsync" title="پایان ضبط" aria-label="پایان ضبط">
-                                    <span class="oi oi-media-stop"></span>
-                                </button>
-                                <div class="sv-rec-info">
-                                    <div class="sv-rec-time" dir="ltr">@FormatDuration(_recordSeconds)</div>
-                                    <div class="sv-rec-caption">در حال ضبط… برای پایان، دکمه را بزنید</div>
-                                </div>
-                                <div class="sv-eq" aria-hidden="true">
-                                    <span></span><span></span><span></span><span></span><span></span>
-                                </div>
-                            }
-                            else
-                            {
-                                <button type="button" class="sv-rec-btn" @onclick="StartRecordingAsync" disabled="@_saving" title="شروع ضبط" aria-label="شروع ضبط">
-                                    <span class="oi oi-microphone"></span>
-                                </button>
-                                <div class="sv-rec-info">
-                                    <div class="sv-rec-title">ضبط زنده صدا</div>
-                                    <div class="sv-rec-caption">میکروفون را بزنید و صدای اکشن را ضبط کنید</div>
-                                </div>
-                            }
-                        </div>
+                </div>
+                <button type="button" class="sv-modal__close" @onclick="CloseEditor" aria-label="بستن">
+                    <span class="oi oi-x"></span>
+                </button>
+            </div>
 
-                        @if (!string.IsNullOrWhiteSpace(_pendingUrl))
-                        {
-                            <div class="sv-take">
-                                <div class="sv-take__label">
-                                    <span class="sv-tag sv-tag--ok"><span class="oi oi-check"></span>ضبط جدید — پیش از ذخیره تست کنید</span>
-                                </div>
-                                <audio controls src="@_pendingUrl" class="sv-audio" dir="ltr"></audio>
-                                <div class="sv-rec-caption">این صدا پیش از آپلود به MP3 (مونو، ۲۲ کیلوهرتز، ۶۴ کیلوبیت) تبدیل می‌شود تا روی دستگاه ESP32 روان و واضح پخش شود.</div>
-                                <div class="sv-take__actions">
-                                    <button type="button" class="sv-btn sv-btn--ghost" @onclick="StartRecordingAsync" disabled="@_saving">
-                                        <span class="oi oi-microphone"></span>
-                                        ضبط مجدد
-                                    </button>
-                                    <button type="button" class="sv-btn sv-btn--danger" @onclick="ClearPendingAsync" disabled="@_saving">
-                                        <span class="oi oi-x"></span>
-                                        پاک کردن ضبط
-                                    </button>
+            <EditForm Model="_model" OnValidSubmit="SaveAsync" class="sv-modal__form">
+                <DataAnnotationsValidator />
+                <div class="sv-modal__body">
+                    <section class="sv-sec">
+                        <div class="sv-sec__head">
+                            <span class="oi oi-sliders"></span>
+                            <span>اطلاعات اکشن</span>
+                            <span class="sv-sec__hint">کلید، نام و اولویت پخش</span>
+                        </div>
+                        <div class="sv-sec__body">
+                            <div class="sv-field">
+                                <label class="sv-label">اتصال به رویداد پایش</label>
+                                <select class="form-select" value="@EventKeySelectValue" @onchange="OnEventKeyChanged">
+                                    <option value="">بدون اتصال — فقط پخش دستی</option>
+                                    @foreach (var opt in ServiceVoiceEventKeys.Options)
+                                    {
+                                        <option value="@opt.Key">@opt.TitleFa — @opt.HintFa</option>
+                                    }
+                                </select>
+                                <div class="sv-hint">
+                                    با انتخاب رویداد، کلید و نام خودکار پر می‌شود. هنگام تغییر همان تجهیز در پایش،
+                                    صدا بلافاصله روی دستگاه پخش می‌شود.
                                 </div>
                             </div>
-                        }
-                        else if (!string.IsNullOrWhiteSpace(_existingAudioUrl))
-                        {
-                            <div class="sv-take">
-                                <div class="sv-take__label">صدای ذخیره‌شده روی سرور</div>
-                                <audio controls preload="none" src="@_existingAudioUrl" class="sv-audio" dir="ltr"></audio>
-                                @if (!IsDevicePlayable(_existingAudioUrl))
+
+                            <div class="row g-3">
+                                <div class="col-12 col-sm-6">
+                                    <label class="sv-label">نام نمایشی</label>
+                                    <InputText class="form-control" @bind-Value="_model.TitleFa" placeholder="دیفراست" />
+                                    <ValidationMessage For="@(() => _model.TitleFa)" class="text-danger small" />
+                                </div>
+                                <div class="col-12 col-sm-6">
+                                    <label class="sv-label">کلید اکشن</label>
+                                    <InputText class="form-control" dir="ltr" @bind-Value="_model.Key" placeholder="defrost" />
+                                    <div class="sv-hint">حروف انگلیسی کوچک، عدد، خط تیره یا زیرخط</div>
+                                    <ValidationMessage For="@(() => _model.Key)" class="text-danger small" />
+                                </div>
+                            </div>
+
+                            <div class="row g-3 mt-1">
+                                <div class="col-6">
+                                    <label class="sv-label">تعداد تکرار</label>
+                                    <InputNumber class="form-control" dir="ltr" min="1" max="50" @bind-Value="_model.RepeatCount" />
+                                    <ValidationMessage For="@(() => _model.RepeatCount)" class="text-danger small" />
+                                </div>
+                                <div class="col-6">
+                                    <label class="sv-label">اولویت پخش</label>
+                                    <InputNumber class="form-control" dir="ltr" min="0" max="1000" @bind-Value="_model.Priority" />
+                                    <div class="sv-hint">عدد کمتر = اولویت بالاتر</div>
+                                    <ValidationMessage For="@(() => _model.Priority)" class="text-danger small" />
+                                </div>
+                            </div>
+
+                            <div class="form-check form-switch sv-switch mt-3 mb-0">
+                                <InputCheckbox class="form-check-input" id="svIsActive" @bind-Value="_model.IsActive" />
+                                <label class="form-check-label" for="svIsActive">اکشن فعال باشد</label>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="sv-sec">
+                        <div class="sv-sec__head">
+                            <span class="oi oi-audio"></span>
+                            <span>صدای اکشن</span>
+                            <span class="sv-sec__hint">ضبط، تست و ذخیرهٔ فایل MP3 دستگاه</span>
+                        </div>
+                        <div class="sv-sec__body">
+                            <div class="sv-recorder sv-recorder--plain @(_isRecording ? "is-recording" : "")">
+                                <div class="sv-recorder__head">
+                                    <div class="sv-recorder__title"><span class="oi oi-audio"></span> صدای اکشن</div>
+                                    @if (!string.IsNullOrWhiteSpace(_existingAudioUrl) && string.IsNullOrWhiteSpace(_pendingUrl))
+                                    {
+                                        <button type="button" class="sv-btn sv-btn--danger" @onclick="DeleteAudioAsync" disabled="@_saving">
+                                            <span class="oi oi-trash"></span>
+                                            حذف صدا
+                                        </button>
+                                    }
+                                </div>
+
+                                @if (!_recorderSupported)
                                 {
-                                    <div class="sv-rec-hint">
-                                        این فایل MP3 نیست و روی دستگاه پخش نمی‌شود. لطفاً دوباره ضبط کنید تا خودکار به MP3 تبدیل شود.
+                                    <div class="sv-note">
+                                        ضبط صدا در این مرورگر پشتیبانی نمی‌شود. از Chrome یا Edge روی اتصال HTTPS استفاده کنید.
                                     </div>
                                 }
-                                <div class="sv-take__actions">
-                                    <button type="button" class="sv-btn sv-btn--ghost" @onclick="StartRecordingAsync" disabled="@_saving">
-                                        <span class="oi oi-microphone"></span>
-                                        ضبط مجدد
-                                    </button>
-                                </div>
+                                else
+                                {
+                                    <div class="sv-rec-stage">
+                                        @if (_isRecording)
+                                        {
+                                            <button type="button" class="sv-rec-btn is-rec" @onclick="StopRecordingAsync" title="پایان ضبط" aria-label="پایان ضبط">
+                                                <span class="oi oi-media-stop"></span>
+                                            </button>
+                                            <div class="sv-rec-info">
+                                                <div class="sv-rec-time" dir="ltr">@FormatDuration(_recordSeconds)</div>
+                                                <div class="sv-rec-caption">در حال ضبط… برای پایان، دکمه را بزنید</div>
+                                            </div>
+                                            <div class="sv-eq" aria-hidden="true">
+                                                <span></span><span></span><span></span><span></span><span></span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="sv-rec-btn" @onclick="StartRecordingAsync" disabled="@_saving" title="شروع ضبط" aria-label="شروع ضبط">
+                                                <span class="oi oi-microphone"></span>
+                                            </button>
+                                            <div class="sv-rec-info">
+                                                <div class="sv-rec-title">ضبط زنده صدا</div>
+                                                <div class="sv-rec-caption">میکروفون را بزنید و صدای اکشن را ضبط کنید</div>
+                                            </div>
+                                        }
+                                    </div>
+
+                                    @if (!string.IsNullOrWhiteSpace(_pendingUrl))
+                                    {
+                                        <div class="sv-take">
+                                            <div class="sv-take__label">
+                                                <span class="sv-tag sv-tag--ok"><span class="oi oi-check"></span>ضبط جدید — پیش از ذخیره تست کنید</span>
+                                            </div>
+                                            <audio controls src="@_pendingUrl" class="sv-audio" dir="ltr"></audio>
+                                            <div class="sv-rec-caption">این صدا پیش از آپلود به MP3 (مونو، ۲۲ کیلوهرتز، ۶۴ کیلوبیت) تبدیل می‌شود تا روی دستگاه ESP32 روان و واضح پخش شود.</div>
+                                            <div class="sv-take__actions">
+                                                <button type="button" class="sv-btn sv-btn--ghost" @onclick="StartRecordingAsync" disabled="@_saving">
+                                                    <span class="oi oi-microphone"></span>
+                                                    ضبط مجدد
+                                                </button>
+                                                <button type="button" class="sv-btn sv-btn--danger" @onclick="ClearPendingAsync" disabled="@_saving">
+                                                    <span class="oi oi-x"></span>
+                                                    پاک کردن ضبط
+                                                </button>
+                                            </div>
+                                        </div>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(_existingAudioUrl))
+                                    {
+                                        <div class="sv-take">
+                                            <div class="sv-take__label">صدای ذخیره‌شده روی سرور</div>
+                                            <audio controls preload="none" src="@_existingAudioUrl" class="sv-audio" dir="ltr"></audio>
+                                            @if (!IsDevicePlayable(_existingAudioUrl))
+                                            {
+                                                <div class="sv-rec-hint">
+                                                    این فایل MP3 نیست و روی دستگاه پخش نمی‌شود. لطفاً دوباره ضبط کنید تا خودکار به MP3 تبدیل شود.
+                                                </div>
+                                            }
+                                            <div class="sv-take__actions">
+                                                <button type="button" class="sv-btn sv-btn--ghost" @onclick="StartRecordingAsync" disabled="@_saving">
+                                                    <span class="oi oi-microphone"></span>
+                                                    ضبط مجدد
+                                                </button>
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="sv-rec-hint">
+                                            صدایی ثبت نشده است. بعد از ضبط، «ذخیره اکشن» را بزنید تا فایل روی سرور ذخیره شود.
+                                        </div>
+                                    }
+                                }
                             </div>
-                        }
-                        else
-                        {
-                            <div class="sv-rec-hint">
-                                صدایی ثبت نشده است. بعد از ضبط، «ذخیره اکشن» را بزنید تا فایل روی سرور ذخیره شود.
-                            </div>
-                        }
-                    }
+                        </div>
+                    </section>
                 </div>
 
-                <div class="sv-form__actions">
-                    <button class="btn btn-primary rounded-3 flex-grow-1" type="submit" disabled="@(_saving || _isRecording || _selectedDeviceId is not > 0)">
+                <div class="sv-modal__foot">
+                    <button type="button" class="btn btn-light rounded-3 px-4" @onclick="CloseEditor" disabled="@_saving">انصراف</button>
+                    <button type="submit" class="btn btn-primary rounded-3 px-4 shadow-sm" disabled="@(_saving || _isRecording)">
                         @if (_saving)
                         {
-                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span class="spinner-border spinner-border-sm me-1"></span>
                             <span>در حال ذخیره…</span>
                         }
                         else
@@ -416,108 +594,12 @@
                             <span>ذخیره اکشن</span>
                         }
                     </button>
-                    <button class="btn btn-light rounded-3" type="button" @onclick="Reset" disabled="@_saving">
-                        انصراف
-                    </button>
                 </div>
             </EditForm>
-        </section>
+        </div>
     </div>
+}
 
-    <section class="sv-panel sv-events">
-        <header class="sv-panel__head">
-            <div>
-                <div class="sv-panel__title"><span class="oi oi-bolt"></span> آخرین رویدادهای صوتی دستگاه</div>
-                <div class="sv-hint">
-                    هر تغییر پایش، اکشنی که انتخاب شده و فایلی که روی دستگاه پخش شده را نشان می‌دهد؛
-                    برای بررسی تطابق صدا با رویداد از همین جدول استفاده کنید.
-                </div>
-            </div>
-            <button type="button" class="sv-icon-btn" @onclick="LoadEventsAsync" disabled="@_loadingEvents"
-                    title="بازخوانی رویدادها" aria-label="بازخوانی رویدادها">
-                <span class="oi oi-reload"></span>
-            </button>
-        </header>
-
-        @if (_selectedDeviceId is not > 0)
-        {
-            <div class="sv-empty">برای دیدن رویدادها ابتدا یک دستگاه فعال انتخاب کنید.</div>
-        }
-        else if (_loadingEvents)
-        {
-            <div class="sv-empty">
-                <span class="spinner-border spinner-border-sm text-primary me-2"></span>
-                در حال بارگذاری رویدادها…
-            </div>
-        }
-        else if (_events.Count == 0)
-        {
-            <div class="sv-empty">
-                هنوز رویداد صوتی برای این دستگاه ثبت نشده است. با تغییر برق، موتور یا المنت‌ها
-                در دستگاه، رویداد همان لحظه اینجا ثبت می‌شود.
-            </div>
-        }
-        else
-        {
-            <div class="sv-events__list">
-                @foreach (var ev in _events)
-                {
-                    <article class="sv-event @(ev.IsExpired ? "is-expired" : "")">
-                        <div class="sv-event__top">
-                            <span class="sv-event__time">@PersianDate.ToJalaliDateTime(ev.CreatedAt)</span>
-                            @if (ev.IsTest)
-                            {
-                                <span class="sv-tag sv-tag--event">آزمایشی</span>
-                            }
-                            @if (ev.IsExpired)
-                            {
-                                <span class="sv-tag sv-tag--off">منقضی — پخش نشد</span>
-                            }
-                            else
-                            {
-                                <span class="sv-tag sv-tag--ok">در بازهٔ ارسال</span>
-                            }
-                        </div>
-
-                        <div class="sv-event__body">
-                            <div class="sv-event__main">
-                                <div class="sv-event__title">@ev.EventTitleFa</div>
-                                <div class="sv-event__meta">
-                                    <code dir="ltr">@ev.ActionKey</code>
-                                    @if (!string.IsNullOrWhiteSpace(ev.ActionTitleFa))
-                                    {
-                                        <span class="sv-tag">اکشن: @ev.ActionTitleFa</span>
-                                    }
-                                    @if (!ev.ActionIsActive && !string.IsNullOrWhiteSpace(ev.ActionTitleFa))
-                                    {
-                                        <span class="sv-tag sv-tag--off">اکشن غیرفعال</span>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(ev.DescriptionFa))
-                                    {
-                                        <span class="sv-event__desc">@ev.DescriptionFa</span>
-                                    }
-                                </div>
-                            </div>
-
-                            @if (ev.HasAudio && !string.IsNullOrWhiteSpace(ev.AudioUrl))
-                            {
-                                <div class="sv-event__audio">
-                                    <audio controls preload="none" src="@ev.AudioUrl" class="sv-audio" dir="ltr"></audio>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="sv-event__audio sv-event__audio--missing">
-                                    فایل MP3 برای این اکشن پیدا نشد
-                                </div>
-                            }
-                        </div>
-                    </article>
-                }
-            </div>
-        }
-    </section>
-</div>
 
 <style>
     .sv-hero {
@@ -649,42 +731,6 @@
         height: 7px;
         border-radius: 50%;
         background: currentColor;
-    }
-
-    .sv-stats {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: .6rem;
-        margin-bottom: 1rem;
-    }
-
-    .sv-stat {
-        background: var(--app-surface);
-        border: 1px solid var(--app-border);
-        border-radius: 14px;
-        padding: .75rem .9rem;
-        display: flex;
-        flex-direction: column;
-        gap: .1rem;
-    }
-
-    .sv-stat__num {
-        font-size: 1.25rem;
-        font-weight: 800;
-        color: var(--app-text);
-        line-height: 1.4;
-    }
-
-    .sv-stat__label {
-        font-size: .72rem;
-        color: var(--app-text-muted);
-    }
-
-    .sv-layout {
-        display: grid;
-        grid-template-columns: minmax(0, 1.15fr) minmax(0, .95fr);
-        gap: 1rem;
-        align-items: start;
     }
 
     .sv-panel {
@@ -952,14 +998,6 @@
         height: 34px;
     }
 
-    .sv-editor {
-        scroll-margin-top: 132px;
-    }
-
-    .sv-form {
-        padding: 1rem 1.05rem 1.1rem;
-    }
-
     .sv-field {
         margin-bottom: .9rem;
     }
@@ -972,7 +1010,7 @@
         color: var(--app-text-secondary);
     }
 
-    .sv-form .form-control {
+    .sv-modal__form .form-control {
         border-radius: 11px;
     }
 
@@ -1166,12 +1204,6 @@
         opacity: .55;
     }
 
-    .sv-form__actions {
-        display: flex;
-        gap: .5rem;
-        margin-top: .9rem;
-    }
-
     @@keyframes svPulse {
         0%, 100% { transform: scale(1); }
         50% { transform: scale(1.06); }
@@ -1191,6 +1223,83 @@
         flex-direction: column;
         gap: .55rem;
         padding: .9rem 1rem 1rem;
+    }
+
+    /* ── Receipt groups ── */
+    .sv-egroup {
+        border: 1px solid var(--app-border);
+        border-radius: 13px;
+        overflow: hidden;
+        background: var(--app-surface);
+    }
+
+    .sv-egroup.is-open {
+        border-color: var(--app-border-strong);
+    }
+
+    .sv-egroup__head {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        padding: .65rem .75rem;
+        border: 0;
+        background: var(--app-bg);
+        text-align: start;
+        cursor: pointer;
+        transition: background .15s ease;
+    }
+
+    .sv-egroup__head:hover {
+        background: var(--app-primary-light);
+    }
+
+    .sv-egroup__chevron {
+        flex: 0 0 auto;
+        font-size: .7rem;
+        color: var(--app-text-muted);
+    }
+
+    .sv-egroup__main {
+        display: flex;
+        flex-direction: column;
+        gap: .1rem;
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .sv-egroup__title {
+        font-size: .84rem;
+        font-weight: 800;
+        color: var(--app-text);
+    }
+
+    .sv-egroup__meta {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .3rem;
+        font-size: .7rem;
+        color: var(--app-text-muted);
+    }
+
+    .sv-egroup__side {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .3rem;
+        flex: 0 0 auto;
+    }
+
+    .sv-egroup__body {
+        display: flex;
+        flex-direction: column;
+        gap: .5rem;
+        padding: .6rem .65rem .7rem;
+        border-top: 1px solid var(--app-divider);
+    }
+
+    .sv-event__del {
+        margin-inline-start: auto;
     }
 
     .sv-event {
@@ -1274,9 +1383,243 @@
         border-radius: 9px;
     }
 
-    @@media (max-width: 1099.98px) {
-        .sv-layout {
-            grid-template-columns: 1fr;
+    .sv-events__head {
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .sv-events__head:hover .sv-panel__title {
+        color: var(--app-primary);
+    }
+
+    .sv-events__toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        flex: 0 0 auto;
+        font-size: .72rem;
+        font-weight: 800;
+        color: var(--app-primary);
+    }
+
+    .sv-events__actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .5rem .6rem;
+        padding: .7rem 1.05rem 0;
+    }
+
+    .sv-events__actions .sv-hint {
+        margin-top: 0;
+    }
+
+    /* ── Action editor modal ── */
+    .sv-modal-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 3000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(2, 6, 23, .55);
+        backdrop-filter: blur(6px);
+        animation: svFadeIn .16s ease;
+        direction: rtl;
+    }
+
+    .sv-modal {
+        display: flex;
+        flex-direction: column;
+        width: min(760px, 100%);
+        max-height: min(92vh, 900px);
+        background: var(--app-surface);
+        border: 1px solid var(--app-border);
+        border-radius: 24px;
+        box-shadow: 0 40px 90px rgba(2, 6, 23, .35);
+        overflow: hidden;
+        animation: svPop .2s cubic-bezier(.34, 1.4, .64, 1);
+    }
+
+    .sv-modal__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .75rem;
+        padding: 1.05rem 1.2rem;
+        border-bottom: 1px solid var(--app-divider);
+        background: linear-gradient(180deg, var(--app-primary-light), transparent);
+    }
+
+    .sv-modal__kicker {
+        font-size: .68rem;
+        font-weight: 800;
+        color: var(--app-primary);
+        margin-bottom: .2rem;
+    }
+
+    .sv-modal__title {
+        margin: 0;
+        font-size: 1.02rem;
+        font-weight: 800;
+        color: var(--app-text);
+    }
+
+    .sv-modal__sub {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .35rem;
+        margin-top: .35rem;
+        font-size: .74rem;
+        color: var(--app-text-muted);
+    }
+
+    .sv-modal__sub code {
+        font-size: .7rem;
+        padding: .02rem .35rem;
+        border-radius: 6px;
+        background: var(--app-bg);
+        border: 1px solid var(--app-border);
+    }
+
+    .sv-modal__close {
+        flex: 0 0 auto;
+        width: 34px;
+        height: 34px;
+        border-radius: 11px;
+        border: 1px solid var(--app-border);
+        background: var(--app-surface);
+        color: var(--app-text-muted);
+        display: grid;
+        place-items: center;
+        font-size: .85rem;
+        transition: background .15s ease, color .15s ease, border-color .15s ease;
+    }
+
+    .sv-modal__close:hover {
+        background: var(--app-danger-bg);
+        border-color: transparent;
+        color: var(--app-danger);
+    }
+
+    .sv-modal__form {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .sv-modal__body {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 1.1rem 1.2rem;
+    }
+
+    .sv-modal__foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: .5rem;
+        padding: .85rem 1.2rem;
+        border-top: 1px solid var(--app-divider);
+        background: var(--app-bg);
+    }
+
+    .sv-sec {
+        border: 1px solid var(--app-border);
+        border-radius: 16px;
+        overflow: hidden;
+        background: var(--app-surface);
+    }
+
+    .sv-sec__head {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        padding: .65rem .9rem;
+        border-bottom: 1px solid var(--app-divider);
+        background: var(--app-bg);
+        font-size: .82rem;
+        font-weight: 800;
+        color: var(--app-text);
+    }
+
+    .sv-sec__head .oi {
+        color: var(--app-primary);
+    }
+
+    .sv-sec__hint {
+        margin-inline-start: auto;
+        font-size: .68rem;
+        font-weight: 600;
+        color: var(--app-text-muted);
+    }
+
+    .sv-sec__body {
+        display: flex;
+        flex-direction: column;
+        gap: .75rem;
+        padding: .9rem;
+    }
+
+    .sv-sec__body .sv-field {
+        margin-bottom: 0;
+    }
+
+    .sv-recorder--plain {
+        margin-bottom: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+    }
+
+    @@keyframes svFadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @@keyframes svPop {
+        from { opacity: 0; transform: translateY(12px) scale(.98); }
+        to { opacity: 1; transform: none; }
+    }
+
+    @@keyframes svSheet {
+        from { opacity: .6; transform: translateY(24px); }
+        to { opacity: 1; transform: none; }
+    }
+
+    @@media (max-width: 767.98px) {
+        .sv-modal-overlay {
+            align-items: flex-end;
+            padding: 0;
+        }
+
+        .sv-modal {
+            width: 100%;
+            max-height: 94vh;
+            border-radius: 22px 22px 0 0;
+            animation: svSheet .22s ease;
+        }
+
+        .sv-modal__head { padding: .9rem 1rem; }
+        .sv-modal__body { padding: .9rem 1rem; }
+        .sv-modal__foot {
+            padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom));
+        }
+        .sv-sec__hint { display: none; }
+        .sv-events__actions { padding: .65rem .85rem 0; }
+        .sv-egroup__head { flex-wrap: wrap; }
+        .sv-egroup__side {
+            width: 100%;
+            justify-content: flex-end;
+            margin-inline-start: 1.2rem;
         }
     }
 </style>
@@ -1304,6 +1647,15 @@
 
     private List<ServiceVoiceEventLogDto> _events = new();
     private bool _loadingEvents;
+    private ServiceVoiceEventLogDto? _eventToDelete;
+    private bool _showEventDeleteConfirm;
+    private bool _showClearEventsConfirm;
+    private bool _clearingEvents;
+
+    private bool _showEditor;
+    private bool _showEvents;
+    private bool _bodyScrollLocked;
+    private readonly HashSet<string> _expandedGroups = new(StringComparer.Ordinal);
 
     /// <summary>کلید ذخیره‌شدهٔ اکشن در حال ویرایش؛ برای تشخیص تغییر کلید/رویداد.</summary>
     private string _originalKey = string.Empty;
@@ -1313,6 +1665,138 @@
 
     private int ActiveCount => _items?.Count(x => x.IsActive) ?? 0;
     private int WithAudioCount => _items?.Count(x => !string.IsNullOrWhiteSpace(x.AudioUrl)) ?? 0;
+
+    private string ActionsHint => _items == null
+        ? "در حال خواندن اکشن‌های این دستگاه…"
+        : _items.Count == 0
+            ? "هنوز اکشنی برای این دستگاه تعریف نشده است."
+            : $"{_items.Count:N0} اکشن · {ActiveCount:N0} فعال · {WithAudioCount:N0} دارای صدا";
+
+    private string EventsHint
+    {
+        get
+        {
+            if (_selectedDevice is not { } device)
+                return "برای دیدن رویدادها ابتدا یک دستگاه فعال انتخاب کنید.";
+
+            if (_events.Count == 0)
+                return $"دستگاه {device.DeviceNumber} · هنوز رویدادی ثبت نشده است.";
+
+            var receiptCount = EventGroups.Count(g => g.Key != NoReceiptKey);
+            return receiptCount == 0
+                ? $"دستگاه {device.DeviceNumber} · {_events.Count:N0} رویداد بدون رسید مشتری"
+                : $"دستگاه {device.DeviceNumber} · {_events.Count:N0} رویداد در {receiptCount:N0} رسید مشتری";
+        }
+    }
+
+    /// <summary>کلید گروه رویدادهایی که در بازهٔ هیچ رسید مشتری رخ نداده‌اند.</summary>
+    private const string NoReceiptKey = "no-receipt";
+
+    /// <summary>رویدادها بر اساس رسید مشتری/اتصال پایش گروه‌بندی می‌شوند.</summary>
+    private List<EventGroup> EventGroups
+    {
+        get
+        {
+            var groups = new List<EventGroup>();
+
+            foreach (var bucket in _events
+                         .GroupBy(e => e.CustomerReceiptId)
+                         .OrderByDescending(g => g.Max(e => e.CreatedAt)))
+            {
+                var newest = bucket.OrderByDescending(e => e.CreatedAt).First();
+                var from = bucket.Min(e => e.CreatedAt);
+                var to = bucket.Max(e => e.CreatedAt);
+                var hasReceipt = newest.CustomerReceiptId is > 0;
+
+                groups.Add(new EventGroup
+                {
+                    Key = hasReceipt ? $"receipt-{newest.CustomerReceiptId}" : NoReceiptKey,
+                    Title = hasReceipt
+                        ? $"رسید مشتری #{newest.CustomerReceiptId}"
+                        : "بدون رسید مشتری",
+                    CustomerName = newest.CustomerName,
+                    IsOpen = bucket.Any(e => e.ReceiptIsOpen),
+                    RangeLabel = from.Date == to.Date
+                        ? PersianDate.ToJalaliDateTime(from)
+                        : $"{PersianDate.ToJalaliDate(from)} تا {PersianDate.ToJalaliDate(to)}",
+                    Events = bucket.OrderByDescending(e => e.CreatedAt).ToList()
+                });
+            }
+
+            return groups;
+        }
+    }
+
+    private void ToggleGroup(string key)
+    {
+        if (!_expandedGroups.Add(key))
+            _expandedGroups.Remove(key);
+    }
+
+    private void AskDeleteEvent(ServiceVoiceEventLogDto ev)
+    {
+        _eventToDelete = ev;
+        _showEventDeleteConfirm = true;
+    }
+
+    private async Task HandleDeleteEventResult(bool ok)
+    {
+        _showEventDeleteConfirm = false;
+        var ev = _eventToDelete;
+        _eventToDelete = null;
+
+        if (!ok || ev == null) return;
+
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/admin/service-voices/events/{ev.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _events.RemoveAll(x => x.Id == ev.Id);
+                ToastService.ShowSuccess("رویداد حذف شد");
+            }
+            else
+            {
+                ToastService.ShowError(await ReadErrorAsync(resp, "حذف رویداد انجام نشد"));
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("حذف رویداد انجام نشد");
+        }
+    }
+
+    private void AskClearEvents() => _showClearEventsConfirm = true;
+
+    private async Task HandleClearEventsResult(bool ok)
+    {
+        _showClearEventsConfirm = false;
+        if (!ok || _selectedDeviceId is not > 0) return;
+
+        _clearingEvents = true;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/admin/service-voices/events?deviceId={_selectedDeviceId}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _events = new();
+                _expandedGroups.Clear();
+                ToastService.ShowSuccess("همهٔ رویدادهای این دستگاه پاک شد");
+            }
+            else
+            {
+                ToastService.ShowError(await ReadErrorAsync(resp, "پاک کردن رویدادها انجام نشد"));
+            }
+        }
+        catch
+        {
+            ToastService.ShowError("پاک کردن رویدادها انجام نشد");
+        }
+        finally
+        {
+            _clearingEvents = false;
+        }
+    }
 
     private static string DeviceLabel(ServiceVoiceDeviceDto d) =>
         string.IsNullOrWhiteSpace(d.WorkshopTitle)
@@ -1360,15 +1844,23 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-        try
+        if (firstRender)
         {
-            _recorderSupported = await JS.InvokeAsync<bool>("serviceVoiceRecorder.isSupported");
-            if (_recorderSupported) StateHasChanged();
+            try
+            {
+                _recorderSupported = await JS.InvokeAsync<bool>("serviceVoiceRecorder.isSupported");
+                if (_recorderSupported) StateHasChanged();
+            }
+            catch
+            {
+                _recorderSupported = false;
+            }
         }
-        catch
+
+        if (_bodyScrollLocked != _showEditor)
         {
-            _recorderSupported = false;
+            _bodyScrollLocked = _showEditor;
+            try { await JS.InvokeVoidAsync("setBodyScrollLock", _showEditor); } catch { }
         }
     }
 
@@ -1449,7 +1941,10 @@
             ToastService.ShowError("خطا در بارگذاری اکشن‌ها");
         }
 
-        await LoadEventsAsync();
+        if (_showEvents)
+            await LoadEventsAsync();
+        else
+            _events = new();
     }
 
     /// <summary>
@@ -1461,6 +1956,7 @@
         if (_selectedDeviceId is not > 0)
         {
             _events = new();
+            _expandedGroups.Clear();
             return;
         }
 
@@ -1468,7 +1964,14 @@
         try
         {
             _events = await Http.GetFromJsonAsync<List<ServiceVoiceEventLogDto>>(
-                          $"api/admin/service-voices/events?deviceId={_selectedDeviceId}&take=20") ?? new();
+                          $"api/admin/service-voices/events?deviceId={_selectedDeviceId}&take=60") ?? new();
+
+            // جدیدترین رسید به‌صورت پیش‌فرض باز می‌شود تا کاربر بلافاصله رویدادهای
+            // همان رسید را ببیند و بقیه بسته بمانند.
+            _expandedGroups.Clear();
+            var newestGroup = EventGroups.FirstOrDefault();
+            if (newestGroup != null)
+                _expandedGroups.Add(newestGroup.Key);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized
                                            || ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
@@ -1486,16 +1989,17 @@
         }
     }
 
-    private async Task NewItemAsync()
+    private Task NewItemAsync()
     {
         if (_selectedDeviceId is not > 0)
         {
             ToastService.ShowWarning("ابتدا از نوار «دستگاه هدف» یک دستگاه فعال انتخاب کنید.");
-            return;
+            return Task.CompletedTask;
         }
 
         Reset();
-        await ScrollToEditorAsync();
+        _showEditor = true;
+        return Task.CompletedTask;
     }
 
     private void Edit(ServiceVoiceActionDto it)
@@ -1516,7 +2020,34 @@
         _recordSeconds = 0;
         _originalKey = it.Key ?? string.Empty;
         _ = ClearRecorderPendingAsync();
-        _ = ScrollToEditorAsync();
+        _showEditor = true;
+    }
+
+    /// <summary>بستن مدال ویرایش؛ هنگام ذخیره یا ضبط در جریان، بسته نمی‌شود.</summary>
+    private void CloseEditor()
+    {
+        if (_saving || _isRecording) return;
+        _showEditor = false;
+        Reset();
+    }
+
+    private void CloseEditorIfIdle()
+    {
+        if (_saving || _isRecording) return;
+        CloseEditor();
+    }
+
+    private async Task ToggleEventsAsync()
+    {
+        _showEvents = !_showEvents;
+
+        if (_showEvents)
+            await LoadEventsAsync();
+        else
+        {
+            _events = new();
+            _expandedGroups.Clear();
+        }
     }
 
     private void Reset()
@@ -1545,11 +2076,6 @@
         RepeatCount = 1,
         Priority = priority
     };
-
-    private async Task ScrollToEditorAsync()
-    {
-        try { await JS.InvokeVoidAsync("serviceVoiceRecorder.scrollToEditor", "sv-editor"); } catch { }
-    }
 
     private async Task SaveAsync()
     {
@@ -1624,24 +2150,10 @@
 
             await LoadDevicesAsync();
             await LoadAsync();
-            var refreshed = _items?.FirstOrDefault(x => x.Id == saved.Id);
-            _originalKey = refreshed?.Key ?? saved.Key;
-            if (refreshed != null)
-            {
-                _editingId = refreshed.Id;
-                _model = new ServiceVoiceActionUpsertRequest
-                {
-                    Id = refreshed.Id,
-                    MonitoringDeviceId = refreshed.DeviceId ?? _selectedDeviceId ?? 0,
-                    Key = refreshed.Key,
-                    TitleFa = refreshed.TitleFa,
-                    IsActive = refreshed.IsActive,
-                    RepeatCount = refreshed.RepeatCount,
-                    Priority = refreshed.Priority
-                };
-                _originalKey = refreshed.Key;
-                _existingAudioUrl = refreshed.AudioUrl ?? string.Empty;
-            }
+
+            // بعد از ذخیره، فرم کاملاً ریست می‌شود تا اکشن بعدی بی‌درنگ ثبت شود.
+            _showEditor = false;
+            Reset();
         }
         catch (Exception ex)
         {
@@ -1890,5 +2402,16 @@
         public bool Ok { get; set; }
         public int Status { get; set; }
         public string? Body { get; set; }
+    }
+
+    /// <summary>گروه رویدادهای یک رسید مشتری برای نمایش بازشونده در فهرست.</summary>
+    private sealed class EventGroup
+    {
+        public string Key { get; init; } = string.Empty;
+        public string Title { get; init; } = string.Empty;
+        public string? CustomerName { get; init; }
+        public bool IsOpen { get; init; }
+        public string RangeLabel { get; init; } = string.Empty;
+        public List<ServiceVoiceEventLogDto> Events { get; init; } = new();
     }
 }
