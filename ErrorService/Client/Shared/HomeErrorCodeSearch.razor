@@ -48,13 +48,15 @@
                     {
                         <div class="hes-chips" aria-label="کدهای تازه">
                             <span class="hes-chips__label">کدهای تازه</span>
-                            @foreach (var chip in _chips)
-                            {
-                                <a class="hes-chip" href="@ItemUrl(chip)" title="@chip.Description">
-                                    <span class="hes-chip__code">@chip.Code</span>
-                                    <span class="hes-chip__brand">@chip.Brand</span>
-                                </a>
-                            }
+                            <div class="hes-chips__scroll">
+                                @foreach (var chip in _chips)
+                                {
+                                    <a class="hes-chip" href="@ItemUrl(chip)" title="@chip.Description">
+                                        <span class="hes-chip__code">@chip.Code</span>
+                                        <span class="hes-chip__brand">@chip.Brand</span>
+                                    </a>
+                                }
+                            </div>
                         </div>
                     }
 
