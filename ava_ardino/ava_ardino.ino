@@ -178,6 +178,11 @@ String deviceCode;    // کد دستگاه برای فیلتر آواها در �
 unsigned long lastWifiAttempt = 0;
 unsigned long lostAt          = 0;
 
+// پنل تنظیمات: زمان آخرین اقدام کاربر و اینکه خروج خودکار مجاز است یا نه.
+// اگر تنظیمات ذخیره‌شده وجود داشته باشد، پنل پس از بی‌اقدامی خودش بسته می‌شود.
+unsigned long portalLastActivity = 0;
+bool          portalAutoExit     = false;
+
 // ==================== فهرست آواها ====================
 VoiceAction voices[MAX_ACTIONS];
 volatile uint8_t voiceCount = 0;
@@ -221,6 +226,11 @@ bool     btnStable[3]  = { false, false, false };
 bool     btnLastRaw[3] = { false, false, false };
 unsigned long btnChangeAt[3] = { 0, 0, 0 };
 
+// نگه‌داشتن طولانی دکمهٔ پخش برای ورود به پنل تنظیمات
+const uint8_t BTN_PLAY_INDEX = 1;   // جایگاه دکمهٔ پخش در BTN_PINS
+unsigned long btnHoldStart[3]     = { 0, 0, 0 };
+bool          btnHoldTriggered[3] = { false, false, false };
+
 // ==================== اعلان توابع ====================
 void updateLeds();
 void stopPlayback();
@@ -240,7 +250,10 @@ void handleAudioButtons();
 void handleTrackFinished();
 void moveSelection(int delta);
 void startSession(int idx);
-void startPortal();
+void startPortal(bool allowAutoExit = true);
+void stopPortal();
+void loopPortal();
+void touchPortalActivity();
 void startSta();
 void loopSta();
 void pollButtons();
@@ -288,12 +301,13 @@ void updateLeds() {
   }
   ledWrite(LED_PLAY_PIN, playOn);
 
-  // LED وضعیت: فهرست آماده و دارای آوا = ثابت؛ خطای دریافت = چشمک
-  bool statusOn;
-  if (lastFetchOk) {
-    statusOn = (voiceCount > 0);
-  } else {
-    statusOn = (now % 1000) < 500;
+  // LED وضعیت (آماده بودن فهرست آواها): فقط بعد از اولین پاسخ موفق سرور
+  // معنا دارد. تا آن لحظه — بوت، اسکن وای‌فای، اتصال و دریافت اولیه — خاموش
+  // می‌ماند تا کنار LED وای‌فای روشن یا چشمک نزند. در پنل تنظیمات هم خاموش است.
+  bool statusOn = false;
+  if (mode != M_PORTAL && wifiConnected && listLoaded) {
+    // خطای واقعی بعد از یک بار دریافت موفق = چشمک هشدار
+    statusOn = lastFetchOk ? (voiceCount > 0) : ((now % 1000) < 500);
   }
   ledWrite(LED_STATUS_PIN, statusOn);
 }
@@ -481,6 +495,7 @@ int scanWifi() {
 }
 
 void handlePortalRoot() {
+  touchPortalActivity();
   Serial.println("[Portal] scanning networks...");
   int n = scanWifi();
 
@@ -525,6 +540,8 @@ void handlePortalRoot() {
 }
 
 void handleSave() {
+  touchPortalActivity();
+
   String s = portal.arg("ssid"); s.trim();
   String p = portal.arg("pass");
   String code = portal.arg("code"); code.trim();
@@ -559,6 +576,8 @@ void handleSave() {
 }
 
 void handleClear() {
+  touchPortalActivity();
+
   prefs.begin("cfg", false);
   prefs.clear();
   prefs.end();
@@ -572,11 +591,12 @@ void handleClear() {
 }
 
 void handlePortalNotFound() {
+  touchPortalActivity();
   portal.sendHeader("Location", "/");
   portal.send(302, "text/plain", "");
 }
 
-void startPortal() {
+void startPortal(bool allowAutoExit) {
   mode = M_PORTAL;   // تسک پخش خودش صدا را متوقف می‌کند
   for (int i = 0; i < 200 && playState != PS_IDLE; i++) delay(5);
 
@@ -584,6 +604,7 @@ void startPortal() {
   wifiConnected = false;
   lostAt = 0;
 
+  // کلاینت (STA) خاموش می‌شود تا فقط شبکهٔ تنظیمات (AP) در دسترس باشد.
   WiFi.disconnect(true, false);
   delay(50);
   WiFi.mode(WIFI_AP_STA);   // AP + STA آزاد برای اسکن شبکه‌ها
@@ -592,8 +613,47 @@ void startPortal() {
   applyTxPower();
 
   portal.begin();
-  Serial.printf("[Portal] AP \"%s\" -> http://%s\n",
-                AP_SSID, WiFi.softAPIP().toString().c_str());
+
+  // اگر تنظیمات معتبری ذخیره شده باشد پنل نباید همیشه باز بماند؛ پس از
+  // بی‌اقدامی بسته می‌شود. در بوتِ بدون تنظیمات، پنل باز می‌ماند.
+  portalAutoExit    = allowAutoExit && !cfgSsid.isEmpty() && !deviceCode.isEmpty();
+  portalLastActivity = millis();
+
+  Serial.printf("[Portal] AP \"%s\" -> http://%s%s\n",
+                AP_SSID, WiFi.softAPIP().toString().c_str(),
+                portalAutoExit ? " (auto-close after idle)" : "");
+}
+
+/// ثبت هر اقدام کاربر در پنل؛ شمارندهٔ بی‌اقدامی را صفر می‌کند.
+void touchPortalActivity() {
+  portalLastActivity = millis();
+}
+
+/// بستن پنل تنظیمات: سرور (AP) خاموش و کلاینت (STA) روشن می‌شود.
+void stopPortal() {
+  portalAutoExit = false;
+
+  Serial.println("[Portal] no activity -> server off, client on");
+  portal.stop();
+  delay(30);
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+  delay(50);
+
+  // اگر دکمهٔ پخش هنوز فشرده باشد، دوباره پنل باز نشود؛ باید رها و دوباره
+  // نگه داشته شود.
+  btnHoldTriggered[BTN_PLAY_INDEX] = true;
+
+  startSta();
+}
+
+void loopPortal() {
+  portal.handleClient();
+
+  if (!portalAutoExit) return;
+  if (millis() - portalLastActivity < PORTAL_IDLE_TIMEOUT_MS) return;
+
+  stopPortal();
 }
 
 // ==================== دریافت فهرست آواها ====================
@@ -1266,17 +1326,22 @@ void audioTask(void *arg) {
 
 // ==================== دکمه‌ها ====================
 void pollButtons() {
+  unsigned long now = millis();
+
   for (uint8_t i = 0; i < 3; i++) {
 #if BTN_ACTIVE_HIGH
     bool raw = (digitalRead(BTN_PINS[i]) == HIGH);
 #else
     bool raw = (digitalRead(BTN_PINS[i]) == LOW);
 #endif
-    unsigned long now = millis();
 
     if (raw != btnLastRaw[i]) {
       btnLastRaw[i] = raw;
       btnChangeAt[i] = now;
+      if (raw) {
+        btnHoldStart[i] = now;
+        btnHoldTriggered[i] = false;
+      }
     }
 
     if (now - btnChangeAt[i] >= BTN_DEBOUNCE_MS && raw != btnStable[i]) {
@@ -1285,6 +1350,17 @@ void pollButtons() {
         (*BTN_EVENTS[i])++;
         Serial.printf("[Btn] gpio %u\n", BTN_PINS[i]);
       }
+    }
+
+    // نگه‌داشتن ۵ ثانیه‌ای دکمهٔ پخش: پنل تنظیمات (AP) روشن و کلاینت خاموش
+    // می‌شود تا وای‌فای/کد دستگاه دوباره تنظیم شود.
+    if (i == BTN_PLAY_INDEX && mode != M_PORTAL && btnStable[i] &&
+        !btnHoldTriggered[i] &&
+        (now - btnHoldStart[i]) >= BTN_PORTAL_HOLD_MS) {
+      btnHoldTriggered[i] = true;
+      Serial.println("[Btn] play held 5s -> setup portal (client off)");
+      startPortal();
+      return;
     }
   }
 }
@@ -1384,10 +1460,10 @@ void setup() {
 
   if (cfgSsid.isEmpty()) {
     Serial.println("[Boot] no saved WiFi -> portal");
-    startPortal();
+    startPortal(false);
   } else if (deviceCode.isEmpty()) {
     Serial.println("[Boot] no device code -> portal");
-    startPortal();
+    startPortal(false);
   } else if (forcePortal) {
     Serial.println("[Boot] BOOT held -> portal");
     startPortal();
@@ -1402,9 +1478,9 @@ void loop() {
   maintenance();
 
   switch (mode) {
-    case M_STA:    loopSta();             break;
-    case M_PLAY:   keepTx();              break;
-    case M_PORTAL: portal.handleClient(); break;
+    case M_STA:    loopSta();   break;
+    case M_PLAY:   keepTx();    break;
+    case M_PORTAL: loopPortal(); break;
   }
 
   delay(2);

@@ -86,6 +86,14 @@ const unsigned long POLL_INTERVAL_MS    = 60000; // تازه‌سازی فهرس
 const unsigned long HTTP_TIMEOUT_MS     = 12000; // تایم‌اوت درخواست‌های API
 const unsigned long RETRY_DELAY_MS      = 3000;  // فاصلهٔ تلاش مجدد پخش
 const unsigned long BTN_DEBOUNCE_MS     = 50;    // دیبانس دکمه‌ها
+
+// نگه‌داشتن دکمهٔ پخش (GPIO1) به‌مدت ۵ ثانیه = روشن شدن پنل تنظیمات (AP)
+// و خاموش شدن کلاینت، تا بتوان وای‌فای/کد دستگاه را دوباره تنظیم کرد.
+const unsigned long BTN_PORTAL_HOLD_MS     = 5000;
+
+// اگر در پنل تنظیمات تا این مدت هیچ درخواستی از کاربر نرسد، سرور (AP) خاموش
+// و کلاینت (STA) روشن می‌شود و دستگاه کار عادی خود را ادامه می‌دهد.
+const unsigned long PORTAL_IDLE_TIMEOUT_MS = 2UL * 60UL * 1000UL;
 const unsigned long WIFI_RETRY_INTERVAL = 8000;  // فاصلهٔ تلاش‌های اتصال وای‌فای
 const unsigned long OFFLINE_TO_PORTAL   = 2UL * 60UL * 1000UL; // ۲ دقیقه بی‌اتصال → پنل
 const unsigned long WIFI_TX_REFRESH_MS  = 5000;  // تازه‌سازی دوره‌ای قدرت رادیو
