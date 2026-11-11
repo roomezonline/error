@@ -21,86 +21,149 @@
     Keywords="@SeoKeywords"
     OgType="website" />
 
-<section class="news-page py-5 bg-light" dir="rtl">
-    <div class="container">
-        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
-            <div>
-                <h1 class="fw-bold h2 m-0 mb-2">@PageHeading</h1>
-                <nav aria-label="breadcrumb">
-                    <ol class="breadcrumb m-0">
-                        <li class="breadcrumb-item"><a href="/">خانه</a></li>
-                        @if (CategorySlug != null)
-                        {
-                            <li class="breadcrumb-item"><a href="@ContentTypeCatalog.Route(_type)">@ContentTypeCatalog.PluralLabel(_type)</a></li>
-                            <li class="breadcrumb-item active">@(CategoryTitle ?? CategorySlug)</li>
-                        }
-                        else if (TagSlug != null)
-                        {
-                            <li class="breadcrumb-item"><a href="@ContentTypeCatalog.Route(_type)">@ContentTypeCatalog.PluralLabel(_type)</a></li>
-                            <li class="breadcrumb-item active">برچسب: @TagSlug</li>
-                        }
-                        else
-                        {
-                            <li class="breadcrumb-item active">@ContentTypeCatalog.PluralLabel(_type)</li>
-                        }
-                    </ol>
-                </nav>
-            </div>
-            <div class="news-hub-tabs">
-                @foreach (var type in EnabledTabs)
+<section class="nlp" dir="rtl">
+    <div class="nlp-hero">
+        <div class="container">
+            <nav aria-label="breadcrumb" class="nlp-breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/">خانه</a></li>
+                    @if (CategorySlug != null)
+                    {
+                        <li class="breadcrumb-item"><a href="@ContentTypeCatalog.Route(_type)">@ContentTypeCatalog.PluralLabel(_type)</a></li>
+                        <li class="breadcrumb-item active">@(CategoryTitle ?? CategorySlug)</li>
+                    }
+                    else if (TagSlug != null)
+                    {
+                        <li class="breadcrumb-item"><a href="@ContentTypeCatalog.Route(_type)">@ContentTypeCatalog.PluralLabel(_type)</a></li>
+                        <li class="breadcrumb-item active">برچسب: @TagSlug</li>
+                    }
+                    else
+                    {
+                        <li class="breadcrumb-item active">@ContentTypeCatalog.PluralLabel(_type)</li>
+                    }
+                </ol>
+            </nav>
+
+            <div class="nlp-hero__main">
+                <div class="nlp-hero__text">
+                    <h1 class="nlp-hero__title">@PageHeading</h1>
+                    <p class="nlp-hero__sub">@PageSubtitle</p>
+                </div>
+
+                @if (EnabledTabs.Count() > 1)
                 {
-                    <a href="@ContentTypeCatalog.Route(type)" class="news-hub-tab @(type == _type && CategorySlug == null && TagSlug == null ? "is-active" : null)">
-                        <span class="oi @ContentTypeCatalog.Icon(type) me-1"></span>@ContentTypeCatalog.PluralLabel(type)
-                    </a>
+                    <nav class="nlp-tabs" aria-label="نوع محتوا">
+                        @foreach (var type in EnabledTabs)
+                        {
+                            var isActive = type == _type;
+                            <a href="@ContentTypeCatalog.Route(type)" class="nlp-tab @(isActive ? "is-active" : null)" aria-current="@(isActive ? "page" : null)">
+                                <span class="oi @ContentTypeCatalog.Icon(type)"></span>@ContentTypeCatalog.PluralLabel(type)
+                            </a>
+                        }
+                    </nav>
                 }
             </div>
         </div>
+    </div>
 
-        <div class="news-hub-toolbar card border-0 shadow-sm rounded-4 p-3 mb-4">
-            <div class="d-flex flex-wrap align-items-center gap-2">
-                @if (Categories.Any())
-                {
-                    <div class="news-hub-cats">
-                        <a href="@ContentTypeCatalog.Route(_type)" class="news-cat-chip @(CategorySlug == null ? "is-active" : null)">همه</a>
-                        @foreach (var cat in Categories)
-                        {
-                            <a href="@ContentTypeCatalog.CategoryRoute(_type, cat.Slug ?? cat.Id.ToString())"
-                               class="news-cat-chip @(string.Equals(CategorySlug, cat.Slug, StringComparison.OrdinalIgnoreCase) ? "is-active" : null)">
-                                @cat.Title
-                                <span class="news-cat-chip__count">@cat.ContentCount</span>
-                            </a>
-                        }
-                    </div>
-                }
-                <div class="ms-auto d-flex gap-2">
-                    <div class="input-group input-group-sm" style="width: 240px;">
-                        <input type="search" class="form-control rounded-start-3" placeholder="جستجو در @ContentTypeCatalog.PluralLabel(_type)…"
-                               @bind="_query" @bind:event="oninput" @bind:after="OnSearchChanged" />
-                        @if (!string.IsNullOrWhiteSpace(_query))
-                        {
-                            <button type="button" class="btn btn-outline-secondary" @onclick="ClearSearch">×</button>
-                        }
-                    </div>
-                    <select class="form-select form-select-sm rounded-3" style="width: 140px;" @bind="_sort" @bind:after="() => ReloadAsync()">
+    <div class="container nlp-body">
+        <div class="nlp-filters">
+            <div class="nlp-toolbar">
+                <div class="nlp-search" role="search">
+                    <span class="oi oi-magnifying-glass nlp-search__icon" aria-hidden="true"></span>
+                    <input type="search"
+                           class="nlp-search__input"
+                           aria-label="جستجو در @ContentTypeCatalog.PluralLabel(_type)"
+                           placeholder="جستجو در عنوان، خلاصه یا برچسب…"
+                           @bind="_query" @bind:event="oninput" @bind:after="OnSearchChanged" />
+                    @if (!string.IsNullOrWhiteSpace(_query))
+                    {
+                        <button type="button" class="nlp-search__clear" @onclick="ClearSearch" aria-label="پاک کردن جستجو" title="پاک کردن جستجو">×</button>
+                    }
+                </div>
+
+                <label class="nlp-sort">
+                    <span class="oi oi-sort-ascending nlp-sort__icon" aria-hidden="true"></span>
+                    <select class="nlp-sort__select" aria-label="ترتیب نمایش" @bind="_sort" @bind:after="() => ReloadAsync()">
                         <option value="newest">جدیدترین</option>
                         <option value="oldest">قدیمی‌ترین</option>
                         <option value="views">پربازدیدترین</option>
                     </select>
-                </div>
+                </label>
             </div>
+
+            @if (Categories.Any())
+            {
+                <div class="nlp-cats">
+                    <span class="nlp-cats__label"><span class="oi oi-folder"></span> دسته‌بندی</span>
+                    <div class="nlp-cats__rail">
+                        <a href="@ContentTypeCatalog.Route(_type)" class="nlp-cat @(CategorySlug == null ? "is-active" : null)">
+                            همه
+                        </a>
+                        @foreach (var cat in Categories)
+                        {
+                            <a href="@ContentTypeCatalog.CategoryRoute(_type, cat.Slug ?? cat.Id.ToString())"
+                               class="nlp-cat @(string.Equals(CategorySlug, cat.Slug, StringComparison.OrdinalIgnoreCase) ? "is-active" : null)">
+                                @cat.Title
+                                @if (cat.ContentCount > 0)
+                                {
+                                    <span class="nlp-cat__count">@cat.ContentCount</span>
+                                }
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (HasActiveFilters)
+            {
+                <div class="nlp-applied">
+                    <span class="nlp-applied__label">فیلتر فعال:</span>
+                    @if (CategorySlug != null)
+                    {
+                        <a class="nlp-applied__chip" href="@ContentTypeCatalog.Route(_type)">
+                            دسته: @(CategoryTitle ?? CategorySlug)
+                            <span aria-hidden="true">×</span>
+                        </a>
+                    }
+                    @if (TagSlug != null)
+                    {
+                        <a class="nlp-applied__chip" href="@ContentTypeCatalog.Route(_type)">
+                            برچسب: @TagSlug
+                            <span aria-hidden="true">×</span>
+                        </a>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_query))
+                    {
+                        <button type="button" class="nlp-applied__chip" @onclick="ClearSearch">
+                            جستجو: @_query
+                            <span aria-hidden="true">×</span>
+                        </button>
+                    }
+                    <button type="button" class="nlp-applied__clear" @onclick="ClearAllFilters">پاک کردن همه</button>
+                </div>
+            }
+        </div>
+
+        <div class="nlp-resultbar">
+            <span class="nlp-resultbar__count">@ResultSummary</span>
+            @if (_items != null && _items.Any())
+            {
+                <span class="nlp-resultbar__hint">ترتیب: @SortLabel</span>
+            }
         </div>
 
         @if (_items == null)
         {
-            <div class="row g-4">
+            <div class="row g-3 g-md-4">
                 @for (int i = 0; i < 6; i++)
                 {
-                    <div class="col-md-4">
-                        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-                            <div style="height:200px;background:#f0f0f0"></div>
-                            <div class="card-body p-3">
-                                <div style="height:15px;background:#f0f0f0;border-radius:4px" class="mb-2"></div>
-                                <div style="height:15px;background:#f0f0f0;border-radius:4px;width:75%"></div>
+                    <div class="col-12 col-sm-6 col-lg-4">
+                        <div class="nlp-skeleton">
+                            <div class="nlp-skeleton__media"></div>
+                            <div class="nlp-skeleton__body">
+                                <div class="nlp-skeleton__line"></div>
+                                <div class="nlp-skeleton__line nlp-skeleton__line--short"></div>
                             </div>
                         </div>
                     </div>
@@ -109,84 +172,89 @@
         }
         else if (!_items.Any())
         {
-            <div class="empty-state-box">
-                <span class="empty-icon oi @ContentTypeCatalog.Icon(_type)"></span>
-                <h4>@ContentTypeCatalog.Label(_type)ی یافت نشد</h4>
-                <p>در حال حاضر محتوایی مطابق با این فیلترها برای نمایش وجود ندارد.</p>
-                <a href="@ContentTypeCatalog.Route(_type)" class="btn btn-outline-primary rounded-pill px-4">نمایش همه @ContentTypeCatalog.PluralLabel(_type)</a>
+            <div class="nlp-empty">
+                <div class="nlp-empty__icon"><span class="oi oi-magnifying-glass"></span></div>
+                <h2 class="nlp-empty__title">@EmptyTitle</h2>
+                <p class="nlp-empty__text">@EmptyText</p>
+                <div class="nlp-empty__actions">
+                    @if (HasActiveFilters)
+                    {
+                        <button type="button" class="btn btn-primary rounded-pill px-4" @onclick="ClearAllFilters">پاک کردن فیلترها</button>
+                    }
+                    <a href="@ContentTypeCatalog.Route(_type)" class="btn btn-outline-primary rounded-pill px-4">نمایش همه @ContentTypeCatalog.PluralLabel(_type)</a>
+                </div>
             </div>
         }
         else
         {
-            <div class="row g-4">
+            <div class="row g-3 g-md-4">
                 @foreach (var news in _items)
                 {
-                    <div class="col-md-4 reveal">
-                        <div class="card news-card border-0 shadow-sm rounded-4 overflow-hidden h-100">
-                            <a href="@ContentTypeCatalog.DetailRoute(news.ContentType, news.Id, news.Slug)" class="text-decoration-none d-block">
-                                <div class="news-card__img-wrap position-relative">
-                                    @if (!string.IsNullOrWhiteSpace(news.ImageUrl))
-                                    {
-                                        <img src="@ImageUrlHelper.Thumb(news.ImageUrl, 500)" srcset="@ImageUrlHelper.SrcSet(news.ImageUrl)"
-                                             sizes="(max-width: 768px) 100vw, 400px" loading="lazy" decoding="async"
-                                             class="card-img-top" alt="@news.Title" />
-                                    }
-                                    else
-                                    {
-                                        <div class="news-placeholder-wrap card-img-top">
-                                            <div class="news-placeholder-icon"><span class="oi oi-image"></span></div>
-                                            <div class="news-placeholder-text">تصویری ثبت نشده است</div>
-                                        </div>
-                                    }
-                                    <div class="news-card__badges position-absolute top-0 start-0 m-2 d-flex gap-1">
-                                        <span class="badge rounded-pill px-2 @ContentTypeCatalog.BadgeClass(news.ContentType)">@ContentTypeCatalog.Label(news.ContentType)</span>
-                                        @if (news.IsFeatured)
-                                        {
-                                            <span class="badge bg-warning text-dark rounded-pill px-2">منتخب</span>
-                                        }
-                                        @if (news.PinnedUntil.HasValue && news.PinnedUntil > DateTimeOffset.UtcNow)
-                                        {
-                                            <span class="badge bg-primary rounded-pill px-2">سنجاق</span>
-                                        }
+                    <div class="col-12 col-sm-6 col-lg-4 reveal">
+                        <article class="nlp-card">
+                            <a href="@ContentTypeCatalog.DetailRoute(news.ContentType, news.Id, news.Slug)" class="nlp-card__media">
+                                @if (!string.IsNullOrWhiteSpace(news.ImageUrl))
+                                {
+                                    <img src="@ImageUrlHelper.Thumb(news.ImageUrl, 500)" srcset="@ImageUrlHelper.SrcSet(news.ImageUrl)"
+                                         sizes="(max-width: 576px) 100vw, (max-width: 992px) 50vw, 400px" loading="lazy" decoding="async"
+                                         alt="@news.Title" />
+                                }
+                                else
+                                {
+                                    <div class="nlp-card__placeholder">
+                                        <span class="oi oi-image"></span>
+                                        <small>تصویری ثبت نشده است</small>
                                     </div>
-                                    <div class="news-card__date position-absolute bottom-0 start-0 m-3 badge bg-primary rounded-pill px-3 shadow">
-                                        <span class="small opacity-75 me-1">@PersianDate.ToTime(news.PublishedAt)</span>
-                                        <span>@PersianDate.ToJalaliDate(news.PublishedAt)</span>
-                                    </div>
+                                }
+                                <div class="nlp-card__badges">
+                                    <span class="nlp-card__badge @ContentTypeCatalog.BadgeClass(news.ContentType)">@ContentTypeCatalog.Label(news.ContentType)</span>
+                                    @if (news.IsFeatured)
+                                    {
+                                        <span class="nlp-card__badge is-featured">منتخب</span>
+                                    }
+                                    @if (news.PinnedUntil.HasValue && news.PinnedUntil > DateTimeOffset.UtcNow)
+                                    {
+                                        <span class="nlp-card__badge is-pinned">سنجاق</span>
+                                    }
                                 </div>
                             </a>
-                            <div class="card-body p-3 d-flex flex-column">
-                                <a href="@ContentTypeCatalog.DetailRoute(news.ContentType, news.Id, news.Slug)" class="text-decoration-none">
-                                    <h3 class="h6 fw-bold text-dark mb-2 news-card__title">@news.Title</h3>
-                                </a>
-                                <p class="text-muted small mb-2 news-card__summary">@news.Summary</p>
-                                <div class="d-flex justify-content-between align-items-center mt-auto pt-2">
-                                    <div class="d-flex flex-wrap gap-1">
+                            <div class="nlp-card__body">
+                                <a href="@ContentTypeCatalog.DetailRoute(news.ContentType, news.Id, news.Slug)" class="nlp-card__title">@news.Title</a>
+                                @if (!string.IsNullOrWhiteSpace(news.Summary))
+                                {
+                                    <p class="nlp-card__summary">@news.Summary</p>
+                                }
+                                <div class="nlp-card__footer">
+                                    <div class="nlp-card__tags">
                                         @foreach (var tag in ContentTags.Split(news.Tags).Take(2))
                                         {
-                                            <a href="@ContentTypeCatalog.TagRoute(news.ContentType, tag)" class="news-tag-chip">@tag</a>
+                                            <a href="@ContentTypeCatalog.TagRoute(news.ContentType, tag)" class="nlp-card__tag">@tag</a>
                                         }
                                     </div>
-                                    @if (_settings.ShowViewCount)
-                                    {
-                                        <span class="small text-muted"><span class="oi oi-eye me-1"></span>@news.ViewCount.ToString("N0")</span>
-                                    }
+                                    <div class="nlp-card__meta">
+                                        <span><span class="oi oi-calendar"></span>@PersianDate.ToJalaliDate(news.PublishedAt)</span>
+                                        @if (_settings.ShowViewCount)
+                                        {
+                                            <span><span class="oi oi-eye"></span>@news.ViewCount.ToString("N0")</span>
+                                        }
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        </article>
                     </div>
                 }
             </div>
 
             @if (_items.Count < _totalCount)
             {
-                <div class="text-center mt-4">
-                    <button class="btn btn-outline-primary rounded-pill px-5" @onclick="LoadMoreAsync" disabled="@_isLoadingMore">
+                <div class="nlp-more">
+                    <button type="button" class="btn btn-outline-primary rounded-pill px-4" @onclick="LoadMoreAsync" disabled="@_isLoadingMore">
                         @if (_isLoadingMore)
                         {
                             <span class="spinner-border spinner-border-sm me-2"></span>
                         }
-                        مشاهده بیشتر (@(_totalCount - _items.Count) مورد باقی‌مانده)
+                        مشاهده بیشتر
+                        <span class="nlp-more__count">@((_totalCount - _items.Count).ToString("N0")) مورد باقی‌مانده</span>
                     </button>
                 </div>
             }
@@ -195,72 +263,299 @@
 </section>
 
 <style>
-    .news-hub-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
-    .news-hub-tab {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 8px 16px;
-        border: 1px solid #e2e8f0;
-        border-radius: 999px;
-        background: #fff;
-        color: #475569;
-        font-size: .85rem;
-        font-weight: 700;
-        text-decoration: none;
-        transition: all .15s ease;
+    .nlp {
+        background: #f8fafc;
+        padding-bottom: 56px;
+        min-height: 60vh;
     }
-    .news-hub-tab:hover { border-color: #93c5fd; color: #1d4ed8; }
-    .news-hub-tab.is-active { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
-    .news-hub-cats { display: flex; flex-wrap: wrap; gap: 6px; }
-    .news-cat-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 5px 12px;
-        border: 1px solid #e2e8f0;
-        border-radius: 999px;
-        background: #fff;
-        color: #475569;
-        font-size: .8rem;
-        font-weight: 700;
-        text-decoration: none;
+
+    /* ── Hero ── */
+    .nlp-hero {
+        background: linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%);
+        border-bottom: 1px solid #e8eef6;
+        padding: 18px 0 16px;
     }
-    .news-cat-chip:hover { border-color: #93c5fd; color: #1d4ed8; }
-    .news-cat-chip.is-active { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
-    .news-cat-chip__count { font-size: .7rem; opacity: .7; }
-    .news-tag-chip {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 999px;
-        background: #f1f5f9;
-        color: #64748b;
-        font-size: .7rem;
-        font-weight: 700;
+    .nlp-breadcrumb { margin-bottom: 10px; }
+    .nlp-breadcrumb .breadcrumb {
+        margin: 0;
+        font-size: .76rem;
+        --bs-breadcrumb-divider-color: #94a3b8;
     }
-    .news-card { transition: transform .3s ease, box-shadow .3s ease; }
-    .news-card:hover { transform: translateY(-5px); box-shadow: 0 15px 35px rgba(0,0,0,.1) !important; }
-    .news-card__img-wrap { height: 200px; overflow: hidden; }
-    .news-card__img-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s ease; }
-    .news-card:hover img { transform: scale(1.06); }
-    .news-placeholder-wrap {
-        height: 100%;
+    .nlp-breadcrumb .breadcrumb-item a { color: #64748b; text-decoration: none; }
+    .nlp-breadcrumb .breadcrumb-item a:hover { color: #1d4ed8; }
+    .nlp-breadcrumb .breadcrumb-item.active { color: #334155; font-weight: 700; }
+
+    .nlp-hero__main {
+        display: flex; flex-direction: column; gap: 14px;
+    }
+    .nlp-hero__title {
+        font-size: 1.3rem; font-weight: 800; color: #0f172a; margin: 0 0 6px; line-height: 1.5;
+    }
+    .nlp-hero__sub {
+        color: #64748b; font-size: .84rem; margin: 0; line-height: 1.8;
+    }
+
+    .nlp-tabs {
+        display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px;
+        scrollbar-width: none; -ms-overflow-style: none;
+    }
+    .nlp-tabs::-webkit-scrollbar { display: none; }
+    .nlp-tab {
+        flex: 0 0 auto;
+        display: inline-flex; align-items: center; gap: 6px;
+        min-height: 40px; padding: 8px 16px;
+        border-radius: 999px; border: 1px solid #dbe3ec;
+        background: #fff; color: #475569;
+        font-size: .84rem; font-weight: 800; text-decoration: none; white-space: nowrap;
+        transition: background .15s, color .15s, border-color .15s, box-shadow .15s;
+    }
+    .nlp-tab:hover { border-color: #93c5fd; color: #1d4ed8; background: #fff; }
+    .nlp-tab.is-active {
+        background: #2563eb; border-color: #2563eb; color: #fff;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, .25);
+    }
+
+    /* ── Filters ── */
+    .nlp-body { padding-top: 16px; }
+    .nlp-filters {
+        background: #fff; border: 1px solid #eef2f7; border-radius: 16px;
+        padding: 10px; box-shadow: 0 4px 16px rgba(15, 23, 42, .04);
+        display: grid; gap: 10px;
+    }
+    .nlp-toolbar { display: grid; grid-template-columns: 1fr; gap: 8px; }
+
+    .nlp-search { position: relative; display: flex; align-items: center; }
+    .nlp-search__icon {
+        position: absolute; right: 14px; color: #94a3b8; font-size: .9rem; pointer-events: none;
+    }
+    .nlp-search__input {
+        width: 100%; min-height: 46px;
+        border: 1.5px solid #e2e8f0; border-radius: 12px;
+        padding: 0 40px 0 42px;
+        background: #fff; color: #0f172a;
+        font-size: .9rem; font-family: inherit;
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .nlp-search__input::placeholder { color: #94a3b8; }
+    .nlp-search__input:focus {
+        outline: none; border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, .1);
+    }
+    .nlp-search__clear {
+        position: absolute; left: 8px;
+        width: 30px; height: 30px; border-radius: 50%;
+        border: none; background: #f1f5f9; color: #64748b;
+        font-size: 1.05rem; line-height: 1; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .nlp-search__clear:hover { background: #e2e8f0; color: #334155; }
+
+    .nlp-sort { position: relative; display: flex; align-items: center; }
+    .nlp-sort__icon {
+        position: absolute; right: 12px; color: #94a3b8; font-size: .8rem; pointer-events: none;
+    }
+    .nlp-sort__select {
+        width: 100%; min-height: 44px;
+        border: 1.5px solid #e2e8f0; border-radius: 12px;
+        padding: 0 34px 0 12px;
+        background: #fff; color: #334155;
+        font-size: .85rem; font-family: inherit; cursor: pointer;
+    }
+    .nlp-sort__select:focus {
+        outline: none; border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, .1);
+    }
+
+    /* ── Categories ── */
+    .nlp-cats {
+        display: flex; flex-direction: column; gap: 6px;
+        border-top: 1px dashed #eef2f7; padding-top: 10px;
+    }
+    .nlp-cats__label {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: .72rem; font-weight: 800; color: #94a3b8;
+    }
+    .nlp-cats__rail {
+        display: flex; gap: 8px; overflow-x: auto;
+        padding: 2px 0 4px; scrollbar-width: none; -ms-overflow-style: none;
+    }
+    .nlp-cats__rail::-webkit-scrollbar { display: none; }
+    .nlp-cat {
+        flex: 0 0 auto;
+        display: inline-flex; align-items: center; gap: 6px;
+        min-height: 36px; padding: 6px 12px;
+        border-radius: 999px; border: 1px solid #e2e8f0;
+        background: #f8fafc; color: #475569;
+        font-size: .78rem; font-weight: 700; text-decoration: none; white-space: nowrap;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .nlp-cat:hover { border-color: #93c5fd; color: #1d4ed8; background: #fff; }
+    .nlp-cat.is-active { background: #eff6ff; border-color: #2563eb; color: #1d4ed8; }
+    .nlp-cat__count {
+        font-size: .68rem; background: #e2e8f0; color: #475569;
+        border-radius: 999px; padding: 1px 7px; min-width: 20px; text-align: center;
+    }
+    .nlp-cat.is-active .nlp-cat__count { background: #dbeafe; color: #1d4ed8; }
+
+    /* ── Applied filters ── */
+    .nlp-applied {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+        border-top: 1px dashed #eef2f7; padding-top: 10px;
+    }
+    .nlp-applied__label { font-size: .72rem; font-weight: 800; color: #94a3b8; }
+    .nlp-applied__chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: #eff6ff; color: #1d4ed8;
+        border: 1px solid #bfdbfe; border-radius: 999px;
+        padding: 4px 10px; font-size: .74rem; font-weight: 700;
+        text-decoration: none; font-family: inherit; cursor: pointer;
+    }
+    .nlp-applied__chip span { font-size: 1rem; line-height: 1; }
+    .nlp-applied__chip:hover { background: #dbeafe; }
+    .nlp-applied__clear {
+        border: none; background: none; color: #dc2626;
+        font-size: .74rem; font-weight: 800; font-family: inherit;
+        cursor: pointer; padding: 4px 6px; text-decoration: underline;
+    }
+
+    /* ── Result bar ── */
+    .nlp-resultbar {
+        display: flex; justify-content: space-between; align-items: center; gap: 8px;
+        margin: 14px 2px 10px;
+    }
+    .nlp-resultbar__count { font-size: .85rem; font-weight: 800; color: #334155; }
+    .nlp-resultbar__hint { font-size: .74rem; color: #94a3b8; }
+
+    /* ── Cards ── */
+    .nlp-card {
+        display: flex; flex-direction: column; height: 100%;
+        background: #fff; border: 1px solid #eef2f7; border-radius: 16px;
+        overflow: hidden; box-shadow: 0 6px 18px rgba(15, 23, 42, .05);
+        transition: transform .25s ease, box-shadow .25s ease;
+    }
+    .nlp-card__media {
+        position: relative; display: block;
+        aspect-ratio: 16 / 10;
         background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+        overflow: hidden;
+    }
+    .nlp-card__media img {
+        width: 100%; height: 100%; object-fit: cover; display: block;
+        transition: transform .5s ease;
+    }
+    .nlp-card__placeholder {
+        position: absolute; inset: 0;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
-        gap: 8px; color: #94a3b8;
+        gap: 6px; color: #94a3b8;
     }
-    .news-placeholder-icon { font-size: 2.5rem; opacity: .5; }
-    .news-placeholder-text { font-size: .75rem; font-weight: 700; }
-    .news-card__title {
+    .nlp-card__placeholder .oi { font-size: 2.2rem; opacity: .55; }
+    .nlp-card__placeholder small { font-size: .7rem; font-weight: 700; }
+    .nlp-card__badges {
+        position: absolute; top: 10px; right: 10px;
+        display: flex; flex-wrap: wrap; gap: 4px;
+    }
+    .nlp-card__badge {
+        display: inline-flex; align-items: center; gap: 3px;
+        padding: 3px 9px; border-radius: 999px;
+        font-size: .68rem; font-weight: 800;
+        background: rgba(255, 255, 255, .94);
+        backdrop-filter: blur(6px);
+    }
+    .nlp-card__badge.is-featured { color: #b45309; background: #fef3c7; }
+    .nlp-card__badge.is-pinned { color: #1d4ed8; background: #dbeafe; }
+
+    .nlp-card__body {
+        padding: 14px; display: flex; flex-direction: column; flex: 1; gap: 8px;
+    }
+    .nlp-card__title {
+        color: #0f172a; font-size: .95rem; font-weight: 800; line-height: 1.6;
+        text-decoration: none;
         display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-        overflow: hidden; height: 2.8em; line-height: 1.4;
+        overflow: hidden; min-height: 3.15em;
     }
-    .news-card__summary {
+    .nlp-card__title:hover { color: #1d4ed8; }
+    .nlp-card__summary {
+        color: #64748b; font-size: .8rem; line-height: 1.8; margin: 0;
         display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-        overflow: hidden; line-height: 1.45; min-height: 2.9em; font-size: .82rem;
+        overflow: hidden; min-height: 2.85em;
     }
-    .empty-state-box { text-align: center; padding: 60px 20px; }
-    .empty-icon { font-size: 3rem; color: #cbd5e1; display: block; margin-bottom: 12px; }
+    .nlp-card__footer {
+        margin-top: auto; padding-top: 10px;
+        border-top: 1px dashed #eef2f7;
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 8px; flex-wrap: wrap;
+    }
+    .nlp-card__tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .nlp-card__tag {
+        display: inline-block; padding: 2px 8px; border-radius: 999px;
+        background: #f1f5f9; color: #64748b;
+        font-size: .68rem; font-weight: 700; text-decoration: none;
+    }
+    .nlp-card__tag:hover { background: #e2e8f0; color: #334155; }
+    .nlp-card__meta {
+        display: flex; align-items: center; gap: 10px;
+        color: #94a3b8; font-size: .72rem; font-weight: 600;
+    }
+    .nlp-card__meta span { display: inline-flex; align-items: center; gap: 3px; }
+
+    @@media (hover: hover) {
+        .nlp-card:hover { transform: translateY(-4px); box-shadow: 0 16px 32px rgba(15, 23, 42, .1); }
+        .nlp-card:hover .nlp-card__media img { transform: scale(1.05); }
+    }
+
+    /* ── Load more ── */
+    .nlp-more { display: flex; justify-content: center; margin-top: 22px; }
+    .nlp-more .btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: .85rem; font-weight: 700; padding: 10px 28px;
+    }
+    .nlp-more__count {
+        font-size: .72rem; font-weight: 600; color: #64748b;
+        background: #f1f5f9; border-radius: 999px; padding: 2px 8px;
+    }
+
+    /* ── Empty ── */
+    .nlp-empty {
+        text-align: center; padding: 44px 18px;
+        background: #fff; border: 1px dashed #dbe3ec; border-radius: 18px;
+    }
+    .nlp-empty__icon {
+        width: 64px; height: 64px; margin: 0 auto 14px;
+        border-radius: 50%; background: #eff6ff; color: #93c5fd;
+        display: flex; align-items: center; justify-content: center; font-size: 1.6rem;
+    }
+    .nlp-empty__title { font-size: 1.05rem; font-weight: 800; color: #334155; margin: 0 0 6px; }
+    .nlp-empty__text { color: #94a3b8; font-size: .84rem; margin: 0 0 18px; line-height: 1.8; }
+    .nlp-empty__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+
+    /* ── Skeleton ── */
+    .nlp-skeleton {
+        background: #fff; border: 1px solid #eef2f7; border-radius: 16px; overflow: hidden;
+    }
+    .nlp-skeleton__media { aspect-ratio: 16 / 10; background: #eef2f7; animation: nlp-pulse 1.4s ease-in-out infinite; }
+    .nlp-skeleton__body { padding: 14px; display: grid; gap: 8px; }
+    .nlp-skeleton__line { height: 14px; border-radius: 6px; background: #eef2f7; animation: nlp-pulse 1.4s ease-in-out infinite; }
+    .nlp-skeleton__line--short { width: 65%; }
+    @@keyframes nlp-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .45; }
+    }
+
+    /* ── Responsive ── */
+    @@media (min-width: 576px) {
+        .nlp-toolbar { grid-template-columns: minmax(0, 1fr) 190px; }
+        .nlp-cats__rail { flex-wrap: wrap; overflow: visible; }
+        .nlp-hero__title { font-size: 1.5rem; }
+    }
+    @@media (min-width: 992px) {
+        .nlp-hero { padding: 26px 0 22px; }
+        .nlp-hero__main { flex-direction: row; align-items: flex-end; justify-content: space-between; }
+        .nlp-hero__title { font-size: 1.75rem; }
+        .nlp-body { padding-top: 22px; }
+        .nlp-filters { padding: 14px; }
+        .nlp-card__body { padding: 16px; }
+        .nlp-card__title { font-size: 1rem; }
+    }
 </style>
 
 @code {
@@ -281,6 +576,7 @@
     private bool _isLoadingMore;
     private CancellationTokenSource? _searchCts;
     private bool _needsRevealScan;
+    private int _loadVersion;
 
     private string? CategoryTitle => _categories
         .FirstOrDefault(c => string.Equals(c.Slug, CategorySlug, StringComparison.OrdinalIgnoreCase))?.Title;
@@ -290,11 +586,51 @@
 
     private IEnumerable<ContentCategoryDto> Categories => _categories;
 
+    private bool HasActiveFilters =>
+        CategorySlug != null || TagSlug != null || !string.IsNullOrWhiteSpace(_query);
+
     private string PageHeading => CategorySlug != null
-        ? $"{CategoryTitle ?? CategorySlug} — {ContentTypeCatalog.PluralLabel(_type)}"
+        ? $"{CategoryTitle ?? CategorySlug}"
         : TagSlug != null
             ? $"برچسب: {TagSlug}"
             : ContentTypeCatalog.PluralLabel(_type);
+
+    private string PageSubtitle => CategorySlug != null
+        ? $"جدیدترین {ContentTypeCatalog.PluralLabel(_type)} در دستهٔ «{CategoryTitle ?? CategorySlug}»"
+        : TagSlug != null
+            ? $"همهٔ {ContentTypeCatalog.PluralLabel(_type)} با برچسب «{TagSlug}»"
+            : _type switch
+            {
+                ContentType.Tip => "ترفندهای کاربردی برای تعمیر، نگهداری و عیب‌یابی لوازم الکترونیک",
+                ContentType.Announcement => "اطلاعیه‌ها و اخبار مهم ارورسرویس",
+                _ => "تازه‌ترین اخبار فناوری، الکترونیک و تعمیرات لوازم خانگی"
+            };
+
+    private string SortLabel => _sort switch
+    {
+        "oldest" => "قدیمی‌ترین",
+        "views" => "پربازدیدترین",
+        _ => "جدیدترین"
+    };
+
+    private string ResultSummary
+    {
+        get
+        {
+            if (_items == null) return "در حال بارگذاری…";
+            if (_totalCount == 0) return "نتیجه‌ای پیدا نشد";
+            var label = _totalCount == 1 ? ContentTypeCatalog.Label(_type) : ContentTypeCatalog.PluralLabel(_type);
+            return $"{_totalCount.ToString("N0")} {label}";
+        }
+    }
+
+    private string EmptyTitle => !string.IsNullOrWhiteSpace(_query)
+        ? $"نتیجه‌ای برای «{_query}» پیدا نشد"
+        : $"{ContentTypeCatalog.Label(_type)}ی یافت نشد";
+
+    private string EmptyText => HasActiveFilters
+        ? "فیلترها را تغییر دهید یا پاک کنید تا مطالب بیشتری ببینید."
+        : "در حال حاضر محتوایی برای نمایش در این بخش وجود ندارد.";
 
     private string SeoTitle => $"{PageHeading} | ارورسرویس";
 
@@ -358,6 +694,18 @@
         _ = ReloadAsync();
     }
 
+    private void ClearAllFilters()
+    {
+        var hadRouteFilter = CategorySlug != null || TagSlug != null;
+        _query = string.Empty;
+        _sort = "newest";
+
+        if (hadRouteFilter)
+            NavigationManager.NavigateTo(ContentTypeCatalog.Route(_type));
+        else
+            _ = ReloadAsync();
+    }
+
     private async Task ReloadAsync()
     {
         _skip = 0;
@@ -378,6 +726,8 @@
             _skip += _take;
         }
 
+        var version = ++_loadVersion;
+
         try
         {
             var url = $"api/news?onlyPublished=true&skip={_skip}&take={_take}&type={_type}&sort={_sort}";
@@ -386,14 +736,19 @@
             if (!string.IsNullOrWhiteSpace(_query)) url += $"&q={Uri.EscapeDataString(_query.Trim())}";
 
             var response = await Http.GetAsync(url);
+            if (version != _loadVersion) return;
+
             if (!response.IsSuccessStatusCode)
             {
                 if (!append) _items = new();
                 return;
             }
 
-            _totalCount = PaginationHeaderReader.ReadTotalCount(response);
+            var totalCount = PaginationHeaderReader.ReadTotalCount(response);
             var data = await response.Content.ReadFromJsonAsync<List<NewsDto>>() ?? new();
+            if (version != _loadVersion) return;
+
+            _totalCount = totalCount;
 
             if (append && _items != null)
                 _items.AddRange(data);
@@ -404,11 +759,11 @@
         }
         catch
         {
-            if (!append) _items = new();
+            if (version == _loadVersion && !append) _items = new();
         }
         finally
         {
-            _isLoadingMore = false;
+            if (version == _loadVersion) _isLoadingMore = false;
         }
     }
 }
