@@ -32,16 +32,16 @@ public sealed class ServiceVoicesController : ControllerBase
 
     private readonly ErrorServiceDbContext _db;
     private readonly IWebHostEnvironment _env;
-    private readonly DeviceVoiceEventService _voiceEvents;
+    private readonly DeviceVoiceLiveTestQueue _liveTests;
 
     public ServiceVoicesController(
         ErrorServiceDbContext db,
         IWebHostEnvironment env,
-        DeviceVoiceEventService voiceEvents)
+        DeviceVoiceLiveTestQueue liveTests)
     {
         _db = db;
         _env = env;
-        _voiceEvents = voiceEvents;
+        _liveTests = liveTests;
     }
 
     private string WebRoot => _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
@@ -404,7 +404,8 @@ public sealed class ServiceVoicesController : ControllerBase
         if (entity == null)
             return NotFound("اکشن یافت نشد.");
 
-        if (entity.MonitoringDevice is not { IsActive: true })
+        var device = entity.MonitoringDevice;
+        if (device is not { IsActive: true })
             return BadRequest("دستگاه این اکشن فعال نیست یا به کارگاه متصل نیست.");
 
         if (!entity.IsActive)
@@ -415,14 +416,26 @@ public sealed class ServiceVoicesController : ControllerBase
             return BadRequest("برای این اکشن فایل MP3 ذخیره نشده است؛ ابتدا صدا را ضبط و ذخیره کنید.");
 
         var now = DateTimeOffset.UtcNow;
-        var ev = _voiceEvents.AddTestEvent(_db, entity.MonitoringDevice, entity, now);
-        await _db.SaveChangesAsync(ct);
+        var audioUrl = entity.AudioUrl!;
+        var titleFa = string.IsNullOrWhiteSpace(entity.TitleFa)
+            ? (ServiceVoiceEventKeys.TitleOf(entity.Key) ?? entity.Key)
+            : entity.TitleFa;
+
+        _liveTests.Enqueue(device.Id, new DeviceVoiceLiveTestItem(
+            entity.Key,
+            titleFa,
+            Math.Clamp(entity.RepeatCount, 1, 50),
+            entity.Priority,
+            audioUrl,
+            Path.GetExtension(audioUrl).TrimStart('.').ToLowerInvariant(),
+            entity.UpdatedAt.ToUnixTimeSeconds(),
+            now));
 
         return Ok(new ServiceVoiceTestResultDto
         {
             Ok = true,
-            EventId = ev.Id,
-            Message = "درخواست پخش آزمایشی برای دستگاه ارسال شد."
+            EventId = 0,
+            Message = "پخش آزمایشی به‌صورت زنده ارسال شد؛ در تاریخچهٔ رویدادها ثبت نمی‌شود."
         });
     }
 

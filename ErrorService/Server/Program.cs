@@ -64,6 +64,7 @@ builder.Services.AddScoped<PriceDropNotifier>();
 builder.Services.AddScoped<AdminOrderService>();
 builder.Services.AddSingleton<MonitoringCacheService>();
 builder.Services.AddSingleton<DeviceVoiceEventService>();
+builder.Services.AddSingleton<DeviceVoiceLiveTestQueue>();
 builder.Services.AddHostedService<DeviceVoiceEventCleanupService>();
 builder.Services.AddScoped<MonitoringAuthorizationService>();
 builder.Services.AddHttpClient();

@@ -104,25 +104,6 @@ public sealed class DeviceVoiceEventService
         return added;
     }
 
-    /// <summary>ساخت مستقیم رویداد آزمایشی از پنل (بدون cooldown).</summary>
-    public DeviceVoiceEvent AddTestEvent(ErrorServiceDbContext db, MonitoringDevice device, ServiceVoiceAction action, DateTimeOffset now)
-    {
-        var entity = new DeviceVoiceEvent
-        {
-            MonitoringDeviceId = device.Id,
-            DeviceCode = device.DeviceNumber,
-            ActionKey = action.Key,
-            SourceType = "Test",
-            DescriptionFa = "پخش آزمایشی از پنل مدیریت",
-            IsTest = true,
-            CreatedAt = now,
-            ExpiresAt = now.Add(Lifetime)
-        };
-
-        db.DeviceVoiceEvents.Add(entity);
-        return entity;
-    }
-
     private static string? Truncate(string? value, int max) =>
         value == null || value.Length <= max ? value : value[..max];
 }

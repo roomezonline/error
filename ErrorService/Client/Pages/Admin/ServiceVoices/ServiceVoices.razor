@@ -163,8 +163,9 @@
                                 @if (it.DeviceId is > 0 && it.AudioUrl is not null &&
                                      it.AudioUrl.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    <button type="button" class="sv-icon-btn" title="پخش آزمایشی روی دستگاه"
-                                            aria-label="پخش آزمایشی روی دستگاه"
+                                    <button type="button" class="sv-icon-btn"
+                                            title="پخش آزمایشی زنده روی دستگاه (در تاریخچه ثبت نمی‌شود)"
+                                            aria-label="پخش آزمایشی زنده روی دستگاه"
                                             @onclick="() => TestAsync(it)" disabled="@(_testingId == it.Id)">
                                         @if (_testingId == it.Id)
                                         {
@@ -1833,12 +1834,16 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadDevicesAsync(keepSelection: false);
+        // آخرین دستگاه انتخاب‌شده را از حافظهٔ مرورگر بخوان تا با reload صفحه عوض نشود.
+        _selectedDeviceId = await ReadSavedDeviceIdAsync();
+
+        await LoadDevicesAsync();
         if (_selectedDeviceId is > 0)
             await LoadAsync();
         else
             _items = new();
 
+        await SaveSelectedDeviceAsync();
         Reset();
     }
 
@@ -1910,8 +1915,43 @@
 
     private async Task OnDeviceChangedAsync()
     {
+        await SaveSelectedDeviceAsync();
         await LoadAsync();
         Reset();
+    }
+
+    /// <summary>کلید حافظهٔ محلی برای نگه‌داشتن آخرین دستگاه انتخاب‌شده.</summary>
+    private const string DeviceStorageKey = "serviceVoices.selectedDeviceId";
+
+    /// <summary>آخرین دستگاه انتخاب‌شده را از localStorage مرورگر می‌خواند.</summary>
+    private async Task<int?> ReadSavedDeviceIdAsync()
+    {
+        try
+        {
+            var raw = await JS.InvokeAsync<string?>("localStorage.getItem", DeviceStorageKey);
+            return int.TryParse(raw, out var id) && id > 0 ? id : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>انتخاب فعلی دستگاه را در localStorage ذخیره می‌کند تا دفعهٔ بعد بازگردد.</summary>
+    private async Task SaveSelectedDeviceAsync()
+    {
+        try
+        {
+            if (_selectedDeviceId is > 0)
+                await JS.InvokeVoidAsync("localStorage.setItem", DeviceStorageKey,
+                    _selectedDeviceId.Value.ToString());
+            else
+                await JS.InvokeVoidAsync("localStorage.removeItem", DeviceStorageKey);
+        }
+        catch
+        {
+            // حافظهٔ مرورگر در دسترس نیست (حالت ناشناس/محدود) — انتخاب فعلی معتبر می‌ماند.
+        }
     }
 
     private async Task LoadAsync()
@@ -2196,7 +2236,7 @@
             if (resp.IsSuccessStatusCode)
             {
                 var result = await resp.Content.ReadFromJsonAsync<ServiceVoiceTestResultDto>();
-                ToastService.ShowSuccess(result?.Message ?? "درخواست پخش آزمایشی برای دستگاه ارسال شد");
+                ToastService.ShowSuccess(result?.Message ?? "پخش آزمایشی زنده ارسال شد (در تاریخچه ثبت نمی‌شود)");
             }
             else
             {

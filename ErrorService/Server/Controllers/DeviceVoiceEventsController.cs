@@ -1,4 +1,5 @@
 using ErrorService.Server.Data;
+using ErrorService.Server.Services;
 using ErrorService.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,11 +21,16 @@ public sealed class DeviceVoiceEventsController : ControllerBase
     private const int BatchSize = 10;
 
     private readonly ErrorServiceDbContext _db;
+    private readonly DeviceVoiceLiveTestQueue _liveTests;
     private readonly string? _configuredBaseUrl;
 
-    public DeviceVoiceEventsController(ErrorServiceDbContext db, IConfiguration configuration)
+    public DeviceVoiceEventsController(
+        ErrorServiceDbContext db,
+        DeviceVoiceLiveTestQueue liveTests,
+        IConfiguration configuration)
     {
         _db = db;
+        _liveTests = liveTests;
         _configuredBaseUrl = configuration["Site:BaseUrl"];
     }
 
@@ -65,6 +71,10 @@ public sealed class DeviceVoiceEventsController : ControllerBase
         {
             var now = DateTimeOffset.UtcNow;
 
+            // درخواست‌های آزمایشی «زنده» فقط در حافظه‌اند؛ در تاریخچهٔ رویدادها
+            // ذخیره نمی‌شوند و با همان مسیر عادی long-poll به دستگاه می‌رسند.
+            var liveItems = _liveTests.Drain(device.Id, now);
+
             var rows = await _db.DeviceVoiceEvents.AsNoTracking()
                 .Where(e => e.MonitoringDeviceId == device.Id &&
                             e.Id > afterId &&
@@ -73,32 +83,30 @@ public sealed class DeviceVoiceEventsController : ControllerBase
                 .Take(BatchSize)
                 .ToListAsync(ct);
 
-            if (rows.Count > 0)
+            if (rows.Count > 0 || liveItems.Count > 0)
             {
-                var batchCursor = rows[^1].Id;
+                var batchCursor = rows.Count > 0 ? rows[^1].Id : afterId;
                 var keys = rows.Select(e => e.ActionKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                var actions = await _db.ServiceVoiceActions.AsNoTracking()
-                    .Where(a => a.MonitoringDeviceId == device.Id &&
-                                a.IsActive &&
-                                a.AudioUrl != null && a.AudioUrl != "" &&
-                                keys.Contains(a.Key))
-                    .Select(a => new
-                    {
-                        a.Key,
-                        a.TitleFa,
-                        a.RepeatCount,
-                        a.Priority,
-                        a.AudioUrl,
-                        a.UpdatedAt
-                    })
-                    .ToListAsync(ct);
+                var actionByKey = new Dictionary<string, ActionSnapshot>(StringComparer.OrdinalIgnoreCase);
+                if (keys.Count > 0)
+                {
+                    var actions = await _db.ServiceVoiceActions.AsNoTracking()
+                        .Where(a => a.MonitoringDeviceId == device.Id &&
+                                    a.IsActive &&
+                                    a.AudioUrl != null && a.AudioUrl != "" &&
+                                    keys.Contains(a.Key))
+                        .Select(a => new ActionSnapshot(
+                            a.Key, a.TitleFa, a.RepeatCount, a.Priority, a.AudioUrl, a.UpdatedAt))
+                        .ToListAsync(ct);
 
-                var actionByKey = actions
-                    .GroupBy(a => a.Key, StringComparer.OrdinalIgnoreCase)
-                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+                    foreach (var action in actions)
+                        actionByKey.TryAdd(action.Key, action);
+                }
 
                 var events = new List<DeviceVoiceEventDto>();
+                var deliveredIds = new List<int>();
+
                 foreach (var row in rows)
                 {
                     if (!actionByKey.TryGetValue(row.ActionKey, out var action)) continue;
@@ -118,13 +126,33 @@ public sealed class DeviceVoiceEventsController : ControllerBase
                         IsTest = row.IsTest,
                         CreatedAt = row.CreatedAt
                     });
+
+                    deliveredIds.Add(row.Id);
+                }
+
+                // پخش آزمایشی: شناسهٔ دیتابیسی ندارد و در تاریخچه ثبت نمی‌شود.
+                foreach (var live in liveItems)
+                {
+                    events.Add(new DeviceVoiceEventDto
+                    {
+                        Id = 0,
+                        ActionKey = live.ActionKey,
+                        TitleFa = live.TitleFa,
+                        RepeatCount = Math.Clamp(live.RepeatCount, 1, 50),
+                        Priority = live.Priority,
+                        AudioUrl = ToAbsoluteUrl(baseUrl, live.AudioUrl),
+                        Format = live.Format,
+                        Version = live.Version,
+                        IsTest = true,
+                        CreatedAt = live.EnqueuedAt
+                    });
                 }
 
                 // ثبت تحویل: از این لحظه در پنل مشخص است که صدا به دستگاه رسیده
                 // (و «پخش نشد» فقط برای رویدادهای تحویل‌نشده نمایش داده می‌شود).
-                if (events.Count > 0)
+                // فقط رویدادهای واقعی دیتابیس علامت می‌خورند؛ آزمایشی‌های زنده نه.
+                if (deliveredIds.Count > 0)
                 {
-                    var deliveredIds = events.Select(e => (int)e.Id).ToList();
                     var deliveredAt = DateTimeOffset.UtcNow;
                     await _db.DeviceVoiceEvents
                         .Where(e => deliveredIds.Contains(e.Id) && e.DeliveredAt == null)
@@ -200,4 +228,12 @@ public sealed class DeviceVoiceEventsController : ControllerBase
     }
 
     private sealed record DeviceInfo(int Id, string DeviceNumber);
+
+    private sealed record ActionSnapshot(
+        string Key,
+        string? TitleFa,
+        int RepeatCount,
+        int Priority,
+        string? AudioUrl,
+        DateTimeOffset UpdatedAt);
 }
