@@ -99,8 +99,12 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">تاریخ و ساعت ایجاد</label>
-                            <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="createdAtInput" />
-                            <div class="text-muted small mt-1">در صورت خالی بودن، زمان فعلی ثبت می‌شود.</div>
+                            <input class="form-control rounded-3" data-jdp autocomplete="off"
+                                   @bind="createdAtInput" @bind:after="NormalizeCreatedAt" />
+                            <div class="text-muted small mt-1">
+                                فقط تاریخ را از تقویم انتخاب کنید؛ ساعت به‌صورت خودکار برابر همان لحظهٔ انتخاب ثبت می‌شود.
+                                برای ساعت دلخواه، بعد از تاریخ بنویسید: <code dir="ltr">1404/08/21 09:30</code>
+                            </div>
                         </div>
                         <div class="row g-3 mb-3">
                             <div class="col-md-6">
@@ -128,11 +132,13 @@
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label small">انتشار از</label>
-                                    <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="_publishAtInput" placeholder="خالی = بلافاصله" />
+                                    <input class="form-control rounded-3" data-jdp autocomplete="off"
+                                           @bind="_publishAtInput" @bind:after="NormalizePublishAt" placeholder="خالی = بلافاصله" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">آرشیو خودکار از</label>
-                                    <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="_expireAtInput" placeholder="خالی = بدون انقضا" />
+                                    <input class="form-control rounded-3" data-jdp autocomplete="off"
+                                           @bind="_expireAtInput" @bind:after="NormalizeExpireAt" placeholder="خالی = بدون انقضا" />
                                 </div>
                             </div>
                             <div class="form-check form-switch mt-3">
@@ -141,7 +147,8 @@
                             </div>
                             <div class="mt-2">
                                 <label class="form-label small">سنجاق تا تاریخ</label>
-                                <input class="form-control rounded-3" data-jdp autocomplete="off" @bind="_pinnedUntilInput" placeholder="خالی = بدون سنجاق" />
+                                <input class="form-control rounded-3" data-jdp autocomplete="off"
+                                       @bind="_pinnedUntilInput" @bind:after="NormalizePinnedUntil" placeholder="خالی = بدون سنجاق" />
                             </div>
                         </div>
                         <div class="seo-panel mb-3">
@@ -2248,7 +2255,7 @@
             IsPublished = true,
             ContentType = _typeFilter ?? ContentType.News
         };
-        createdAtInput = PersianDate.ToJalaliDateTime(DateTimeOffset.Now);
+        createdAtInput = PersianDate.ToJalaliDateWithTime(DateTimeOffset.Now);
         _publishAtInput = string.Empty;
         _expireAtInput = string.Empty;
         _pinnedUntilInput = string.Empty;
@@ -2295,10 +2302,10 @@
             SourceUrl = news.SourceUrl
         };
 
-        createdAtInput = PersianDate.ToJalaliDateTime(news.CreatedAt);
-        _publishAtInput = news.PublishAt.HasValue ? PersianDate.ToJalaliDateTime(news.PublishAt.Value) : string.Empty;
-        _expireAtInput = news.ExpireAt.HasValue ? PersianDate.ToJalaliDateTime(news.ExpireAt.Value) : string.Empty;
-        _pinnedUntilInput = news.PinnedUntil.HasValue ? PersianDate.ToJalaliDateTime(news.PinnedUntil.Value) : string.Empty;
+        createdAtInput = PersianDate.ToJalaliDateWithTime(news.CreatedAt);
+        _publishAtInput = news.PublishAt.HasValue ? PersianDate.ToJalaliDateWithTime(news.PublishAt.Value) : string.Empty;
+        _expireAtInput = news.ExpireAt.HasValue ? PersianDate.ToJalaliDateWithTime(news.ExpireAt.Value) : string.Empty;
+        _pinnedUntilInput = news.PinnedUntil.HasValue ? PersianDate.ToJalaliDateWithTime(news.PinnedUntil.Value) : string.Empty;
         _seoOpen = !string.IsNullOrWhiteSpace(news.SeoTitle)
                    || !string.IsNullOrWhiteSpace(news.SeoDescription)
                    || !string.IsNullOrWhiteSpace(news.CanonicalUrl)
@@ -2310,6 +2317,33 @@
     }
 
     private void ToggleSeoPanel() => _seoOpen = !_seoOpen;
+
+    /// <summary>
+    /// فیلدهای تاریخ فقط از دیتاپیکر جلالی «تاریخ» می‌گیرند؛ اگر ساعت همراه مقدار
+    /// نباشد، ساعتِ همان لحظهٔ انتخاب تاریخ اضافه می‌شود تا مقدار با 00:00 ذخیره نشود.
+    /// </summary>
+    private void NormalizeCreatedAt() => createdAtInput = EnsureClockTime(createdAtInput);
+    private void NormalizePublishAt() => _publishAtInput = EnsureClockTime(_publishAtInput);
+    private void NormalizeExpireAt() => _expireAtInput = EnsureClockTime(_expireAtInput);
+    private void NormalizePinnedUntil() => _pinnedUntilInput = EnsureClockTime(_pinnedUntilInput);
+
+    /// <summary>
+    /// اگر متن فقط تاریخ جلالی باشد (بدون ساعت)، ساعت فعلی به آن اضافه می‌شود.
+    /// خروجی همیشه به قالب <c>yyyy/MM/dd HH:mm</c> است؛ همان قالبی که دیتاپیکر می‌خواند.
+    /// </summary>
+    private static string EnsureClockTime(string? value)
+    {
+        var text = (value ?? string.Empty).Trim();
+        if (text.Length == 0) return string.Empty;
+
+        // ساعت از قبل وارد شده است → دست نزن
+        if (text.Contains(':')) return text;
+
+        var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 1 || !parts[0].Contains('/')) return text;
+
+        return $"{parts[0]} {DateTime.Now:HH:mm}";
+    }
 
     private void ClearSource()
     {

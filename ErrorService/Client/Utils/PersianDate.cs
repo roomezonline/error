@@ -36,6 +36,17 @@ public static class PersianDate
         return $"{y:0000}/{m:00}/{d:00}";
     }
 
+    /// <summary>
+    /// تاریخ و ساعت جلالی با ترتیب «تاریخ اول» — همان قالبی که دیتاپیکر جلالی
+    /// می‌خواند و می‌نویسد: <c>yyyy/MM/dd HH:mm</c>.
+    /// </summary>
+    public static string ToJalaliDateWithTime(DateTimeOffset value)
+    {
+        if (!TryGetYmd(value, out var y, out var m, out var d)) return string.Empty;
+        var local = value.ToLocalTime().DateTime;
+        return $"{y:0000}/{m:00}/{d:00} {local.Hour:00}:{local.Minute:00}";
+    }
+
     public static string ToLongPersianDate(DateTimeOffset value)
     {
         if (!TryGetYmd(value, out var y, out var m, out var d)) return string.Empty;
